@@ -39,10 +39,19 @@ storage = StorageManager(DATA_ROOT)
 # Auto-clean failed courses on startup
 try:
     from services.common.course_cleaner import clean_failed_courses
-
     clean_failed_courses(DATA_ROOT)
 except Exception as e:
     logger.warning(f"Failed to run course auto-cleaner: {e}")
+
+# Start background operations (cleanup, integrity checks, cache pruning)
+bg_ops = None
+try:
+    from services.common.background_ops import BackgroundOperations
+    bg_ops = BackgroundOperations(storage_manager=storage, interval_seconds=300)
+    bg_ops.start()
+    logger.info("Background operations initialized")
+except Exception as e:
+    logger.warning(f"Background ops init failed (non-fatal): {e}")
 
 app = Flask(__name__)
 
@@ -538,7 +547,10 @@ def course_modules():
 
 @app.route("/health", methods=["GET"])
 def health():
-    return jsonify({"status": "healthy", "storage": True})
+    result = {"status": "healthy", "storage": True}
+    if bg_ops:
+        result["background_ops"] = bg_ops.get_status()
+    return jsonify(result)
 
 
 @app.route("/api/due_cards", methods=["GET"])
