@@ -1,0 +1,189 @@
+{
+  "course": "Causal Inference",
+  "depth": 4,
+  "depth_label": "Postgraduate / Professional Expert",
+  "modules": [
+    {
+      "title": "Causal Mechanisms",
+      "ordinal": 1,
+      "units": [
+        {
+          "title": "Causal Inference",
+          "ordinal": 1,
+          "lessons": [
+            {
+              "title": "Theoretical",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "title": "Causal Models"
+                },
+                {
+                  "title": "Causal Effects"
+                },
+                {
+                  "title": "Defining Causal Inference"
+                },
+                {
+                  "title": "Analyzing Causal Effects"
+                },
+                {
+                  "title": "Causal Inference Techniques"
+                }
+              ]
+            },
+            {
+              "title": "Historical",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "title": "Identifying Confounding Variables"
+                },
+                {
+                  "title": "Measuring Treatment Effects"
+                },
+                {
+                  "title": "Interpreting Results"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Systematic Interactions",
+      "ordinal": 2,
+      "units": [
+        {
+          "title": "Systematic Interaction",
+          "ordinal": 1,
+          "lessons": [
+            {
+              "title": "Interactions in Systems",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "title": "Systemic Feedback Loops"
+                },
+                {
+                  "title": "Analyzing Systemic Interactions"
+                },
+                {
+                  "title": "Causal Mechanisms and Their Components"
+                },
+                {
+                  "title": "Systemic Influences on Causality"
+                },
+                {
+                  "title": "Quantitative Methods for Causal"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Comparative Theoretical Critiques",
+          "ordinal": 2,
+          "lessons": [
+            {
+              "title": "Role of Comparative Theories in Understanding Systemic Interactions",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "title": "Analyzing Causal Mechanisms"
+                },
+                {
+                  "title": "Systemic Interactions within Systems"
+                },
+                {
+                  "title": "Systemic Feedback Loop"
+                },
+                {
+                  "title": "Systemic Feedback Loop Dynamics"
+                }
+              ]
+            },
+            {
+              "title": "Active Operational Mechanisms in Systemic Interactions",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "title": "Analyzing Systemic Feedback Loops"
+                },
+                {
+                  "title": "Systemic Interactions and Their Impact"
+                },
+                {
+                  "title": "Causal Mechanisms and Their Importance"
+                },
+                {
+                  "title": "Systemic Feedback Loops and Their Role"
+                }
+              ]
+            },
+            {
+              "title": "Comparative Theoretical Critiques of Systemic Interactions",
+              "ordinal": 3,
+              "concepts": [
+                {
+                  "title": "Systemic Influences on Causal Effects"
+                },
+                {
+                  "title": "Systemic Interactions and Their Measurement"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Complex Applications",
+      "ordinal": 3,
+      "units": [
+        {
+          "title": "Unit Title",
+          "ordinal": 1,
+          "lessons": [
+            {
+              "title": "Lesson 1",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "title": "Common Statistical Tools Used in Causal Inference"
+                },
+                {
+                  "title": "Analyzing Causal Relationships through Graphs and Diagrams"
+                },
+                {
+                  "title": "Handling Confounding Variables in Causal Studies"
+                },
+                {
+                  "title": "Using Machine Learning Approaches for Causal Inference"
+                }
+              ]
+            },
+            {
+              "title": "Lesson 2",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "title": "Handling Confounding Variables"
+                },
+                {
+                  "title": "Using Statistical Tools for Causal"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Future Legacy",
+      "ordinal": 4,
+      "units": []
+    }
+  ]
+}

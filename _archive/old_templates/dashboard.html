@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Mnemosyne Node{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <h1>Mnemosyne Node v3.1</h1>
+    <p>Professional Edge-AI Learning Station</p>
+    <div class="dashboard-actions">
+        <a href="/session" class="btn btn-primary">Start Session</a>
+        <button id="create-course-btn" class="btn btn-secondary">Create Course</button>
+        <a href="/status" class="btn btn-secondary">System Status</a>
+    </div>
+    <div class="dashboard-info">
+        <h2>System Overview</h2>
+        <ul>
+            <li><strong>Host:</strong> NVIDIA Jetson Orin Nano (8GB)</li>
+            <li><strong>Architecture:</strong> Microservices with Share Nothing design</li>
+            <li><strong>Access:</strong> Local Network + Cloudflare Tunnel</li>
+            <li><strong>AI Models:</strong> Llama-3.2 1B (4-bit quantized), Whisper Tiny</li>
+        </ul>
+    </div>
+</div>
+
+<!-- Course Creation Modal -->
+<div id="course-creation-modal" class="modal hidden">
+    <div class="modal-content">
+        <h2>Creating Course</h2>
+        <form id="course-creation-form">
+            <label for="course-topic">Topic:</label>
+            <input type="text" id="course-topic" placeholder="Enter course topic" required>
+            <button type="submit" class="btn btn-primary">Start Creation</button>
+        </form>
+        <div id="creation-progress" class="hidden">
+            <p id="creation-status">Initializing...</p>
+            <div class="progress-bar">
+                <div id="progress-fill" class="progress-fill" style="width: 0%;"></div>
+            </div>
+        </div>
+        <button id="close-modal" class="btn btn-secondary">Close</button>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Dashboard specific JS for course creation
+let courseModal, courseForm, courseTopicInput, creationProgress, creationStatus, progressFill, closeModalBtn;
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Course creation modal elements
+    courseModal = document.getElementById('course-creation-modal');
+    courseForm = document.getElementById('course-creation-form');
+    courseTopicInput = document.getElementById('course-topic');
+    creationProgress = document.getElementById('creation-progress');
+    creationStatus = document.getElementById('creation-status');
+    progressFill = document.getElementById('progress-fill');
+    closeModalBtn = document.getElementById('close-modal');
+
+    // Create course button
+    document.getElementById('create-course-btn').addEventListener('click', () => {
+        courseModal.classList.remove('hidden');
+    });
+
+    // Form submit
+    courseForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const topic = courseTopicInput.value.trim();
+        if (topic) {
+            courseForm.style.display = 'none';
+            creationProgress.classList.remove('hidden');
+            // Since dashboard doesn't have session context, redirect to session with topic
+            window.location.href = `/session?create_course=${encodeURIComponent(topic)}`;
+        }
+    });
+
+    closeModalBtn.addEventListener('click', () => {
+        courseModal.classList.add('hidden');
+    });
+});
+</script>
+{% endblock %}

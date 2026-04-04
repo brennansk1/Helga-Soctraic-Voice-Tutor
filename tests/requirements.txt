@@ -1,0 +1,5 @@
+pytest
+evdev
+python-socketio
+psutil
+requests

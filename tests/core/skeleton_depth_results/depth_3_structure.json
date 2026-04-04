@@ -1,0 +1,163 @@
+{
+  "course": "Causal Inference",
+  "depth": 3,
+  "depth_label": "Graduate / Advanced technical",
+  "modules": [
+    {
+      "title": "Causal Mechanisms",
+      "ordinal": 1,
+      "units": [
+        {
+          "title": "Causal Inference",
+          "ordinal": 1,
+          "lessons": [
+            {
+              "title": "Theoretical",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "title": "Causal Graphs"
+                },
+                {
+                  "title": "Analyzing Causal Effects"
+                },
+                {
+                  "title": "Statistical Inference Methods"
+                },
+                {
+                  "title": "Modeling Causation with Probabilistic Graphical Models"
+                }
+              ]
+            },
+            {
+              "title": "Historical",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "title": "Randomized Controlled Trials"
+                },
+                {
+                  "title": "Confounding Variables"
+                },
+                {
+                  "title": "Analyzing Treatment Effects Using Meta-"
+                },
+                {
+                  "title": "Handling Missing Data in Causal Inference"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Systematic Interactions",
+      "ordinal": 2,
+      "units": [
+        {
+          "title": "Systematic Interactions and Active Operational Mechanisms",
+          "ordinal": 2,
+          "lessons": [
+            {
+              "title": "Active Operational Mechanisms in Causal Inference",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "title": "Mechanistic Models"
+                },
+                {
+                  "title": "Analyzing Network Structures"
+                },
+                {
+                  "title": "Mechanistic Theories"
+                },
+                {
+                  "title": "Building Causal Graphs"
+                }
+              ]
+            },
+            {
+              "title": "Comparative Theoretical Critiques of Causal Inference",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "title": "Comparative Theoretical Critiques"
+                },
+                {
+                  "title": "Developing Practical Skills"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Complex Applications",
+      "ordinal": 3,
+      "units": [
+        {
+          "title": "Analyzing High-Order Synthesis",
+          "ordinal": 2,
+          "lessons": [
+            {
+              "title": "High-Order Synthesis in Causal",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "title": "Bayesian Networks"
+                },
+                {
+                  "title": "Advanced Topics in Causal Inference"
+                }
+              ]
+            },
+            {
+              "title": "Advanced Technical Limit Cases",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "title": "Handling Confounding Variables"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Future Legacy of Causal Inference",
+          "ordinal": 3,
+          "lessons": [
+            {
+              "title": "Legacy of Causal Inference",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "title": "Practical Application of Causal Graphs"
+                },
+                {
+                  "title": "Causal Inference in Practice"
+                },
+                {
+                  "title": "Critical Thinking and Problem-Solving"
+                }
+              ]
+            },
+            {
+              "title": "Impact of Future Research",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "title": "Causal Inference Methods"
+                },
+                {
+                  "title": "Interpreting Results"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

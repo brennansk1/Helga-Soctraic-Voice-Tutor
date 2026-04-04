@@ -1,0 +1,119 @@
+{
+  "course": "Causal Inference",
+  "depth": 1,
+  "depth_label": "Introductory / Basic Access",
+  "modules": [
+    {
+      "title": "Causal Mechanisms",
+      "ordinal": 1,
+      "units": [
+        {
+          "title": "Causal Inference",
+          "ordinal": 1,
+          "lessons": [
+            {
+              "title": "Theoretical",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "title": "Cause and Effect"
+                },
+                {
+                  "title": "Analyzing Influences"
+                }
+              ]
+            },
+            {
+              "title": "Historical",
+              "ordinal": 2,
+              "concepts": []
+            },
+            {
+              "title": "Primary Definitions",
+              "ordinal": 3,
+              "concepts": [
+                {
+                  "title": "Influences"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Systematic",
+      "ordinal": 2,
+      "units": [
+        {
+          "title": "Interpreting Results",
+          "ordinal": 2,
+          "lessons": [
+            {
+              "title": "Effect Size",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "title": "Patterns"
+                },
+                {
+                  "title": "Structuring Data"
+                }
+              ]
+            },
+            {
+              "title": "Confidence Intervals",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "title": "Structures"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Modeling Complex Systems",
+          "ordinal": 3,
+          "lessons": [
+            {
+              "title": "Bayesian Networks",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "title": "Causality"
+                },
+                {
+                  "title": "Probability Distributions"
+                }
+              ]
+            },
+            {
+              "title": "Markov Models",
+              "ordinal": 2,
+              "concepts": []
+            }
+          ]
+        },
+        {
+          "title": "Future Impact",
+          "ordinal": 4,
+          "lessons": [
+            {
+              "title": "Legacy and Future Research",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "title": "Causal Graphs"
+                },
+                {
+                  "title": "Causal Models"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+{% block title %}Helga - Home{% endblock %}
+{% block body_class %}page-home{% endblock %}
+
+{% block content %}
+<div class="home-container">
+    <!-- Hero -->
+    <div class="hero-section">
+        <h1 id="greeting-heading">Welcome to Helga</h1>
+        <p class="subtitle">Your Socratic AI Tutor</p>
+    </div>
+
+    <!-- Stats row -->
+    <div class="stats-row">
+        <div class="stat-card">
+            <span class="stat-value" id="total-courses">-</span>
+            <span class="stat-label">Courses</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-value" id="concepts-mastered">-</span>
+            <span class="stat-label">Concepts</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-value" id="cards-due">-</span>
+            <span class="stat-label">Due Today</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-value" id="active-streak">-</span>
+            <span class="stat-label">Streak</span>
+        </div>
+    </div>
+
+    <!-- Primary action -->
+    <div class="home-cta" id="home-cta">
+        <a href="/courses" class="cta-btn primary" id="cta-primary">Create Your First Course</a>
+    </div>
+
+    <!-- Quick links -->
+    <div class="quick-links">
+        <a href="/courses" class="quick-card">
+            <span class="qc-icon">📚</span>
+            <div>
+                <strong>Courses</strong>
+                <span>Create & manage learning paths</span>
+            </div>
+        </a>
+        <a href="/learn" class="quick-card">
+            <span class="qc-icon">💬</span>
+            <div>
+                <strong>Learn</strong>
+                <span>Socratic dialogue sessions</span>
+            </div>
+        </a>
+        <a href="/review" class="quick-card">
+            <span class="qc-icon">🔄</span>
+            <div>
+                <strong>Review</strong>
+                <span>Spaced repetition (FSRS)</span>
+            </div>
+        </a>
+        <a href="/quiz" class="quick-card">
+            <span class="qc-icon">🧠</span>
+            <div>
+                <strong>Quiz</strong>
+                <span>Test your knowledge</span>
+            </div>
+        </a>
+        <a href="/schedule" class="quick-card">
+            <span class="qc-icon">📅</span>
+            <div>
+                <strong>Schedule</strong>
+                <span>Review calendar</span>
+            </div>
+        </a>
+        <a href="/settings" class="quick-card">
+            <span class="qc-icon">⚙️</span>
+            <div>
+                <strong>Settings</strong>
+                <span>Profile, voice, theme</span>
+            </div>
+        </a>
+    </div>
+</div>
+
+<style>
+.home-container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 2rem 1rem 3rem;
+}
+.hero-section {
+    text-align: center;
+    margin-bottom: 2rem;
+    animation: fadeIn 0.4s ease-out;
+}
+.hero-section h1 {
+    font-size: 2.2rem;
+    font-weight: 800;
+    margin: 0 0 0.25rem 0;
+    color: var(--text-primary);
+}
+.subtitle {
+    font-size: 1rem;
+    color: var(--text-secondary);
+    margin: 0;
+}
+.stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+}
+.stat-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1rem;
+    text-align: center;
+}
+.stat-value {
+    display: block;
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: var(--accent-primary);
+    line-height: 1.2;
+}
+.stat-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.home-cta {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+.cta-btn {
+    display: inline-block;
+    padding: 0.75rem 2rem;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 1rem;
+    text-decoration: none;
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+.cta-btn.primary {
+    background: var(--accent-primary);
+    color: #fff;
+    box-shadow: 0 3px 0 var(--accent-primary-shadow, #1d4a6a);
+}
+.cta-btn.primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(46, 107, 138, 0.3);
+}
+.quick-links {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+}
+.quick-card {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1rem;
+    text-decoration: none;
+    color: var(--text-primary);
+    transition: transform 0.15s, border-color 0.15s;
+}
+.quick-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent-primary);
+}
+.qc-icon { font-size: 1.5rem; flex-shrink: 0; }
+.quick-card strong {
+    display: block;
+    font-size: 0.9rem;
+    margin-bottom: 0.1rem;
+}
+.quick-card span {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+@media (max-width: 768px) {
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+    .quick-links { grid-template-columns: 1fr 1fr; }
+    .hero-section h1 { font-size: 1.8rem; }
+}
+@media (max-width: 480px) {
+    .quick-links { grid-template-columns: 1fr; }
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadStats();
+    loadGreeting();
+});
+
+async function loadStats() {
+    try {
+        var res = await fetch('/api/stats');
+        var data = await res.json();
+        document.getElementById('total-courses').textContent = data.courses || 0;
+        document.getElementById('concepts-mastered').textContent = data.concepts || 0;
+        document.getElementById('active-streak').textContent = data.streak || 0;
+
+        // Update CTA based on whether courses exist
+        var ctaBtn = document.getElementById('cta-primary');
+        if (data.courses > 0) {
+            ctaBtn.textContent = 'Continue Learning';
+            ctaBtn.href = '/learn';
+        }
+    } catch (e) { console.warn('Stats load failed:', e); }
+
+    try {
+        var revRes = await fetch('/api/review_stats');
+        var review = await revRes.json();
+        document.getElementById('cards-due').textContent = review.due_today || 0;
+    } catch (e) { console.warn('Review stats unavailable:', e); }
+}
+
+async function loadGreeting() {
+    try {
+        var res = await fetch('/api/profile');
+        if (res.ok) {
+            var profile = await res.json();
+            if (profile.display_name && profile.display_name.trim()) {
+                document.getElementById('greeting-heading').textContent = 'Welcome back, ' + profile.display_name.trim();
+            }
+        }
+    } catch (e) {}
+}
+</script>
+{% endblock %}

@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+
+{% block title %}System Status - Helga{% endblock %}
+
+{% block content %}
+<div class="status-page">
+    <header class="status-header">
+        <h1>System Status</h1>
+        <div id="last-updated">Last updated: Just now</div>
+    </header>
+
+    <div class="status-grid">
+        <!-- Active Context Card -->
+        <div class="status-card status-healthy" id="context-card">
+            <div class="card-header">
+                <span class="service-icon">🧠</span>
+                <h3>Active Context</h3>
+                <div class="status-indicator-icon status-healthy">
+                    <span id="context-indicator">●</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <p><strong>Mode:</strong> <span id="fsm-mode">Idle</span></p>
+                <p><strong>Course:</strong> <span id="active-course-title">None</span></p>
+                <p><strong>Lesson:</strong> <span id="active-lesson">None</span></p>
+            </div>
+        </div>
+
+        {% for service_name, service in services_health.items() %}
+        <div class="status-card status-{{ service.status }}">
+            <div class="card-header">
+                <span class="service-icon">
+                    <!-- Placeholder for service-specific icons -->
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 8V4H8L4 8v4h4l4-4z" />
+                        <path d="M12 16v4h4l4-4v-4h-4l-4 4z" />
+                    </svg>
+                </span>
+                <h3>{{ service.name|title }}</h3>
+                <div class="status-indicator-icon status-{{ service.status }}">
+                    {% if service.status == 'healthy' %}
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                        stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                        <polyline points="22 4 12 14.01 9 11.01" />
+                    </svg>
+                    {% elif service.status == 'degraded' %}
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                        stroke="#fbbf24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path
+                            d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                        <line x1="12" y1="9" x2="12" y2="13" />
+                        <line x1="12" y1="17" x2="12.01" y2="17" />
+                    </svg>
+                    {% else %}
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                        stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="15" y1="9" x2="9" y2="15" />
+                        <line x1="9" y1="9" x2="15" y2="15" />
+                    </svg>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="card-body">
+                <p><strong>Status:</strong> <span class="status-text-{{ service.status }}">{{ service.status|title
+                        }}</span></p>
+                {% if service.latency is defined %}
+                <p><strong>Latency:</strong> {{ service.latency }} ms</p>
+                {% endif %}
+                {% if service.data is defined %}
+                {% if service.data.cpu_percent is defined %}
+                <p><strong>CPU:</strong> {{ service.data.cpu_percent|round(1) }}%</p>
+                {% endif %}
+                {% if service.data.memory_percent is defined %}
+                <p><strong>RAM:</strong> {{ service.data.memory_percent|round(1) }}%</p>
+                {% endif %}
+                {% endif %}
+                {% if service.error %}
+                <p class="error-detail"><strong>Error:</strong> {{ service.error }}</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="logs-section">
+        <h2>Live Health Log</h2>
+        <div class="logs-container">
+            <pre id="health-logs">{{ logs }}</pre>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    async function loadContext() {
+        try {
+            const res = await fetch('/api/fsm_state');
+            if (res.ok) {
+                const data = await res.json();
+                const state = data.state || 'IDLE';
+                const courseId = data.active_course_uid;
+
+                document.getElementById('fsm-mode').textContent = state.replace('_', ' ');
+
+                if (courseId) {
+                    document.getElementById('active-course-title').textContent = courseId; // Ideally title, but ID works for now
+                    document.getElementById('active-course-title').style.color = "var(--accent-primary)";
+                } else {
+                    document.getElementById('active-course-title').textContent = "None";
+                    document.getElementById('active-course-title').style.color = "var(--text-secondary)";
+                }
+
+                if (data.current_lesson_title) {
+                    document.getElementById('active-lesson').textContent = data.current_lesson_title;
+                } else {
+                    document.getElementById('active-lesson').textContent = "-";
+                }
+            }
+        } catch (e) {
+            console.error("Context load failed", e);
+        }
+    }
+
+    // Only poll when tab is visible (PERF-5)
+    let statusInterval = null;
+    function startPolling() {
+        if (!statusInterval) {
+            statusInterval = setInterval(loadContext, 10000);
+        }
+    }
+    function stopPolling() {
+        if (statusInterval) {
+            clearInterval(statusInterval);
+            statusInterval = null;
+        }
+    }
+
+    loadContext();
+    startPolling();
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            stopPolling();
+        } else {
+            loadContext(); // Refresh immediately on return
+            startPolling();
+        }
+    });
+
+</script>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{{ url_for('static', filename='js/status.js') }}"></script>
+{% endblock %}

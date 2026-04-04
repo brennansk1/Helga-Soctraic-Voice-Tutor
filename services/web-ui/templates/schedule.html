@@ -1,0 +1,680 @@
+{% extends "base.html" %}
+
+{% block title %}Helga - Schedule{% endblock %}
+
+{% block content %}
+<div class="schedule-wrapper theme-schedule">
+    <!-- Stats Bar -->
+    <div class="stats-bar">
+        <div class="stat-card streak">
+            <span class="stat-icon">🔥</span>
+            <div class="stat-info">
+                <span class="stat-value" id="stat-streak">0</span>
+                <span class="stat-label">Day Streak</span>
+            </div>
+        </div>
+        <div class="stat-card upcoming">
+            <span class="stat-icon">📅</span>
+            <div class="stat-info">
+                <span class="stat-value" id="stat-upcoming">0</span>
+                <span class="stat-label">This Week</span>
+            </div>
+        </div>
+        <div class="stat-card overdue">
+            <span class="stat-icon">⚠️</span>
+            <div class="stat-info">
+                <span class="stat-value" id="stat-overdue">0</span>
+                <span class="stat-label">Overdue</span>
+            </div>
+        </div>
+        <div class="stat-card retention">
+            <span class="stat-icon">🧠</span>
+            <div class="stat-info">
+                <span class="stat-value" id="stat-retention">0%</span>
+                <span class="stat-label">Retention</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Calendar Section -->
+    <div class="calendar-section">
+        <div class="calendar-header">
+            <button class="cal-nav-btn" id="prev-month">‹</button>
+            <h2 class="cal-month-title" id="cal-month-title">February 2026</h2>
+            <button class="cal-nav-btn" id="next-month">›</button>
+        </div>
+        <div class="cal-weekdays">
+            <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span>
+            <span>Thu</span><span>Fri</span><span>Sat</span>
+        </div>
+        <div class="cal-grid" id="cal-grid">
+            <!-- Populated by JS -->
+        </div>
+    </div>
+
+    <!-- Day Detail Panel -->
+    <div class="day-detail-panel hidden" id="day-detail-panel">
+        <div class="detail-header">
+            <h3 id="detail-date-title">Reviews for Today</h3>
+            <button class="close-btn" id="close-detail-panel">✕</button>
+        </div>
+        <div class="detail-list" id="detail-list">
+            <!-- Populated by JS -->
+        </div>
+    </div>
+</div>
+
+<style>
+    .schedule-wrapper {
+        min-height: calc(100vh - 60px);
+        background: var(--bg-primary, #f0f2f5);
+        padding: 2rem;
+        font-family: 'DM Sans', sans-serif;
+    }
+
+    /* Stats Bar */
+    .stats-bar {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1rem;
+        max-width: 900px;
+        margin: 0 auto 2rem;
+    }
+
+    .theme-schedule .stat-card {
+        background: var(--bg-secondary, #ffffff);
+        border-radius: 16px;
+        padding: 1.2rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08);
+        border: 1px solid var(--border-color, #e5e7eb);
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 15px -3px rgba(0, 0, 0, 0.1);
+    }
+
+    .stat-icon {
+        font-size: 2rem;
+    }
+
+    .stat-info {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .stat-value {
+        font-size: 1.5rem;
+        font-weight: 800;
+        color: var(--text-primary);
+    }
+
+    .stat-label {
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .theme-schedule .stat-card.streak .stat-value {
+        color: var(--status-warning);
+    }
+
+    .theme-schedule .stat-card.upcoming .stat-value {
+        color: var(--accent-primary);
+    }
+
+    .theme-schedule .stat-card.overdue .stat-value {
+        color: var(--status-error);
+    }
+
+    .theme-schedule .stat-card.retention .stat-value {
+        color: var(--status-success);
+    }
+
+    /* Calendar */
+    .calendar-section {
+        max-width: 900px;
+        margin: 0 auto;
+        background: var(--bg-secondary);
+        border-radius: 20px;
+        padding: 2rem;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+        border: 1px solid var(--border-color);
+    }
+
+    .calendar-header {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 1.5rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .cal-month-title {
+        font-size: 1.4rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        min-width: 200px;
+        text-align: center;
+    }
+
+    .cal-nav-btn {
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        border: 1px solid var(--border-color);
+        background: var(--bg-primary);
+        font-size: 1.2rem;
+        cursor: pointer;
+        color: var(--text-secondary);
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .cal-nav-btn:hover {
+        background: var(--bg-tertiary);
+        transform: scale(1.05);
+    }
+
+    .cal-weekdays {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 4px;
+        margin-bottom: 0.5rem;
+    }
+
+    .cal-weekdays span {
+        text-align: center;
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        padding: 0.5rem 0;
+    }
+
+    .cal-grid {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 4px;
+    }
+
+    .cal-day {
+        aspect-ratio: 1;
+        border-radius: 12px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s;
+        position: relative;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .cal-day:hover {
+        background: var(--bg-tertiary);
+        border-color: var(--accent-secondary);
+    }
+
+    .cal-day.today {
+        border: 2px solid var(--accent-primary);
+        background: var(--bg-tertiary);
+        font-weight: 800;
+    }
+
+    .cal-day.empty {
+        background: transparent;
+        cursor: default;
+    }
+
+    .cal-day.has-reviews::after {
+        content: '';
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--accent-primary);
+        position: absolute;
+        bottom: 6px;
+    }
+
+    .cal-day.has-overdue::after {
+        background: var(--status-error);
+    }
+
+    .cal-day.has-completed::after {
+        background: var(--status-success);
+    }
+
+    /* Day Detail Panel */
+    .day-detail-panel {
+        max-width: 900px;
+        margin: 1.5rem auto 0;
+        background: var(--bg-secondary);
+        border-radius: 16px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08);
+        border: 1px solid var(--border-color);
+        animation: slideUp 0.3s ease;
+    }
+
+    @keyframes slideUp {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .detail-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .detail-header h3 {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+
+    .close-btn {
+        background: var(--bg-primary);
+        border: none;
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+        transition: all 0.2s;
+    }
+
+    .close-btn:hover {
+        background: var(--border-color);
+    }
+
+    .detail-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    .review-item {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 0.75rem 1rem;
+        background: var(--bg-primary);
+        border-radius: 12px;
+        border: 1px solid var(--border-color);
+        transition: all 0.2s;
+    }
+
+    .review-item:hover {
+        border-color: var(--accent-secondary);
+    }
+
+    .review-item .review-title {
+        flex: 1;
+        font-weight: 600;
+        font-size: 0.9rem;
+        color: var(--text-primary);
+    }
+
+    .review-item .review-number {
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        background: var(--border-color);
+        padding: 0.2rem 0.5rem;
+        border-radius: 6px;
+    }
+
+    .review-status {
+        font-size: 0.75rem;
+        font-weight: 600;
+        padding: 0.25rem 0.6rem;
+        border-radius: 8px;
+    }
+
+    .review-status.pending {
+        background: rgba(245, 158, 11, 0.2);
+        color: var(--status-warning);
+    }
+
+    .review-status.overdue {
+        background: rgba(239, 68, 68, 0.2);
+        color: var(--status-error);
+    }
+
+    .review-status.completed {
+        background: rgba(34, 197, 94, 0.2);
+        color: var(--status-success);
+    }
+
+    .complete-btn {
+        background: var(--status-success);
+        color: var(--bg-primary);
+        border: none;
+        padding: 0.4rem 0.8rem;
+        border-radius: 8px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .complete-btn:hover {
+        background: var(--status-success);
+        transform: scale(1.02);
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 2rem;
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+    }
+
+    .hidden {
+        display: none !important;
+    }
+
+    @media (max-width: 768px) {
+        .stats-bar {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .schedule-wrapper {
+            padding: 1rem;
+        }
+
+        .calendar-section {
+            padding: 1rem;
+        }
+
+        .cal-month-title {
+            font-size: 1.1rem;
+            min-width: 160px;
+        }
+
+        .day-detail-panel {
+            padding: 1rem;
+        }
+
+        .review-item {
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .stats-bar {
+            grid-template-columns: 1fr;
+            gap: 0.75rem;
+        }
+
+        .schedule-wrapper {
+            padding: 0.75rem;
+        }
+
+        .stat-card {
+            padding: 0.75rem;
+        }
+
+        .stat-icon {
+            font-size: 1.5rem;
+        }
+
+        .stat-value {
+            font-size: 1.2rem;
+        }
+
+        .stat-label {
+            font-size: 0.7rem;
+        }
+
+        .calendar-section {
+            padding: 0.75rem;
+            border-radius: 12px;
+        }
+
+        .calendar-header {
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .cal-month-title {
+            font-size: 1rem;
+            min-width: 140px;
+        }
+
+        .cal-nav-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+        }
+
+        .cal-weekdays span {
+            font-size: 0.65rem;
+        }
+
+        .cal-day {
+            font-size: 0.75rem;
+            border-radius: 6px;
+        }
+
+        .day-detail-panel {
+            padding: 0.75rem;
+            border-radius: 12px;
+        }
+
+        .detail-header h3 {
+            font-size: 0.95rem;
+        }
+
+        .review-item {
+            padding: 0.5rem 0.75rem;
+        }
+
+        .review-item .review-title {
+            font-size: 0.8rem;
+        }
+    }
+</style>
+
+<script>
+    function escapeHtml(str) {
+        if (!str) return '';
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        let currentDate = new Date();
+        let calendarData = {};  // date -> card count from FSRS
+
+        // Load unified stats from flashcard FSRS data
+        async function loadStats() {
+            try {
+                const res = await fetch('/api/review_stats');
+                const data = await res.json();
+                document.getElementById('stat-streak').textContent = data.streak || 0;
+                document.getElementById('stat-upcoming').textContent = data.upcoming_7d || 0;
+                document.getElementById('stat-overdue').textContent = data.due_today || 0;
+                document.getElementById('stat-retention').textContent = `${data.avg_retention || 0}%`;
+                calendarData = data.calendar || {};
+                renderCalendar();
+            } catch (e) {
+                console.error('Stats error:', e);
+                // Fallback to legacy schedule stats
+                try {
+                    const res2 = await fetch('/api/schedule/stats');
+                    const data2 = await res2.json();
+                    document.getElementById('stat-streak').textContent = data2.streak || 0;
+                    document.getElementById('stat-upcoming').textContent = data2.upcoming || 0;
+                    document.getElementById('stat-overdue').textContent = data2.overdue || 0;
+                    document.getElementById('stat-retention').textContent = `${data2.retention || 0}%`;
+                } catch (e2) { console.error('Legacy stats also failed:', e2); }
+            }
+        }
+
+        // Render calendar grid using FSRS flashcard due dates
+        function renderCalendar() {
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+            const today = new Date();
+            const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                'July', 'August', 'September', 'October', 'November', 'December'];
+
+            document.getElementById('cal-month-title').textContent = `${monthNames[month]} ${year}`;
+
+            const firstDay = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const grid = document.getElementById('cal-grid');
+            grid.innerHTML = '';
+
+            const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+            // Empty cells before first day
+            for (let i = 0; i < firstDay; i++) {
+                const empty = document.createElement('div');
+                empty.className = 'cal-day empty';
+                grid.appendChild(empty);
+            }
+
+            // Day cells
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const dayEl = document.createElement('div');
+                dayEl.className = 'cal-day';
+                dayEl.textContent = day;
+
+                if (today.getFullYear() === year && today.getMonth() === month && today.getDate() === day) {
+                    dayEl.classList.add('today');
+                }
+
+                // Flashcard due date indicators
+                const cardCount = calendarData[dateStr] || 0;
+                if (cardCount > 0) {
+                    dayEl.classList.add('has-reviews');
+                    // Past dates with cards = overdue
+                    if (dateStr < todayStr) {
+                        dayEl.classList.add('has-overdue');
+                    }
+                    // Add count badge
+                    const badge = document.createElement('span');
+                    badge.style.cssText = 'font-size:0.6rem; position:absolute; top:4px; right:4px; background:var(--accent-primary); color:var(--bg-primary); border-radius:50%; width:16px; height:16px; display:flex; align-items:center; justify-content:center;';
+                    badge.textContent = cardCount > 9 ? '9+' : cardCount;
+                    dayEl.appendChild(badge);
+                }
+
+                dayEl.addEventListener('click', () => showDayDetail(dateStr, cardCount));
+                grid.appendChild(dayEl);
+            }
+        }
+
+        // Show day detail panel with flashcard info
+        async function showDayDetail(dateStr, cardCount) {
+            const panel = document.getElementById('day-detail-panel');
+            const titleEl = document.getElementById('detail-date-title');
+            const listEl = document.getElementById('detail-list');
+
+            const d = new Date(dateStr + 'T12:00:00');
+            titleEl.textContent = `Reviews for ${d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}`;
+
+            listEl.innerHTML = '';
+
+            if (cardCount === 0) {
+                listEl.innerHTML = '<div class="empty-state">No flashcards due this day. Keep studying!</div>';
+            } else {
+                // Fetch actual cards due for this date
+                try {
+                    const res = await fetch(`/api/due_cards?target_date=${encodeURIComponent(dateStr)}`);
+                    const data = await res.json();
+                    const cards = data.cards || [];
+
+                    if (cards.length === 0) {
+                        const info = document.createElement('div');
+                        info.className = 'empty-state';
+                        info.textContent = `${cardCount} card(s) scheduled for review.`;
+                        listEl.appendChild(info);
+                    } else {
+                        // Group cards by course
+                        const byCourse = {};
+                        cards.forEach(c => {
+                            const key = c.course_uid || 'unknown';
+                            if (!byCourse[key]) byCourse[key] = [];
+                            byCourse[key].push(c);
+                        });
+
+                        Object.entries(byCourse).forEach(([courseUid, courseCards]) => {
+                            courseCards.forEach(card => {
+                                const item = document.createElement('div');
+                                item.className = 'review-item';
+                                const lapses = card.lapses || 0;
+                                const lapseBadge = lapses > 0 ? `<span class="review-number" style="background:rgba(239,68,68,0.2); color:var(--status-error);">${lapses} lapse(s)</span>` : '';
+                                item.innerHTML = `
+                                    <span class="review-title">${escapeHtml(card.front ? card.front.substring(0, 60) : 'Flashcard')}</span>
+                                    ${lapseBadge}
+                                    <span class="review-number">Rep #${card.repetitions || 0}</span>
+                                `;
+                                listEl.appendChild(item);
+                            });
+                        });
+                    }
+                } catch (e) {
+                    const info = document.createElement('div');
+                    info.className = 'empty-state';
+                    info.textContent = `${cardCount} card(s) scheduled. Click below to start reviewing.`;
+                    listEl.appendChild(info);
+                }
+
+                // "Start Review" button
+                const startBtn = document.createElement('a');
+                startBtn.href = '/review';
+                startBtn.className = 'complete-btn';
+                startBtn.style.cssText = 'display:block; text-align:center; margin-top:1rem; padding:0.75rem 1.5rem; font-size:0.95rem; text-decoration:none; border-radius:12px;';
+                startBtn.textContent = `Start Review (${cardCount} cards)`;
+                listEl.appendChild(startBtn);
+            }
+            panel.classList.remove('hidden');
+        }
+
+        // Navigation
+        document.getElementById('prev-month').addEventListener('click', () => {
+            currentDate.setMonth(currentDate.getMonth() - 1);
+            loadStats();
+        });
+        document.getElementById('next-month').addEventListener('click', () => {
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            loadStats();
+        });
+        document.getElementById('close-detail-panel').addEventListener('click', () => {
+            document.getElementById('day-detail-panel').classList.add('hidden');
+        });
+
+        // Initial load
+        await loadStats();
+    });
+</script>
+{% endblock %}

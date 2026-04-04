@@ -1,0 +1,575 @@
+{% extends "base.html" %}
+
+{% block title %}Helga - Review{% endblock %}
+
+{% block content %}
+<div class="learn-container theme-review">
+    <!-- Chat Interface (Adapted for Review) -->
+    <div class="session-interface">
+        <div class="ai-avatar-container">
+            <div class="ai-avatar pulse" style="background-color: var(--accent-tertiary);">
+                <span style="font-size: 2rem;">🧠</span>
+            </div>
+            <div class="status-indicator" id="review-status">Review Mode</div>
+        </div>
+
+        <!-- Chat Stream -->
+        <div class="conversation-log" id="review-chat-stream">
+            <div class="message ai">
+                <span>Loading active recall session...</span>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls">
+            <input type="text" id="review-input" placeholder="Type 'show' to reveal answer..." class="text-input">
+            <button id="review-send-btn" class="control-btn send-btn" title="Send"
+                style="background-color: var(--accent-tertiary);">➤</button>
+        </div>
+    </div>
+</div>
+
+<style>
+    .theme-review .session-interface {
+        border-color: var(--accent-tertiary);
+    }
+    .theme-review .message.ai {
+        border-left-color: var(--accent-tertiary);
+    }
+    .theme-review .message.user {
+        background: var(--accent-tertiary);
+        color: white;
+    }
+    .selection-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+    }
+    .select-btn {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        padding: 1rem;
+        border-radius: 8px;
+        color: var(--text-primary);
+        cursor: pointer;
+        transition: all 0.2s;
+        text-align: left;
+    }
+    .select-btn:hover {
+        border-color: var(--accent-tertiary);
+        background: var(--bg-primary);
+    }
+    .select-btn strong {
+        display: block;
+        margin-bottom: 0.2rem;
+        color: var(--accent-tertiary);
+    }
+    .learn-container {
+        height: calc(100vh - 80px);
+        display: flex;
+        gap: 1rem;
+        padding: 1rem;
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+    .session-interface {
+        flex: 1;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 20px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    .theme-review .conversation-log {
+        flex: 1;
+        padding: 2rem;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+    .theme-review .message {
+        padding: 1rem;
+        border-radius: 12px;
+        max-width: 80%;
+    }
+    .theme-review .message.ai {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        align-self: flex-start;
+    }
+    .theme-review .message.user {
+        background-color: var(--accent-tertiary);
+        color: var(--text-inverted);
+        align-self: flex-end;
+    }
+    .theme-review .controls {
+        padding: 1rem;
+        display: flex;
+        gap: 1rem;
+        background: var(--bg-secondary);
+        border-top: 1px solid var(--border-color);
+    }
+    .theme-review .text-input {
+        flex: 1;
+        padding: 0.8rem;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+        border-radius: 8px;
+    }
+    .theme-review .ai-avatar-container {
+        padding: 1rem;
+        background: linear-gradient(to bottom, var(--bg-primary), var(--bg-secondary));
+        border-bottom: 1px solid var(--border-color);
+        text-align: center;
+    }
+    .theme-review .ai-avatar {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        margin: 0 auto 0.5rem;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+    .grade-btns {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 1rem;
+    }
+    .grade-btn {
+        flex: 1;
+        padding: 0.6rem 0.4rem;
+        border: none;
+        border-radius: 8px;
+        color: white;
+        cursor: pointer;
+        opacity: 0.9;
+        font-weight: 600;
+        font-size: 0.85rem;
+        text-align: center;
+        transition: all 0.2s;
+    }
+    .grade-btn:hover {
+        opacity: 1;
+        transform: translateY(-1px);
+    }
+    .grade-btn .interval-hint {
+        display: block;
+        font-size: 0.7rem;
+        font-weight: 400;
+        opacity: 0.8;
+        margin-top: 2px;
+    }
+    .card-meta {
+        font-size: 0.75rem;
+        color: var(--text-secondary, #888);
+        margin-top: 0.5rem;
+        opacity: 0.7;
+    }
+
+    /* Responsive overrides for review page */
+    @media (max-width: 768px) {
+        .learn-container {
+            height: auto;
+            min-height: calc(100vh - 80px);
+            padding: 0.75rem;
+        }
+        .session-interface {
+            height: auto;
+            min-height: 60vh;
+            max-height: calc(100vh - 100px);
+        }
+        .theme-review .conversation-log {
+            padding: 1rem;
+        }
+        .theme-review .controls {
+            padding: 0.75rem;
+        }
+        .grade-btns {
+            flex-wrap: wrap;
+        }
+        .grade-btn {
+            flex: 1 1 calc(50% - 0.25rem);
+            min-width: calc(50% - 0.25rem);
+        }
+        .selection-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .learn-container {
+            padding: 0.5rem;
+            min-height: calc(100vh - 60px);
+        }
+        .session-interface {
+            min-height: 65vh;
+            border-radius: 16px;
+        }
+        .theme-review .conversation-log {
+            padding: 0.75rem;
+        }
+        .theme-review .message {
+            max-width: 95%;
+            padding: 0.6rem 0.8rem;
+            font-size: 0.9rem;
+        }
+        .theme-review .controls {
+            padding: 0.5rem;
+        }
+        .theme-review .text-input {
+            font-size: 16px;
+        }
+        .grade-btns {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.4rem;
+        }
+        .grade-btn {
+            min-width: unset;
+            font-size: 0.8rem;
+            padding: 0.5rem 0.3rem;
+        }
+        .selection-grid {
+            grid-template-columns: 1fr;
+            gap: 0.5rem;
+        }
+        .theme-review .ai-avatar {
+            width: 48px;
+            height: 48px;
+        }
+        .theme-review .ai-avatar-container {
+            padding: 0.5rem;
+        }
+    }
+</style>
+
+<script>
+    const chatStream = document.getElementById('review-chat-stream');
+    const inputField = document.getElementById('review-input');
+    const sendBtn = document.getElementById('review-send-btn');
+    const statusIndicator = document.getElementById('review-status');
+
+    let queue = [];
+    let totalCards = 0;
+    let reviewedCount = 0;
+    let currentCard = null;
+    let waitingForReveal = false;
+
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    function addMessageText(text, sender) {
+        const div = document.createElement('div');
+        div.className = `message ${sender}`;
+        const span = document.createElement('span');
+        span.textContent = text;
+        div.appendChild(span);
+        chatStream.appendChild(div);
+        chatStream.scrollTop = chatStream.scrollHeight;
+    }
+
+    function addMessageHtml(html, sender) {
+        const div = document.createElement('div');
+        div.className = `message ${sender}`;
+        div.innerHTML = html;
+        chatStream.appendChild(div);
+        chatStream.scrollTop = chatStream.scrollHeight;
+    }
+
+    function updateStatus() {
+        if (totalCards > 0) {
+            const remaining = queue.length;
+            statusIndicator.textContent = `Review: ${reviewedCount}/${totalCards} done, ${remaining} remaining`;
+        }
+    }
+
+    async function initReview() {
+        chatStream.innerHTML = '';
+        addMessageText("Checking for due cards...", 'ai');
+
+        try {
+            let activeCourseUid = null;
+            let activeCourseTitle = null;
+            try {
+                const stateRes = await fetch('/api/fsm_state');
+                if (stateRes.ok) {
+                    const stateData = await stateRes.json();
+                    activeCourseUid = stateData.active_course_uid;
+                }
+            } catch (err) { console.warn("FSM check failed", err); }
+
+            const coursesRes = await fetch('/api/courses');
+            const coursesData = await coursesRes.json();
+
+            if (!coursesData.courses || coursesData.courses.length === 0) {
+                chatStream.innerHTML = '';
+                addMessageText("You don't have any courses yet. Create a course to start reviewing!", 'ai');
+                inputField.disabled = true;
+                return;
+            }
+
+            if (activeCourseUid) {
+                const activeC = coursesData.courses.find(c => c.uid === activeCourseUid);
+                if (activeC) activeCourseTitle = activeC.title;
+            }
+
+            if (activeCourseUid && activeCourseTitle) {
+                addMessageText(`Active Course detected: ${activeCourseTitle}`, 'ai');
+                setTimeout(() => startSession(activeCourseTitle, activeCourseUid), 800);
+                return;
+            }
+
+            const div = document.createElement('div');
+            div.className = 'message ai';
+
+            const p = document.createElement('p');
+            p.textContent = 'What would you like to review?';
+            div.appendChild(p);
+
+            const grid = document.createElement('div');
+            grid.className = 'selection-grid';
+
+            const allBtn = document.createElement('button');
+            allBtn.className = 'select-btn';
+            allBtn.innerHTML = '<strong>All Courses</strong><span>Mix of all topics</span>';
+            allBtn.addEventListener('click', () => startSession('', ''));
+            grid.appendChild(allBtn);
+
+            coursesData.courses.forEach(c => {
+                const btn = document.createElement('button');
+                btn.className = 'select-btn';
+                const strong = document.createElement('strong');
+                strong.textContent = c.title;
+                const span = document.createElement('span');
+                span.textContent = 'Specific focus';
+                btn.appendChild(strong);
+                btn.appendChild(span);
+                btn.addEventListener('click', () => startSession(c.title, c.uid));
+                grid.appendChild(btn);
+            });
+
+            div.appendChild(grid);
+            chatStream.appendChild(div);
+        } catch (e) {
+            console.error(e);
+            addMessageText("Error connecting to server.", 'ai');
+        }
+    }
+
+    window.startSession = async (topic, courseUid) => {
+        chatStream.innerHTML = '';
+        const label = topic || 'All Courses';
+        addMessageText(`Starting review for: ${label}`, 'user');
+
+        try {
+            let url = `/api/due_cards?topic=${encodeURIComponent(topic || '')}`;
+            if (courseUid) {
+                url += `&course_uid=${encodeURIComponent(courseUid)}`;
+            }
+
+            const res = await fetch(url);
+            const data = await res.json();
+
+            if (data.cards && data.cards.length > 0) {
+                queue = data.cards;
+                totalCards = queue.length;
+                reviewedCount = 0;
+                updateStatus();
+                addMessageText(`Found ${queue.length} cards due for review. Let's begin!`, 'ai');
+                showNextCard();
+            } else {
+                addMessageText("No cards due right now! Great job keeping up with reviews.", 'ai');
+
+                const btnRow = document.createElement('div');
+                btnRow.style.cssText = 'display:flex; gap:0.5rem; margin-top:1rem; flex-wrap:wrap;';
+
+                const reloadBtn = document.createElement('button');
+                reloadBtn.className = 'primary-btn';
+                reloadBtn.textContent = 'Back to Menu';
+                reloadBtn.addEventListener('click', initReview);
+                btnRow.appendChild(reloadBtn);
+
+                if (courseUid) {
+                    const genBtn = document.createElement('button');
+                    genBtn.className = 'primary-btn';
+                    genBtn.style.background = 'var(--accent-tertiary)';
+                    genBtn.textContent = 'Generate Flashcards';
+                    genBtn.addEventListener('click', async () => {
+                        genBtn.disabled = true;
+                        genBtn.textContent = 'Generating...';
+                        try {
+                            const genRes = await fetch('/api/auto_generate_flashcards', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ course_uid: courseUid })
+                            });
+                            const genData = await genRes.json();
+                            const count = genData.cards_created || 0;
+                            addMessageText(`Generated ${count} new flashcard(s). Refreshing...`, 'ai');
+                            setTimeout(() => startSession(topic, courseUid), 1000);
+                        } catch (err) {
+                            addMessageText("Error generating flashcards.", 'ai');
+                            genBtn.disabled = false;
+                            genBtn.textContent = 'Generate Flashcards';
+                        }
+                    });
+                    btnRow.appendChild(genBtn);
+                }
+
+                chatStream.appendChild(btnRow);
+            }
+        } catch (e) {
+            addMessageText("Error loading cards.", 'ai');
+        }
+    };
+
+    function showNextCard() {
+        if (queue.length === 0) {
+            addMessageText(`Session complete! You reviewed ${reviewedCount} card(s).`, 'ai');
+            statusIndicator.textContent = 'Review Complete';
+            const reloadBtn = document.createElement('button');
+            reloadBtn.className = 'primary-btn';
+            reloadBtn.style.marginTop = '1rem';
+            reloadBtn.textContent = 'Back to Menu';
+            reloadBtn.addEventListener('click', initReview);
+            chatStream.appendChild(reloadBtn);
+            return;
+        }
+
+        currentCard = queue.shift();
+        waitingForReveal = true;
+        updateStatus();
+
+        const questionText = currentCard.front || currentCard.title || 'Unknown';
+        const safeQuestion = escapeHtml(questionText);
+
+        // Show card metadata (lapses, reps)
+        const lapses = currentCard.lapses || 0;
+        const reps = currentCard.repetitions || 0;
+        const metaStr = lapses > 0 ? `Reps: ${reps} | Lapses: ${lapses}` : `Reps: ${reps}`;
+
+        const cardHtml = `
+            <strong>Question:</strong><br>
+            <span style="font-size: 1.1rem;">${safeQuestion}</span><br><br>
+            <em>Think of the answer, then type anything or click reveal.</em>
+            <br>
+            <button class="reveal-btn" style="margin-top:1rem; padding:0.5rem 1.5rem; cursor:pointer; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-secondary); color:var(--text-primary); font-weight:600;">Show Answer</button>
+            <div class="card-meta">${escapeHtml(metaStr)}</div>
+        `;
+        addMessageHtml(cardHtml, 'ai');
+
+        const lastMsg = chatStream.lastElementChild;
+        const revealBtn = lastMsg.querySelector('.reveal-btn');
+        if (revealBtn) revealBtn.addEventListener('click', revealCard);
+    }
+
+    window.revealCard = () => {
+        if (!waitingForReveal) return;
+        waitingForReveal = false;
+
+        addMessageText("Show", 'user');
+
+        const safeAnswer = escapeHtml(currentCard.back || '').replace(/\n/g, '<br>');
+
+        // FSRS grading: 1=Again, 2=Hard, 3=Good, 4=Easy
+        const answerHtml = `
+            <strong>Answer:</strong><br>
+            ${safeAnswer}<br><br>
+            <div style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:0.5rem;">How well did you know this?</div>
+            <div class="grade-btns">
+                <button class="grade-btn" data-grade="1" style="background:var(--status-error, #e74c3c)">
+                    Again
+                    <span class="interval-hint">1d</span>
+                </button>
+                <button class="grade-btn" data-grade="2" style="background:var(--status-warning, #e67e22)">
+                    Hard
+                    <span class="interval-hint">~</span>
+                </button>
+                <button class="grade-btn" data-grade="3" style="background:#3b82f6">
+                    Good
+                    <span class="interval-hint">~</span>
+                </button>
+                <button class="grade-btn" data-grade="4" style="background:var(--status-success, #2ecc71)">
+                    Easy
+                    <span class="interval-hint">~</span>
+                </button>
+            </div>
+        `;
+        addMessageHtml(answerHtml, 'ai');
+
+        const lastMsg = chatStream.lastElementChild;
+        lastMsg.querySelectorAll('.grade-btn').forEach(btn => {
+            btn.addEventListener('click', () => gradeCard(parseInt(btn.dataset.grade)));
+        });
+    };
+
+    window.gradeCard = async (rating) => {
+        // FSRS server-side grading (1=Again, 2=Hard, 3=Good, 4=Easy)
+        const gradeLabels = {1: 'Again', 2: 'Hard', 3: 'Good', 4: 'Easy'};
+        const label = gradeLabels[rating] || 'Unknown';
+
+        // Disable grade buttons to prevent double-click
+        chatStream.querySelectorAll('.grade-btn').forEach(b => b.disabled = true);
+
+        try {
+            const res = await fetch('/api/grade_card_fsrs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    uid: currentCard.uid,
+                    rating: rating
+                })
+            });
+            const data = await res.json();
+
+            if (data.error) {
+                addMessageText(`Error: ${data.error}`, 'ai');
+                return;
+            }
+
+            reviewedCount++;
+            updateStatus();
+
+            const interval = data.interval_days || 1;
+            const retention = data.retention ? Math.round(data.retention * 100) : '?';
+            const stability = data.stability ? data.stability.toFixed(1) : '?';
+
+            addMessageText(
+                `${label} — next review in ${interval} day(s) | Retention: ${retention}% | Stability: ${stability}`,
+                'user'
+            );
+            setTimeout(showNextCard, 400);
+        } catch (e) {
+            console.error(e);
+            addMessageText("Error saving grade. Please try again.", 'ai');
+        }
+    };
+
+    function handleInput() {
+        const text = inputField.value.trim();
+        if (!text) return;
+        inputField.value = '';
+
+        if (waitingForReveal) {
+            revealCard();
+        } else {
+            addMessageText(text, 'user');
+        }
+    }
+
+    sendBtn.addEventListener('click', handleInput);
+    inputField.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') handleInput();
+    });
+
+    document.addEventListener('DOMContentLoaded', initReview);
+</script>
+{% endblock %}

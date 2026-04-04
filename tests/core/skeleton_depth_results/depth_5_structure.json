@@ -1,0 +1,264 @@
+{
+  "course": "Causal Inference",
+  "depth": 5,
+  "depth_label": "Doctoral / Research-level Theoretical",
+  "modules": [
+    {
+      "title": "Causal Mechanisms",
+      "ordinal": 1,
+      "units": [
+        {
+          "title": "Causal Inference",
+          "ordinal": 1,
+          "lessons": [
+            {
+              "title": "Historical Context and Fundamental Origins",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "title": "Causal Graphs"
+                },
+                {
+                  "title": "Analyzing Treatment Effects"
+                },
+                {
+                  "title": "Modeling Randomized Experiments"
+                },
+                {
+                  "title": "Confounding Variables"
+                },
+                {
+                  "title": "Handling Missing Data"
+                },
+                {
+                  "title": "Statistical Power and Effect Size"
+                }
+              ]
+            },
+            {
+              "title": "Role of Interaction Feedback and Constraints",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "title": "Role of Interaction Feedback"
+                },
+                {
+                  "title": "Analyzing the Influence of Feedback on Causality"
+                },
+                {
+                  "title": "Role of Feedback in Causal Models"
+                },
+                {
+                  "title": "Role of Feedback in Causal Graphs"
+                },
+                {
+                  "title": "Feedback as a Key Component in Causal Models"
+                },
+                {
+                  "title": "Impact of Feedback on Statistical Inference"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Theoretical Foundations and Definitions",
+          "ordinal": 3,
+          "lessons": [
+            {
+              "title": "Core Concepts and Terminology",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "title": "Role of Randomization in Experimental Design"
+                },
+                {
+                  "title": "Difference Between Confounding Variables and Extraneous Variables"
+                },
+                {
+                  "title": "Defining the Central Limit Theorem and Its Application in Statistical"
+                },
+                {
+                  "title": "Analyzing Variability in Data through Measures of Dispersion"
+                },
+                {
+                  "title": "Role of Sampling in Estimating Population Parameters"
+                },
+                {
+                  "title": "Probability Theory and Its Applications"
+                }
+              ]
+            },
+            {
+              "title": "Statistical Methods",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "title": "Interaction and Feedback Relationships"
+                },
+                {
+                  "title": "Defining the Role of Constraints in Causal Studies"
+                },
+                {
+                  "title": "Analyzing Data Using Statistical Methods"
+                },
+                {
+                  "title": "Developing a Solid Understanding of Statistical Significance"
+                },
+                {
+                  "title": "Building a Strong Foundation in Model Selection"
+                }
+              ]
+            },
+            {
+              "title": "Mathematical Notation and Frameworks",
+              "ordinal": 3,
+              "concepts": [
+                {
+                  "title": "Analyzing Causal Relationships"
+                },
+                {
+                  "title": "Estimating Causal Effects"
+                },
+                {
+                  "title": "Handling Confounding Variables"
+                },
+                {
+                  "title": "Modeling Causality"
+                },
+                {
+                  "title": "Interpreting Results"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Complexity in Systems",
+      "ordinal": 2,
+      "units": [
+        {
+          "title": "Emergent Causal Mechanisms",
+          "ordinal": 2,
+          "lessons": [
+            {
+              "title": "Emerging Concepts in Causal Mechanism Definition",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "title": "Non-linear Effects"
+                },
+                {
+                  "title": "Emergence"
+                },
+                {
+                  "title": "Limit Cases"
+                }
+              ]
+            },
+            {
+              "title": "Limitations of Traditional Causal Models",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "title": "Nonlinear Effects"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Comparative Theoretical Critiques",
+          "ordinal": 3,
+          "lessons": [
+            {
+              "title": "Comparative Theories of Causal Mechanism Development",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "title": "Quantitative"
+                },
+                {
+                  "title": "Future Impact"
+                },
+                {
+                  "title": "High-Dimensional Models"
+                }
+              ]
+            },
+            {
+              "title": "Role of Comparative Theories in Causal Graphs",
+              "ordinal": 2,
+              "concepts": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Synthesizing Applications",
+      "ordinal": 3,
+      "units": [
+        {
+          "title": "Unit Title",
+          "ordinal": 1,
+          "lessons": [
+            {
+              "title": "Lesson Title 1",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "title": "Quantifying Causal Effects"
+                },
+                {
+                  "title": "Analyzing Complex Causal Networks"
+                },
+                {
+                  "title": "Handling Feedback and Interactions"
+                },
+                {
+                  "title": "Analyzing Causal Relationships with Control Variables"
+                },
+                {
+                  "title": "Handling Limitations of Traditional Causal Models"
+                }
+              ]
+            },
+            {
+              "title": "Lesson Title 2",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "title": "Analyzing Complex Systems"
+                },
+                {
+                  "title": "Handling Large-Scale Data"
+                },
+                {
+                  "title": "Interpreting Causal Relationships"
+                },
+                {
+                  "title": "Analyzing Causal Networks"
+                }
+              ]
+            },
+            {
+              "title": "Lesson Title 3",
+              "ordinal": 3,
+              "concepts": [
+                {
+                  "title": "Analyzing Complex Data Structures"
+                },
+                {
+                  "title": "Using Machine Learning Techniques"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

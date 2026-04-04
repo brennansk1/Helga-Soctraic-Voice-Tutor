@@ -1,0 +1,838 @@
+{% extends "base.html" %}
+
+{% block title %}{{ course_title }} - Structure{% endblock %}
+
+{% block content %}
+<div class="structure-container">
+    <!-- Header Section -->
+    <div class="structure-header">
+        <div class="header-content">
+            <button class="back-btn" onclick="window.location.href='/courses'">
+                <span>←</span> Back to Courses
+            </button>
+            <div class="course-title-section">
+                <h1 id="course-title">{{ course_title }}</h1>
+                <p id="course-description">{{ course_description }}</p>
+            </div>
+            <div class="progress-overview">
+                <div class="progress-circle">
+                    <svg width="120" height="120">
+                        <circle class="progress-ring-bg" cx="60" cy="60" r="54" />
+                        <circle class="progress-ring-fill" cx="60" cy="60" r="54" id="progress-circle"
+                            style="stroke-dasharray: 339.292; stroke-dashoffset: 339.292;" />
+                    </svg>
+                    <div class="progress-text" id="progress-percent">0%</div>
+                </div>
+                <div class="progress-stats">
+                    <div class="stat">
+                        <span class="stat-value" id="completed-count">0</span>
+                        <span class="stat-label">Completed</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-value" id="total-count">0</span>
+                        <span class="stat-label">Total Concepts</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Progression Path -->
+    <div class="progression-path" id="progression-path">
+        <!-- JavaScript will populate this -->
+        <div class="loading-state">Loading course structure...</div>
+    </div>
+</div>
+
+<!-- Concept Detail Modal -->
+<div id="concept-modal" class="modal hidden">
+    <div class="modal-content concept-detail">
+        <button class="close-btn" onclick="closeConceptModal()">&times;</button>
+        <h2 id="concept-name">Concept Name</h2>
+        <div class="concept-status" id="concept-status-badge"></div>
+        <p id="concept-description">Description goes here...</p>
+
+        <div class="concept-meta">
+            <div class="meta-item">
+                <span class="meta-label">Module:</span>
+                <span id="concept-module">Module Name</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Prerequisites:</span>
+                <span id="concept-prereqs">None</span>
+            </div>
+        </div>
+
+        <div class="concept-actions">
+            <button class="primary-btn" id="start-concept-btn" onclick="startConcept()">
+                <span>🎓</span> Start Learning
+            </button>
+        </div>
+    </div>
+</div>
+
+<style>
+    .structure-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 2rem;
+    }
+
+    .structure-header {
+        background: var(--bg-secondary);
+        border-radius: 24px;
+        padding: 2rem;
+        margin-bottom: 3rem;
+        border: 2px solid var(--border-color);
+    }
+
+    .header-content {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+
+    .back-btn {
+        align-self: flex-start;
+        background: transparent;
+        border: 2px solid var(--border-color);
+        color: var(--text-primary);
+        padding: 0.6rem 1.2rem;
+        border-radius: 10px;
+        cursor: pointer;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        transition: all 0.2s;
+    }
+
+    .back-btn:hover {
+        border-color: var(--accent-primary);
+        color: var(--accent-primary);
+        transform: translateX(-4px);
+    }
+
+    .course-title-section h1 {
+        margin: 0 0 0.5rem 0;
+        color: var(--text-primary);
+        font-size: 2rem;
+    }
+
+    .course-title-section p {
+        margin: 0;
+        color: var(--text-secondary);
+        font-size: 1.1rem;
+    }
+
+    .progress-overview {
+        display: flex;
+        align-items: center;
+        gap: 2rem;
+        padding: 1.5rem;
+        background: var(--bg-primary);
+        border-radius: 16px;
+    }
+
+    .progress-circle {
+        position: relative;
+        width: 120px;
+        height: 120px;
+    }
+
+    .progress-ring-bg {
+        fill: none;
+        stroke: var(--border-color);
+        stroke-width: 8;
+    }
+
+    .progress-ring-fill {
+        fill: none;
+        stroke: var(--accent-primary);
+        stroke-width: 8;
+        stroke-linecap: round;
+        transform: rotate(-90deg);
+        transform-origin: 50% 50%;
+        transition: stroke-dashoffset 0.5s ease;
+    }
+
+    .progress-text {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: var(--accent-primary);
+    }
+
+    .progress-stats {
+        display: flex;
+        gap: 3rem;
+    }
+
+    .stat {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .stat-value {
+        font-size: 2rem;
+        font-weight: bold;
+        color: var(--text-primary);
+    }
+
+    .stat-label {
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    /* Progression Path Styles */
+    .progression-path {
+        position: relative;
+        padding: 2rem 0;
+    }
+
+    .module-section {
+        margin-bottom: 4rem;
+        position: relative;
+    }
+
+    .module-header {
+        background: var(--bg-secondary);
+        padding: 1.5rem 2rem;
+        border-radius: 16px;
+        border: 2px solid var(--border-color);
+        margin-bottom: 2rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .module-header:hover {
+        border-color: var(--accent-primary);
+        background: var(--bg-primary);
+        transform: translateY(-2px);
+    }
+
+    .module-header h2 {
+        margin: 0;
+        color: var(--text-primary);
+        font-size: 1.5rem;
+    }
+
+    .module-progress {
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+        font-weight: 600;
+    }
+
+    .concepts-path {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2rem;
+        position: relative;
+    }
+
+    /* Vertical Connector Line */
+    .concepts-path::before {
+        content: '';
+        position: absolute;
+        left: 50%;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+        background: var(--border-color);
+        transform: translateX(-50%);
+        z-index: 0;
+    }
+
+    .unit-header,
+    .lesson-header {
+        margin: 2rem 0 1rem 0;
+        padding: 1rem;
+        background: var(--bg-tertiary);
+        border-radius: 12px;
+        border-left: 4px solid var(--accent-primary);
+        text-align: left;
+        width: 100%;
+        cursor: pointer;
+    }
+
+    .lesson-header {
+        margin-left: 2rem;
+        border-left-color: #f59e0b;
+        width: calc(100% - 2rem);
+    }
+
+    .unit-header h3,
+    .lesson-header h4 {
+        margin: 0;
+        color: var(--text-primary);
+    }
+
+    .unit-header p,
+    .lesson-header p {
+        margin: 0.2rem 0 0 0;
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+    }
+
+    .concepts-grid {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 2rem;
+        padding: 1rem;
+        position: relative;
+    }
+
+    .concept-node {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1rem;
+        cursor: pointer;
+        transition: transform 0.2s;
+    }
+
+    .concept-node:hover {
+        transform: scale(1.05);
+    }
+
+    .node-circle {
+        width: 100px;
+        height: 100px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 2.5rem;
+        border: 4px solid;
+        background: var(--bg-secondary);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        transition: all 0.3s;
+        position: relative;
+    }
+
+    /* Node States */
+    .node-circle.locked {
+        background: var(--bg-primary);
+        border-color: var(--border-color);
+        color: var(--text-secondary);
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .node-circle.available {
+        border-color: var(--accent-primary);
+        color: var(--accent-primary);
+        animation: pulse 2s infinite;
+    }
+
+    .node-circle.in-progress {
+        border-color: #f59e0b;
+        color: #f59e0b;
+        background: linear-gradient(135deg, var(--bg-secondary) 50%, rgba(245, 158, 11, 0.1) 50%);
+    }
+
+    .node-circle.completed {
+        border-color: #10b981;
+        color: #10b981;
+        background: rgba(16, 185, 129, 0.1);
+    }
+
+    @keyframes pulse {
+
+        0%,
+        100% {
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+
+        50% {
+            box-shadow: 0 4px 24px rgba(59, 130, 246, 0.6);
+        }
+    }
+
+    .node-label {
+        text-align: center;
+        max-width: 200px;
+    }
+
+    .node-label h3 {
+        margin: 0 0 0.25rem 0;
+        color: var(--text-primary);
+        font-size: 1.1rem;
+    }
+
+    .node-label p {
+        margin: 0;
+        color: var(--text-secondary);
+        font-size: 0.85rem;
+    }
+
+    /* Modal Styles */
+    .modal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        backdrop-filter: blur(4px);
+    }
+
+    .modal.hidden {
+        display: none;
+    }
+
+    .concept-detail {
+        background: var(--bg-secondary);
+        padding: 2.5rem;
+        border-radius: 24px;
+        max-width: 600px;
+        width: 90%;
+        border: 2px solid var(--border-color);
+        position: relative;
+    }
+
+    .close-btn {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        background: none;
+        border: none;
+        font-size: 2rem;
+        color: var(--text-secondary);
+        cursor: pointer;
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        transition: all 0.2s;
+    }
+
+    .close-btn:hover {
+        background: var(--bg-primary);
+        color: var(--text-primary);
+    }
+
+    .concept-detail h2 {
+        margin: 0 0 1rem 0;
+        color: var(--text-primary);
+    }
+
+    .concept-status {
+        display: inline-block;
+        padding: 0.4rem 1rem;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        margin-bottom: 1.5rem;
+    }
+
+    .concept-status.locked {
+        background: rgba(156, 163, 175, 0.2);
+        color: #9ca3af;
+    }
+
+    .concept-status.available {
+        background: rgba(59, 130, 246, 0.2);
+        color: #3b82f6;
+    }
+
+    .concept-status.completed {
+        background: rgba(16, 185, 129, 0.2);
+        color: #10b981;
+    }
+
+    .concept-meta {
+        margin: 1.5rem 0;
+        padding: 1rem;
+        background: var(--bg-primary);
+        border-radius: 12px;
+    }
+
+    .meta-item {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .meta-item:last-child {
+        margin-bottom: 0;
+    }
+
+    .meta-label {
+        font-weight: 600;
+        color: var(--text-secondary);
+    }
+
+    .concept-actions {
+        margin-top: 2rem;
+    }
+
+    .primary-btn {
+        width: 100%;
+        padding: 1rem 2rem;
+        background: var(--accent-primary);
+        color: white;
+        border: none;
+        border-radius: 12px;
+        font-weight: 600;
+        font-size: 1rem;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        box-shadow: 0 4px 0 #2563eb;
+        transition: all 0.2s;
+    }
+
+    .primary-btn:hover {
+        background: #3b82f6;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 0 #2563eb;
+    }
+
+    .primary-btn:active {
+        transform: translateY(2px);
+        box-shadow: 0 2px 0 #2563eb;
+    }
+
+    .primary-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .loading-state {
+        text-align: center;
+        padding: 4rem;
+        color: var(--text-secondary);
+        font-size: 1.2rem;
+    }
+</style>
+
+<script>
+    let courseData = null;
+    let selectedConcept = null;
+
+    async function loadCourseStructure() {
+        const courseUid = '{{ course_uid }}';
+        const courseTitle = '{{ course_title }}';
+
+        try {
+            const response = await fetch(`/api/course_structure?uid=${encodeURIComponent(courseUid)}`);
+            const data = await response.json();
+
+            if (data.error) {
+                document.getElementById('progression-path').innerHTML =
+                    `<div class="loading-state" style="color: red;">Error: ${data.error}</div>`;
+                return;
+            }
+
+            courseData = data;
+            renderCourseStructure(data);
+            updateProgressStats(data);
+        } catch (error) {
+            console.error('Failed to load course structure:', error);
+            document.getElementById('progression-path').innerHTML =
+                '<div class="loading-state" style="color: red;">Failed to load course structure</div>';
+        }
+    }
+
+    function renderCourseStructure(data) {
+        const pathContainer = document.getElementById('progression-path');
+        pathContainer.innerHTML = '';
+
+        // 1. Map all nodes
+        const nodesByUid = {};
+        data.nodes.forEach(n => { nodesByUid[n.uid] = { ...n, children: [] }; });
+
+        // 2. Build the tree
+        data.relationships.forEach(rel => {
+            if (rel.type.startsWith('HAS_')) {
+                const parent = nodesByUid[rel.source];
+                const child = nodesByUid[rel.target];
+                if (parent && child) {
+                    parent.children.push(child);
+                }
+            }
+        });
+
+        // 3. Find root (Course)
+        const rootNode = data.nodes.find(n => n.type === 'Course');
+        if (!rootNode) {
+            pathContainer.innerHTML = '<div class="loading-state">Course data missing.</div>';
+            return;
+        }
+
+        // 4. Recursive rendering
+        const rootChildren = nodesByUid[rootNode.uid]?.children || [];
+        rootChildren.sort((a, b) => (a.ordinal || 0) - (b.ordinal || 0)).forEach(child => {
+            renderNodeRecursive(child, pathContainer, data);
+        });
+    }
+
+    function renderNodeRecursive(node, container, data) {
+        if (node.type === 'Module') {
+            const section = document.createElement('div');
+            section.className = 'module-section';
+            section.innerHTML = `
+                <div class="module-header" id="header-${node.uid}">
+                    <h2>📦 ${node.name}</h2>
+                    <span class="module-progress">${node.children.length} items</span>
+                </div>
+                <div class="module-content" id="content-${node.uid}"></div>
+            `;
+            container.appendChild(section);
+            document.getElementById(`header-${node.uid}`).onclick = () => showDetail(node, 'Module');
+
+            const content = document.getElementById(`content-${node.uid}`);
+            node.children.sort((a, b) => (a.ordinal || 0) - (b.ordinal || 0)).forEach(child => {
+                renderNodeRecursive(child, content, data);
+            });
+
+        } else if (node.type === 'Unit') {
+            const unitDiv = document.createElement('div');
+            unitDiv.className = 'unit-container';
+            unitDiv.innerHTML = `
+                <div class="unit-header" id="header-${node.uid}" style="margin-bottom: 2rem;">
+                    <h3>🔖 ${node.name}</h3>
+                    <p>${node.overview || ''}</p>
+                </div>
+                <div class="unit-content" id="content-${node.uid}" style="margin-left: 2rem;"></div>
+            `;
+            container.appendChild(unitDiv);
+            document.getElementById(`header-${node.uid}`).onclick = () => showDetail(node, 'Unit');
+
+            const content = document.getElementById(`content-${node.uid}`);
+            node.children.sort((a, b) => (a.ordinal || 0) - (b.ordinal || 0)).forEach(child => {
+                renderNodeRecursive(child, content, data);
+            });
+
+        } else if (node.type === 'Lesson') {
+            const lessonDiv = document.createElement('div');
+            lessonDiv.className = 'lesson-container';
+            lessonDiv.innerHTML = `
+                <div class="lesson-header" id="header-${node.uid}">
+                    <h4>📖 ${node.name}</h4>
+                    <p>${node.overview || ''}</p>
+                </div>
+                <div class="concepts-grid" id="content-${node.uid}"></div>
+            `;
+            container.appendChild(lessonDiv);
+            document.getElementById(`header-${node.uid}`).onclick = () => showDetail(node, 'Lesson');
+
+            const content = document.getElementById(`content-${node.uid}`);
+            node.children.sort((a, b) => (a.ordinal || 0) - (b.ordinal || 0)).forEach(child => {
+                renderNodeRecursive(child, content, data);
+            });
+
+        } else if (node.type === 'Concept') {
+            const conceptNode = createConceptNode(node, data);
+            container.appendChild(conceptNode);
+        }
+    }
+
+    function showDetail(node, badge) {
+        document.getElementById('concept-name').textContent = node.name;
+        document.getElementById('concept-description').textContent = node.overview || 'No description available.';
+
+        const badgeEl = document.getElementById('concept-status-badge');
+        badgeEl.className = 'concept-status available';
+        badgeEl.textContent = badge;
+
+        document.getElementById('concept-module').textContent = node.type || 'Information';
+        document.getElementById('concept-prereqs').textContent = 'N/A';
+
+        const startBtn = document.getElementById('start-concept-btn');
+        if (node.type === 'Concept') {
+            startBtn.disabled = node.completed;
+            startBtn.textContent = '🎓 Start Learning';
+            selectedConcept = node;
+        } else {
+            startBtn.disabled = true;
+            startBtn.textContent = 'Select a concept below';
+        }
+
+        document.getElementById('concept-modal').classList.remove('hidden');
+    }
+
+    function showModuleDetail(module) {
+        document.getElementById('concept-name').textContent = module.name;
+        document.getElementById('concept-description').textContent = module.summary || 'No summary available for this module.';
+
+        document.getElementById('concept-status-badge').className = 'concept-status available';
+        document.getElementById('concept-status-badge').textContent = 'Module Overview';
+
+        document.getElementById('concept-module').textContent = 'Main Unit';
+        document.getElementById('concept-prereqs').textContent = 'N/A';
+
+        const startBtn = document.getElementById('start-concept-btn');
+        startBtn.disabled = true;
+        startBtn.textContent = 'Select a concept below to start';
+
+        document.getElementById('concept-modal').classList.remove('hidden');
+    }
+
+    function createConceptNode(concept, courseData) {
+        const node = document.createElement('div');
+        node.className = 'concept-node';
+
+        // Determine node state
+        let state = 'available';
+        let icon = '📘';
+        let statusText = 'Ready to Learn';
+
+        if (concept.completed) {
+            state = 'completed';
+            icon = '✓';
+            statusText = 'Completed';
+        } else {
+            // Check if prerequisites are met
+            const prereqs = courseData.relationships.filter(rel =>
+                rel.target === concept.uid && rel.type === 'DEPENDS_ON'
+            );
+
+            const prereqsMet = prereqs.every(rel => {
+                const prereqNode = courseData.nodes.find(n => n.uid === rel.source);
+                return prereqNode && prereqNode.completed;
+            });
+
+            if (!prereqsMet && prereqs.length > 0) {
+                state = 'locked';
+                icon = '🔒';
+                statusText = 'Locked';
+            }
+        }
+
+        node.innerHTML = `
+            <div class="node-circle ${state}">
+                ${icon}
+            </div>
+            <div class="node-label">
+                <h3>${concept.name}</h3>
+                <p>${statusText}</p>
+            </div>
+        `;
+
+        if (state !== 'locked') {
+            node.onclick = () => showConceptDetail(concept, state, courseData);
+        }
+
+        return node;
+    }
+
+    function showConceptDetail(concept, state, courseData) {
+        selectedConcept = concept;
+
+        document.getElementById('concept-name').textContent = concept.name;
+        document.getElementById('concept-description').textContent = concept.summary || 'No description available';
+
+        // Find parent
+        const parentRel = courseData.relationships.find(rel =>
+            rel.target === concept.uid && rel.type === 'HAS_CONCEPT'
+        );
+        const parent = courseData.nodes.find(n => n.uid === parentRel?.source);
+        document.getElementById('concept-module').textContent = parent?.name || 'Context';
+
+        // Find prerequisites
+        const prereqRels = courseData.relationships.filter(rel =>
+            rel.target === concept.uid && rel.type === 'DEPENDS_ON'
+        );
+        const prereqNames = prereqRels.map(rel => {
+            const prereq = courseData.nodes.find(n => n.uid === rel.source);
+            return prereq?.name || 'Unknown';
+        });
+        document.getElementById('concept-prereqs').textContent =
+            prereqNames.length > 0 ? prereqNames.join(', ') : 'None';
+
+        // Set status badge
+        const statusBadge = document.getElementById('concept-status-badge');
+        statusBadge.className = `concept-status ${state}`;
+        statusBadge.textContent = state === 'completed' ? 'Completed' :
+            state === 'locked' ? 'Locked' : 'Available';
+
+        // Enable/disable start button
+        const startBtn = document.getElementById('start-concept-btn');
+        startBtn.disabled = state === 'locked' || state === 'completed';
+
+        document.getElementById('concept-modal').classList.remove('hidden');
+    }
+
+    function closeConceptModal() {
+        document.getElementById('concept-modal').classList.add('hidden');
+    }
+
+    async function startConcept() {
+        if (selectedConcept) {
+            const startBtn = document.getElementById('start-concept-btn');
+            const originalText = startBtn.textContent;
+            startBtn.disabled = true;
+            startBtn.textContent = "Loading...";
+
+            const courseUid = '{{ course_uid }}';
+            const courseTitle = '{{ course_title }}' || 'Course';
+
+            try {
+                // 1. Set Active Course Context
+                const res = await fetch('/api/set_active_course', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ uid: courseUid, title: courseTitle })
+                });
+
+                // 2. Navigate to specific concept
+                if (res.ok) {
+                    window.location.href = `/learn?course_uid=${encodeURIComponent(courseUid)}&concept_uid=${encodeURIComponent(selectedConcept.uid)}`;
+                } else {
+                    showToast("Failed to activate course context.", 'error');
+                    startBtn.disabled = false;
+                    startBtn.textContent = originalText;
+                }
+            } catch (e) {
+                console.error("Navigation error:", e);
+                showToast("Network error.", 'error');
+                startBtn.disabled = false;
+                startBtn.textContent = originalText;
+            }
+        }
+    }
+
+    function updateProgressStats(data) {
+        const concepts = data.nodes.filter(n => n.type === 'Concept');
+        const completed = concepts.filter(c => c.completed).length;
+        const total = concepts.length;
+        const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+        document.getElementById('completed-count').textContent = completed;
+        document.getElementById('total-count').textContent = total;
+        document.getElementById('progress-percent').textContent = `${percentage}%`;
+
+        // Update progress circle
+        const circle = document.getElementById('progress-circle');
+        const circumference = 2 * Math.PI * 54;
+        const offset = circumference - (percentage / 100) * circumference;
+        circle.style.strokeDashoffset = offset;
+    }
+
+    // Load on page load
+    document.addEventListener('DOMContentLoaded', loadCourseStructure);
+</script>
+{% endblock %}

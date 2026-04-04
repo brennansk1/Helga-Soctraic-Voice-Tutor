@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <script>
+        // Apply saved theme immediately to prevent flash of wrong theme (FOUC)
+        (function() {
+            var theme = localStorage.getItem('helga-theme');
+            if (theme === 'light' || theme === 'dark') {
+                document.documentElement.setAttribute('data-theme', theme);
+            }
+        })();
+        // Apply gamification visibility immediately to prevent FOUC
+        (function() {
+            var gam = localStorage.getItem('helga-gamification');
+            if (gam === 'false') {
+                document.documentElement.setAttribute('data-gamification', 'off');
+            }
+        })();
+    </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Helga — AI-powered Socratic voice tutor for self-directed learning">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>{% block title %}Helga{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=4">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <script src="{{ url_for('static', filename='js/socket.io.min.js') }}"></script>
+    <script>
+        // CSRF helper: auto-attach token to fetch() and XMLHttpRequest
+        window.CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]')?.content || '';
+        const _origFetch = window.fetch;
+        window.fetch = function(url, opts = {}) {
+            if (opts.method && opts.method.toUpperCase() !== 'GET') {
+                opts.headers = opts.headers || {};
+                if (opts.headers instanceof Headers) {
+                    opts.headers.set('X-CSRF-Token', window.CSRF_TOKEN);
+                } else {
+                    opts.headers['X-CSRF-Token'] = window.CSRF_TOKEN;
+                }
+            }
+            return _origFetch(url, opts);
+        };
+    </script>
+    <script src="{{ url_for('static', filename='js/feather.min.js') }}"></script>
+    {% block head_scripts %}{% endblock %}
+    <style>
+        :root {
+            --xp-gold: #d4a843;
+            --streak-fire: #e87c3f;
+        }
+        .gamification-bar {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-left: 0.75rem;
+            flex-shrink: 0;
+        }
+        .gamification-bar.hidden {
+            display: none;
+        }
+        /* Hide gamification bar instantly via data attribute (FOUC prevention) */
+        [data-gamification="off"] .gamification-bar {
+            display: none !important;
+        }
+        .xp-badge, .level-badge, .streak-badge {
+            font-family: 'DM Sans', sans-serif;
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 0.15rem 0.5rem;
+            border-radius: 999px;
+            white-space: nowrap;
+            line-height: 1.4;
+        }
+        .xp-badge {
+            background: var(--xp-gold);
+            color: #1a1a1a;
+        }
+        .level-badge {
+            background: #3a7bd5;
+            color: #fff;
+        }
+        .streak-badge {
+            background: var(--streak-fire);
+            color: #fff;
+        }
+        .daily-goal-dots {
+            display: flex;
+            gap: 3px;
+            align-items: center;
+        }
+        .goal-dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: rgba(128,128,128,0.3);
+            transition: background 0.3s, transform 0.3s;
+        }
+        .goal-dot.filled {
+            background: var(--xp-gold);
+            transform: scale(1.15);
+        }
+        @media (max-width: 768px) {
+            .gamification-bar {
+                gap: 0.3rem;
+                margin-left: 0.4rem;
+            }
+            .xp-badge, .level-badge, .streak-badge {
+                font-size: 0.65rem;
+                padding: 0.1rem 0.35rem;
+            }
+        }
+    </style>
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧠</text></svg>">
+</head>
+
+<body class="{% block body_class %}{% endblock %}">
+    <div class="matterhorn-bg" aria-hidden="true"></div>
+    <a href="#main-content" class="skip-nav">Skip to content</a>
+    <div class="app-container">
+        <header class="app-header" role="banner">
+            <div class="logo">
+                <a href="/">Helga</a>
+            </div>
+            <div class="gamification-bar hidden" id="gamification-bar">
+                <span class="xp-badge" id="xp-counter">0 XP</span>
+                <span class="level-badge" id="level-badge">Lv 1</span>
+                <span class="streak-badge" id="streak-counter">&#128293; 0</span>
+                <span class="daily-goal-dots" id="daily-goal-dots" title="Daily goal progress"></span>
+            </div>
+            <button id="hamburger-btn" class="hamburger-btn" aria-label="Toggle navigation menu">
+                <span></span><span></span><span></span>
+            </button>
+            <nav class="app-nav" id="app-nav" role="navigation" aria-label="Main navigation">
+                <a href="/" class="nav-link {% if request.path == '/' %}active{% endif %}" {% if request.path=='/'
+                    %}aria-current="page" {% endif %}>Home</a>
+                <a href="/courses" class="nav-link {% if request.path == '/courses' %}active{% endif %}" {% if
+                    request.path=='/courses' %}aria-current="page" {% endif %}>Courses</a>
+                <a href="/learn" class="nav-link {% if request.path == '/learn' %}active{% endif %}" {% if
+                    request.path=='/learn' %}aria-current="page" {% endif %}>Learn</a>
+                <a href="/quiz" class="nav-link {% if request.path in ['/quiz', '/test'] %}active{% endif %}" {% if
+                    request.path in ['/quiz', '/test'] %}aria-current="page" {% endif %}>Quiz</a>
+                <a href="/review" class="nav-link {% if request.path == '/review' %}active{% endif %}" {% if
+                    request.path=='/review' %}aria-current="page" {% endif %}>Review</a>
+                <a href="/schedule" class="nav-link {% if request.path == '/schedule' %}active{% endif %}" {% if
+                    request.path=='/schedule' %}aria-current="page" {% endif %}>Schedule</a>
+                <a href="/status" class="nav-link {% if request.path == '/status' %}active{% endif %}" {% if
+                    request.path=='/status' %}aria-current="page" {% endif %}>Status</a>
+                <a href="/settings" class="settings-btn" title="Settings" aria-label="Open settings">⚙️</a>
+            </nav>
+        </header>
+        <main class="app-content" id="main-content">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+    <script src="{{ url_for('static', filename='js/toast.js') }}?v=4"></script>
+    <script src="{{ url_for('static', filename='js/settings.js') }}?v=4"></script>
+
+    {% block page_scripts %}{% endblock %}
+
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="settings-modal hidden" role="dialog" aria-modal="true" aria-label="Settings">
+        <div class="settings-content">
+            <h2>Settings</h2>
+            <div class="settings-group">
+                <label>Theme:</label>
+                <div class="theme-selector">
+                    <button class="theme-option" data-theme="light">Light</button>
+                    <button class="theme-option" data-theme="dark">Dark</button>
+                </div>
+            </div>
+            <div class="settings-group">
+                <label>Font Size:</label>
+                <div class="font-size-controls">
+                    <button id="font-decrease" class="font-size-btn" aria-label="Decrease font size">-</button>
+                    <span id="font-size-display" class="font-size-display" aria-live="polite">100%</span>
+                    <button id="font-increase" class="font-size-btn" aria-label="Increase font size">+</button>
+                </div>
+            </div>
+            <button id="settings-close" class="settings-close">Close</button>
+        </div>
+    </div>
+
+    <!-- Level-Up Toast Element -->
+    <div id="level-up-toast" class="level-up-toast" aria-live="polite"></div>
+
+    <script>
+        // ---- Level-up toast notification (Task #63) ----
+        function showLevelUpToast(newLevel) {
+            var toast = document.getElementById('level-up-toast');
+            if (!toast) return;
+            toast.textContent = 'Level Up! You\u2019ve reached Level ' + newLevel + '!';
+            toast.classList.add('show');
+            setTimeout(function() {
+                toast.classList.remove('show');
+            }, 4000);
+        }
+        // Expose globally so session.js, review.html, etc. can call it
+        window.showLevelUpToast = showLevelUpToast;
+
+        // Hamburger menu toggle
+        const hamburgerBtn = document.getElementById('hamburger-btn');
+        const appNav = document.getElementById('app-nav');
+        if (hamburgerBtn && appNav) {
+            hamburgerBtn.addEventListener('click', () => {
+                appNav.classList.toggle('nav-open');
+                hamburgerBtn.classList.toggle('active');
+            });
+            // Close menu when a link is clicked
+            appNav.querySelectorAll('.nav-link').forEach(link => {
+                link.addEventListener('click', () => {
+                    appNav.classList.remove('nav-open');
+                    hamburgerBtn.classList.remove('active');
+                });
+            });
+        }
+
+        // Gamification bar — fetch data and populate on load
+        document.addEventListener('DOMContentLoaded', function() {
+            var bar = document.getElementById('gamification-bar');
+            if (!bar) return;
+
+            // Check localStorage for cached gamification preference (avoids FOUC)
+            var enabled = localStorage.getItem('helga-gamification');
+            if (enabled === 'false') return;
+
+            function showBar(data) {
+                var xpEl = document.getElementById('xp-counter');
+                var lvlEl = document.getElementById('level-badge');
+                var streakEl = document.getElementById('streak-counter');
+                if (xpEl) xpEl.textContent = (data.total_xp || data.xp || 0).toLocaleString() + ' XP';
+                if (lvlEl) lvlEl.textContent = 'Lv ' + (data.level || 1);
+                if (streakEl) streakEl.innerHTML = '&#128293; ' + (data.streak_days || data.streak || 0);
+                // Daily goal dots
+                var dotsEl = document.getElementById('daily-goal-dots');
+                if (dotsEl && data.daily_goal) {
+                    dotsEl.innerHTML = '';
+                    var filled = Math.min(data.daily_xp || 0, data.daily_goal);
+                    for (var d = 0; d < data.daily_goal; d++) {
+                        var dot = document.createElement('span');
+                        dot.className = 'goal-dot' + (d < filled ? ' filled' : '');
+                        dotsEl.appendChild(dot);
+                    }
+                    dotsEl.title = filled + '/' + data.daily_goal + ' daily goal';
+                }
+                bar.classList.remove('hidden');
+            }
+
+            // ---- Streak pulse check (Task #64) ----
+            function checkStreak() {
+                fetch('/api/gamification/check_streak', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: '{}'
+                })
+                .then(function(res) { return res.ok ? res.json() : Promise.reject(res.status); })
+                .then(function(data) {
+                    if (data.incremented) {
+                        var streakEl = document.getElementById('streak-counter');
+                        if (streakEl) {
+                            // Update the displayed streak count
+                            streakEl.innerHTML = '&#128293; ' + (data.streak_days || 0);
+                            // Trigger pulse animation — remove and re-add class to restart
+                            streakEl.classList.remove('streak-pulse');
+                            void streakEl.offsetWidth; // force reflow
+                            streakEl.classList.add('streak-pulse');
+                            // Clean up after animation finishes (3 iterations x 0.7s)
+                            setTimeout(function() {
+                                streakEl.classList.remove('streak-pulse');
+                            }, 2200);
+                        }
+                    }
+                })
+                .catch(function() {
+                    // check_streak not available — silently ignore
+                });
+            }
+
+            function fetchGamification() {
+                fetch('/api/gamification')
+                    .then(function(res) { return res.ok ? res.json() : Promise.reject(res.status); })
+                    .then(function(data) {
+                        showBar(data);
+                        // After populating the bar, check streak for today
+                        checkStreak();
+                    })
+                    .catch(function() {
+                        // API not available — keep bar hidden
+                    });
+            }
+
+            if (enabled === 'true' || enabled === null) {
+                // If no explicit setting cached, check /api/profile first
+                if (enabled === null) {
+                    fetch('/api/profile')
+                        .then(function(res) { return res.ok ? res.json() : Promise.reject(res.status); })
+                        .then(function(profile) {
+                            if (profile.gamification_enabled === false) {
+                                localStorage.setItem('helga-gamification', 'false');
+                                document.documentElement.setAttribute('data-gamification', 'off');
+                                return;
+                            }
+                            localStorage.setItem('helga-gamification', 'true');
+                            fetchGamification();
+                        })
+                        .catch(function() {
+                            // Profile API not available — try gamification anyway
+                            fetchGamification();
+                        });
+                } else {
+                    fetchGamification();
+                }
+            }
+        });
+    </script>
+</body>
+
+</html>

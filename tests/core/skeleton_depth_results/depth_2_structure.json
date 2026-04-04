@@ -1,0 +1,247 @@
+{
+  "course": "Causal Inference",
+  "depth": 2,
+  "depth_label": "Undergraduate / Intermediate",
+  "modules": [
+    {
+      "title": "Causal Mechanisms",
+      "ordinal": 1,
+      "units": [
+        {
+          "title": "Causal Inference",
+          "ordinal": 1,
+          "lessons": [
+            {
+              "title": "Theoretical",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "title": "Analyzing Data with Causal Models"
+                },
+                {
+                  "title": "Building Complex Causal Models"
+                }
+              ]
+            },
+            {
+              "title": "Historical",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "title": "Causal Models"
+                },
+                {
+                  "title": "Analyzing Treatment Effects"
+                },
+                {
+                  "title": "Interpreting Results"
+                }
+              ]
+            },
+            {
+              "title": "Primary Definitions",
+              "ordinal": 3,
+              "concepts": [
+                {
+                  "title": "Practical Application"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Interaction and Feedback",
+          "ordinal": 2,
+          "lessons": [
+            {
+              "title": "Interactions",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "title": "Critical Thinking"
+                }
+              ]
+            },
+            {
+              "title": "Feedback Loops",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "title": "Analyzing Interaction Effects"
+                },
+                {
+                  "title": "Handling Feedback Loops"
+                }
+              ]
+            },
+            {
+              "title": "Feedback Loop",
+              "ordinal": 3,
+              "concepts": [
+                {
+                  "title": "Role of Feedback in Causal Inference"
+                },
+                {
+                  "title": "Analyzing the Impact of Feedback on Causal Relationships"
+                },
+                {
+                  "title": "Importance of Feedback in Causal"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Defining Causal Mechanisms",
+          "ordinal": 3,
+          "lessons": [
+            {
+              "title": "Definition of Causal Mechanism",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "title": "Interaction"
+                },
+                {
+                  "title": "Analyzing Feedback"
+                },
+                {
+                  "title": "Constraints"
+                }
+              ]
+            },
+            {
+              "title": "Types of Causal Mechanisms",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "title": "Role of Randomization in Causal Studies"
+                },
+                {
+                  "title": "Analyzing the Impact of Confounding Variables"
+                },
+                {
+                  "title": "Role of External Validity in Causal Studies"
+                }
+              ]
+            },
+            {
+              "title": "Causal Mechanism Framework",
+              "ordinal": 3,
+              "concepts": [
+                {
+                  "title": "Interaction and Feedback Relationship"
+                },
+                {
+                  "title": "Analyzing the Impact of Feedback Loops"
+                },
+                {
+                  "title": "Developing a Causal Mechanism Framework"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Analyzing Feedbacks and Constraints",
+          "ordinal": 4,
+          "lessons": [
+            {
+              "title": "Feedback",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "title": "Analyzing Feedback Dynamics"
+                },
+                {
+                  "title": "Limiting Factors in Feedback"
+                }
+              ]
+            },
+            {
+              "title": "Constraint Identification",
+              "ordinal": 2,
+              "concepts": []
+            },
+            {
+              "title": "Optimizing Causal Models",
+              "ordinal": 3,
+              "concepts": []
+            }
+          ]
+        },
+        {
+          "title": "Limitations and Challenges",
+          "ordinal": 5,
+          "lessons": [
+            {
+              "title": "Challenges in Causal Studies",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "title": "Defining Constraints"
+                }
+              ]
+            },
+            {
+              "title": "Limiting Factors",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "title": "Role of Data"
+                },
+                {
+                  "title": "Analyzing Causal Effects"
+                }
+              ]
+            },
+            {
+              "title": "Future Research Directions",
+              "ordinal": 3,
+              "concepts": [
+                {
+                  "title": "Causal Mechanism"
+                },
+                {
+                  "title": "Handling Feedbacks Effectively"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Complexity in Systems",
+      "ordinal": 2,
+      "units": []
+    },
+    {
+      "title": "Synthesizing Applications",
+      "ordinal": 3,
+      "units": [
+        {
+          "title": "Unit Title",
+          "ordinal": 1,
+          "lessons": [
+            {
+              "title": "Lesson Title",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "title": "Causal Graphs"
+                },
+                {
+                  "title": "Causal Inference Techniques"
+                },
+                {
+                  "title": "Analyzing Causal Effects in Real-world Applications"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

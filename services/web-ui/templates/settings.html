@@ -1,0 +1,378 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<main class="page-settings" style="max-width: 720px; margin: 0 auto; padding: 2rem 1rem;">
+    <h1 style="margin-bottom: 1.5rem;">Settings</h1>
+
+    <!-- Profile Section -->
+    <section class="settings-section" id="section-profile">
+        <h2>Profile</h2>
+        <div class="setting-row">
+            <label for="display-name">Display Name</label>
+            <input type="text" id="display-name" placeholder="Your name" maxlength="50" autocomplete="off">
+            <p class="setting-hint">The tutor will address you by this name.</p>
+        </div>
+    </section>
+
+    <!-- Appearance Section -->
+    <section class="settings-section" id="section-appearance">
+        <h2>Appearance</h2>
+        <div class="setting-row">
+            <label>Theme</label>
+            <div class="toggle-group">
+                <button class="theme-btn" data-theme="light">Light</button>
+                <button class="theme-btn" data-theme="dark">Dark</button>
+            </div>
+        </div>
+        <div class="setting-row">
+            <label for="font-scale">Font Size</label>
+            <input type="range" id="font-scale" min="0.8" max="1.4" step="0.1" value="1.0">
+            <span id="font-scale-label">100%</span>
+        </div>
+    </section>
+
+    <!-- Learning Section -->
+    <section class="settings-section" id="section-learning">
+        <h2>Learning</h2>
+        <div class="setting-row">
+            <label for="daily-goal">Daily Concept Goal</label>
+            <input type="number" id="daily-goal" min="1" max="20" value="5">
+            <p class="setting-hint">Number of concepts to target each day.</p>
+        </div>
+    </section>
+
+    <!-- Gamification Section -->
+    <section class="settings-section" id="section-gamification">
+        <h2>Gamification</h2>
+        <div class="setting-row">
+            <label for="gamification-toggle">Enable Gamification</label>
+            <label class="switch">
+                <input type="checkbox" id="gamification-toggle" checked>
+                <span class="slider round"></span>
+            </label>
+            <p class="setting-hint">Show XP, streaks, levels, and achievements. Learning features are always available.</p>
+        </div>
+        <div class="setting-row">
+            <label for="sound-toggle">Sound Effects</label>
+            <label class="switch">
+                <input type="checkbox" id="sound-toggle" checked>
+                <span class="slider round"></span>
+            </label>
+        </div>
+    </section>
+
+    <!-- Voice Section -->
+    <section class="settings-section" id="section-voice">
+        <h2>Voice</h2>
+        <div class="setting-row">
+            <label for="voice-select">TTS Voice</label>
+            <select id="voice-select">
+                <option value="af_heart">Heart (Female)</option>
+                <option value="af_bella">Bella (Female)</option>
+                <option value="af_nicole">Nicole (Female)</option>
+                <option value="af_sarah">Sarah (Female)</option>
+                <option value="af_sky">Sky (Female)</option>
+                <option value="am_adam">Adam (Male)</option>
+                <option value="am_michael">Michael (Male)</option>
+                <option value="bf_emma">Emma (British F)</option>
+                <option value="bf_isabella">Isabella (British F)</option>
+                <option value="bm_george">George (British M)</option>
+                <option value="bm_lewis">Lewis (British M)</option>
+            </select>
+            <button id="voice-preview" class="btn-small">Preview</button>
+        </div>
+    </section>
+
+    <!-- Data Section -->
+    <section class="settings-section" id="section-data">
+        <h2>Data</h2>
+        <div class="setting-row">
+            <button id="export-data" class="btn-secondary">Export Learning Data</button>
+            <p class="setting-hint">Download your progress, courses, and review history as JSON.</p>
+        </div>
+        <div class="setting-row danger-zone">
+            <button id="reset-progress" class="btn-danger">Reset All Progress</button>
+            <p class="setting-hint">This cannot be undone. Course content is preserved.</p>
+        </div>
+    </section>
+
+    <div id="settings-toast" class="toast hidden"></div>
+</main>
+
+<style>
+.settings-section {
+    background: var(--bg-secondary, #fff);
+    border: 1px solid var(--border-color, #d4cdc4);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.25rem;
+}
+.settings-section h2 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin: 0 0 1rem 0;
+    color: var(--text-primary, #2d3a2e);
+}
+.setting-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border-color, #e8e4df);
+    flex-wrap: wrap;
+}
+.setting-row:last-child { border-bottom: none; }
+.setting-row label:first-child {
+    min-width: 160px;
+    font-weight: 600;
+    color: var(--text-primary, #2d3a2e);
+}
+.setting-hint {
+    width: 100%;
+    font-size: 0.85rem;
+    color: var(--text-secondary, #6b7c6e);
+    margin: 0.25rem 0 0 0;
+}
+.setting-row input[type="text"],
+.setting-row input[type="number"],
+.setting-row select {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border-color, #d4cdc4);
+    border-radius: 8px;
+    font-size: 0.95rem;
+    background: var(--bg-primary, #f5f0eb);
+    color: var(--text-primary, #2d3a2e);
+    flex: 1;
+    max-width: 240px;
+}
+.toggle-group {
+    display: flex;
+    gap: 0;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border-color, #d4cdc4);
+}
+.theme-btn {
+    padding: 0.5rem 1.25rem;
+    border: none;
+    background: var(--bg-primary, #f5f0eb);
+    color: var(--text-primary, #2d3a2e);
+    cursor: pointer;
+    font-weight: 600;
+    transition: background 0.2s;
+}
+.theme-btn.active {
+    background: var(--accent-primary, #2e6b8a);
+    color: #fff;
+}
+/* Toggle switch */
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 48px;
+    height: 26px;
+}
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: #ccc;
+    transition: 0.3s;
+}
+.slider.round { border-radius: 26px; }
+.slider.round:before {
+    border-radius: 50%;
+}
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 20px; width: 20px;
+    left: 3px; bottom: 3px;
+    background: white;
+    transition: 0.3s;
+}
+input:checked + .slider { background: var(--accent-primary, #2e6b8a); }
+input:checked + .slider:before { transform: translateX(22px); }
+.btn-small {
+    padding: 0.4rem 0.8rem;
+    border: 1px solid var(--border-color, #d4cdc4);
+    border-radius: 6px;
+    background: var(--bg-primary, #f5f0eb);
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+.btn-secondary {
+    padding: 0.6rem 1.2rem;
+    border: 1px solid var(--accent-primary, #2e6b8a);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--accent-primary, #2e6b8a);
+    cursor: pointer;
+    font-weight: 600;
+}
+.btn-danger {
+    padding: 0.6rem 1.2rem;
+    border: 1px solid var(--status-error, #c45c4a);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--status-error, #c45c4a);
+    cursor: pointer;
+    font-weight: 600;
+}
+.danger-zone { border-bottom: none !important; }
+.toast {
+    position: fixed;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--accent-primary, #2e6b8a);
+    color: #fff;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-weight: 600;
+    z-index: 9999;
+    transition: opacity 0.3s;
+}
+.toast.hidden { opacity: 0; pointer-events: none; }
+</style>
+
+<script>
+(function() {
+    const SAVE_DELAY = 500;
+    let saveTimer = null;
+    let profile = {};
+
+    function showToast(msg) {
+        const t = document.getElementById('settings-toast');
+        t.textContent = msg;
+        t.classList.remove('hidden');
+        setTimeout(() => t.classList.add('hidden'), 2000);
+    }
+
+    function autoSave(key, value) {
+        profile[key] = value;
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => {
+            fetch('/api/profile', {
+                method: 'PATCH',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({[key]: value})
+            }).then(() => showToast('Saved')).catch(() => showToast('Save failed'));
+        }, SAVE_DELAY);
+    }
+
+    // Load profile
+    fetch('/api/profile').then(r => r.json()).then(data => {
+        profile = data;
+        document.getElementById('display-name').value = data.display_name || '';
+        document.getElementById('font-scale').value = data.font_scale || 1.0;
+        document.getElementById('font-scale-label').textContent = Math.round((data.font_scale || 1.0) * 100) + '%';
+        document.getElementById('daily-goal').value = data.daily_goal || 5;
+        document.getElementById('gamification-toggle').checked = data.gamification_enabled !== false;
+        document.getElementById('sound-toggle').checked = data.sound_effects !== false;
+        document.getElementById('voice-select').value = data.default_voice || 'af_heart';
+
+        // Theme
+        const currentTheme = data.theme || localStorage.getItem('helga-theme') || 'light';
+        document.querySelectorAll('.theme-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.theme === currentTheme);
+        });
+    });
+
+    // Display name
+    document.getElementById('display-name').addEventListener('input', function() {
+        autoSave('display_name', this.value);
+    });
+
+    // Theme
+    document.querySelectorAll('.theme-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const theme = this.dataset.theme;
+            document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem('helga-theme', theme);
+            autoSave('theme', theme);
+        });
+    });
+
+    // Font scale
+    document.getElementById('font-scale').addEventListener('input', function() {
+        const scale = parseFloat(this.value);
+        document.getElementById('font-scale-label').textContent = Math.round(scale * 100) + '%';
+        document.documentElement.style.setProperty('--font-scale', scale);
+        autoSave('font_scale', scale);
+    });
+
+    // Daily goal
+    document.getElementById('daily-goal').addEventListener('change', function() {
+        autoSave('daily_goal', parseInt(this.value) || 5);
+    });
+
+    // Gamification toggle — sync to localStorage so base.html picks it up instantly
+    document.getElementById('gamification-toggle').addEventListener('change', function() {
+        var isEnabled = this.checked;
+        localStorage.setItem('helga-gamification', isEnabled ? 'true' : 'false');
+        if (isEnabled) {
+            document.documentElement.removeAttribute('data-gamification');
+        } else {
+            document.documentElement.setAttribute('data-gamification', 'off');
+        }
+        autoSave('gamification_enabled', isEnabled);
+    });
+
+    // Sound toggle
+    document.getElementById('sound-toggle').addEventListener('change', function() {
+        autoSave('sound_effects', this.checked);
+    });
+
+    // Voice select
+    document.getElementById('voice-select').addEventListener('change', function() {
+        localStorage.setItem('helga-voice', this.value);
+        autoSave('default_voice', this.value);
+    });
+
+    // Voice preview
+    document.getElementById('voice-preview').addEventListener('click', function() {
+        const voice = document.getElementById('voice-select').value;
+        this.disabled = true;
+        this.textContent = '...';
+        fetch('/api/tts', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({text: 'Hello! I am your Socratic tutor, Helga.', voice: voice})
+        }).then(r => r.blob()).then(blob => {
+            const url = URL.createObjectURL(blob);
+            const audio = new Audio(url);
+            audio.onended = () => { this.disabled = false; this.textContent = 'Preview'; };
+            audio.play();
+        }).catch(() => {
+            this.disabled = false;
+            this.textContent = 'Preview';
+            showToast('Preview failed');
+        });
+    });
+
+    // Reset progress
+    document.getElementById('reset-progress').addEventListener('click', function() {
+        if (confirm('Are you sure? This will reset ALL learning progress. Course content is preserved.')) {
+            fetch('/api/profile/reset', {method: 'POST'})
+                .then(() => showToast('Progress reset'))
+                .catch(() => showToast('Reset failed'));
+        }
+    });
+
+    // Export data
+    document.getElementById('export-data').addEventListener('click', function() {
+        fetch('/api/stats').then(r => r.json()).then(data => {
+            const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'helga_data_export.json';
+            a.click();
+        }).catch(() => showToast('Export failed'));
+    });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,13 @@
+system:
+  wake_word: "helga"
+  mic_device_name: "USB PnP Audio Device"
+  keyboard_device_name: "Mini Keyboard"
+  vad_threshold: 0.5
+
+pedagogy:
+  socratic_depth: 3
+  fsrs_retention: 0.90
+
+prompts:
+  tutor_system: "You are Helga, a headless AI tutor. Use short sentences..."
+  critic_system: "Evaluate the previous response for pedagogical errors..."

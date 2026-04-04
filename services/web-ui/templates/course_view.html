@@ -1,0 +1,369 @@
+{% extends "base.html" %}
+{% block title %}Helga - Course Structure{% endblock %}
+{% block content %}
+<div class="cv-container">
+    <!-- Top bar -->
+    <div class="cv-topbar">
+        <button class="cv-back" onclick="window.location.href='/courses'">
+            <span class="cv-back-arrow">←</span> Back to Courses
+        </button>
+        <div class="cv-actions" id="cv-actions" style="display:none;">
+            <button class="btn-alpine btn-alpine-primary" id="cv-start-btn" onclick="startLearning()">Start Learning</button>
+        </div>
+    </div>
+
+    <!-- Course header -->
+    <div class="cv-header" id="cv-header">
+        <h1 id="cv-title">Loading...</h1>
+        <p class="cv-overview" id="cv-overview"></p>
+        <div class="cv-meta" id="cv-meta"></div>
+    </div>
+
+    <!-- Structure tree -->
+    <div class="cv-tree" id="cv-tree">
+        <div class="cv-loading">Loading course structure...</div>
+    </div>
+</div>
+
+<style>
+.cv-container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 1.5rem 1rem 3rem;
+}
+.cv-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+.cv-back {
+    background: none;
+    border: 1px solid var(--border-color);
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: background 0.2s;
+}
+.cv-back:hover { background: var(--bg-tertiary); }
+.cv-back-arrow { font-size: 1.1rem; }
+.cv-header {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+.cv-header h1 {
+    font-size: 1.6rem;
+    font-weight: 800;
+    margin: 0 0 0.5rem 0;
+    color: var(--text-primary);
+}
+.cv-overview {
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    margin: 0 0 0.75rem 0;
+    max-width: 600px;
+    margin-left: auto;
+    margin-right: auto;
+}
+.cv-meta {
+    display: flex;
+    justify-content: center;
+    gap: 1.5rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+.cv-meta span {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+.cv-tree {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+.cv-loading {
+    text-align: center;
+    color: var(--text-secondary);
+    padding: 2rem;
+}
+
+/* Module card */
+.cv-module {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    margin-bottom: 1rem;
+    overflow: hidden;
+}
+.cv-module-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s;
+}
+.cv-module-header:hover { background: var(--bg-tertiary); }
+.cv-module-num {
+    background: var(--accent-primary);
+    color: #fff;
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.85rem;
+    flex-shrink: 0;
+}
+.cv-module-info { flex: 1; }
+.cv-module-title {
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: var(--text-primary);
+}
+.cv-module-count {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-top: 0.15rem;
+}
+.cv-module-chevron {
+    font-size: 1.2rem;
+    color: var(--text-secondary);
+    transition: transform 0.2s;
+}
+.cv-module.open .cv-module-chevron { transform: rotate(90deg); }
+
+/* Module body (expandable) */
+.cv-module-body {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+}
+.cv-module.open .cv-module-body {
+    max-height: 2000px;
+}
+
+/* Unit */
+.cv-unit {
+    padding: 0.5rem 1.25rem 0.5rem 3.25rem;
+    border-top: 1px solid var(--border-color);
+}
+.cv-unit-title {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    margin-bottom: 0.4rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+/* Lesson */
+.cv-lesson {
+    padding: 0.25rem 0 0.25rem 1.25rem;
+}
+.cv-lesson-title {
+    font-weight: 500;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.3rem;
+}
+
+/* Concept */
+.cv-concept {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0 0.3rem 1rem;
+    border-radius: 6px;
+    transition: background 0.15s;
+    cursor: pointer;
+}
+.cv-concept:hover { background: var(--bg-tertiary); }
+.cv-concept-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--border-color);
+    flex-shrink: 0;
+}
+.cv-concept-dot.completed { background: var(--status-success); }
+.cv-concept-name {
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    flex: 1;
+}
+.cv-concept-badge {
+    font-size: 0.75rem;
+}
+
+/* Progress bar on module header */
+.cv-module-progress {
+    width: 50px; height: 4px;
+    background: var(--border-color);
+    border-radius: 2px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+.cv-module-progress-fill {
+    height: 100%;
+    background: var(--status-success);
+    border-radius: 2px;
+    transition: width 0.3s;
+}
+
+@media (max-width: 600px) {
+    .cv-container { padding: 1rem 0.5rem; }
+    .cv-unit { padding-left: 2rem; }
+    .cv-module-header { padding: 0.75rem 1rem; }
+}
+</style>
+
+<script>
+(function() {
+    var courseUid = new URLSearchParams(window.location.search).get('uid');
+    if (!courseUid) { window.location.href = '/courses'; return; }
+
+    var BLOOM_BADGES = {0:'', 1:'🌱', 2:'🌿', 3:'🌲', 4:'🏔️', 5:'⭐', 6:'⭐'};
+
+    function countConcepts(obj) {
+        var total = 0, completed = 0;
+        (obj.units || []).forEach(function(u) {
+            (u.lessons || []).forEach(function(l) {
+                (l.concepts || []).forEach(function(c) {
+                    total++;
+                    if (c.completed) completed++;
+                });
+            });
+        });
+        return {total: total, completed: completed};
+    }
+
+    async function load() {
+        try {
+            // Fetch structure + details in parallel
+            var [structRes, detRes] = await Promise.all([
+                fetch('/api/course_structure?uid=' + courseUid),
+                fetch('/api/course_details?uid=' + courseUid)
+            ]);
+            var structData = await structRes.json();
+            var detData = await detRes.json();
+            var course = structData.structure || {};
+            var modules = course.modules || [];
+
+            // Header
+            document.getElementById('cv-title').textContent = detData.title || course.title || 'Course';
+            document.getElementById('cv-overview').textContent = detData.overview || '';
+
+            // Meta stats
+            var totalConcepts = 0, completedConcepts = 0;
+            modules.forEach(function(m) {
+                var c = countConcepts(m);
+                totalConcepts += c.total;
+                completedConcepts += c.completed;
+            });
+            var pct = totalConcepts > 0 ? Math.round(completedConcepts / totalConcepts * 100) : 0;
+            document.getElementById('cv-meta').innerHTML =
+                '<span>📦 ' + modules.length + ' Modules</span>' +
+                '<span>📝 ' + totalConcepts + ' Concepts</span>' +
+                '<span>✅ ' + pct + '% Complete</span>' +
+                (detData.scope ? '<span>🔍 Scope ' + detData.scope + '/5</span>' : '') +
+                (detData.mastery ? '<span>🏔️ Mastery ' + detData.mastery + '/5</span>' : '');
+
+            // Show action buttons
+            var actionsEl = document.getElementById('cv-actions');
+            actionsEl.style.display = 'flex';
+            var startBtn = document.getElementById('cv-start-btn');
+            startBtn.textContent = completedConcepts > 0 ? 'Resume Learning' : 'Start Learning';
+
+            // Render tree
+            var treeEl = document.getElementById('cv-tree');
+            treeEl.innerHTML = '';
+
+            modules.forEach(function(mod, mi) {
+                var stats = countConcepts(mod);
+                var modEl = document.createElement('div');
+                modEl.className = 'cv-module' + (mi === 0 ? ' open' : '');
+
+                // Header
+                var progPct = stats.total > 0 ? Math.round(stats.completed / stats.total * 100) : 0;
+                modEl.innerHTML =
+                    '<div class="cv-module-header" onclick="this.parentElement.classList.toggle(\'open\')">' +
+                        '<div class="cv-module-num">' + (mi + 1) + '</div>' +
+                        '<div class="cv-module-info">' +
+                            '<div class="cv-module-title">' + escapeHtml(mod.title) + '</div>' +
+                            '<div class="cv-module-count">' + stats.total + ' concepts · ' + stats.completed + ' completed</div>' +
+                        '</div>' +
+                        '<div class="cv-module-progress"><div class="cv-module-progress-fill" style="width:' + progPct + '%"></div></div>' +
+                        '<div class="cv-module-chevron">›</div>' +
+                    '</div>';
+
+                // Body
+                var bodyEl = document.createElement('div');
+                bodyEl.className = 'cv-module-body';
+
+                (mod.units || []).forEach(function(unit) {
+                    var unitEl = document.createElement('div');
+                    unitEl.className = 'cv-unit';
+                    unitEl.innerHTML = '<div class="cv-unit-title">📖 ' + escapeHtml(unit.title) + '</div>';
+
+                    (unit.lessons || []).forEach(function(lesson) {
+                        var lessonEl = document.createElement('div');
+                        lessonEl.className = 'cv-lesson';
+                        lessonEl.innerHTML = '<div class="cv-lesson-title">📝 ' + escapeHtml(lesson.title) + '</div>';
+
+                        (lesson.concepts || []).forEach(function(concept) {
+                            var bloom = concept.bloom_level || 0;
+                            var badge = BLOOM_BADGES[Math.min(bloom, 6)] || '';
+                            var dotClass = concept.completed ? 'completed' : '';
+                            var conceptEl = document.createElement('div');
+                            conceptEl.className = 'cv-concept';
+                            conceptEl.onclick = function() {
+                                window.location.href = '/learn?course_uid=' + courseUid + '&concept_uid=' + concept.uid;
+                            };
+                            conceptEl.innerHTML =
+                                '<div class="cv-concept-dot ' + dotClass + '"></div>' +
+                                '<div class="cv-concept-name">' + escapeHtml(concept.title) + '</div>' +
+                                (badge ? '<span class="cv-concept-badge">' + badge + '</span>' : '');
+                            lessonEl.appendChild(conceptEl);
+                        });
+                        unitEl.appendChild(lessonEl);
+                    });
+                    bodyEl.appendChild(unitEl);
+                });
+                modEl.appendChild(bodyEl);
+                treeEl.appendChild(modEl);
+            });
+
+        } catch(e) {
+            document.getElementById('cv-tree').innerHTML = '<div class="cv-loading">Error loading course structure.</div>';
+            console.error(e);
+        }
+    }
+
+    function escapeHtml(s) {
+        var d = document.createElement('div');
+        d.textContent = s || '';
+        return d.innerHTML;
+    }
+
+    window.startLearning = function() {
+        fetch('/api/set_active_course', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({uid: courseUid, title: document.getElementById('cv-title').textContent})
+        }).catch(function(){});
+        window.location.href = '/learn?course_uid=' + courseUid;
+    };
+
+    document.addEventListener('DOMContentLoaded', load);
+})();
+</script>
+{% endblock %}

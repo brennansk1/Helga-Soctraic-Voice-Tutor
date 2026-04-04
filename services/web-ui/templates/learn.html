@@ -1,0 +1,1798 @@
+{% extends "base.html" %}
+
+{% block title %}Helga - Learn{% endblock %}
+
+{% block head_scripts %}<script src="{{ url_for('static', filename='js/session.js') }}?v=5"></script>{% endblock %}
+
+{% block content %}
+<div class="learn-wrapper theme-learn">
+    <!-- Top Bar -->
+    <div class="learn-header">
+        <div class="header-left">
+            <h2 id="course-title-display" class="course-title">Loading Course...</h2>
+        </div>
+        <div class="header-right">
+            <div id="session-header" class="hidden">
+                <button id="back-to-path-btn-session" class="nav-btn">
+                    <span class="icon">←</span> Back
+                </button>
+                <div style="flex:1; text-align:center; display:flex; align-items:center; justify-content:center; gap:0.75rem;">
+                    <span id="mode-indicator-badge" style="font-size:0.75rem; padding:0.25rem 0.6rem; border-radius:12px; border:1px solid rgba(59,130,246,0.3); color:#3b82f6; white-space:nowrap;">🎓 Socratic Learning</span>
+                    <h2 style="margin:0; font-size:1.1rem;">Current Lesson</h2>
+                </div>
+                <div class="header-progress-section" style="position: relative;">
+                    <!-- Thinking UI moved inline -->
+                </div>
+            </div>
+            <!-- Voice/text mode toggle removed (text-only mode) -->
+        </div>
+    </div>
+
+    <!-- MAIN VIEW 1: PATH VISUALIZATION -->
+    <div id="path-view" class="path-container">
+        <div class="path-background"></div>
+        <div id="path-content" class="path-content">
+            <!-- SVG Layer for connections -->
+            <svg id="path-svg" class="path-svg"></svg>
+            <!-- Nodes will be injected here via JS -->
+            <div class="loading-spinner"></div>
+        </div>
+    </div>
+
+    <!-- MAIN VIEW 2: ACTIVE SESSION -->
+    <div id="session-view" class="session-container hidden">
+        <div class="session-main">
+            <div class="ai-avatar-container">
+                <div class="ai-avatar pulse">
+                    <img src="{{ url_for('static', filename='img/avatar_placeholder.png') }}" alt="AI"
+                        onerror="this.src='https://ui-avatars.com/api/?name=H&background=3b82f6&color=fff&size=128'">
+                </div>
+
+                <!-- Thinking Bubble -->
+                <div id="thinking-bubble" class="thinking-bubble hidden">
+                    <div class="spinner-small"></div>
+                    <span id="thinking-status-text">Thinking...</span>
+                    <button id="toggle-logs" class="logs-toggle-btn" title="View Logs">📄</button>
+                </div>
+                <!-- Logs Container -->
+                <div id="thinking-logs" class="thinking-logs hidden">
+                    <pre><code id="thinking-logs-code"></code></pre>
+                </div>
+            </div>
+
+            <!-- Concept Info Bar -->
+            <div id="concept-info-bar" class="concept-info-bar hidden">
+                <div class="concept-breadcrumb" id="concept-breadcrumb"></div>
+                <div class="concept-title-display" id="concept-title-display"></div>
+                <div class="session-progress">
+                    <div class="session-progress-bar">
+                        <div class="session-progress-fill" id="session-progress-fill"></div>
+                    </div>
+                    <span class="session-progress-text" id="session-progress-text">0 / 0</span>
+                </div>
+            </div>
+
+            <!-- Question Type Indicator -->
+            <div id="question-type-badge" class="question-type-badge hidden">
+                <div class="qtype-dots" id="qtype-dots"></div>
+                <span class="qtype-icon" id="qtype-icon"></span>
+                <span class="qtype-name" id="qtype-name"></span>
+            </div>
+
+            <!-- Chat Stream -->
+            <div class="conversation-log" id="chat-stream">
+                <div class="message ai">
+                    <div class="msg-avatar">
+                        <img src="https://ui-avatars.com/api/?name=H&background=3b82f6&color=fff&size=32" alt="AI">
+                    </div>
+                    <div class="msg-content">
+                        Hello. Select a topic from the path to begin your learning journey.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Controls (text-only) -->
+            <div class="controls">
+                <div class="input-area">
+                    <input type="text" id="text-input" placeholder="Type your response..." class="text-input">
+                    <button id="send-btn" class="control-btn send-btn" title="Send">
+                        <span class="icon">➤</span>
+                    </button>
+                </div>
+                <button id="skip-concept-btn" class="control-btn skip-btn" title="Skip Concept">
+                    <span class="icon">⏭</span>
+                </button>
+                <button id="pause-resume" class="control-btn pause-btn" title="Pause Session">
+                    <span class="icon">⏸</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Contextual Sidebar -->
+        <div id="context-sidebar" class="context-sidebar hidden">
+            <h3 class="sidebar-title">🧠 Teaching Context</h3>
+
+            <div id="pedagogy-hints" class="pedagogy-hints hidden">
+                <div id="misconceptions-list" class="hint-group"></div>
+                <div id="analogies-list" class="hint-group"></div>
+            </div>
+
+            <!-- Other hidden rails expected by session.js -->
+            <div id="context-rail" class="hidden"></div>
+            <div id="flashcard-rail" class="hidden"></div>
+            <div id="palace-rail" class="hidden"></div>
+            <div id="course-title" class="hidden"></div>
+            <div id="breadcrumb-path" class="hidden"></div>
+            <div id="facets-list" class="hidden"></div>
+            <div id="progress-percent" class="hidden"></div>
+            <div id="progress-bar" class="hidden"></div>
+            <div id="logs-content" class="hidden"></div>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* Context Sidebar */
+    .context-sidebar {
+        width: 300px;
+        background: var(--bg-secondary);
+        border-radius: 20px;
+        border: 1px solid var(--border-color);
+        padding: 1.5rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        overflow-y: auto;
+    }
+
+    .context-sidebar.hidden {
+        display: none;
+    }
+
+    .sidebar-title {
+        font-size: 1.1rem;
+        color: var(--text-primary);
+        margin: 0;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid var(--border-color);
+        font-weight: 700;
+    }
+
+    .hint-group h5 {
+        margin: 1rem 0 0.5rem 0;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-size: 0.8rem;
+    }
+
+    .hint-item {
+        background: var(--bg-tertiary);
+        padding: 0.75rem;
+        border-radius: 8px;
+        font-size: 0.85rem;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+        border-left: 3px solid var(--border-color);
+        line-height: 1.4;
+    }
+
+    .hint-item.misconception {
+        border-left-color: #ef4444;
+        /* Red for pitfall */
+        background: rgba(239, 68, 68, 0.05);
+    }
+
+    .hint-item.analogy {
+        border-left-color: #3b82f6;
+        /* Blue for analogy */
+        background: rgba(59, 130, 246, 0.05);
+    }
+
+    :root {
+        --path-bg: var(--bg-primary);
+        --node-size: 70px;
+        --node-gap: 80px;
+        --path-color: var(--border-color);
+        --completed-color: var(--status-warning);
+        --current-color: var(--accent-primary);
+        --locked-color: var(--text-secondary);
+        --text-color: var(--text-primary);
+        --bg-msg-ai: var(--bg-secondary);
+        --bg-msg-user: var(--accent-primary);
+    }
+
+    /* Layout */
+    .learn-wrapper {
+        height: calc(100vh - 60px);
+        display: flex;
+        flex-direction: column;
+        background: var(--path-bg);
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    .learn-header {
+        padding: 0 2rem;
+        background: var(--bg-secondary);
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        height: 70px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+        z-index: 10;
+    }
+
+    .course-title {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--text-color);
+        margin: 0;
+    }
+
+    .header-left {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .theme-learn .secondary-btn {
+        background: transparent;
+        border: 1px solid var(--border-color);
+        color: var(--text-color);
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .secondary-btn:hover {
+        background: var(--bg-tertiary);
+    }
+
+    /* Path Visualization */
+    .path-container {
+        flex: 1;
+        overflow-y: auto;
+        position: relative;
+        display: flex;
+        justify-content: center;
+        padding-top: 2rem;
+        padding-bottom: 4rem;
+        background-color: var(--path-bg);
+        background-image: radial-gradient(var(--border-color, #d1d5db) 1px, transparent 1px);
+        background-size: 24px 24px;
+    }
+
+    .path-content {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 100%;
+        max-width: 600px;
+        z-index: 2;
+    }
+
+    .path-svg {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 1;
+    }
+
+    .unit-header {
+        background: var(--bg-secondary);
+        padding: 1rem 1.5rem;
+        border-radius: 16px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        margin: 2rem 0;
+        z-index: 2;
+        text-align: center;
+        width: 80%;
+        border: 2px solid var(--border-color);
+        color: var(--text-color);
+    }
+
+    .unit-header h3 {
+        margin: 0;
+        font-size: 1.1rem;
+        color: var(--text-color);
+    }
+
+    .unit-header p {
+        margin: 0.2rem 0 0;
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+    }
+
+    .node-row {
+        position: relative;
+        height: var(--node-gap);
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 2;
+    }
+
+    .module-block {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+    }
+
+    .nodes-container {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        padding: 2rem 0;
+    }
+
+    .path-node {
+        width: var(--node-size);
+        height: var(--node-size);
+        border-radius: 50%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        cursor: pointer;
+        position: relative;
+        transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+        z-index: 2;
+        border: none;
+        outline: none;
+        background: transparent;
+        /* Reset default */
+        padding: 0;
+        margin: 0;
+        -webkit-appearance: none;
+        appearance: none;
+    }
+
+    .path-node:active {
+        transform: scale(0.95);
+    }
+
+    .path-node .icon {
+        font-size: 1.5rem;
+        font-weight: bold;
+    }
+
+    /* Node States */
+    .path-node-inner {
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        position: relative;
+    }
+
+    /* 3D Effect for Nodes */
+    .path-node.completed .path-node-inner {
+        background: linear-gradient(135deg, #fcd34d 0%, #fbbf24 100%);
+        box-shadow: 0 4px 0 #b45309, 0 8px 10px rgba(0, 0, 0, 0.2);
+        color: #fff;
+    }
+
+    .path-node.current {
+        border-color: var(--current-color);
+        background: var(--current-color);
+        color: white;
+        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3);
+        animation: pulse-node 2s infinite;
+    }
+
+    .path-node.current .path-node-inner {
+        background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+        box-shadow: 0 4px 0 #1d4ed8, 0 8px 10px rgba(0, 0, 0, 0.2);
+        color: #fff;
+        animation: pulse-ring 2s infinite;
+    }
+
+    .path-node.locked .path-node-inner {
+        background: var(--border-color, #e5e7eb);
+        box-shadow: 0 4px 0 var(--text-secondary, #9ca3af);
+        color: var(--text-secondary, #9ca3af);
+        cursor: not-allowed;
+    }
+
+    @keyframes pulse-ring {
+        0% {
+            box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4), 0 4px 0 #1d4ed8;
+        }
+
+        70% {
+            box-shadow: 0 0 0 15px rgba(59, 130, 246, 0), 0 4px 0 #1d4ed8;
+        }
+
+        100% {
+            box-shadow: 0 0 0 0 rgba(59, 130, 246, 0), 0 4px 0 #1d4ed8;
+        }
+    }
+
+    .node-tooltip {
+        position: absolute;
+        top: -45px;
+        background: var(--bg-tertiary, #1f2937);
+        color: var(--text-primary, white);
+        padding: 0.5rem 0.8rem;
+        border-radius: 8px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        white-space: nowrap;
+        opacity: 0;
+        transform: translateY(10px) scale(0.9);
+        transition: all 0.2s ease-out;
+        pointer-events: none;
+        z-index: 10;
+    }
+
+    .node-tooltip::after {
+        content: '';
+        position: absolute;
+        bottom: -4px;
+        left: 50%;
+        transform: translateX(-50%) rotate(45deg);
+        width: 8px;
+        height: 8px;
+        background: var(--bg-tertiary, #1f2937);
+    }
+
+    .path-node:hover .node-tooltip {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+
+    /* Session UI */
+    .session-container {
+        flex: 1;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        gap: 1.5rem;
+        padding: 1rem;
+        background: var(--bg-primary);
+        max-width: 1300px;
+        margin: 0 auto;
+        width: 100%;
+    }
+
+    .session-main {
+        flex: 1;
+        width: 100%;
+        max-width: 1000px;
+        height: 85vh;
+        background: var(--bg-secondary);
+        border-radius: 20px;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        border: 1px solid var(--border-color);
+    }
+
+    .theme-learn .ai-avatar-container {
+        padding: 1.5rem;
+        background: var(--bg-tertiary);
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .theme-learn .ai-avatar {
+        width: 100px;
+        height: 100px;
+        border-radius: 50%;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        border: 4px solid var(--bg-secondary);
+        overflow: hidden;
+        position: relative;
+    }
+
+    .theme-learn .ai-avatar img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .theme-learn .status-badge {
+        margin-top: -10px;
+        background: var(--bg-secondary);
+        padding: 0.2rem 0.8rem;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--accent-primary);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        z-index: 2;
+        border: 1px solid var(--border-color);
+    }
+
+    .theme-learn .conversation-log {
+        flex: 1;
+        overflow-y: auto;
+        padding: 2rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+        background: var(--bg-secondary);
+    }
+
+    .theme-learn .message {
+        display: flex;
+        gap: 1rem;
+        max-width: 80%;
+    }
+
+    .theme-learn .message.user {
+        align-self: flex-end;
+        flex-direction: row-reverse;
+    }
+
+    .theme-learn .message.ai {
+        align-self: flex-start;
+    }
+
+    .msg-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        overflow: hidden;
+        flex-shrink: 0;
+    }
+
+    .msg-avatar img {
+        width: 100%;
+        height: 100%;
+    }
+
+    .msg-content {
+        padding: 1rem;
+        border-radius: 18px;
+        line-height: 1.5;
+        font-size: 0.95rem;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+
+    .theme-learn .message.ai .msg-content {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+        border-top-left-radius: 4px;
+    }
+
+    .theme-learn .message.user .msg-content {
+        background: var(--accent-primary);
+        color: var(--text-inverted);
+        border-top-right-radius: 4px;
+    }
+
+    .theme-learn .controls {
+        padding: 1.5rem;
+        background: var(--bg-secondary);
+        border-top: 1px solid var(--border-color);
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+    }
+
+    .input-area {
+        flex: 1;
+        display: flex;
+        gap: 0.5rem;
+        background: var(--bg-primary);
+        padding: 0.5rem;
+        border-radius: 12px;
+        border: 1px solid var(--border-color);
+    }
+
+    .theme-learn .text-input {
+        flex: 1;
+        border: none;
+        background: transparent;
+        padding: 0.5rem;
+        font-size: 1rem;
+        outline: none;
+    }
+
+    .control-btn {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        border: none;
+        background: var(--bg-tertiary);
+        color: var(--text-secondary);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+    }
+
+    .control-btn:hover:not(:disabled) {
+        background: var(--border-color);
+        transform: translateY(-1px);
+    }
+
+    .control-btn:active:not(:disabled) {
+        transform: translateY(1px);
+    }
+
+    .control-btn.active {
+        background: var(--bg-tertiary);
+        color: var(--accent-primary);
+        border: 1px solid var(--accent-primary);
+    }
+
+    /* mic-btn and pulse-red animation removed (voice UI removed) */
+
+    .send-btn {
+        background: #3b82f6;
+        color: white;
+    }
+
+    .send-btn:hover {
+        background: #2563eb;
+    }
+
+    /* Toggle Switch */
+    .switch {
+        position: relative;
+        display: inline-block;
+        width: 50px;
+        height: 26px;
+    }
+
+    .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+
+    .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: var(--current-color);
+        transition: .4s;
+        border-radius: 34px;
+    }
+
+    .slider:before {
+        position: absolute;
+        content: "";
+        height: 20px;
+        width: 20px;
+        left: 3px;
+        bottom: 3px;
+        background-color: white;
+        transition: .4s;
+        border-radius: 50%;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    input:checked+.slider {
+        background-color: #10b981;
+    }
+
+    input:checked+.slider:before {
+        transform: translateX(24px);
+    }
+
+    .toggle-container {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text-secondary, #6b7280);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .toggle-label {
+        transition: color 0.3s;
+    }
+
+    /* Inline Thinking UI */
+    .thinking-message .msg-content {
+        background: transparent !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+    }
+
+    .thinking-bubble-inline {
+        width: 100%;
+        max-width: 600px;
+    }
+
+    .thinking-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background-color: var(--bg-tertiary, #f3f4f6);
+        padding: 8px 12px;
+        border-radius: 8px;
+        font-size: 0.9rem;
+        color: var(--text-secondary, #4b5563);
+        font-weight: 500;
+        cursor: pointer;
+        transition: background-color 0.2s;
+        user-select: none;
+    }
+
+    .thinking-header:hover {
+        background-color: var(--border-color, #e5e7eb);
+    }
+
+    .thinking-header .icon-chevron {
+        margin-left: auto;
+        font-size: 0.8rem;
+        transition: transform 0.2s;
+    }
+
+    .thinking-header.expanded .icon-chevron {
+        transform: rotate(180deg);
+    }
+
+    .thinking-logs-inline {
+        margin-top: 4px;
+        background-color: var(--bg-primary, #f9fafb);
+        border: 1px solid var(--border-color, #e5e7eb);
+        border-radius: 8px;
+        padding: 10px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.75rem;
+        color: var(--text-primary, #374151);
+        max-height: 200px;
+        overflow-y: auto;
+    }
+
+    .thinking-message.completed .thinking-header {
+        background-color: transparent;
+        color: var(--text-secondary, #6b7280);
+        border: 1px solid var(--border-color, #e5e7eb);
+    }
+
+    .spinner-tiny {
+        width: 14px;
+        height: 14px;
+        border: 2px solid #cbd5e1;
+        border-top-color: #6366f1;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    .log-item {
+        padding: 2px 0;
+        border-bottom: 1px dashed var(--bg-tertiary, #f3f4f6);
+    }
+
+    @keyframes slideDown {
+        from {
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    /* Voice/text toggle label styles removed */
+
+    .hidden {
+        display: none !important;
+    }
+
+    .thinking-bubble {
+        margin-top: 1rem;
+        background: #eef2ff;
+        color: #4338ca;
+        padding: 0.5rem 1rem;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        border: 1px solid #c7d2fe;
+    }
+
+    .spinner-small {
+        width: 14px;
+        height: 14px;
+        border: 2px solid #a5b4fc;
+        border-top-color: #4338ca;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    /* Text Mode Styles — Theme-aware with smooth transitions */
+    .session-container .session-main,
+    .session-container .controls,
+    .session-container .ai-avatar-container {
+        transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .session-container.text-mode .session-main {
+        border-color: #10b981;
+        box-shadow: 0 0 20px rgba(16, 185, 129, 0.15);
+    }
+
+    .session-container.text-mode .ai-avatar-container {
+        padding: 0.75rem 1.5rem;
+        flex-direction: row;
+        justify-content: flex-start;
+        gap: 1rem;
+        background: var(--bg-secondary, #112240);
+        border-bottom-color: rgba(16, 185, 129, 0.2);
+        min-height: auto;
+    }
+
+    .session-container.text-mode .ai-avatar {
+        width: 48px;
+        height: 48px;
+        border-width: 2px;
+        box-shadow: none;
+        animation: none;
+    }
+
+    /* audio-visualizer and status-badge text-mode styles removed */
+
+    .session-container.text-mode .thinking-bubble {
+        margin-top: 0;
+        margin-left: auto;
+        background: var(--bg-secondary, #112240);
+        border-color: rgba(16, 185, 129, 0.3);
+        color: #10b981;
+    }
+
+    /* mic-wrapper/speaker-btn text-mode hiding removed (voice UI removed) */
+
+    .session-container.text-mode .controls {
+        background: var(--bg-secondary, #112240);
+        border-top-color: rgba(16, 185, 129, 0.15);
+    }
+
+    .session-container.text-mode .input-area {
+        border-color: #10b981;
+        background: var(--bg-primary, #0a192f);
+        flex: 1;
+    }
+
+    .session-container.text-mode .text-input {
+        font-size: 1rem;
+    }
+
+    .session-container.text-mode .text-input:focus {
+        box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25);
+    }
+
+    .session-container.text-mode .message.user .msg-content {
+        background: #10b981;
+    }
+
+    .session-container.text-mode .send-btn {
+        background: #10b981;
+        transition: background 0.2s ease, transform 0.15s ease;
+    }
+
+    .session-container.text-mode .send-btn:hover {
+        background: #059669;
+        transform: scale(1.05);
+    }
+
+    /* Voice mode indicator and toggle styles removed (text-only mode) */
+
+    /* Question Type Badge */
+    .question-type-badge {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0.5rem 1rem;
+        margin: 0 2rem;
+        background: var(--bg-tertiary, #f8fafc);
+        border: 1px solid var(--border-color, #e2e8f0);
+        border-radius: 12px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--text-secondary, #475569);
+        transition: all 0.3s ease;
+    }
+
+    .qtype-dots {
+        display: flex;
+        gap: 4px;
+    }
+
+    .qtype-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--border-color, #e2e8f0);
+        transition: all 0.3s ease;
+    }
+
+    .qtype-dot.completed {
+        background: #10b981;
+    }
+
+    .qtype-dot.current {
+        background: var(--qtype-color, #3b82f6);
+        box-shadow: 0 0 6px var(--qtype-color, #3b82f6);
+        animation: dot-pulse 1.5s ease-in-out infinite;
+    }
+
+    @keyframes dot-pulse {
+
+        0%,
+        100% {
+            transform: scale(1);
+        }
+
+        50% {
+            transform: scale(1.3);
+        }
+    }
+
+    .qtype-icon {
+        font-size: 1rem;
+    }
+
+    .qtype-name {
+        color: var(--qtype-color, #3b82f6);
+        font-weight: 700;
+        letter-spacing: 0.02em;
+    }
+
+    /* Concept Info Bar */
+    .concept-info-bar {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 0.6rem 1.5rem;
+        background: var(--bg-tertiary, #f0f9ff);
+        border-bottom: 1px solid var(--border-color, #dbeafe);
+        font-size: 0.85rem;
+    }
+
+    .concept-breadcrumb {
+        color: var(--text-secondary, #6b7280);
+        font-size: 0.75rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 200px;
+    }
+
+    .concept-title-display {
+        font-weight: 700;
+        color: var(--accent-primary, #1e40af);
+        flex: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .session-progress {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-shrink: 0;
+    }
+
+    .session-progress-bar {
+        width: 80px;
+        height: 6px;
+        background: var(--border-color, #e2e8f0);
+        border-radius: 3px;
+        overflow: hidden;
+    }
+
+    .session-progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #3b82f6, #10b981);
+        border-radius: 3px;
+        transition: width 0.5s ease;
+        width: 0%;
+    }
+
+    .session-progress-text {
+        font-size: 0.7rem;
+        color: var(--text-secondary, #6b7280);
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    /* Skip Button */
+    .skip-btn {
+        background: #fef3c7;
+        color: #92400e;
+        border: 1px solid #fcd34d;
+    }
+
+    .skip-btn:hover:not(:disabled) {
+        background: #fde68a;
+        border-color: #f59e0b;
+    }
+
+    /* Improved Module Header */
+    .unit-header {
+        background: var(--bg-secondary, #ffffff);
+        padding: 1rem 1.5rem;
+        border-radius: 16px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+        margin: 2rem 0;
+        z-index: 2;
+        text-align: center;
+        width: 80%;
+        border: 2px solid var(--border-color, #e5e7eb);
+        color: var(--text-color);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .unit-header::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, var(--accent-primary, #3b82f6), #8b5cf6, #ec4899);
+    }
+
+    .unit-header .concept-count {
+        font-size: 0.75rem;
+        color: var(--text-secondary, #9ca3af);
+        margin-top: 0.3rem;
+    }
+
+    /* S-Curve positioning */
+    .node-row {
+        position: relative;
+        height: var(--node-gap);
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 2;
+    }
+
+    /* Completed node crown effect */
+    .path-node.completed .path-node-inner::after {
+        content: '👑';
+        position: absolute;
+        top: -14px;
+        font-size: 0.7rem;
+    }
+
+    /* Unit Sub-Header (inside path) */
+    .unit-sub-header {
+        padding: 0.75rem 1rem;
+        background: var(--bg-secondary, #f9fafb);
+        border: 1px solid var(--border-color, #e5e7eb);
+        border-radius: 12px;
+        margin-top: 1.5rem;
+        margin-bottom: 0.5rem;
+        width: 70%;
+        text-align: center;
+        font-weight: 700;
+        font-size: 0.9rem;
+        color: var(--text-secondary, #4b5563);
+    }
+
+    /* Lesson Sub-Header (inside path) */
+    .lesson-sub-header {
+        padding: 0.5rem;
+        color: var(--text-secondary, #6b7280);
+        font-size: 0.85rem;
+        font-weight: 600;
+        text-align: center;
+        margin-top: 0.5rem;
+    }
+
+    /* SVG path line theme */
+    .path-svg path {
+        stroke: var(--border-color, #e5e7eb);
+    }
+
+    /* Responsive overrides for learn page inline styles */
+    @media (max-width: 768px) {
+        .learn-wrapper {
+            height: auto;
+            min-height: calc(100vh - 60px);
+        }
+        .session-main {
+            height: auto;
+            min-height: 60vh;
+            max-height: calc(100vh - 120px);
+        }
+        .context-sidebar {
+            width: 100%;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .learn-wrapper {
+            min-height: calc(100vh - 52px);
+        }
+        .session-main {
+            min-height: 65vh;
+            max-height: calc(100vh - 80px);
+            border-radius: 12px;
+        }
+        .context-sidebar {
+            width: 100%;
+            max-height: 200px;
+            padding: 1rem;
+        }
+        .learn-header {
+            padding: 0 0.75rem;
+            height: 48px;
+        }
+    }
+
+    /* Mastery Badges (Task #66) */
+    .mastery-badge {
+        display: inline-block;
+        font-size: 0.85rem;
+        margin-left: 0.3rem;
+        vertical-align: middle;
+        line-height: 1;
+    }
+
+    .path-node .mastery-badge {
+        position: absolute;
+        bottom: -18px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 0.7rem;
+        z-index: 5;
+    }
+
+    .node-tooltip .mastery-badge {
+        font-size: 0.85rem;
+        margin-left: 0.25rem;
+    }
+
+    .mastery-badge-label {
+        font-size: 0.65rem;
+        color: var(--text-secondary, #6b7280);
+        display: block;
+        text-align: center;
+        margin-top: 1px;
+    }
+</style>
+
+<script>
+    document.addEventListener('DOMContentLoaded', async () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const courseUid = urlParams.get('course_uid');
+        const courseTitleEl = document.getElementById('course-title-display');
+        const pathContent = document.getElementById('path-content');
+        const pathSvg = document.getElementById('path-svg');
+        const sessionView = document.getElementById('session-view');
+        const pathView = document.getElementById('path-view');
+        let structureReady = false;  // LRN-6: Guard for node clicks
+
+        if (!courseUid) {
+            window.location.href = '/courses';
+            return;
+        }
+
+        // Text-only mode: always active, no voice toggle needed
+        const sessionContainer = document.getElementById('session-view');
+        if (sessionContainer) sessionContainer.classList.add('text-mode');
+
+        // Fetch Structure
+        try {
+            const res = await fetch(`/api/course_structure?uid=${courseUid}`);
+            const data = await res.json();
+
+            if (data.structure) {
+                if (courseTitleEl) courseTitleEl.textContent = data.title;
+                renderStructure(data.structure);
+
+                // Initialize Session Context
+                if (window.sendEvent) {
+                    setTimeout(() => window.sendEvent('SET_CONTEXT', { course_uid: courseUid }), 500);
+                }
+            } else {
+                pathContent.innerHTML = '<div class="error">Failed to load course structure.</div>';
+            }
+        } catch (e) {
+            console.error(e);
+            pathContent.innerHTML = '<div class="error">Connection error.</div>';
+        }
+
+        // ... renderStructure and other functions ...
+
+        // updateControlsForMode removed — text-only mode is always active
+
+        // Task #66: Mastery badge mapping based on bloom level and completion
+        function getMasteryBadge(bloomLevel, completed) {
+            bloomLevel = bloomLevel || 0;
+            if (bloomLevel >= 5 && completed) return { emoji: '\u2B50', label: 'Edelweiss' };
+            if (bloomLevel >= 4) return { emoji: '\uD83C\uDFD4\uFE0F', label: 'Summit' };
+            if (bloomLevel >= 3) return { emoji: '\uD83C\uDF32', label: 'Rooted' };
+            if (bloomLevel >= 2) return { emoji: '\uD83C\uDF3F', label: 'Growing' };
+            if (bloomLevel >= 1) return { emoji: '\uD83C\uDF31', label: 'Seedling' };
+            return null;  // No badge for bloom 0 (no interaction yet)
+        }
+
+        function renderStructure(structure) {
+            structureReady = false;  // Block clicks during render
+            pathContent.innerHTML = '';
+
+            // LRN-3.8: Remove old resize listener before adding new one
+            window.removeEventListener('resize', drawAllLines);
+
+            if (!structure || !structure.modules) {
+                pathContent.innerHTML = '<div class="error">Invalid course structure.</div>';
+                return;
+            }
+
+            structure.modules.forEach(mod => {
+                if (!mod || !mod.units) return;  // Null guard
+
+                const modBlock = document.createElement('div');
+                modBlock.className = 'module-block';
+
+                const modHeader = document.createElement('div');
+                modHeader.className = 'unit-header';
+                let modConceptCount = 0;
+                (mod.units || []).forEach(u => (u.lessons || []).forEach(l => { modConceptCount += (l.concepts || []).length; }));
+                modHeader.innerHTML = `<h3>${mod.title || 'Module'}</h3><div class="concept-count">${modConceptCount} concepts</div>`;
+                modBlock.appendChild(modHeader);
+
+                const nodesContainer = document.createElement('div');
+                nodesContainer.className = 'nodes-container';
+                nodesContainer.style.position = 'relative';
+
+                const modSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+                modSvg.className = 'path-svg';
+                modSvg.style.width = '100%';
+                modSvg.style.height = '100%';
+                modSvg.style.position = 'absolute';
+                modSvg.style.top = '0';
+                modSvg.style.left = '0';
+                modSvg.style.pointerEvents = 'none';
+                modSvg.style.zIndex = '1';
+                nodesContainer.appendChild(modSvg);
+
+                let globalConceptIdx = 0;
+                (mod.units || []).forEach(unit => {
+                    if (!unit || !unit.lessons) return;  // Null guard
+
+                    const unitHeader = document.createElement('div');
+                    unitHeader.className = 'unit-sub-header';
+                    unitHeader.innerHTML = `<span class="icon">🔖</span> ${unit.title || 'Unit'}`;
+                    nodesContainer.appendChild(unitHeader);
+
+                    (unit.lessons || []).forEach(lesson => {
+                        if (!lesson) return;  // Null guard
+
+                        const lessonHeader = document.createElement('div');
+                        lessonHeader.className = 'lesson-sub-header';
+                        lessonHeader.innerHTML = `<span class="icon">📖</span> ${lesson.title || 'Lesson'}`;
+                        nodesContainer.appendChild(lessonHeader);
+
+                        (lesson.concepts || []).forEach(concept => {
+                            if (!concept || !concept.uid || !concept.title) return;  // Null guard
+
+                            const row = document.createElement('div');
+                            row.className = 'node-row';
+
+                            const sPattern = [0, -70, 0, 70];
+                            const offset = sPattern[globalConceptIdx % sPattern.length];
+
+                            const nodeEl = document.createElement('button');
+                            nodeEl.className = 'path-node';
+                            nodeEl.style.transform = `translateX(${offset}px)`;
+                            nodeEl.dataset.uid = concept.uid;
+                            nodeEl.dataset.completed = concept.completed || 'false';
+                            nodeEl.dataset.bloomLevel = concept.bloom_level || 0;
+
+                            // Task #66: Build mastery badge HTML
+                            const badge = getMasteryBadge(concept.bloom_level, concept.completed);
+                            const badgeNodeHtml = badge ? `<span class="mastery-badge" title="${badge.label}">${badge.emoji}</span>` : '';
+                            const badgeTooltipHtml = badge ? `<span class="mastery-badge" title="${badge.label}">${badge.emoji}</span>` : '';
+
+                            // Task #51: Low-confidence indicator
+                            const srcConf = concept.source_confidence;
+                            const isLowConfidence = (typeof srcConf === 'number' && srcConf < 0.3);
+                            const lowConfBadge = isLowConfidence
+                                ? '<span class="low-confidence-badge" title="Low source confidence — content may be unverified">&#9888; unverified</span>'
+                                : '';
+                            if (isLowConfidence) {
+                                nodeEl.classList.add('low-confidence');
+                            }
+
+                            nodeEl.innerHTML = `
+                                <div class="path-node-inner">
+                                    <span class="icon"></span>
+                                </div>
+                                ${badgeNodeHtml}
+                                <div class="node-tooltip">${concept.title}${lowConfBadge}${badgeTooltipHtml}</div>
+                            `;
+
+                            nodeEl.onclick = () => {
+                                if (!nodeEl.classList.contains('locked')) {
+                                    enterNode(concept.uid, concept.title);
+                                }
+                            };
+
+                            row.appendChild(nodeEl);
+                            nodesContainer.appendChild(row);
+                            globalConceptIdx++;
+                        });
+                    });
+                });
+
+                modBlock.appendChild(nodesContainer);
+                pathContent.appendChild(modBlock);
+            });
+
+            // Post-Process Status
+            const allNodes = document.querySelectorAll('.path-node');
+            let foundNext = false;
+
+            allNodes.forEach(node => {
+                const isCompleted = node.dataset.completed === 'true';
+                if (isCompleted) {
+                    node.classList.add('completed');
+                    node.querySelector('.icon').textContent = '✓';
+                } else if (!foundNext) {
+                    node.classList.add('current');
+                    node.querySelector('.icon').textContent = '★';
+                    foundNext = true;
+                } else {
+                    node.classList.add('locked');
+                    node.querySelector('.icon').textContent = '🔒';
+                }
+            });
+
+            requestAnimationFrame(drawAllLines);
+            window.addEventListener('resize', drawAllLines);
+            structureReady = true;  // LRN-6: Allow node clicks now
+        }
+
+        function drawAllLines() {
+            const containers = document.querySelectorAll('.nodes-container');
+            containers.forEach(container => {
+                const svg = container.querySelector('svg');
+                const rows = container.querySelectorAll('.node-row');
+                if (svg && rows.length > 1) {
+                    drawModulePath(svg, rows, container);
+                }
+            });
+        }
+
+        function drawModulePath(svg, rows, container) {
+            const containerRect = container.getBoundingClientRect();
+            let pathsHTML = "";
+            let prevX = 0, prevY = 0;
+            let first = true;
+
+            rows.forEach((row) => {
+                const node = row.querySelector('.path-node');
+                if (!node) return;
+
+                const rect = node.getBoundingClientRect();
+                // Calculate relative to the nodes-container
+                const x = rect.left + rect.width / 2 - containerRect.left;
+                const y = rect.top + rect.height / 2 - containerRect.top;
+
+                // Determine segment color leading to this node
+                const isCompleted = node.classList.contains('completed');
+                const isCurrent = node.classList.contains('current');
+                const strokeColor = (isCompleted || isCurrent) ? "#fcd34d" : "var(--border-color, #e5e7eb)";
+
+                if (first) {
+                    first = false;
+                } else {
+                    const cpY = (prevY + y) / 2;
+                    const pathD = `M ${prevX} ${prevY} C ${prevX} ${cpY}, ${x} ${cpY}, ${x} ${y}`;
+                    pathsHTML += `
+                        <path d="${pathD}" 
+                              stroke="${strokeColor}" 
+                              stroke-width="12" 
+                              fill="none" 
+                              stroke-linecap="round" 
+                              stroke-linejoin="round" />
+                    `;
+                }
+                prevX = x; prevY = y;
+            });
+
+            svg.setAttribute("width", containerRect.width);
+            svg.setAttribute("height", containerRect.height);
+            svg.setAttribute("viewBox", `0 0 ${containerRect.width} ${containerRect.height}`);
+            svg.innerHTML = pathsHTML;
+        }
+
+        function getNodeIcon(status) {
+            if (status === 'completed') return '✓';
+            if (status === 'current') return '★';
+            return '🔒';
+        }
+
+        function enterNode(uid, title) {
+            // LRN-6: Guard — don't navigate if structure hasn't rendered yet
+            if (!structureReady) {
+                console.warn('[enterNode] Structure not ready yet');
+                return;
+            }
+            if (!uid || !title) {
+                console.warn('[enterNode] Missing concept UID or title');
+                return;
+            }
+
+            pathView.classList.add('hidden');
+            sessionView.classList.remove('hidden');
+
+            // Show concept info bar and context sidebar
+            const conceptInfoBar = document.getElementById('concept-info-bar');
+            if (conceptInfoBar) conceptInfoBar.classList.remove('hidden');
+            const contextSidebar = document.getElementById('context-sidebar');
+            if (contextSidebar) contextSidebar.classList.remove('hidden');
+            // Reset pedagogy sidebar for new concept
+            const pedagogyHints = document.getElementById('pedagogy-hints');
+            if (pedagogyHints) { pedagogyHints.classList.add('hidden'); }
+            const miscList = document.getElementById('misconceptions-list');
+            if (miscList) miscList.innerHTML = '';
+            const anaList = document.getElementById('analogies-list');
+            if (anaList) anaList.innerHTML = '';
+            const conceptTitle = document.getElementById('concept-title-display');
+            if (conceptTitle) {
+                // Task #66: Add mastery badge next to concept title in session view
+                const clickedNode = document.querySelector(`.path-node[data-uid="${uid}"]`);
+                const bloomLvl = clickedNode ? parseInt(clickedNode.dataset.bloomLevel || '0', 10) : 0;
+                const isCompleted = clickedNode ? clickedNode.dataset.completed === 'true' : false;
+                const sessionBadge = getMasteryBadge(bloomLvl, isCompleted);
+                const badgeHtml = sessionBadge ? ` <span class="mastery-badge" title="${sessionBadge.label}">${sessionBadge.emoji}</span>` : '';
+                conceptTitle.innerHTML = title + badgeHtml;
+            }
+            const courseTitle = document.getElementById('course-title-display');
+            const breadcrumb = document.getElementById('concept-breadcrumb');
+            if (breadcrumb && courseTitle) breadcrumb.textContent = courseTitle.textContent + ' ›';
+
+            // Toggle Headers
+            const sessionHeader = document.getElementById('session-header');
+            const headerLeft = document.querySelector('.header-left');
+            if (sessionHeader) sessionHeader.classList.remove('hidden');
+            if (headerLeft) headerLeft.classList.add('hidden');
+            // Reset question type badge for new concept
+            const qtypeBadge = document.getElementById('question-type-badge');
+            if (qtypeBadge) qtypeBadge.classList.add('hidden');
+
+            // Set navigation guard — suppress stale boot transcript until FSM sends fresh content
+            window.navigatingToNode = true;
+
+            // LRN-7: Safety timeout — reset flag if FSM doesn't respond within 15s
+            if (window._navGuardTimeout) clearTimeout(window._navGuardTimeout);
+            window._navGuardTimeout = setTimeout(() => {
+                if (window.navigatingToNode) {
+                    console.warn('[enterNode] Navigation guard timeout — resetting');
+                    window.navigatingToNode = false;
+                    const chatEl = document.getElementById('chat-stream');
+                    if (chatEl && chatEl.querySelector('.loading-placeholder')) {
+                        chatEl.innerHTML = `
+                            <div class="message ai" style="opacity: 0.8;">
+                                <div class="msg-avatar">
+                                    <img src="https://ui-avatars.com/api/?name=H&background=3b82f6&color=fff&size=32" alt="AI">
+                                </div>
+                                <div class="msg-content">
+                                    The tutor didn't respond in time. Try clicking the concept again, or use the Skip button.
+                                </div>
+                            </div>
+                        `;
+                    }
+                }
+            }, 60000);
+
+            // Clear chat and show loading placeholder
+            const chat = document.getElementById('chat-stream');
+            if (chat) {
+                chat.innerHTML = `
+                    <div class="message ai loading-placeholder" style="opacity: 0.7;">
+                        <div class="msg-avatar">
+                            <img src="https://ui-avatars.com/api/?name=H&background=3b82f6&color=fff&size=32" alt="AI">
+                        </div>
+                        <div class="msg-content">
+                            Starting lesson on <strong>${title}</strong>...
+                        </div>
+                    </div>
+                `;
+            }
+            if (window.resetChatSession) {
+                displayedMessagesCount = 0;
+            }
+
+            // Send navigation event to FSM
+            if (window.sendEvent) {
+                window.sendEvent('NAVIGATE_TO_TOPIC', { topic_id: uid });
+            }
+        }
+
+        // Back button in session header
+        document.getElementById('back-to-path-btn-session').addEventListener('click', async () => {
+            // LRN-9: Notify FSM to pause session (saves progress, stops audio)
+            if (window.sendEvent) {
+                window.sendEvent('PAUSE_SESSION', {});
+            }
+            // Stop any active playback
+            if (window.stopPlayback) window.stopPlayback();
+
+            const sessionHeader = document.getElementById('session-header');
+            const headerLeft = document.querySelector('.header-left');
+            const contextSidebar = document.getElementById('context-sidebar');
+
+            sessionView.classList.add('hidden');
+            pathView.classList.remove('hidden');
+
+            if (sessionHeader) sessionHeader.classList.add('hidden');
+            if (headerLeft) headerLeft.classList.remove('hidden');
+            if (contextSidebar) contextSidebar.classList.add('hidden');
+            // Hide question type badge on back navigation
+            const qtypeBadge = document.getElementById('question-type-badge');
+            if (qtypeBadge) qtypeBadge.classList.add('hidden');
+
+            // LRN-11: Re-fetch structure to show updated completion status
+            try {
+                const res = await fetch(`/api/course_structure?uid=${courseUid}`);
+                const data = await res.json();
+                if (data.structure) {
+                    renderStructure(data.structure);
+                }
+            } catch (e) {
+                console.warn('Failed to refresh structure on back:', e);
+            }
+        });
+
+
+
+        // Skip button handler
+        const skipBtn = document.getElementById('skip-concept-btn');
+        if (skipBtn) {
+            skipBtn.addEventListener('click', () => {
+                if (window.sendEvent) window.sendEvent('SKIP_CONCEPT', {});
+            });
+        }
+
+        window.appendMessage = (sender, text) => {
+            const chat = document.getElementById('chat-stream');
+            const msg = document.createElement('div');
+            msg.className = `message ${sender}`;
+
+            let avatar = '';
+            if (sender === 'ai') {
+                avatar = `<div class="msg-avatar"><img src="https://ui-avatars.com/api/?name=H&background=3b82f6&color=fff" alt="AI"></div>`;
+            } else if (sender === 'user') {
+                avatar = `<div class="msg-avatar"><img src="https://ui-avatars.com/api/?name=You&background=10b981&color=fff" alt="You"></div>`;
+            }
+
+            let formattedText = text;
+            if (sender === 'ai' && typeof marked !== 'undefined') {
+                formattedText = marked.parse(text);
+            }
+
+            msg.innerHTML = `${avatar}<div class="msg-content">${formattedText}</div>`;
+            chat.appendChild(msg);
+            chat.scrollTop = chat.scrollHeight;
+        };
+
+        // Question Type Badge Update Handler
+        const QTYPE_META = {
+            'SCENARIO': { icon: '🎬', color: '#3b82f6', name: 'Scenario' },
+            'MECHANISM': { icon: '⚙️', color: '#8b5cf6', name: 'Mechanism' },
+            'CONTRAST': { icon: '⚖️', color: '#ec4899', name: 'Contrast' },
+            'APPLICATION': { icon: '🔧', color: '#f59e0b', name: 'Application' },
+            'EDGE_CASE': { icon: '🔬', color: '#ef4444', name: 'Edge Case' },
+            'SYNTHESIS': { icon: '🧩', color: '#10b981', name: 'Synthesis' },
+        };
+
+        // Listen for status updates that contain QTYPE prefix
+        // Reuse the global socket from session.js instead of creating a duplicate
+        if (window.socket) {
+            const learnSocket = window.socket;
+            learnSocket.on('status_update', (data) => {
+                const msg = data.message || data.status || '';
+                if (msg.startsWith('QTYPE:')) {
+                    const parts = msg.split(':');
+                    // QTYPE:KEY:INDEX:TOTAL
+                    if (parts.length >= 4) {
+                        const key = parts[1];
+                        const idx = parseInt(parts[2]);
+                        const total = parseInt(parts[3]);
+                        updateQuestionTypeBadge(key, idx, total);
+                    }
+                } else if (msg.startsWith('PEDAGOGY:')) {
+                    try {
+                        const payload = JSON.parse(msg.substring(9));
+                        const hintsEl = document.getElementById('pedagogy-hints');
+                        const miscEl = document.getElementById('misconceptions-list');
+                        const anaEl = document.getElementById('analogies-list');
+                        if (hintsEl && miscEl && anaEl) {
+                            miscEl.innerHTML = '';
+                            anaEl.innerHTML = '';
+                            if (payload.misconceptions && payload.misconceptions.length) {
+                                miscEl.innerHTML = '<h4>Common Misconceptions</h4><ul>' +
+                                    payload.misconceptions.map(m => `<li>${m}</li>`).join('') + '</ul>';
+                            }
+                            if (payload.analogies && payload.analogies.length) {
+                                anaEl.innerHTML = '<h4>Analogies</h4><ul>' +
+                                    payload.analogies.map(a => `<li>${a}</li>`).join('') + '</ul>';
+                            }
+                            if (miscEl.innerHTML || anaEl.innerHTML) {
+                                hintsEl.classList.remove('hidden');
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('Failed to parse PEDAGOGY update:', e);
+                    }
+                } else if (msg.startsWith('CPROG:')) {
+                    // CPROG:TITLE:COMPLETED:TOTAL
+                    const parts = msg.split(':');
+                    if (parts.length >= 4) {
+                        const conceptTitle = parts[1];
+                        const completed = parseInt(parts[2]);
+                        const total = parseInt(parts[3]);
+                        // Update concept info bar
+                        const titleEl = document.getElementById('concept-title-display');
+                        if (titleEl) titleEl.textContent = conceptTitle;
+                        const infoBar = document.getElementById('concept-info-bar');
+                        if (infoBar) infoBar.classList.remove('hidden');
+                        // Update progress
+                        const fillEl = document.getElementById('session-progress-fill');
+                        const textEl = document.getElementById('session-progress-text');
+                        if (fillEl) fillEl.style.width = `${Math.round((completed / total) * 100)}%`;
+                        if (textEl) textEl.textContent = `${completed} / ${total}`;
+                    }
+                } else if (msg === 'COURSE_COMPLETE') {
+                    // Show completion overlay with next-step options
+                    showCourseCompleteOverlay();
+                }
+            });
+        }
+
+        window.updateQuestionTypeBadge = function (key, idx, total) {
+            const badge = document.getElementById('question-type-badge');
+            const dotsEl = document.getElementById('qtype-dots');
+            const iconEl = document.getElementById('qtype-icon');
+            const nameEl = document.getElementById('qtype-name');
+            const meta = QTYPE_META[key];
+            if (!badge || !meta) return;
+
+            badge.classList.remove('hidden');
+            badge.style.setProperty('--qtype-color', meta.color);
+            badge.style.borderColor = meta.color + '40';
+
+            // Update dots
+            dotsEl.innerHTML = '';
+            for (let i = 0; i < total; i++) {
+                const dot = document.createElement('span');
+                dot.className = 'qtype-dot';
+                if (i < idx) dot.classList.add('completed');
+                else if (i === idx) dot.classList.add('current');
+                dotsEl.appendChild(dot);
+            }
+
+            iconEl.textContent = meta.icon;
+            nameEl.textContent = meta.name;
+            nameEl.style.color = meta.color;
+        };
+
+        // --- Course Completion Overlay ---
+        window.showCourseCompleteOverlay = function() {
+            // Remove existing overlay if any
+            const existing = document.getElementById('course-complete-overlay');
+            if (existing) existing.remove();
+
+            const overlay = document.createElement('div');
+            overlay.id = 'course-complete-overlay';
+            overlay.style.cssText = `
+                position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+                display: flex; align-items: center; justify-content: center;
+                z-index: 1000; animation: fadeIn 0.3s ease;
+            `;
+            overlay.innerHTML = `
+                <div style="background: var(--bg-primary, #1a1a2e); border-radius: 20px;
+                    padding: 2.5rem; max-width: 420px; width: 90%; text-align: center;
+                    border: 1px solid rgba(16,185,129,0.3); box-shadow: 0 20px 60px rgba(0,0,0,0.5);">
+                    <div style="font-size: 3rem; margin-bottom: 1rem;">🎉</div>
+                    <h2 style="color: #10b981; margin: 0 0 0.5rem;">Course Complete!</h2>
+                    <p style="color: var(--text-secondary, #a0a0b0); margin-bottom: 1.5rem;">
+                        Great work finishing this course. What would you like to do next?
+                    </p>
+                    <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                        <button onclick="document.getElementById('course-complete-overlay').remove();
+                            window.location.href='/review';"
+                            style="padding: 0.75rem; border-radius: 10px; border: 1px solid rgba(59,130,246,0.3);
+                            background: rgba(59,130,246,0.1); color: #3b82f6; cursor: pointer; font-size: 0.95rem;">
+                            📝 Review with Flashcards
+                        </button>
+                        <button onclick="document.getElementById('course-complete-overlay').remove();
+                            window.location.href='/courses';"
+                            style="padding: 0.75rem; border-radius: 10px; border: 1px solid rgba(16,185,129,0.3);
+                            background: rgba(16,185,129,0.1); color: #10b981; cursor: pointer; font-size: 0.95rem;">
+                            📚 Browse More Courses
+                        </button>
+                        <button onclick="document.getElementById('course-complete-overlay').remove();"
+                            style="padding: 0.75rem; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);
+                            background: transparent; color: var(--text-secondary, #a0a0b0); cursor: pointer; font-size: 0.85rem;">
+                            Stay Here
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+        };
+
+        // --- Mode Indicator Badge ---
+        // Updates the session header to show which learning mode is active
+        const _modeLabels = {
+            'SOCRATIC_LEARNING': { label: 'Socratic Learning', color: '#3b82f6', icon: '🎓' },
+            'SPACED_REPETITION': { label: 'Spaced Repetition', color: '#f59e0b', icon: '📝' },
+            'MEMORY_PALACE': { label: 'Memory Palace', color: '#8b5cf6', icon: '🏛' },
+            'LOBBY': { label: 'Ready', color: '#6b7280', icon: '⏸' }
+        };
+
+        // Poll state to update mode indicator (piggybacks on existing state_update)
+        learnSocket.on('state_update', (data) => {
+            const fsmState = data && data.state;
+            const modeBadge = document.getElementById('mode-indicator-badge');
+            if (!modeBadge || !fsmState) return;
+            const meta = _modeLabels[fsmState] || _modeLabels['LOBBY'];
+            modeBadge.textContent = `${meta.icon} ${meta.label}`;
+            modeBadge.style.borderColor = meta.color + '40';
+            modeBadge.style.color = meta.color;
+        });
+    });
+</script>
+
+<!-- Thinking Bubble Template -->
+<template id="thinking-bubble-template">
+    <div class="message ai thinking-message">
+        <div class="msg-avatar">
+            <img src="https://ui-avatars.com/api/?name=H&background=3b82f6&color=fff" alt="AI">
+        </div>
+        <div class="msg-content">
+            <div class="thinking-header">
+                <div class="spinner-tiny"></div>
+                <span class="thinking-text">Thinking...</span>
+                <span class="thinking-toggle-icon">▼</span>
+            </div>
+            <div class="thinking-logs-inline hidden">
+                <div class="logs-content">
+                    <!-- Logs will be appended here -->
+                </div>
+            </div>
+        </div>
+</template>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<!-- session.js loaded via head_scripts block -->
+<script src="{{ url_for('static', filename='js/session-rails.js') }}"></script>
+{% endblock %}

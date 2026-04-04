@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+
+{% block title %}Helga - Courses{% endblock %}
+
+{% block content %}
+<div class="page-section">
+    <div class="action-bar">
+        <div>
+            <h1>My Courses</h1>
+            <p class="page-subtitle">Your library of learning paths</p>
+        </div>
+        <div class="action-buttons">
+            <button class="btn-alpine btn-alpine-primary" onclick="openQuickCreate()">Quick Create</button>
+            <button class="btn-alpine btn-alpine-secondary" onclick="window.location.href='/courses/new'">Build Custom</button>
+        </div>
+    </div>
+
+    <div id="courses-grid" class="course-card-grid">
+        <div class="empty-state" id="courses-loading">
+            <div class="empty-icon">📚</div>
+            <h3>Loading courses...</h3>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Create Modal -->
+<div id="quick-create-backdrop" class="alpine-modal-backdrop" onclick="if(event.target===this) closeQuickCreate();">
+    <div class="alpine-modal">
+        <!-- Phase 1: Form -->
+        <div id="qc-form-phase">
+            <h2>Quick Create Course</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 1.25rem;">
+                Enter a topic and Helga will generate a complete course with modules, lessons, and concepts.
+            </p>
+            <div class="form-group-alpine">
+                <label for="qc-topic">What do you want to learn?</label>
+                <input type="text" id="qc-topic" placeholder="e.g. Classical Mechanics, Machine Learning..." autofocus>
+                <small id="qc-topic-error" style="color: var(--status-error); display: none;"></small>
+            </div>
+            <div class="form-group-alpine">
+                <label>Scope <span style="font-weight:400;color:var(--text-secondary)">— how much territory</span></label>
+                <div class="depth-slider">
+                    <span>🔍</span>
+                    <input type="range" id="qc-scope" min="1" max="5" value="2">
+                    <span>🌍</span>
+                </div>
+                <div class="slider-labels">
+                    <span>Focused</span>
+                    <span>Targeted</span>
+                    <span>Standard</span>
+                    <span>Broad</span>
+                    <span>Comprehensive</span>
+                </div>
+            </div>
+            <div class="form-group-alpine">
+                <label>Mastery <span style="font-weight:400;color:var(--text-secondary)">— how deep</span></label>
+                <div class="depth-slider">
+                    <span>🌱</span>
+                    <input type="range" id="qc-mastery" min="1" max="5" value="2">
+                    <span>🏔️</span>
+                </div>
+                <div class="slider-labels">
+                    <span>Awareness</span>
+                    <span>Understanding</span>
+                    <span>Application</span>
+                    <span>Proficiency</span>
+                    <span>Expertise</span>
+                </div>
+            </div>
+            <div class="form-group-alpine">
+                <label>Starting From <span style="font-weight:400;color:var(--text-secondary)">— your background</span></label>
+                <div class="depth-slider">
+                    <span>👶</span>
+                    <input type="range" id="qc-start" min="1" max="5" value="1">
+                    <span>🎓</span>
+                </div>
+                <div class="slider-labels">
+                    <span>None</span>
+                    <span>Basic</span>
+                    <span>Foundation</span>
+                    <span>Intermediate</span>
+                    <span>Advanced</span>
+                </div>
+            </div>
+            <div class="depth-estimate" id="qc-depth-estimate">~8 concepts · ~1.5 hours</div>
+            <div class="form-group-alpine">
+                <label for="qc-style">Teaching Style</label>
+                <select id="qc-style">
+                    <option value="">Default (Socratic)</option>
+                    <option value="ELI5">Explain Like I'm Five</option>
+                    <option value="Academic">Strict Academic</option>
+                    <option value="Analogies">Lots of Analogies</option>
+                    <option value="Drill">Quiz Drill</option>
+                </select>
+            </div>
+            <div style="display: flex; gap: 0.75rem; margin-top: 1.5rem;">
+                <button class="btn-alpine btn-alpine-primary" style="flex: 1;" onclick="submitQuickCreate()">Create Course</button>
+                <button class="btn-alpine btn-alpine-secondary" onclick="closeQuickCreate()">Cancel</button>
+            </div>
+        </div>
+
+        <!-- Phase 2: Animated Progress -->
+        <div id="qc-progress-phase" style="display: none;">
+            <div class="build-header">
+                <div class="build-phase-indicator">
+                    <div class="phase-dot active" id="phase-skeleton"></div>
+                    <div class="phase-line"></div>
+                    <div class="phase-dot" id="phase-hydrate"></div>
+                    <div class="phase-line"></div>
+                    <div class="phase-dot" id="phase-complete"></div>
+                </div>
+                <div class="build-phase-labels">
+                    <span class="active" id="phase-label-skeleton">Building Structure</span>
+                    <span id="phase-label-hydrate">Generating Content</span>
+                    <span id="phase-label-complete">Complete</span>
+                </div>
+            </div>
+
+            <h2 id="qc-progress-title" style="margin: 1rem 0 0.25rem 0; font-size: 1.2rem;">Building Course...</h2>
+            <p id="qc-progress-status" style="color: var(--text-secondary); font-size: 0.88rem; margin: 0 0 1rem 0;">Initializing skeleton builder...</p>
+
+            <div class="alpine-progress" style="height: 6px;">
+                <div class="alpine-progress-fill" id="qc-progress-bar" style="width: 0%"></div>
+            </div>
+
+            <!-- Live Structure Tree -->
+            <div id="qc-progress-tree" class="build-tree" style="margin-top: 1.25rem;">
+                <div class="build-tree-placeholder">
+                    <div class="skeleton-pulse"></div>
+                    <span>Waiting for structure...</span>
+                </div>
+            </div>
+
+            <!-- Collapsible Log Terminal -->
+            <details class="build-logs-toggle" style="margin-top: 1rem;">
+                <summary style="cursor: pointer; font-size: 0.82rem; color: var(--text-secondary); font-weight: 600;">System Logs</summary>
+                <div id="qc-progress-logs" class="log-terminal" style="margin-top: 0.5rem;"></div>
+            </details>
+
+            <!-- Completion Actions -->
+            <div id="qc-progress-actions" style="display: none; margin-top: 1.25rem;">
+                <div class="build-complete-card">
+                    <div class="build-complete-icon">&#10003;</div>
+                    <h3 id="qc-complete-title">Course Created!</h3>
+                    <p id="qc-complete-summary" style="color: var(--text-secondary); margin: 0.5rem 0 1rem 0;"></p>
+                    <button class="btn-alpine btn-alpine-primary" style="width: 100%;" id="qc-start-learning-btn">Start Learning</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% block page_scripts %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/courses.css') }}?v=6">
+<script src="{{ url_for('static', filename='js/socket.io.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/progress-tree.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='js/courses.js') }}?v=6"></script>
+{% endblock %}
+{% endblock %}

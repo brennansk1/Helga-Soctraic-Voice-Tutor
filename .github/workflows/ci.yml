@@ -1,0 +1,54 @@
+name: Helga CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install core dependencies
+        run: |
+          pip install -r services/core/requirements.txt
+          pip install pytest
+
+      - name: Install web-ui dependencies
+        run: |
+          pip install flask flask-socketio gevent python-socketio python-engineio requests werkzeug
+
+      - name: Run core unit tests
+        run: python -m pytest tests/core/ -v --tb=short
+
+      - name: Run verification tests
+        run: python -m pytest tests/verification/ -v --tb=short
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r services/core/requirements.txt
+          pip install flask flask-socketio gevent python-socketio python-engineio requests werkzeug pytest
+
+      - name: Run integration tests
+        run: python -m pytest tests/integration/test_web_routes.py -v --tb=short
