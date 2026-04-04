@@ -809,53 +809,67 @@ class SkeletonBuilder:
 
         self.used_titles = set()
 
-        # Build complexity guidance based on mastery level
-        mastery_guide = {
-            1: f"COMPLEXITY CONSTRAINT: This is a {cp['mastery_label']}-level course. "
-               f"Concepts should be things a complete beginner would learn. "
-               f"Use everyday language equivalents of technical terms. "
-               f"Example for 'Basic Astronomy': stars, planets, the solar system, seasons, the moon — NOT Lagrangian points or spectral classification.",
-            2: f"COMPLEXITY CONSTRAINT: This is a {cp['mastery_label']}-level course. "
-               f"Concepts should be what a high school or introductory college student would learn. "
-               f"Introduce standard terminology but explain it. "
-               f"Example for 'Astronomy': telescope types, light-years, stellar life cycles, galaxy classification — NOT Friedmann equations.",
-            3: f"COMPLEXITY CONSTRAINT: This is a {cp['mastery_label']}-level course. "
-               f"Concepts should be what an undergraduate would study. "
-               f"Use proper technical terms. Cover mechanisms and relationships.",
-            4: f"COMPLEXITY CONSTRAINT: This is a {cp['mastery_label']}-level course. "
-               f"Concepts should be at the level of a senior undergraduate or early graduate student. "
-               f"Include formal methods, named theorems, and analytical frameworks.",
-            5: f"COMPLEXITY CONSTRAINT: This is a {cp['mastery_label']}-level course. "
-               f"Concepts should be at research/doctoral level. "
-               f"Include frontier topics, open problems, and advanced theoretical frameworks.",
-        }
+        # Build Bloom progression map — distribute levels across modules
+        bloom_floor = cp["bloom_floor"]
+        bloom_ceiling = cp["bloom_ceiling"]
+        bloom_labels = {1: "Remember", 2: "Understand", 3: "Apply", 4: "Analyze", 5: "Evaluate", 6: "Create"}
 
-        # Build starting_from guidance
+        # Calculate per-module bloom targets
+        bloom_range = bloom_ceiling - bloom_floor
+        module_bloom_targets = []
+        for i in range(target_modules):
+            progress = i / max(target_modules - 1, 1)  # 0.0 to 1.0
+            bloom = bloom_floor + round(progress * bloom_range)
+            bloom = max(bloom_floor, min(bloom_ceiling, bloom))
+            label = bloom_labels.get(bloom, "Apply")
+            module_bloom_targets.append((bloom, label))
+
+        # Build the progression schedule string for the prompt
+        progression_schedule = "\n".join([
+            f"  Module {i+1}: Bloom {b} ({l}) — " + (
+                "Beginner-friendly. Define key terms. Use analogies." if b <= 1 else
+                "Build understanding. Explain how concepts connect." if b == 2 else
+                "Apply concepts. Show methods and procedures." if b == 3 else
+                "Analyze and compare. Formal methods and trade-offs." if b == 4 else
+                "Evaluate and critique. Advanced techniques and limitations." if b == 5 else
+                "Create and synthesize. Original application of frameworks."
+            )
+            for i, (b, l) in enumerate(module_bloom_targets)
+        ])
+
         starting_guide = cp["starting_instruction"]
 
-        # Structured prompt with three-slider awareness
+        # Structured prompt with explicit progression schedule
         prompt = (
             f"Topic: {topic}\n"
             f"Scope: {self.scope}/5 ({cp['scope_label']} — {cp['scope_desc']})\n"
-            f"Mastery Target: {self.mastery}/5 ({cp['mastery_label']})\n"
-            f"Student Background: {self.starting_from}/5 ({cp['starting_label']})\n"
+            f"Mastery Target: {self.mastery}/5 ({cp['mastery_label']}) — student wants to reach Bloom level {bloom_ceiling} ({bloom_labels.get(bloom_ceiling, 'Apply')})\n"
+            f"Student Background: {self.starting_from}/5 ({cp['starting_label']}) — starting at Bloom level {bloom_floor} ({bloom_labels.get(bloom_floor, 'Remember')})\n"
             f"{temporal_constraint}\n"
             f"{category_constraint}\n\n"
             f"Create exactly {target_modules} PROGRESSIVE modules for a course on '{topic}'.\n\n"
-            f"{mastery_guide.get(self.mastery, mastery_guide[2])}\n\n"
+            f"PROGRESSION SCHEDULE — Each module MUST match its assigned complexity level:\n"
+            f"{progression_schedule}\n\n"
+            f"THIS IS A JOURNEY from Bloom {bloom_floor} ({bloom_labels.get(bloom_floor)}) to Bloom {bloom_ceiling} ({bloom_labels.get(bloom_ceiling)}).\n"
+            f"The FIRST modules must be genuinely accessible to someone with {cp['starting_label'].lower()} background.\n"
+            f"The LAST modules should reach {cp['mastery_label'].lower()} level.\n"
+            f"DO NOT start at the target level — BUILD UP TO IT gradually.\n\n"
             f"STUDENT BACKGROUND: {starting_guide}\n\n"
             "CRITICAL RULES:\n"
-            "1. PROGRESSIVE BUILD ORDER — Module 1 is the foundation. Each subsequent module BUILDS ON and REQUIRES the previous one. "
-            "A student who skips Module 2 should be unable to understand Module 3.\n"
-            "2. NON-OVERLAPPING SCOPE — each module's 'scope' array must cover DIFFERENT sub-topics. No scope item should appear in multiple modules.\n"
-            "3. Specific multi-word titles naming REAL recognized sub-areas of this field. No generic words (Basics/Overview/Advanced/Introduction/Fundamental/Axioms/Dynamics/Synthesis).\n"
-            "4. The 'scope' array must contain REAL, established concepts that MATCH THE MASTERY LEVEL — "
-            f"concepts a {cp['mastery_label'].lower()}-level student would actually study.\n"
-            "5. Each module's 'rationale' must explain HOW it builds on the previous module.\n\n"
-            "ANTI-COPY WARNING: The example below shows JSON FORMAT ONLY. The bracket placeholders are NOT real titles. "
-            "You MUST replace ALL bracket placeholders with real sub-areas and real named concepts from the field of " + topic + ".\n"
-            "Do NOT use words from the example like 'Foundational', 'Core Methods', 'Advanced Applications', 'Theory Area', etc.\n\n"
-            f"Return strict JSON array (replace ALL bracket placeholders with real content):\n{example_json}"
+            "1. PROGRESSIVE BUILD ORDER — Module 1 is the SIMPLEST. Each module increases in sophistication. "
+            "A student who skips Module 2 CANNOT understand Module 3. "
+            "The first 1-2 modules must use plain language and concrete examples.\n"
+            "2. NON-OVERLAPPING SCOPE — each module's 'scope' array covers DIFFERENT sub-topics.\n"
+            "3. Specific multi-word titles naming REAL recognized sub-areas. "
+            "No generic words (Basics/Overview/Advanced/Introduction/Fundamental).\n"
+            "4. The 'scope' array concepts must MATCH THAT MODULE'S BLOOM LEVEL — "
+            "Module 1 scope should be simple concepts, final module scope should be advanced.\n"
+            "5. Each module's 'rationale' must explain HOW it builds on the previous module "
+            "AND why this complexity level is appropriate at this point in the journey.\n\n"
+            "ANTI-COPY WARNING: The example below shows JSON FORMAT ONLY. "
+            "Replace ALL bracket placeholders with real content from " + topic + ".\n"
+            "Do NOT use words from the example like 'Foundational', 'Core Methods', 'Advanced Applications'.\n\n"
+            f"Return strict JSON array:\n{example_json}"
         )
 
         max_retries = 3
@@ -1072,26 +1086,48 @@ class SkeletonBuilder:
                 else "No modules covered yet."
             )
 
-            # Level-specific strict constraints
-            level_constraint = ""
+            # Bloom-progressive level constraints per module
             ordinal = module_dict.get("ordinal", 1)
             total_modules = len(module_refs)
+            bloom_labels_map = {1: "Remember", 2: "Understand", 3: "Apply", 4: "Analyze", 5: "Evaluate", 6: "Create"}
+            bloom_floor = self.course_params.get("bloom_floor", 1)
+            bloom_ceiling = self.course_params.get("bloom_ceiling", 5)
+            bloom_range = bloom_ceiling - bloom_floor
+            progress = (ordinal - 1) / max(total_modules - 1, 1)
+            module_bloom = bloom_floor + round(progress * bloom_range)
+            module_bloom = max(bloom_floor, min(bloom_ceiling, module_bloom))
+            module_bloom_label = bloom_labels_map.get(module_bloom, "Apply")
+
+            bloom_descriptors = {
+                1: "Use plain language. Define every term. Concrete everyday examples only. A complete beginner must understand everything.",
+                2: "Explain concepts and relationships. 'Why' and 'how' questions. The student knows basic vocabulary now.",
+                3: "Show how to apply methods. Step-by-step procedures. The student can now use what they've learned.",
+                4: "Compare, contrast, and analyze. Formal methods and trade-offs. The student has working knowledge.",
+                5: "Evaluate approaches critically. Limitations, assumptions, edge cases. The student can judge quality.",
+                6: "Synthesize and create. Original applications, design decisions, research directions.",
+            }
+
+            level_constraint = (
+                f"BLOOM LEVEL FOR THIS MODULE: {module_bloom} ({module_bloom_label})\n"
+                f"{bloom_descriptors.get(module_bloom, bloom_descriptors[3])}\n"
+                f"This is module {ordinal} of {total_modules}. "
+            )
             if ordinal == 1:
-                level_constraint = (
-                    f"STRICT: This is the FIRST module. Cover the foundational definitions, "
-                    f"core frameworks, and key terminology of {topic}. "
-                    f"No advanced methods — establish the base that later modules build on."
+                level_constraint += (
+                    f"This is the FIRST module — it must be the SIMPLEST. "
+                    f"Cover what the field IS, why it matters, and basic vocabulary. "
+                    f"A student with NO background in {topic} must be able to follow every concept."
                 )
             elif ordinal == total_modules:
-                level_constraint = (
-                    f"STRICT: This is the FINAL module. Cover advanced methods, specialized techniques, "
-                    f"and practical applications of {topic}. "
-                    f"Assume the student has mastered content from all previous modules."
+                level_constraint += (
+                    f"This is the FINAL module — it should be the MOST ADVANCED. "
+                    f"The student has built up through {ordinal-1} prior modules. "
+                    f"Cover the most sophisticated techniques and applications."
                 )
             else:
-                level_constraint = (
-                    f"STRICT: This is module {ordinal} of {total_modules}. "
-                    f"Build on earlier foundations. Cover the core methods and analytical tools of this sub-area."
+                level_constraint += (
+                    f"The student has completed {ordinal-1} simpler module(s). "
+                    f"This module should be MORE complex than the previous but LESS complex than the next."
                 )
 
             # Re-emit STRUCT:MODULE to reset the UI container pointer for this module.
@@ -1304,13 +1340,21 @@ class SkeletonBuilder:
                         self.status_callback(
                             f"LOG: Generating concepts for lesson: {l_title}"
                         )
-                    # Mastery-appropriate concept naming guidance
+                    # Compute this module's bloom level for concept complexity
+                    _bloom_labels = {1: "Remember", 2: "Understand", 3: "Apply", 4: "Analyze", 5: "Evaluate", 6: "Create"}
+                    _bf = self.course_params.get("bloom_floor", 1)
+                    _bc = self.course_params.get("bloom_ceiling", 5)
+                    _prog = (module_dict.get("ordinal", 1) - 1) / max(len(module_refs) - 1, 1)
+                    _mod_bloom = max(_bf, min(_bc, _bf + round(_prog * (_bc - _bf))))
+                    _mod_bloom_label = _bloom_labels.get(_mod_bloom, "Apply")
+
+                    # Bloom-appropriate concept naming guidance
                     naming_guide = {
                         1: (f"- Use SIMPLE, DESCRIPTIVE names a beginner would understand.\n"
                             f"- Good: 'What Causes What', 'Confusing Correlation with Causation', 'Controlled Experiments'\n"
-                            f"- Bad: 'D-Separation', 'SUTVA', 'Propensity Score' (too technical for awareness level)\n"
+                            f"- Bad: 'D-Separation', 'SUTVA', 'Propensity Score' (too technical for this level)\n"
                             f"- Each concept should be explainable in one simple sentence."),
-                        2: (f"- Use clear names that introduce key ideas. Technical terms OK if they're standard vocabulary.\n"
+                        2: (f"- Use clear names that introduce key ideas. Technical terms OK if standard vocabulary.\n"
                             f"- Good: 'Confounding Variables', 'Randomized Experiments', 'Correlation vs Causation'\n"
                             f"- Bad: 'Instrumental Variable Estimation', 'G-computation Algorithm' (too advanced)"),
                         3: (f"- Use proper technical names from the field.\n"
@@ -1320,26 +1364,28 @@ class SkeletonBuilder:
                             f"- Good: 'SUTVA', 'D-Separation', 'Inverse Probability Weighting', 'Structural Causal Models'"),
                         5: (f"- Use research-level terminology: named theorems, algorithms, estimation procedures.\n"
                             f"- Good: 'Do-Calculus Rules', 'G-estimation', 'Structural Nested Mean Models'"),
-                    }.get(self.mastery, "- Use appropriate technical names from the field.")
+                    }.get(_mod_bloom, "- Use appropriate technical names from the field.")
 
                     concepts_prompt = (
                         f"Course: {topic}\n"
-                        f"Module: {m_title} | Unit: {u_title} | Lesson: {l_title}\n"
-                        f"Mastery Level: {mastery_label} ({self.mastery}/5)\n\n"
-                        f"### SIBLING LESSONS IN THIS UNIT (concepts must NOT overlap with these lessons' topics):\n{sibling_lessons_str}\n\n"
-                        f"### CONCEPTS ALREADY GENERATED IN THIS UNIT (do NOT repeat or rephrase):\n{prev_concepts_str}\n\n"
+                        f"Module: {m_title} (Module {module_dict.get('ordinal',1)}/{len(module_refs)})\n"
+                        f"Unit: {u_title} | Lesson: {l_title}\n"
+                        f"THIS MODULE'S Bloom Level: {_mod_bloom} ({_mod_bloom_label})\n\n"
+                        f"### SIBLING LESSONS IN THIS UNIT (concepts must NOT overlap):\n{sibling_lessons_str}\n\n"
+                        f"### CONCEPTS ALREADY GENERATED (do NOT repeat):\n{prev_concepts_str}\n\n"
                         f"Generate exactly {base_concepts} key concepts for this lesson on '{l_title}'.\n\n"
-                        f"CONCEPT NAMING RULES (MASTERY LEVEL {self.mastery} — {mastery_label}):\n"
+                        f"CONCEPT NAMING RULES (Bloom {_mod_bloom} — {_mod_bloom_label}):\n"
                         f"{naming_guide}\n"
                         f"- 1-6 words. Each concept must be narrower than the lesson title.\n"
                         f"- NEVER invent fake theorem or axiom names.\n\n"
-                        f"Each concept needs 2 specific learning objectives appropriate for {mastery_label} level.\n"
+                        f"Each concept needs 2 learning objectives appropriate for Bloom level {_mod_bloom} ({_mod_bloom_label}).\n"
                         f"Return JSON: [{{'title': 'Concept Name', 'objectives': ['Learn X', 'Understand Y']}}]"
                     )
 
                     concepts_sys = (
-                        f"Expert curriculum designer for a {mastery_label}-level course on {topic}. "
-                        f"Match concept complexity to mastery level {self.mastery}/5. "
+                        f"Expert curriculum designer for {topic}. "
+                        f"This module is at Bloom level {_mod_bloom} ({_mod_bloom_label}). "
+                        f"Match concept complexity to THIS module's level, not the course maximum. "
                         f"Return strict JSON array only. Never invent fake theorem or axiom names."
                     )
                     concepts_data = llm_generate_json(
