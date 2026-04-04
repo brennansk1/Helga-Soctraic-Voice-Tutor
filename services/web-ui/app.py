@@ -1203,6 +1203,26 @@ def proxy_create_course():
         return jsonify({'error': str(e)}), 502
 
 
+@app.route('/api/creation_status', methods=['GET'])
+def proxy_creation_status():
+    """Monitor course creation progress — phase, topic, progress %."""
+    try:
+        resp = requests.get(f'{SERVICES["core"]}/api/creation_status', timeout=5)
+        return jsonify(resp.json()), resp.status_code
+    except Exception as e:
+        return jsonify({'active': False, 'phase': None, 'error': str(e)}), 200
+
+
+@app.route('/api/cancel_creation', methods=['POST'])
+def proxy_cancel_creation():
+    """Cancel in-progress course creation."""
+    try:
+        resp = requests.post(f'{SERVICES["core"]}/api/cancel_creation', json={}, timeout=5)
+        return jsonify(resp.json()), resp.status_code
+    except Exception as e:
+        return jsonify({'error': str(e)}), 502
+
+
 # --- VG-02: Proxy /api/due_concepts to RAG ---
 @app.route('/api/due_concepts', methods=['GET'])
 def proxy_due_concepts():

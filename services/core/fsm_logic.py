@@ -216,6 +216,15 @@ class MnemosyneFSM:
         # State Variables
         self.active_course_uid = None
         self.creation_in_progress = False  # Guard for concurrent generation
+        self.creation_status = {
+            "active": False,
+            "topic": None,
+            "phase": None,  # skeleton, audit, hydration, complete, error
+            "started_at": None,
+            "course_uid": None,
+            "progress_pct": 0,
+            "last_update": None,
+        }
 
         # State Variables
         self.user_level = 5
@@ -2681,6 +2690,12 @@ class MnemosyneFSM:
         # Run in background thread
         def _creation_pipeline():
             self.creation_in_progress = True
+            self.creation_status.update({
+                "active": True, "topic": topic, "phase": "initializing",
+                "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                "course_uid": None, "progress_pct": 0,
+                "last_update": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            })
             logging.info(
                 f"[PIPELINE] Starting creation pipeline for '{topic}' depth={depth} source={content_source}"
             )
@@ -2698,6 +2713,7 @@ class MnemosyneFSM:
                 self.send_status_update(f"Storage ready ({elapsed:.0f}s)")
 
                 # 2. Build Skeleton
+                self.creation_status.update({"phase": "skeleton", "progress_pct": 10, "last_update": time.strftime("%Y-%m-%dT%H:%M:%S")})
                 self.send_status_update("Architecting Course Skeleton...")
                 logging.info(f"[PIPELINE] Step 2: Building skeleton for '{topic}'")
                 # ZIM/Kolibri providers removed — all content is LLM-generated
@@ -2738,6 +2754,7 @@ class MnemosyneFSM:
                 )
 
                 # 3. Audit Syllabus
+                self.creation_status.update({"phase": "audit", "progress_pct": 30, "course_uid": course_uid, "last_update": time.strftime("%Y-%m-%dT%H:%M:%S")})
                 auditor = SyllabusAuditor(
                     status_callback=self.send_status_update, storage=self.storage
                 )
@@ -2752,6 +2769,7 @@ class MnemosyneFSM:
                 )
 
                 # 4. Hydrate Content
+                self.creation_status.update({"phase": "hydration", "progress_pct": 40, "last_update": time.strftime("%Y-%m-%dT%H:%M:%S")})
                 self.send_status_update("Hydrating Content & Pedagogy...")
                 logging.info(
                     f"[PIPELINE] Step 3: Hydrating content for course {course_uid}"
@@ -2782,6 +2800,7 @@ class MnemosyneFSM:
                     logging.warning(f"[PIPELINE] Failed to set course status: {e}")
 
                 elapsed = time.time() - pipeline_start
+                self.creation_status.update({"phase": "complete", "progress_pct": 100, "last_update": time.strftime("%Y-%m-%dT%H:%M:%S")})
                 self.send_status_update(f"Course built successfully! ({elapsed:.0f}s)")
                 logging.info(f"[PIPELINE] Course creation complete in {elapsed:.0f}s")
                 self.speak("Course creation successful.")
@@ -2790,7 +2809,7 @@ class MnemosyneFSM:
                 logging.error(
                     f"[PIPELINE] Creation pipeline failed: {e}", exc_info=True
                 )
-                # AUTO-12: Log full error, send user-friendly message
+                self.creation_status.update({"phase": "error", "progress_pct": 0, "last_update": time.strftime("%Y-%m-%dT%H:%M:%S")})
                 self.send_status_update(
                     f"Error creating course. Check logs for details."
                 )
@@ -2802,6 +2821,7 @@ class MnemosyneFSM:
                 self.send_status_update("Restarting Systems...")
                 logging.info("[PIPELINE] Step 5: Restarting services")
                 self.creation_in_progress = False
+                self.creation_status["active"] = False
                 sm.restart_after_ingestion()
 
         threading.Thread(target=_creation_pipeline).start()
@@ -3316,6 +3336,27 @@ def api_reset_state():
     fsm.current_teaching_style = ""
     fsm.creation_in_progress = False
     return jsonify({"status": "reset", "state": "LOBBY"})
+
+
+@app.route("/api/creation_status", methods=["GET"])
+def api_creation_status():
+    """Monitor course creation progress. Returns current phase, topic, and progress."""
+    return jsonify(fsm.creation_status)
+
+
+@app.route("/api/cancel_creation", methods=["POST"])
+def api_cancel_creation():
+    """Cancel an in-progress course creation."""
+    if not fsm.creation_in_progress:
+        return jsonify({"status": "no_creation_active"})
+    fsm.creation_in_progress = False
+    fsm.creation_status.update({
+        "active": False,
+        "phase": "cancelled",
+        "last_update": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    })
+    logging.info("Course creation cancelled by user")
+    return jsonify({"status": "cancelled"})
 
 
 if __name__ == "__main__":

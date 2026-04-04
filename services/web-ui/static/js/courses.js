@@ -248,15 +248,43 @@ function showCompletion(topic) {
     document.getElementById('qc-progress-status').textContent = 'Course created successfully!';
     document.getElementById('qc-progress-actions').style.display = 'block';
 
+    var titleEl = document.getElementById('qc-complete-title');
+    if (titleEl) titleEl.textContent = topic + ' — Ready!';
+
+    // Fetch actual stats from API (buildState may be stale after audit)
     var summary = document.getElementById('qc-complete-summary');
     if (summary) {
         var modCount = buildState.moduleOrder.length;
         var conCount = buildState.totalConcepts;
-        summary.textContent = modCount + ' modules, ' + conCount + ' concepts generated';
+        if (modCount > 0 && conCount > 0) {
+            summary.textContent = modCount + ' modules, ' + conCount + ' concepts generated';
+        } else {
+            // Fallback: fetch from API
+            fetch('/api/courses').then(function(r) { return r.json(); }).then(function(data) {
+                var courses = data.courses || [];
+                var match = courses.find(function(c) { return c.title && c.title.toLowerCase().includes(topic.toLowerCase()); }) || courses[0];
+                if (match) {
+                    fetch('/api/course_structure?uid=' + match.uid).then(function(r) { return r.json(); }).then(function(cs) {
+                        var mods = (cs.structure || {}).modules || [];
+                        var cons = 0;
+                        mods.forEach(function(m) {
+                            (m.units || []).forEach(function(u) {
+                                (u.lessons || []).forEach(function(l) {
+                                    cons += (l.concepts || []).length;
+                                });
+                            });
+                        });
+                        summary.textContent = mods.length + ' modules, ' + cons + ' concepts generated';
+                    }).catch(function() {});
+                }
+            }).catch(function() {
+                summary.textContent = 'Course created';
+            });
+        }
     }
 
-    var titleEl = document.getElementById('qc-complete-title');
-    if (titleEl) titleEl.textContent = topic + ' — Ready!';
+    // Trigger confetti
+    if (window.showConfetti) window.showConfetti();
 }
 
 async function submitQuickCreate() {
@@ -341,6 +369,26 @@ async function submitQuickCreate() {
             if (phase === '1_SKELETON') {
                 setPhase('skeleton');
                 statusEl.textContent = 'Building course skeleton...';
+            }
+        }
+        // --- Audit events ---
+        else if (msg.startsWith('AUDIT:')) {
+            var auditParts = msg.split(':');
+            var auditType = auditParts[1];
+            if (auditType === 'DEDUP') {
+                statusEl.textContent = 'Quality check: removed ' + auditParts[2] + ' duplicate concepts';
+                addLogEntry('Audit removed ' + auditParts[2] + ' duplicates', 'warn');
+            } else if (auditType === 'RENAME') {
+                statusEl.textContent = 'Quality check: renamed ' + auditParts[2] + ' items';
+                addLogEntry('Audit renamed ' + auditParts[2] + ' items', 'info');
+            } else if (auditType === 'COMPLETE') {
+                var aModules = auditParts[2] || '?';
+                var aConcepts = auditParts[3] || '?';
+                statusEl.textContent = 'Audit complete: ' + aModules + ' modules, ' + aConcepts + ' concepts';
+                buildState.totalConcepts = parseInt(aConcepts) || buildState.totalConcepts;
+                addLogEntry('Audit complete: ' + aModules + ' modules, ' + aConcepts + ' concepts', 'success');
+            } else {
+                statusEl.textContent = 'Quality audit: ' + auditParts.slice(1).join(' ');
             }
         }
         // --- Progressive availability: show "Start Learning" early ---

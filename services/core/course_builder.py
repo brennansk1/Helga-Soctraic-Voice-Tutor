@@ -1372,8 +1372,13 @@ class SkeletonBuilder:
                         f"Unit: {u_title} | Lesson: {l_title}\n"
                         f"THIS MODULE'S Bloom Level: {_mod_bloom} ({_mod_bloom_label})\n\n"
                         f"### SIBLING LESSONS IN THIS UNIT (concepts must NOT overlap):\n{sibling_lessons_str}\n\n"
-                        f"### CONCEPTS ALREADY GENERATED (do NOT repeat):\n{prev_concepts_str}\n\n"
-                        f"Generate exactly {base_concepts} key concepts for this lesson on '{l_title}'.\n\n"
+                        f"### CONCEPTS ALREADY GENERATED (do NOT repeat OR rephrase):\n{prev_concepts_str}\n\n"
+                        f"Generate exactly {base_concepts} DISTINCT key concepts for this lesson on '{l_title}'.\n\n"
+                        f"CRITICAL ANTI-DUPLICATION RULES:\n"
+                        f"- Each concept must teach a DIFFERENT SKILL or FACT — not the same idea with different words.\n"
+                        f"- BAD: 'Identify Confounders' + 'Confounding Variables Detection' + 'Spotting Confounders' (all the same thing)\n"
+                        f"- GOOD: 'Confounding Variables' + 'Selection Bias' + 'Measurement Error' (three distinct problems)\n"
+                        f"- If two concept titles could be chapter headings for the SAME chapter, they are duplicates.\n\n"
                         f"CONCEPT NAMING RULES (Bloom {_mod_bloom} — {_mod_bloom_label}):\n"
                         f"{naming_guide}\n"
                         f"- 1-6 words. Each concept must be narrower than the lesson title.\n"
@@ -2053,6 +2058,140 @@ class SyllabusAuditor:
     def close(self):
         pass
 
+    # Stopwords excluded from semantic comparison of concept titles
+    DEDUP_STOPWORDS = frozenset({
+        "in", "of", "for", "the", "and", "via", "with", "a", "an", "to", "by",
+        "on", "at", "is", "are", "as", "or", "its", "their", "how", "what",
+        "using", "through", "between", "from",
+    })
+
+    def _tokenize_title(self, title: str) -> set:
+        """Extract meaningful non-stopword tokens from a title for comparison."""
+        words = re.findall(r'[a-z]+', title.lower())
+        return {w for w in words if w not in self.DEDUP_STOPWORDS and len(w) > 1}
+
+    def _word_overlap_ratio(self, tokens_a: set, tokens_b: set) -> float:
+        """Compute symmetric word overlap ratio between two token sets.
+        Returns 0.0 if either set is empty, else |intersection| / |smaller set|."""
+        if not tokens_a or not tokens_b:
+            return 0.0
+        intersection = tokens_a & tokens_b
+        smaller = min(len(tokens_a), len(tokens_b))
+        return len(intersection) / smaller if smaller > 0 else 0.0
+
+    def _programmatic_dedup(self, course: dict) -> int:
+        """Pass 1: Remove semantic duplicates within each module using word overlap.
+        Returns the number of concepts deleted."""
+        total_deleted = 0
+
+        for module in course.get("modules", []):
+            # Collect all concepts across all units/lessons in this module
+            all_concepts = []  # list of (lesson_concepts_list, index, concept_dict, tokens)
+            for unit in module.get("units", []):
+                for lesson in unit.get("lessons", []):
+                    concepts_list = lesson.get("concepts", [])
+                    for idx, concept in enumerate(concepts_list):
+                        tokens = self._tokenize_title(concept.get("title", ""))
+                        all_concepts.append((concepts_list, idx, concept, tokens))
+
+            # Compare every pair; mark later occurrence as duplicate
+            uids_to_delete = set()
+            for i in range(len(all_concepts)):
+                if all_concepts[i][2]["uid"] in uids_to_delete:
+                    continue
+                for j in range(i + 1, len(all_concepts)):
+                    if all_concepts[j][2]["uid"] in uids_to_delete:
+                        continue
+                    ratio = self._word_overlap_ratio(all_concepts[i][3], all_concepts[j][3])
+                    if ratio > 0.6:
+                        dup_concept = all_concepts[j][2]
+                        orig_concept = all_concepts[i][2]
+                        logger.info(
+                            f"Audit DEDUP: '{dup_concept['title']}' overlaps "
+                            f"'{orig_concept['title']}' ({ratio:.0%}) in module "
+                            f"'{module['title']}' — removing duplicate"
+                        )
+                        uids_to_delete.add(dup_concept["uid"])
+
+            # Also check for exact normalized title matches across the module
+            seen_normalized = {}
+            for _, _, concept, _ in all_concepts:
+                if concept["uid"] in uids_to_delete:
+                    continue
+                norm = concept.get("title", "").lower().strip()
+                if norm in seen_normalized:
+                    logger.info(
+                        f"Audit DEDUP: Exact duplicate title '{concept['title']}' "
+                        f"in module '{module['title']}' — removing"
+                    )
+                    uids_to_delete.add(concept["uid"])
+                else:
+                    seen_normalized[norm] = concept["uid"]
+
+            # Delete flagged concepts from their respective lessons
+            if uids_to_delete:
+                for unit in module.get("units", []):
+                    for lesson in unit.get("lessons", []):
+                        before_count = len(lesson.get("concepts", []))
+                        lesson["concepts"] = [
+                            c for c in lesson.get("concepts", [])
+                            if c["uid"] not in uids_to_delete
+                        ]
+                        removed = before_count - len(lesson["concepts"])
+                        if removed > 0:
+                            logger.info(
+                                f"  Removed {removed} duplicate(s) from lesson "
+                                f"'{lesson.get('title', '?')}'"
+                            )
+                total_deleted += len(uids_to_delete)
+
+        # Also do a cross-module exact-title dedup pass
+        seen_global = {}  # normalized_title -> (module_title, concept_uid)
+        cross_module_deletes = set()
+        for module in course.get("modules", []):
+            for unit in module.get("units", []):
+                for lesson in unit.get("lessons", []):
+                    for concept in lesson.get("concepts", []):
+                        norm = concept.get("title", "").lower().strip()
+                        if norm in seen_global:
+                            orig_mod = seen_global[norm][0]
+                            logger.info(
+                                f"Audit DEDUP (cross-module): '{concept['title']}' "
+                                f"in '{module['title']}' duplicates concept in "
+                                f"'{orig_mod}' — removing"
+                            )
+                            cross_module_deletes.add(concept["uid"])
+                        else:
+                            seen_global[norm] = (module.get("title", ""), concept["uid"])
+
+        if cross_module_deletes:
+            for module in course.get("modules", []):
+                for unit in module.get("units", []):
+                    for lesson in unit.get("lessons", []):
+                        lesson["concepts"] = [
+                            c for c in lesson.get("concepts", [])
+                            if c["uid"] not in cross_module_deletes
+                        ]
+            total_deleted += len(cross_module_deletes)
+
+        return total_deleted
+
+    def _count_structure(self, course: dict) -> tuple:
+        """Count total modules, units, lessons, and concepts in a course structure."""
+        total_modules = len(course.get("modules", []))
+        total_units = 0
+        total_lessons = 0
+        total_concepts = 0
+        for module in course.get("modules", []):
+            units = module.get("units", [])
+            total_units += len(units)
+            for unit in units:
+                lessons = unit.get("lessons", [])
+                total_lessons += len(lessons)
+                for lesson in lessons:
+                    total_concepts += len(lesson.get("concepts", []))
+        return total_modules, total_units, total_lessons, total_concepts
+
     def audit(self, course_uid: str, target_depth: int = 2):
         if self.status_callback:
             self.status_callback("SYLLABUS:AUDIT:STARTING")
@@ -2067,10 +2206,41 @@ class SyllabusAuditor:
 
         topic = course.get("title", "Unknown Topic")
 
+        # Count before audit for comparison
+        before_mods, before_units, before_lessons, before_concepts = self._count_structure(course)
+        logger.info(
+            f"Pre-audit structure: {before_mods} modules, {before_units} units, "
+            f"{before_lessons} lessons, {before_concepts} concepts"
+        )
+
+        # ── PASS 1: Programmatic deduplication (no LLM needed) ──
+        if self.status_callback:
+            self.status_callback("AUDIT:PASS1:DEDUP:STARTING")
+        logger.info("=== PASS 1: Programmatic semantic deduplication ===")
+
+        dedup_count = self._programmatic_dedup(course)
+
+        if dedup_count > 0:
+            # Renumber ordinals after deletions
+            self._renumber_ordinals(course)
+            # Save intermediate result
+            self.storage.courses.update_course(course_uid, course)
+            logger.info(f"Pass 1 complete: removed {dedup_count} duplicate concepts")
+        else:
+            logger.info("Pass 1 complete: no duplicates found")
+
+        if self.status_callback:
+            self.status_callback(f"AUDIT:DEDUP:{dedup_count} duplicates removed")
+
+        # ── PASS 2: LLM quality review ──
+        logger.info("=== PASS 2: LLM quality review ===")
+        if self.status_callback:
+            self.status_callback("AUDIT:PASS2:LLM_REVIEW:STARTING")
+
         profile = DEPTH_PROFILES.get(target_depth, DEPTH_PROFILES[2])
         target_context = profile["academic_level"]
 
-        # Build compact text hierarchy for LLM
+        # Build compact hierarchy from the now-deduped structure
         hierarchy = self._get_compact_hierarchy(course)
 
         # Collect all existing titles for collision checking during fix application
@@ -2091,51 +2261,125 @@ class SyllabusAuditor:
             if scope:
                 scope_summary += f"  {module['title']}: {', '.join(scope)}\n"
 
+        # Build module-level bloom/complexity annotations
+        bloom_summary = ""
+        for m_idx, module in enumerate(course.get("modules", []), 1):
+            level = module.get("level", m_idx)
+            bloom_summary += f"  Module {m_idx} '{module['title']}': complexity_level={level}\n"
+
         prompt = (
             f"Topic: {topic}\nDepth: {target_depth}/5 ({target_context})\n\n"
             f"### MODULE SCOPE BOUNDARIES:\n{scope_summary}\n"
-            f"### HIERARCHY:\n{hierarchy}\n\n"
-            "### AUDIT TASKS (check ALL of these):\n"
-            "1. DUPLICATE TITLES: Find titles that are identical or near-identical (e.g., 'Causal Sufficiency' appearing in two different modules). → RENAME the later occurrence to be more specific.\n"
-            "2. SCOPE VIOLATIONS: Find concepts/lessons that belong in a DIFFERENT module's scope. → DELETE them.\n"
-            "3. GENERIC TITLES: Fix titles ending in 'Basics','Overview','Context','Introduction','Understanding' → RENAME with specific technical content.\n"
-            "4. VERB-ONLY TITLES: Fix titles that are just 'Identifying X' or 'Assessing Y' → RENAME to name the actual technique or property.\n\n"
-            "### OUTPUT: JSON Array of fixes. Return [] if perfect.\n"
-            '[{"action": "rename", "type": "module|unit|lesson|concept", "uid": "...", "new_title": "..."}, '
-            '{"action": "delete", "type": "concept", "uid": "..."}]\n'
+            f"### MODULE COMPLEXITY LEVELS (lower=simpler, higher=advanced):\n{bloom_summary}\n"
+            f"### HIERARCHY (after automated dedup — {dedup_count} duplicates already removed):\n{hierarchy}\n\n"
+            "### AUDIT TASKS — check ALL carefully:\n\n"
+            "1. GENERIC / VAGUE TITLES: Any title that is just a gerund phrase ('Identifying X', "
+            "'Assessing Y', 'Understanding Z') or ends with 'Basics', 'Overview', 'Context', "
+            "'Introduction', 'Understanding', 'Fundamentals' → RENAME to a specific technical "
+            "term or property name. Example: 'Identifying Confounders' → 'Confounder Detection Methods'.\n\n"
+            "2. SCOPE VIOLATIONS: Concepts that clearly belong in a DIFFERENT module based on "
+            "the scope boundaries above → DELETE them. Be conservative — only delete clear violations.\n\n"
+            "3. BLOOM PROGRESSION: Early modules (level 1-2) should cover definitional/conceptual "
+            "material. Later modules (level 3+) should cover application, analysis, and synthesis. "
+            "If a high-complexity concept appears in a low-level module, RENAME it to match that "
+            "module's level, or DELETE if it truly doesn't fit.\n\n"
+            "4. REMAINING SEMANTIC DUPLICATES: If you spot concepts with different titles that "
+            "teach the same thing (e.g. 'Causal Graphs' and 'Directed Acyclic Graphs in Causation') "
+            "→ DELETE the less specific one.\n\n"
+            "5. EMPTY OR STUB LESSONS: Lessons with 0 or 1 concepts after our dedup pass may "
+            "need their remaining concept moved to a neighboring lesson → use MOVE action.\n\n"
+            "### OUTPUT FORMAT: JSON Array of fix objects. Return [] if structure is clean.\n"
+            "Valid actions: 'rename', 'delete'\n"
+            "Each fix: {\"action\": \"rename\"|\"delete\", \"type\": \"module\"|\"unit\"|\"lesson\"|\"concept\", "
+            "\"uid\": \"the_uid\", \"new_title\": \"...\" (for rename only), \"reason\": \"brief explanation\"}\n\n"
+            "Be thorough. Check EVERY concept title. Return ALL fixes needed.\n"
         )
 
         raw_fixes = llm_generate(
             prompt,
-            sys_prompt="Senior Curriculum Editor. Return ONLY a JSON list. Be thorough — check every node.",
-            max_tokens=1000,
+            sys_prompt=(
+                "You are a Senior Curriculum Editor performing a rigorous quality audit. "
+                "Return ONLY a valid JSON array of fix objects. No commentary outside the JSON. "
+                "Be aggressive about renaming vague titles — every concept should have a specific, "
+                "teachable name that a student could look up in a textbook."
+            ),
+            max_tokens=2000,
         )
         fixes = extract_python_list(raw_fixes)
 
-        if not fixes:
-            logger.info("Syllabus Auditor found no issues.")
+        rename_count = 0
+        llm_delete_count = 0
+
+        if fixes:
             if self.status_callback:
-                self.status_callback("SYLLABUS:AUDIT:CLEAN")
-            return
+                self.status_callback(f"AUDIT:PASS2:FIXING:{len(fixes)}_ISSUES")
+
+            # Count by action type for reporting
+            for fix in fixes:
+                action = fix.get("action", "")
+                reason = fix.get("reason", "")
+                if reason:
+                    logger.info(f"  LLM fix: {action} {fix.get('type','')} "
+                                f"{fix.get('uid','')} — {reason}")
+
+            applied_count = self._apply_fixes(course_uid, course, fixes)
+
+            # Count renames vs deletes from what was applied
+            for fix in fixes:
+                action = fix.get("action", "")
+                if action == "rename":
+                    rename_count += 1
+                elif action == "delete":
+                    llm_delete_count += 1
+
+            logger.info(f"Pass 2 complete: applied {applied_count}/{len(fixes)} LLM fixes "
+                        f"({rename_count} renames, {llm_delete_count} deletes)")
+        else:
+            logger.info("Pass 2 complete: LLM found no additional issues")
 
         if self.status_callback:
-            self.status_callback(f"SYLLABUS:AUDIT:FIXING:{len(fixes)}_ISSUES")
-        applied_count = self._apply_fixes(course_uid, course, fixes)
-        logger.info(f"Applied {applied_count}/{len(fixes)} fixes to syllabus.")
+            self.status_callback(f"AUDIT:RENAME:{rename_count} items renamed")
+
+        # ── Final summary ──
+        # Re-read course in case _apply_fixes saved it
+        course = self.storage.courses.get_course(course_uid)
+        total_modules, total_units, total_lessons, total_concepts = self._count_structure(course)
+
+        total_deleted = dedup_count + llm_delete_count
+        logger.info(
+            f"Audit complete: {total_deleted} total deletions, {rename_count} renames. "
+            f"Final structure: {total_modules} modules, {total_concepts} concepts "
+            f"(was {before_concepts})"
+        )
+
         if self.status_callback:
-            self.status_callback(f"LOG: Audit applied {applied_count} fixes.")
+            self.status_callback(f"AUDIT:COMPLETE:{total_modules}:{total_concepts}")
 
     def _get_compact_hierarchy(self, course: dict) -> str:
-        """Build a compact text hierarchy for audit — more token-efficient than nested JSON."""
+        """Build a compact text hierarchy for audit — more token-efficient than nested JSON.
+        Includes complexity/bloom level annotations where available."""
         lines = [f"Course: {course.get('title', '')}"]
         for module in course.get("modules", []):
-            lines.append(f"  M[{module['uid']}]: {module['title']}")
+            level = module.get("level", "?")
+            role = module.get("complexity_role", "")
+            level_tag = f" [level={level}]" if level != "?" else ""
+            role_tag = f" ({role})" if role else ""
+            lines.append(f"  M[{module['uid']}]: {module['title']}{level_tag}{role_tag}")
             for unit in module.get("units", []):
                 lines.append(f"    U[{unit['uid']}]: {unit['title']}")
                 for lesson in unit.get("lessons", []):
-                    lines.append(f"      L[{lesson['uid']}]: {lesson['title']}")
+                    concept_count = len(lesson.get("concepts", []))
+                    lines.append(f"      L[{lesson['uid']}]: {lesson['title']} ({concept_count} concepts)")
                     for concept in lesson.get("concepts", []):
-                        lines.append(f"        C[{concept['uid']}]: {concept['title']}")
+                        depth = concept.get("depth_level", "")
+                        c_role = concept.get("complexity_role", "")
+                        tags = []
+                        if depth:
+                            tags.append(f"depth={depth}")
+                        if c_role:
+                            tags.append(c_role)
+                        tag_str = f" [{', '.join(tags)}]" if tags else ""
+                        lines.append(f"        C[{concept['uid']}]: {concept['title']}{tag_str}")
         return "\n".join(lines)
 
     def _get_hierarchy(self, course: dict) -> dict:
