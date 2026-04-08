@@ -2,29 +2,23 @@
 
 {% block title %}Helga - Learn{% endblock %}
 
-{% block head_scripts %}<script src="{{ url_for('static', filename='js/session.js') }}?v=5"></script>{% endblock %}
+{% block head_scripts %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/learn-chat.css') }}?v=2">
+<script src="{{ url_for('static', filename='js/session.js') }}?v=8"></script>
+{% endblock %}
 
 {% block content %}
 <div class="learn-wrapper theme-learn">
-    <!-- Top Bar -->
+    <!-- Top Bar (visible only in path view — session view owns its own topbar) -->
     <div class="learn-header">
         <div class="header-left">
-            <h2 id="course-title-display" class="course-title">Loading Course...</h2>
+            <h2 id="course-title-display" class="course-title">Loading course…</h2>
         </div>
         <div class="header-right">
-            <div id="session-header" class="hidden">
-                <button id="back-to-path-btn-session" class="nav-btn">
-                    <span class="icon">←</span> Back
-                </button>
-                <div style="flex:1; text-align:center; display:flex; align-items:center; justify-content:center; gap:0.75rem;">
-                    <span id="mode-indicator-badge" style="font-size:0.75rem; padding:0.25rem 0.6rem; border-radius:12px; border:1px solid rgba(59,130,246,0.3); color:#3b82f6; white-space:nowrap;">🎓 Socratic Learning</span>
-                    <h2 style="margin:0; font-size:1.1rem;">Current Lesson</h2>
-                </div>
-                <div class="header-progress-section" style="position: relative;">
-                    <!-- Thinking UI moved inline -->
-                </div>
-            </div>
-            <!-- Voice/text mode toggle removed (text-only mode) -->
+            <!-- session-header kept as empty placeholder so legacy JS that
+                 toggles it doesn't throw. The real mode badge now lives
+                 inside the chatbox topbar. -->
+            <div id="session-header" class="hidden"></div>
         </div>
     </div>
 
@@ -34,238 +28,133 @@
         <div id="path-content" class="path-content">
             <!-- SVG Layer for connections -->
             <svg id="path-svg" class="path-svg"></svg>
-            <!-- Nodes will be injected here via JS -->
-            <div class="loading-spinner"></div>
+            <!-- Initial loading state -->
+            <div id="path-loading" class="path-loading">
+                <div class="path-loading-spinner"></div>
+                <div class="path-loading-text">Loading course structure…</div>
+            </div>
         </div>
     </div>
 
-    <!-- MAIN VIEW 2: ACTIVE SESSION -->
-    <div id="session-view" class="session-container hidden">
-        <div class="session-main">
-            <div class="ai-avatar-container">
-                <div class="ai-avatar pulse">
-                    <img src="{{ url_for('static', filename='img/avatar_placeholder.png') }}" alt="AI"
-                        onerror="this.src='https://ui-avatars.com/api/?name=H&background=3b82f6&color=fff&size=128'">
-                </div>
-
-                <!-- Thinking Bubble -->
-                <div id="thinking-bubble" class="thinking-bubble hidden">
-                    <div class="spinner-small"></div>
-                    <span id="thinking-status-text">Thinking...</span>
-                    <button id="toggle-logs" class="logs-toggle-btn" title="View Logs">📄</button>
-                </div>
-                <!-- Logs Container -->
-                <div id="thinking-logs" class="thinking-logs hidden">
-                    <pre><code id="thinking-logs-code"></code></pre>
-                </div>
+    <!-- MAIN VIEW 2: ACTIVE SESSION (Gemini-style chat, customized for Helga) -->
+    <div id="session-view" class="learn-chat-shell hidden">
+        <!-- Top bar: back button, concept info, badges -->
+        <div class="learn-chat-topbar">
+            <button id="back-to-path-btn-session" class="learn-chat-back" aria-label="Back to course map">← Back</button>
+            <div class="learn-chat-info">
+                <span id="concept-breadcrumb" class="learn-chat-breadcrumb"></span>
+                <span id="concept-title-display" class="learn-chat-concept-title"></span>
             </div>
-
-            <!-- Concept Info Bar -->
-            <div id="concept-info-bar" class="concept-info-bar hidden">
-                <div class="concept-breadcrumb" id="concept-breadcrumb"></div>
-                <div class="concept-title-display" id="concept-title-display"></div>
-                <div class="session-progress">
-                    <div class="session-progress-bar">
-                        <div class="session-progress-fill" id="session-progress-fill"></div>
-                    </div>
-                    <span class="session-progress-text" id="session-progress-text">0 / 0</span>
-                </div>
-            </div>
-
-            <!-- Question Type Indicator -->
-            <div id="question-type-badge" class="question-type-badge hidden">
-                <div class="qtype-dots" id="qtype-dots"></div>
-                <span class="qtype-icon" id="qtype-icon"></span>
-                <span class="qtype-name" id="qtype-name"></span>
-            </div>
-
-            <!-- Chat Stream -->
-            <div class="conversation-log" id="chat-stream">
-                <div class="message ai">
-                    <div class="msg-avatar">
-                        <img src="https://ui-avatars.com/api/?name=H&background=3b82f6&color=fff&size=32" alt="AI">
-                    </div>
-                    <div class="msg-content">
-                        Hello. Select a topic from the path to begin your learning journey.
-                    </div>
-                </div>
-            </div>
-
-            <!-- Controls (text-only) -->
-            <div class="controls">
-                <div class="input-area">
-                    <input type="text" id="text-input" placeholder="Type your response..." class="text-input">
-                    <button id="send-btn" class="control-btn send-btn" title="Send">
-                        <span class="icon">➤</span>
-                    </button>
-                </div>
-                <button id="skip-concept-btn" class="control-btn skip-btn" title="Skip Concept">
-                    <span class="icon">⏭</span>
-                </button>
-                <button id="pause-resume" class="control-btn pause-btn" title="Pause Session">
-                    <span class="icon">⏸</span>
-                </button>
+            <div class="learn-chat-meta">
+                <span id="session-progress-pill" class="learn-chat-badge progress hidden" title="Course progress">0 / 0</span>
+                <span id="mode-indicator-badge" class="learn-chat-badge mode">🎓 Socratic</span>
+                <span id="bloom-level-badge" class="learn-chat-badge bloom hidden">Lv 1</span>
             </div>
         </div>
+        <!-- Mastery progress bar: thin fill under the topbar that ticks up
+             as the user demonstrates understanding of the current concept.
+             Driven by concept_correct_streak + concept_question_count. -->
+        <div id="mastery-progress-wrap" class="mastery-progress hidden" aria-hidden="true">
+            <div id="mastery-progress-fill" class="mastery-progress-fill"></div>
+        </div>
 
-        <!-- Contextual Sidebar -->
-        <div id="context-sidebar" class="context-sidebar hidden">
-            <h3 class="sidebar-title">🧠 Teaching Context</h3>
+        <!-- Hero (hidden after first message) -->
+        <div id="chat-hero" class="learn-chat-hero hidden">
+            <h1 class="learn-chat-hero-title" id="chat-hero-title"></h1>
+            <p class="learn-chat-hero-subtitle" id="chat-hero-subtitle"></p>
+        </div>
 
-            <div id="pedagogy-hints" class="pedagogy-hints hidden">
-                <div id="misconceptions-list" class="hint-group"></div>
-                <div id="analogies-list" class="hint-group"></div>
-            </div>
+        <!-- Chat list (message history) -->
+        <div id="chat-stream" class="learn-chat-list" role="log" aria-live="polite" aria-atomic="false"></div>
 
-            <!-- Other hidden rails expected by session.js -->
-            <div id="context-rail" class="hidden"></div>
-            <div id="flashcard-rail" class="hidden"></div>
-            <div id="palace-rail" class="hidden"></div>
-            <div id="course-title" class="hidden"></div>
-            <div id="breadcrumb-path" class="hidden"></div>
-            <div id="facets-list" class="hidden"></div>
-            <div id="progress-percent" class="hidden"></div>
-            <div id="progress-bar" class="hidden"></div>
-            <div id="logs-content" class="hidden"></div>
+        <!-- Floating "jump to latest" button — revealed when user scrolls up -->
+        <button type="button" id="chat-scroll-bottom-btn" class="chat-scroll-bottom-btn" aria-label="Jump to latest message">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16l-6-6h12z"/></svg>
+        </button>
+
+        <!-- Input area (typing form) -->
+        <div class="learn-chat-input-area">
+            <form class="learn-chat-input-form" id="chat-input-form" onsubmit="return false;">
+                <div class="learn-chat-input-wrapper">
+                    <textarea id="text-input" class="learn-chat-input" placeholder="Type your answer…" autocomplete="off" rows="1" required></textarea>
+                    <button type="submit" id="send-btn" class="learn-chat-send-btn" title="Send" aria-label="Send message">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
+                    </button>
+                </div>
+                <button type="button" id="pause-resume" class="learn-chat-action-btn" title="Pause session" data-paused="false" aria-label="Pause session">
+                    <svg class="icon-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                    <svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+                </button>
+            </form>
+            <p class="learn-chat-disclaimer">Helga uses AI — double-check important details.</p>
         </div>
     </div>
 </div>
 
 <style>
-    /* Context Sidebar */
-    .context-sidebar {
-        width: 300px;
-        background: var(--bg-secondary);
-        border-radius: 20px;
-        border: 1px solid var(--border-color);
-        padding: 1.5rem;
-        display: flex;
-        flex-direction: column;
-        gap: 1.5rem;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        overflow-y: auto;
-    }
-
-    .context-sidebar.hidden {
-        display: none;
-    }
-
-    .sidebar-title {
-        font-size: 1.1rem;
-        color: var(--text-primary);
-        margin: 0;
-        padding-bottom: 0.5rem;
-        border-bottom: 1px solid var(--border-color);
-        font-weight: 700;
-    }
-
-    .hint-group h5 {
-        margin: 1rem 0 0.5rem 0;
-        color: var(--text-secondary);
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        font-size: 0.8rem;
-    }
-
-    .hint-item {
-        background: var(--bg-tertiary);
-        padding: 0.75rem;
-        border-radius: 8px;
-        font-size: 0.85rem;
-        color: var(--text-primary);
-        margin-bottom: 0.5rem;
-        border-left: 3px solid var(--border-color);
-        line-height: 1.4;
-    }
-
-    .hint-item.misconception {
-        border-left-color: #ef4444;
-        /* Red for pitfall */
-        background: rgba(239, 68, 68, 0.05);
-    }
-
-    .hint-item.analogy {
-        border-left-color: #3b82f6;
-        /* Blue for analogy */
-        background: rgba(59, 130, 246, 0.05);
-    }
+    /* =============================================
+       Learn Tab — Path View styles
+       Chat/session styles live in learn-chat.css
+       ============================================= */
 
     :root {
-        --path-bg: var(--bg-primary);
-        --node-size: 70px;
-        --node-gap: 80px;
-        --path-color: var(--border-color);
-        --completed-color: var(--status-warning);
-        --current-color: var(--accent-primary);
-        --locked-color: var(--text-secondary);
-        --text-color: var(--text-primary);
-        --bg-msg-ai: var(--bg-secondary);
-        --bg-msg-user: var(--accent-primary);
+        --path-node-size: 72px;
+        --path-node-gap: 84px;
+        --path-max-width: 620px;
+        --path-header-height: 64px;
     }
 
-    /* Layout */
     .learn-wrapper {
-        height: calc(100vh - 60px);
+        height: calc(100vh - 64px);
         display: flex;
         flex-direction: column;
-        background: var(--path-bg);
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: var(--bg-primary);
+        font-family: 'DM Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     }
 
     .learn-header {
-        padding: 0 2rem;
+        padding: 0 1.5rem;
         background: var(--bg-secondary);
         border-bottom: 1px solid var(--border-color);
         display: flex;
         justify-content: space-between;
         align-items: center;
-        height: 70px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+        height: var(--path-header-height);
+        box-shadow: var(--shadow-soft);
         z-index: 10;
+        flex-shrink: 0;
     }
+    .learn-header.hidden { display: none; }
 
     .course-title {
-        font-size: 1.25rem;
+        font-size: 1.2rem;
         font-weight: 700;
-        color: var(--text-color);
+        color: var(--text-primary);
         margin: 0;
+        letter-spacing: -0.01em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .header-left {
         display: flex;
         align-items: center;
         gap: 1rem;
+        flex: 1;
+        min-width: 0;
     }
 
-    .theme-learn .secondary-btn {
-        background: transparent;
-        border: 1px solid var(--border-color);
-        color: var(--text-color);
-        padding: 0.5rem 1rem;
-        border-radius: 8px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.2s;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    .secondary-btn:hover {
-        background: var(--bg-tertiary);
-    }
-
-    /* Path Visualization */
+    /* --- Path container --- */
     .path-container {
         flex: 1;
         overflow-y: auto;
         position: relative;
         display: flex;
         justify-content: center;
-        padding-top: 2rem;
-        padding-bottom: 4rem;
-        background-color: var(--path-bg);
-        background-image: radial-gradient(var(--border-color, #d1d5db) 1px, transparent 1px);
+        padding: 2rem 1rem 4rem;
+        background-color: var(--bg-primary);
+        background-image: radial-gradient(var(--border-color) 1px, transparent 1px);
         background-size: 24px 24px;
     }
 
@@ -275,7 +164,7 @@
         flex-direction: column;
         align-items: center;
         width: 100%;
-        max-width: 600px;
+        max-width: var(--path-max-width);
         z-index: 2;
     }
 
@@ -289,41 +178,82 @@
         z-index: 1;
     }
 
-    .unit-header {
-        background: var(--bg-secondary);
-        padding: 1rem 1.5rem;
-        border-radius: 16px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        margin: 2rem 0;
-        z-index: 2;
-        text-align: center;
-        width: 80%;
-        border: 2px solid var(--border-color);
-        color: var(--text-color);
-    }
-
-    .unit-header h3 {
-        margin: 0;
-        font-size: 1.1rem;
-        color: var(--text-color);
-    }
-
-    .unit-header p {
-        margin: 0.2rem 0 0;
-        font-size: 0.85rem;
-        color: var(--text-secondary);
-    }
-
-    .node-row {
-        position: relative;
-        height: var(--node-gap);
-        width: 100%;
+    /* --- Loading state (initial structure fetch) --- */
+    .path-loading {
         display: flex;
-        justify-content: center;
+        flex-direction: column;
         align-items: center;
-        z-index: 2;
+        justify-content: center;
+        gap: 1rem;
+        padding: 4rem 2rem;
+        color: var(--text-secondary);
+        width: 100%;
+    }
+    .path-loading.hidden { display: none; }
+    .path-loading-spinner {
+        width: 40px;
+        height: 40px;
+        border: 3px solid var(--border-color);
+        border-top-color: var(--accent-primary);
+        border-radius: 50%;
+        animation: spin 0.9s linear infinite;
+    }
+    .path-loading-text {
+        font-size: 0.9rem;
+        font-weight: 500;
+        letter-spacing: 0.02em;
     }
 
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    /* --- Error state --- */
+    .path-error {
+        text-align: center;
+        padding: 3rem 2rem;
+        color: var(--text-secondary);
+        width: 100%;
+    }
+    .path-error p {
+        font-size: 0.95rem;
+        margin: 0 0 1.25rem;
+        line-height: 1.5;
+    }
+    .path-error-actions {
+        display: inline-flex;
+        gap: 0.65rem;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    .path-error-btn {
+        display: inline-block;
+        padding: 0.65rem 1.5rem;
+        background: var(--accent-primary);
+        color: #fff;
+        text-decoration: none;
+        border: 1px solid var(--accent-primary);
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 0.9rem;
+        cursor: pointer;
+        font-family: inherit;
+        transition: background 0.15s, transform 0.15s;
+    }
+    .path-error-btn:hover {
+        background: var(--accent-primary-dark);
+        transform: translateY(-1px);
+    }
+    .path-error-btn.path-error-btn-ghost {
+        background: transparent;
+        color: var(--accent-primary);
+    }
+    .path-error-btn.path-error-btn-ghost:hover {
+        background: var(--bg-tertiary);
+        transform: translateY(-1px);
+    }
+
+    /* --- Module block --- */
     .module-block {
         width: 100%;
         display: flex;
@@ -332,18 +262,94 @@
         position: relative;
     }
 
+    .unit-header {
+        background: var(--bg-secondary);
+        padding: 1.1rem 1.5rem 1rem;
+        border-radius: 16px;
+        box-shadow: var(--shadow-soft);
+        margin: 2rem 0 0.75rem;
+        z-index: 2;
+        text-align: center;
+        width: 82%;
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+        position: relative;
+        overflow: hidden;
+    }
+    .unit-header::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, var(--accent-primary), var(--bloom-3), var(--status-warning));
+    }
+    .unit-header h3 {
+        margin: 0;
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        letter-spacing: -0.01em;
+    }
+    .unit-header .concept-count {
+        font-size: 0.68rem;
+        color: var(--text-secondary);
+        margin-top: 0.35rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-weight: 700;
+    }
+
+    .unit-sub-header {
+        padding: 0.55rem 1rem;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        margin-top: 1.25rem;
+        margin-bottom: 0.25rem;
+        width: 68%;
+        text-align: center;
+        font-weight: 600;
+        font-size: 0.82rem;
+        color: var(--text-secondary);
+    }
+    .unit-sub-header .icon { margin-right: 0.3rem; opacity: 0.75; }
+
+    .lesson-sub-header {
+        padding: 0.3rem 0.5rem;
+        color: var(--text-secondary);
+        font-size: 0.76rem;
+        font-weight: 500;
+        text-align: center;
+        margin-top: 0.3rem;
+        opacity: 0.75;
+    }
+    .lesson-sub-header .icon { margin-right: 0.2rem; opacity: 0.85; }
+
     .nodes-container {
         width: 100%;
         display: flex;
         flex-direction: column;
         align-items: center;
         position: relative;
-        padding: 2rem 0;
+        padding: 1.5rem 0 1rem;
+    }
+
+    /* --- Path nodes --- */
+    .node-row {
+        position: relative;
+        height: var(--path-node-gap);
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 2;
     }
 
     .path-node {
-        width: var(--node-size);
-        height: var(--node-size);
+        width: var(--path-node-size);
+        height: var(--path-node-size);
         border-radius: 50%;
         display: flex;
         justify-content: center;
@@ -353,25 +359,34 @@
         transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
         z-index: 2;
         border: none;
-        outline: none;
         background: transparent;
-        /* Reset default */
         padding: 0;
         margin: 0;
         -webkit-appearance: none;
         appearance: none;
+        /* offset is applied via --node-x-offset so hover/active transforms
+           can preserve the original s-curve translation */
+        transform: translateX(var(--node-x-offset, 0));
     }
-
-    .path-node:active {
-        transform: scale(0.95);
+    .path-node:hover:not(.locked):not([disabled]) {
+        transform: translateX(var(--node-x-offset, 0)) scale(1.05);
+    }
+    .path-node:active:not(.locked):not([disabled]) {
+        transform: translateX(var(--node-x-offset, 0)) scale(0.95);
+    }
+    .path-node:focus-visible {
+        outline: 3px solid var(--accent-primary);
+        outline-offset: 5px;
+    }
+    .path-node[disabled] {
+        cursor: default;
+        pointer-events: none;
     }
 
     .path-node .icon {
-        font-size: 1.5rem;
-        font-weight: bold;
+        display: none; /* reserved slot, content set via inner span */
     }
 
-    /* Node States */
     .path-node-inner {
         width: 100%;
         height: 100%;
@@ -379,70 +394,83 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 1.5rem;
+        font-size: 1.6rem;
         position: relative;
+        line-height: 1;
+        font-weight: 700;
+        color: #fff;
     }
 
-    /* 3D Effect for Nodes */
+    /* Completed nodes — themed goldenrod (matches --status-warning / bloom-6) */
     .path-node.completed .path-node-inner {
-        background: linear-gradient(135deg, #fcd34d 0%, #fbbf24 100%);
-        box-shadow: 0 4px 0 #b45309, 0 8px 10px rgba(0, 0, 0, 0.2);
+        background: linear-gradient(135deg, var(--bloom-6) 0%, var(--status-warning) 100%);
+        box-shadow: 0 4px 0 var(--bloom-5), 0 8px 14px rgba(45, 58, 46, 0.15);
         color: #fff;
     }
 
-    .path-node.current {
-        border-color: var(--current-color);
-        background: var(--current-color);
-        color: white;
-        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3);
-        animation: pulse-node 2s infinite;
-    }
-
+    /* Current node — themed teal (matches --accent-primary) */
     .path-node.current .path-node-inner {
-        background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
-        box-shadow: 0 4px 0 #1d4ed8, 0 8px 10px rgba(0, 0, 0, 0.2);
+        background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-primary-dark) 100%);
+        box-shadow: 0 4px 0 var(--accent-primary-dark), 0 8px 14px rgba(45, 58, 46, 0.18);
         color: #fff;
-        animation: pulse-ring 2s infinite;
+        animation: pulse-node 2.4s ease-in-out infinite;
     }
 
+    @keyframes pulse-node {
+        0%, 100% {
+            box-shadow: 0 4px 0 var(--accent-primary-dark),
+                        0 8px 14px rgba(45, 58, 46, 0.18),
+                        0 0 0 0 rgba(46, 107, 138, 0.35);
+        }
+        50% {
+            box-shadow: 0 4px 0 var(--accent-primary-dark),
+                        0 8px 14px rgba(45, 58, 46, 0.18),
+                        0 0 0 14px rgba(46, 107, 138, 0);
+        }
+    }
+
+    /* Locked nodes — muted */
+    .path-node.locked { cursor: not-allowed; }
     .path-node.locked .path-node-inner {
-        background: var(--border-color, #e5e7eb);
-        box-shadow: 0 4px 0 var(--text-secondary, #9ca3af);
-        color: var(--text-secondary, #9ca3af);
-        cursor: not-allowed;
+        background: var(--bg-tertiary);
+        box-shadow: 0 3px 0 var(--border-color), 0 6px 10px rgba(45, 58, 46, 0.05);
+        color: var(--text-secondary);
+        font-size: 1.35rem;
+        opacity: 0.85;
     }
 
-    @keyframes pulse-ring {
-        0% {
-            box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4), 0 4px 0 #1d4ed8;
-        }
-
-        70% {
-            box-shadow: 0 0 0 15px rgba(59, 130, 246, 0), 0 4px 0 #1d4ed8;
-        }
-
-        100% {
-            box-shadow: 0 0 0 0 rgba(59, 130, 246, 0), 0 4px 0 #1d4ed8;
-        }
+    /* Low confidence indicator — dashed warning ring */
+    .path-node.low-confidence .path-node-inner::before {
+        content: '';
+        position: absolute;
+        inset: -5px;
+        border-radius: 50%;
+        border: 2px dashed var(--status-warning);
+        opacity: 0.6;
+        pointer-events: none;
     }
 
+    /* --- Tooltips --- */
     .node-tooltip {
         position: absolute;
-        top: -45px;
-        background: var(--bg-tertiary, #1f2937);
-        color: var(--text-primary, white);
+        top: -44px;
+        background: var(--text-primary);
+        color: var(--bg-secondary);
         padding: 0.5rem 0.8rem;
         border-radius: 8px;
-        font-size: 0.8rem;
-        font-weight: 500;
+        font-size: 0.78rem;
+        font-weight: 600;
         white-space: nowrap;
         opacity: 0;
-        transform: translateY(10px) scale(0.9);
-        transition: all 0.2s ease-out;
+        transform: translateY(6px) scale(0.95);
+        transition: opacity 0.18s ease-out, transform 0.18s ease-out;
         pointer-events: none;
         z-index: 10;
+        max-width: 240px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
     }
-
     .node-tooltip::after {
         content: '';
         position: absolute;
@@ -451,707 +479,15 @@
         transform: translateX(-50%) rotate(45deg);
         width: 8px;
         height: 8px;
-        background: var(--bg-tertiary, #1f2937);
+        background: var(--text-primary);
     }
-
-    .path-node:hover .node-tooltip {
+    .path-node:hover .node-tooltip,
+    .path-node:focus-visible .node-tooltip {
         opacity: 1;
         transform: translateY(0) scale(1);
     }
 
-    /* Session UI */
-    .session-container {
-        flex: 1;
-        display: flex;
-        justify-content: center;
-        align-items: flex-start;
-        gap: 1.5rem;
-        padding: 1rem;
-        background: var(--bg-primary);
-        max-width: 1300px;
-        margin: 0 auto;
-        width: 100%;
-    }
-
-    .session-main {
-        flex: 1;
-        width: 100%;
-        max-width: 1000px;
-        height: 85vh;
-        background: var(--bg-secondary);
-        border-radius: 20px;
-        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-        border: 1px solid var(--border-color);
-    }
-
-    .theme-learn .ai-avatar-container {
-        padding: 1.5rem;
-        background: var(--bg-tertiary);
-        border-bottom: 1px solid var(--border-color);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-    }
-
-    .theme-learn .ai-avatar {
-        width: 100px;
-        height: 100px;
-        border-radius: 50%;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        border: 4px solid var(--bg-secondary);
-        overflow: hidden;
-        position: relative;
-    }
-
-    .theme-learn .ai-avatar img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-
-    .theme-learn .status-badge {
-        margin-top: -10px;
-        background: var(--bg-secondary);
-        padding: 0.2rem 0.8rem;
-        border-radius: 12px;
-        font-size: 0.75rem;
-        font-weight: 600;
-        color: var(--accent-primary);
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-        z-index: 2;
-        border: 1px solid var(--border-color);
-    }
-
-    .theme-learn .conversation-log {
-        flex: 1;
-        overflow-y: auto;
-        padding: 2rem;
-        display: flex;
-        flex-direction: column;
-        gap: 1.5rem;
-        background: var(--bg-secondary);
-    }
-
-    .theme-learn .message {
-        display: flex;
-        gap: 1rem;
-        max-width: 80%;
-    }
-
-    .theme-learn .message.user {
-        align-self: flex-end;
-        flex-direction: row-reverse;
-    }
-
-    .theme-learn .message.ai {
-        align-self: flex-start;
-    }
-
-    .msg-avatar {
-        width: 36px;
-        height: 36px;
-        border-radius: 50%;
-        overflow: hidden;
-        flex-shrink: 0;
-    }
-
-    .msg-avatar img {
-        width: 100%;
-        height: 100%;
-    }
-
-    .msg-content {
-        padding: 1rem;
-        border-radius: 18px;
-        line-height: 1.5;
-        font-size: 0.95rem;
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-    }
-
-    .theme-learn .message.ai .msg-content {
-        background: var(--bg-tertiary);
-        color: var(--text-primary);
-        border-top-left-radius: 4px;
-    }
-
-    .theme-learn .message.user .msg-content {
-        background: var(--accent-primary);
-        color: var(--text-inverted);
-        border-top-right-radius: 4px;
-    }
-
-    .theme-learn .controls {
-        padding: 1.5rem;
-        background: var(--bg-secondary);
-        border-top: 1px solid var(--border-color);
-        display: flex;
-        gap: 1rem;
-        align-items: center;
-    }
-
-    .input-area {
-        flex: 1;
-        display: flex;
-        gap: 0.5rem;
-        background: var(--bg-primary);
-        padding: 0.5rem;
-        border-radius: 12px;
-        border: 1px solid var(--border-color);
-    }
-
-    .theme-learn .text-input {
-        flex: 1;
-        border: none;
-        background: transparent;
-        padding: 0.5rem;
-        font-size: 1rem;
-        outline: none;
-    }
-
-    .control-btn {
-        width: 44px;
-        height: 44px;
-        border-radius: 12px;
-        border: none;
-        background: var(--bg-tertiary);
-        color: var(--text-secondary);
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: all 0.2s;
-    }
-
-    .control-btn:hover:not(:disabled) {
-        background: var(--border-color);
-        transform: translateY(-1px);
-    }
-
-    .control-btn:active:not(:disabled) {
-        transform: translateY(1px);
-    }
-
-    .control-btn.active {
-        background: var(--bg-tertiary);
-        color: var(--accent-primary);
-        border: 1px solid var(--accent-primary);
-    }
-
-    /* mic-btn and pulse-red animation removed (voice UI removed) */
-
-    .send-btn {
-        background: #3b82f6;
-        color: white;
-    }
-
-    .send-btn:hover {
-        background: #2563eb;
-    }
-
-    /* Toggle Switch */
-    .switch {
-        position: relative;
-        display: inline-block;
-        width: 50px;
-        height: 26px;
-    }
-
-    .switch input {
-        opacity: 0;
-        width: 0;
-        height: 0;
-    }
-
-    .slider {
-        position: absolute;
-        cursor: pointer;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background-color: var(--current-color);
-        transition: .4s;
-        border-radius: 34px;
-    }
-
-    .slider:before {
-        position: absolute;
-        content: "";
-        height: 20px;
-        width: 20px;
-        left: 3px;
-        bottom: 3px;
-        background-color: white;
-        transition: .4s;
-        border-radius: 50%;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-    }
-
-    input:checked+.slider {
-        background-color: #10b981;
-    }
-
-    input:checked+.slider:before {
-        transform: translateX(24px);
-    }
-
-    .toggle-container {
-        font-size: 0.85rem;
-        font-weight: 600;
-        color: var(--text-secondary, #6b7280);
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    .toggle-label {
-        transition: color 0.3s;
-    }
-
-    /* Inline Thinking UI */
-    .thinking-message .msg-content {
-        background: transparent !important;
-        box-shadow: none !important;
-        padding: 0 !important;
-    }
-
-    .thinking-bubble-inline {
-        width: 100%;
-        max-width: 600px;
-    }
-
-    .thinking-header {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        background-color: var(--bg-tertiary, #f3f4f6);
-        padding: 8px 12px;
-        border-radius: 8px;
-        font-size: 0.9rem;
-        color: var(--text-secondary, #4b5563);
-        font-weight: 500;
-        cursor: pointer;
-        transition: background-color 0.2s;
-        user-select: none;
-    }
-
-    .thinking-header:hover {
-        background-color: var(--border-color, #e5e7eb);
-    }
-
-    .thinking-header .icon-chevron {
-        margin-left: auto;
-        font-size: 0.8rem;
-        transition: transform 0.2s;
-    }
-
-    .thinking-header.expanded .icon-chevron {
-        transform: rotate(180deg);
-    }
-
-    .thinking-logs-inline {
-        margin-top: 4px;
-        background-color: var(--bg-primary, #f9fafb);
-        border: 1px solid var(--border-color, #e5e7eb);
-        border-radius: 8px;
-        padding: 10px;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-        font-size: 0.75rem;
-        color: var(--text-primary, #374151);
-        max-height: 200px;
-        overflow-y: auto;
-    }
-
-    .thinking-message.completed .thinking-header {
-        background-color: transparent;
-        color: var(--text-secondary, #6b7280);
-        border: 1px solid var(--border-color, #e5e7eb);
-    }
-
-    .spinner-tiny {
-        width: 14px;
-        height: 14px;
-        border: 2px solid #cbd5e1;
-        border-top-color: #6366f1;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-    }
-
-    .log-item {
-        padding: 2px 0;
-        border-bottom: 1px dashed var(--bg-tertiary, #f3f4f6);
-    }
-
-    @keyframes slideDown {
-        from {
-            opacity: 0;
-            transform: translateY(-10px);
-        }
-
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-
-    /* Voice/text toggle label styles removed */
-
-    .hidden {
-        display: none !important;
-    }
-
-    .thinking-bubble {
-        margin-top: 1rem;
-        background: #eef2ff;
-        color: #4338ca;
-        padding: 0.5rem 1rem;
-        border-radius: 20px;
-        font-size: 0.8rem;
-        display: flex;
-        gap: 0.5rem;
-        align-items: center;
-        border: 1px solid #c7d2fe;
-    }
-
-    .spinner-small {
-        width: 14px;
-        height: 14px;
-        border: 2px solid #a5b4fc;
-        border-top-color: #4338ca;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-    }
-
-    /* Text Mode Styles — Theme-aware with smooth transitions */
-    .session-container .session-main,
-    .session-container .controls,
-    .session-container .ai-avatar-container {
-        transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    .session-container.text-mode .session-main {
-        border-color: #10b981;
-        box-shadow: 0 0 20px rgba(16, 185, 129, 0.15);
-    }
-
-    .session-container.text-mode .ai-avatar-container {
-        padding: 0.75rem 1.5rem;
-        flex-direction: row;
-        justify-content: flex-start;
-        gap: 1rem;
-        background: var(--bg-secondary, #112240);
-        border-bottom-color: rgba(16, 185, 129, 0.2);
-        min-height: auto;
-    }
-
-    .session-container.text-mode .ai-avatar {
-        width: 48px;
-        height: 48px;
-        border-width: 2px;
-        box-shadow: none;
-        animation: none;
-    }
-
-    /* audio-visualizer and status-badge text-mode styles removed */
-
-    .session-container.text-mode .thinking-bubble {
-        margin-top: 0;
-        margin-left: auto;
-        background: var(--bg-secondary, #112240);
-        border-color: rgba(16, 185, 129, 0.3);
-        color: #10b981;
-    }
-
-    /* mic-wrapper/speaker-btn text-mode hiding removed (voice UI removed) */
-
-    .session-container.text-mode .controls {
-        background: var(--bg-secondary, #112240);
-        border-top-color: rgba(16, 185, 129, 0.15);
-    }
-
-    .session-container.text-mode .input-area {
-        border-color: #10b981;
-        background: var(--bg-primary, #0a192f);
-        flex: 1;
-    }
-
-    .session-container.text-mode .text-input {
-        font-size: 1rem;
-    }
-
-    .session-container.text-mode .text-input:focus {
-        box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25);
-    }
-
-    .session-container.text-mode .message.user .msg-content {
-        background: #10b981;
-    }
-
-    .session-container.text-mode .send-btn {
-        background: #10b981;
-        transition: background 0.2s ease, transform 0.15s ease;
-    }
-
-    .session-container.text-mode .send-btn:hover {
-        background: #059669;
-        transform: scale(1.05);
-    }
-
-    /* Voice mode indicator and toggle styles removed (text-only mode) */
-
-    /* Question Type Badge */
-    .question-type-badge {
-        display: flex;
-        align-items: center;
-        gap: 0.6rem;
-        padding: 0.5rem 1rem;
-        margin: 0 2rem;
-        background: var(--bg-tertiary, #f8fafc);
-        border: 1px solid var(--border-color, #e2e8f0);
-        border-radius: 12px;
-        font-size: 0.8rem;
-        font-weight: 600;
-        color: var(--text-secondary, #475569);
-        transition: all 0.3s ease;
-    }
-
-    .qtype-dots {
-        display: flex;
-        gap: 4px;
-    }
-
-    .qtype-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: var(--border-color, #e2e8f0);
-        transition: all 0.3s ease;
-    }
-
-    .qtype-dot.completed {
-        background: #10b981;
-    }
-
-    .qtype-dot.current {
-        background: var(--qtype-color, #3b82f6);
-        box-shadow: 0 0 6px var(--qtype-color, #3b82f6);
-        animation: dot-pulse 1.5s ease-in-out infinite;
-    }
-
-    @keyframes dot-pulse {
-
-        0%,
-        100% {
-            transform: scale(1);
-        }
-
-        50% {
-            transform: scale(1.3);
-        }
-    }
-
-    .qtype-icon {
-        font-size: 1rem;
-    }
-
-    .qtype-name {
-        color: var(--qtype-color, #3b82f6);
-        font-weight: 700;
-        letter-spacing: 0.02em;
-    }
-
-    /* Concept Info Bar */
-    .concept-info-bar {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        padding: 0.6rem 1.5rem;
-        background: var(--bg-tertiary, #f0f9ff);
-        border-bottom: 1px solid var(--border-color, #dbeafe);
-        font-size: 0.85rem;
-    }
-
-    .concept-breadcrumb {
-        color: var(--text-secondary, #6b7280);
-        font-size: 0.75rem;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        max-width: 200px;
-    }
-
-    .concept-title-display {
-        font-weight: 700;
-        color: var(--accent-primary, #1e40af);
-        flex: 1;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .session-progress {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        flex-shrink: 0;
-    }
-
-    .session-progress-bar {
-        width: 80px;
-        height: 6px;
-        background: var(--border-color, #e2e8f0);
-        border-radius: 3px;
-        overflow: hidden;
-    }
-
-    .session-progress-fill {
-        height: 100%;
-        background: linear-gradient(90deg, #3b82f6, #10b981);
-        border-radius: 3px;
-        transition: width 0.5s ease;
-        width: 0%;
-    }
-
-    .session-progress-text {
-        font-size: 0.7rem;
-        color: var(--text-secondary, #6b7280);
-        font-weight: 600;
-        white-space: nowrap;
-    }
-
-    /* Skip Button */
-    .skip-btn {
-        background: #fef3c7;
-        color: #92400e;
-        border: 1px solid #fcd34d;
-    }
-
-    .skip-btn:hover:not(:disabled) {
-        background: #fde68a;
-        border-color: #f59e0b;
-    }
-
-    /* Improved Module Header */
-    .unit-header {
-        background: var(--bg-secondary, #ffffff);
-        padding: 1rem 1.5rem;
-        border-radius: 16px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
-        margin: 2rem 0;
-        z-index: 2;
-        text-align: center;
-        width: 80%;
-        border: 2px solid var(--border-color, #e5e7eb);
-        color: var(--text-color);
-        position: relative;
-        overflow: hidden;
-    }
-
-    .unit-header::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 3px;
-        background: linear-gradient(90deg, var(--accent-primary, #3b82f6), #8b5cf6, #ec4899);
-    }
-
-    .unit-header .concept-count {
-        font-size: 0.75rem;
-        color: var(--text-secondary, #9ca3af);
-        margin-top: 0.3rem;
-    }
-
-    /* S-Curve positioning */
-    .node-row {
-        position: relative;
-        height: var(--node-gap);
-        width: 100%;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        z-index: 2;
-    }
-
-    /* Completed node crown effect */
-    .path-node.completed .path-node-inner::after {
-        content: '👑';
-        position: absolute;
-        top: -14px;
-        font-size: 0.7rem;
-    }
-
-    /* Unit Sub-Header (inside path) */
-    .unit-sub-header {
-        padding: 0.75rem 1rem;
-        background: var(--bg-secondary, #f9fafb);
-        border: 1px solid var(--border-color, #e5e7eb);
-        border-radius: 12px;
-        margin-top: 1.5rem;
-        margin-bottom: 0.5rem;
-        width: 70%;
-        text-align: center;
-        font-weight: 700;
-        font-size: 0.9rem;
-        color: var(--text-secondary, #4b5563);
-    }
-
-    /* Lesson Sub-Header (inside path) */
-    .lesson-sub-header {
-        padding: 0.5rem;
-        color: var(--text-secondary, #6b7280);
-        font-size: 0.85rem;
-        font-weight: 600;
-        text-align: center;
-        margin-top: 0.5rem;
-    }
-
-    /* SVG path line theme */
-    .path-svg path {
-        stroke: var(--border-color, #e5e7eb);
-    }
-
-    /* Responsive overrides for learn page inline styles */
-    @media (max-width: 768px) {
-        .learn-wrapper {
-            height: auto;
-            min-height: calc(100vh - 60px);
-        }
-        .session-main {
-            height: auto;
-            min-height: 60vh;
-            max-height: calc(100vh - 120px);
-        }
-        .context-sidebar {
-            width: 100%;
-        }
-    }
-
-    @media (max-width: 480px) {
-        .learn-wrapper {
-            min-height: calc(100vh - 52px);
-        }
-        .session-main {
-            min-height: 65vh;
-            max-height: calc(100vh - 80px);
-            border-radius: 12px;
-        }
-        .context-sidebar {
-            width: 100%;
-            max-height: 200px;
-            padding: 1rem;
-        }
-        .learn-header {
-            padding: 0 0.75rem;
-            height: 48px;
-        }
-    }
-
-    /* Mastery Badges (Task #66) */
+    /* --- Mastery badges --- */
     .mastery-badge {
         display: inline-block;
         font-size: 0.85rem;
@@ -1159,74 +495,391 @@
         vertical-align: middle;
         line-height: 1;
     }
-
     .path-node .mastery-badge {
         position: absolute;
-        bottom: -18px;
+        bottom: -17px;
         left: 50%;
         transform: translateX(-50%);
-        font-size: 0.7rem;
+        font-size: 0.78rem;
         z-index: 5;
+        filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.18));
+        pointer-events: none;
     }
-
     .node-tooltip .mastery-badge {
         font-size: 0.85rem;
         margin-left: 0.25rem;
     }
 
-    .mastery-badge-label {
-        font-size: 0.65rem;
-        color: var(--text-secondary, #6b7280);
-        display: block;
+    /* Low confidence inline badge inside tooltip */
+    .low-confidence-badge {
+        display: inline-block;
+        margin-left: 0.35rem;
+        padding: 0.1rem 0.4rem;
+        font-size: 0.6rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        background: var(--status-warning);
+        color: #fff;
+        border-radius: 4px;
+        vertical-align: middle;
+    }
+
+    /* --- SVG path connectors --- */
+    .path-svg path {
+        transition: stroke 0.3s;
+    }
+
+    /* --- Course Complete Overlay --- */
+    .course-complete-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.55);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 2000;
+        animation: overlay-fade-in 0.3s ease;
+    }
+    @keyframes overlay-fade-in {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+    .course-complete-card {
+        background: var(--bg-secondary);
+        border-radius: 20px;
+        padding: 2.5rem 2rem 1.75rem;
+        max-width: 440px;
+        width: 90%;
         text-align: center;
-        margin-top: 1px;
+        border: 1px solid var(--border-color);
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        animation: overlay-scale-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    @keyframes overlay-scale-in {
+        from { transform: scale(0.92); opacity: 0; }
+        to { transform: scale(1); opacity: 1; }
+    }
+    .course-complete-emoji {
+        font-size: 3rem;
+        margin-bottom: 0.75rem;
+        display: block;
+        line-height: 1;
+    }
+    .course-complete-card h2 {
+        color: var(--status-success);
+        margin: 0 0 0.5rem;
+        font-size: 1.55rem;
+        font-weight: 700;
+    }
+    .course-complete-card p {
+        color: var(--text-secondary);
+        margin: 0 0 1.5rem;
+        font-size: 0.95rem;
+        line-height: 1.5;
+    }
+    .course-complete-stats {
+        display: flex;
+        justify-content: center;
+        gap: 1.25rem;
+        margin: 0 0 1.5rem;
+        padding: 0.85rem 0.25rem;
+        background: var(--bg-primary);
+        border-radius: 12px;
+        border: 1px solid var(--border-color);
+    }
+    .course-complete-stat {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.15rem;
+        min-width: 60px;
+    }
+    .course-complete-stat-value {
+        font-size: 1.45rem;
+        font-weight: 800;
+        color: var(--accent-primary);
+        font-variant-numeric: tabular-nums;
+        line-height: 1.1;
+    }
+    .course-complete-stat-label {
+        font-size: 0.65rem;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-weight: 600;
+    }
+    .course-complete-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+    }
+    .course-complete-btn {
+        padding: 0.75rem 1rem;
+        border-radius: 10px;
+        border: 1px solid var(--border-color);
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        cursor: pointer;
+        font-size: 0.92rem;
+        font-weight: 600;
+        font-family: inherit;
+        transition: background 0.15s, border-color 0.15s, transform 0.1s;
+    }
+    .course-complete-btn:hover {
+        background: var(--bg-tertiary);
+        border-color: var(--accent-primary);
+        transform: translateY(-1px);
+    }
+    .course-complete-btn.primary {
+        background: var(--accent-primary);
+        color: #fff;
+        border-color: var(--accent-primary);
+    }
+    .course-complete-btn.primary:hover {
+        background: var(--accent-primary-dark);
+        border-color: var(--accent-primary-dark);
+    }
+    .course-complete-btn.subtle {
+        background: transparent;
+        border-color: transparent;
+        color: var(--text-secondary);
+        font-weight: 500;
+        font-size: 0.85rem;
+        margin-top: 0.25rem;
+    }
+    .course-complete-btn.subtle:hover {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+    }
+
+    /* --- Responsive --- */
+    @media (max-width: 768px) {
+        .learn-wrapper { height: auto; min-height: calc(100vh - 60px); }
+        .learn-header { padding: 0 1rem; height: 56px; }
+        .course-title { font-size: 1.05rem; }
+        .path-container { padding: 1.25rem 0.5rem 3rem; }
+        .unit-header { width: 90%; padding: 0.9rem 1.15rem 0.8rem; }
+        .unit-sub-header { width: 82%; }
+    }
+
+    @media (max-width: 480px) {
+        :root {
+            --path-node-size: 62px;
+            --path-node-gap: 74px;
+        }
+        .learn-wrapper { min-height: calc(100vh - 52px); }
+        .learn-header { height: 52px; padding: 0 0.75rem; }
+        .course-title { font-size: 0.95rem; }
+    }
+
+    /* --- Dark mode adjustments --- */
+    [data-theme="dark"] .path-container {
+        background-image: radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+    }
+    [data-theme="dark"] .node-tooltip {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+        border: 1px solid var(--border-color);
+    }
+    [data-theme="dark"] .node-tooltip::after {
+        background: var(--bg-tertiary);
+    }
+
+    /* Back button navigating state — immediate visual feedback on click */
+    .learn-chat-back.is-navigating {
+        opacity: 0.6;
+        pointer-events: none;
+        cursor: default;
+    }
+
+    /* Node click instant feedback — supplement the :active scale with a
+       brief background flash so the response feels < 200ms even on slow
+       devices where the FSM round-trip takes seconds. */
+    .path-node:not(.locked):not([disabled]) {
+        -webkit-tap-highlight-color: transparent;
+    }
+    .path-node.node-pressed .path-node-inner {
+        filter: brightness(0.85);
+        transition: filter 0.05s ease-out;
+    }
+
+    .hidden { display: none !important; }
+
+    /* Path ↔ Session view fade-in animation */
+    .view-fade-in {
+        animation: view-fade-in 0.28s ease-out;
+    }
+    @keyframes view-fade-in {
+        from { opacity: 0; transform: translateY(6px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .view-fade-in { animation: none; }
+    }
+
+    /* Concept-complete pulse animation — fires when a node is live-marked
+       completed via CPROG while the session view is active. */
+    .path-node.completed.just-completed .path-node-inner {
+        animation: node-complete-pulse 0.9s ease-out;
+    }
+    @keyframes node-complete-pulse {
+        0%   { box-shadow: 0 4px 0 var(--bloom-5), 0 8px 14px rgba(45, 58, 46, 0.15), 0 0 0 0 rgba(212, 168, 67, 0.7); }
+        50%  { box-shadow: 0 4px 0 var(--bloom-5), 0 8px 14px rgba(45, 58, 46, 0.15), 0 0 0 22px rgba(212, 168, 67, 0); }
+        100% { box-shadow: 0 4px 0 var(--bloom-5), 0 8px 14px rgba(45, 58, 46, 0.15), 0 0 0 0 rgba(212, 168, 67, 0); }
     }
 </style>
 
 <script>
+    // Escape user-controlled text before inserting into innerHTML. Course,
+    // module, unit, lesson and concept titles come from the LLM and could
+    // contain HTML metacharacters (even < or & from model output), so we
+    // sanitize before rendering.
+    function escapeHtml(str) {
+        if (str == null) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     document.addEventListener('DOMContentLoaded', async () => {
+        console.log('[learn.html] DOMContentLoaded fired');
         const urlParams = new URLSearchParams(window.location.search);
         const courseUid = urlParams.get('course_uid');
+        const conceptUid = urlParams.get('concept_uid');
         const courseTitleEl = document.getElementById('course-title-display');
         const pathContent = document.getElementById('path-content');
         const pathSvg = document.getElementById('path-svg');
         const sessionView = document.getElementById('session-view');
         const pathView = document.getElementById('path-view');
         let structureReady = false;  // LRN-6: Guard for node clicks
+        let cachedStructure = null;  // For re-rendering on back-nav without refetch
+        let conceptPathMap = {};     // uid → { module, unit, lesson, title } — used for breadcrumbs, live CPROG updates, and completion counts
+        let _lastEnteredNodeUid = null;  // Focus restore target after exit
 
         if (!courseUid) {
             window.location.href = '/courses';
             return;
         }
 
-        // Text-only mode: always active, no voice toggle needed
-        const sessionContainer = document.getElementById('session-view');
-        if (sessionContainer) sessionContainer.classList.add('text-mode');
+        // Render a clear error + retry/back actions when the course fails
+        // to load. Most failures are transient (RAG warming up, timeout);
+        // a dedicated Retry is more useful than forcing a full page back.
+        function showLoadError(message) {
+            if (courseTitleEl) courseTitleEl.textContent = 'Failed to load course';
+            if (pathContent) {
+                pathContent.innerHTML =
+                    '<div class="path-error">' +
+                    '<p>' + escapeHtml(message || 'Could not load course structure.') + '</p>' +
+                    '<div class="path-error-actions">' +
+                    '<button type="button" class="path-error-btn" id="path-retry-btn">Retry</button>' +
+                    '<a href="/courses" class="path-error-btn path-error-btn-ghost">Back to Courses</a>' +
+                    '</div>' +
+                    '</div>';
+                const retryBtn = document.getElementById('path-retry-btn');
+                if (retryBtn) {
+                    retryBtn.addEventListener('click', function () {
+                        // Simplest reliable retry: reload the page (preserves
+                        // query params so deep-links still work).
+                        window.location.reload();
+                    });
+                }
+            }
+        }
+
+        // AbortController-backed timeout: actually cancels the hanging fetch
+        // instead of just showing a message over a still-pending request.
+        const controller = new AbortController();
+        const loadTimeout = setTimeout(function() {
+            controller.abort();
+            if (courseTitleEl && courseTitleEl.textContent === 'Loading course…') {
+                showLoadError('Loading is taking too long. The server may be slow or unreachable.');
+            }
+        }, 15000);
 
         // Fetch Structure
         try {
-            const res = await fetch(`/api/course_structure?uid=${courseUid}`);
+            const res = await fetch(`/api/course_structure?uid=${courseUid}`, { signal: controller.signal });
+            clearTimeout(loadTimeout);
+            if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
 
-            if (data.structure) {
-                if (courseTitleEl) courseTitleEl.textContent = data.title;
+            if (data && data.structure) {
+                if (courseTitleEl) courseTitleEl.textContent = data.title || 'Course';
+                cachedStructure = data.structure;
                 renderStructure(data.structure);
 
-                // Initialize Session Context
+                // Send SET_CONTEXT immediately so the FSM switches course
+                // BEFORE any NAVIGATE_TO_TOPIC fires. This handler also wipes
+                // stale transcript/history on course change, so the chatbox
+                // starts from a clean slate when the user opens a new course.
                 if (window.sendEvent) {
-                    setTimeout(() => window.sendEvent('SET_CONTEXT', { course_uid: courseUid }), 500);
+                    window.sendEvent('SET_CONTEXT', { course_uid: courseUid });
+                }
+
+                // Edge case: course has no concepts at all (empty structure).
+                // Previously the user saw an empty path and no feedback.
+                const hasAnyConcept = (data.structure.modules || []).some(function(m) {
+                    return (m.units || []).some(function(u) {
+                        return (u.lessons || []).some(function(l) {
+                            return (l.concepts || []).length > 0;
+                        });
+                    });
+                });
+                if (!hasAnyConcept) {
+                    pathContent.innerHTML =
+                        '<div class="path-error">' +
+                        '<p>This course has no concepts yet. It may still be building — check back in a moment.</p>' +
+                        '<div class="path-error-actions">' +
+                        '<button type="button" class="path-error-btn" onclick="window.location.reload()">Refresh</button>' +
+                        '<a href="/courses" class="path-error-btn path-error-btn-ghost">Back to Courses</a>' +
+                        '</div>' +
+                        '</div>';
+                    return;
+                }
+
+                // If concept_uid provided, jump straight into session. Since
+                // renderStructure() runs synchronously above and sets
+                // structureReady=true before returning, enterNode can fire
+                // immediately — no arbitrary timeout needed.
+                if (conceptUid) {
+                    let conceptTitle = '';
+                    (data.structure.modules || []).forEach(function(m) {
+                        (m.units || []).forEach(function(u) {
+                            (u.lessons || []).forEach(function(l) {
+                                (l.concepts || []).forEach(function(c) {
+                                    if (c.uid === conceptUid) conceptTitle = c.title;
+                                });
+                            });
+                        });
+                    });
+                    if (conceptTitle) {
+                        // Use rAF to let the browser paint the path view
+                        // once before swapping to the session view — avoids
+                        // a brief blank flash on slower devices.
+                        requestAnimationFrame(function() { enterNode(conceptUid, conceptTitle); });
+                    } else {
+                        // Deep link with an unknown concept_uid — show the
+                        // path view and warn the user.
+                        if (window.showToast) window.showToast('That concept could not be found in this course.', 'error');
+                    }
                 }
             } else {
-                pathContent.innerHTML = '<div class="error">Failed to load course structure.</div>';
+                showLoadError(data && data.error ? data.error : 'Course structure is empty or missing.');
             }
         } catch (e) {
+            clearTimeout(loadTimeout);
             console.error(e);
-            pathContent.innerHTML = '<div class="error">Connection error.</div>';
+            const msg = e.name === 'AbortError'
+                ? 'Loading is taking too long. The server may be slow or unreachable.'
+                : 'Connection error: ' + (e.message || e);
+            showLoadError(msg);
         }
-
-        // ... renderStructure and other functions ...
-
-        // updateControlsForMode removed — text-only mode is always active
 
         // Task #66: Mastery badge mapping based on bloom level and completion
         function getMasteryBadge(bloomLevel, completed) {
@@ -1236,23 +889,29 @@
             if (bloomLevel >= 3) return { emoji: '\uD83C\uDF32', label: 'Rooted' };
             if (bloomLevel >= 2) return { emoji: '\uD83C\uDF3F', label: 'Growing' };
             if (bloomLevel >= 1) return { emoji: '\uD83C\uDF31', label: 'Seedling' };
-            return null;  // No badge for bloom 0 (no interaction yet)
+            return null;
         }
 
         function renderStructure(structure) {
             structureReady = false;  // Block clicks during render
+            conceptPathMap = {};     // Reset — will be rebuilt below
             pathContent.innerHTML = '';
+            // Restore SVG layer (was cleared with innerHTML)
+            const svgLayer = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            svgLayer.setAttribute('id', 'path-svg');
+            svgLayer.setAttribute('class', 'path-svg');
+            pathContent.appendChild(svgLayer);
 
-            // LRN-3.8: Remove old resize listener before adding new one
-            window.removeEventListener('resize', drawAllLines);
+            // Remove old resize listener before adding new one
+            window.removeEventListener('resize', _onResizeDebounced);
 
             if (!structure || !structure.modules) {
-                pathContent.innerHTML = '<div class="error">Invalid course structure.</div>';
+                pathContent.innerHTML = '<div class="path-error"><p>Invalid course structure.</p><a href="/courses" class="path-error-btn">Back to Courses</a></div>';
                 return;
             }
 
             structure.modules.forEach(mod => {
-                if (!mod || !mod.units) return;  // Null guard
+                if (!mod || !mod.units) return;
 
                 const modBlock = document.createElement('div');
                 modBlock.className = 'module-block';
@@ -1261,7 +920,7 @@
                 modHeader.className = 'unit-header';
                 let modConceptCount = 0;
                 (mod.units || []).forEach(u => (u.lessons || []).forEach(l => { modConceptCount += (l.concepts || []).length; }));
-                modHeader.innerHTML = `<h3>${mod.title || 'Module'}</h3><div class="concept-count">${modConceptCount} concepts</div>`;
+                modHeader.innerHTML = `<h3>${escapeHtml(mod.title || 'Module')}</h3><div class="concept-count">${modConceptCount} concept${modConceptCount === 1 ? '' : 's'}</div>`;
                 modBlock.appendChild(modHeader);
 
                 const nodesContainer = document.createElement('div');
@@ -1269,7 +928,7 @@
                 nodesContainer.style.position = 'relative';
 
                 const modSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-                modSvg.className = 'path-svg';
+                modSvg.setAttribute('class', 'path-svg');
                 modSvg.style.width = '100%';
                 modSvg.style.height = '100%';
                 modSvg.style.position = 'absolute';
@@ -1281,23 +940,40 @@
 
                 let globalConceptIdx = 0;
                 (mod.units || []).forEach(unit => {
-                    if (!unit || !unit.lessons) return;  // Null guard
+                    if (!unit || !unit.lessons) return;
 
-                    const unitHeader = document.createElement('div');
-                    unitHeader.className = 'unit-sub-header';
-                    unitHeader.innerHTML = `<span class="icon">🔖</span> ${unit.title || 'Unit'}`;
-                    nodesContainer.appendChild(unitHeader);
+                    // Only render unit sub-header when module has >1 unit
+                    // (collapses noise in single-unit modules)
+                    if ((mod.units || []).length > 1) {
+                        const unitHeader = document.createElement('div');
+                        unitHeader.className = 'unit-sub-header';
+                        unitHeader.innerHTML = `<span class="icon">🔖</span>${escapeHtml(unit.title || 'Unit')}`;
+                        nodesContainer.appendChild(unitHeader);
+                    }
 
                     (unit.lessons || []).forEach(lesson => {
-                        if (!lesson) return;  // Null guard
+                        if (!lesson) return;
 
-                        const lessonHeader = document.createElement('div');
-                        lessonHeader.className = 'lesson-sub-header';
-                        lessonHeader.innerHTML = `<span class="icon">📖</span> ${lesson.title || 'Lesson'}`;
-                        nodesContainer.appendChild(lessonHeader);
+                        // Only render lesson header when there's more than one in the unit
+                        if ((unit.lessons || []).length > 1) {
+                            const lessonHeader = document.createElement('div');
+                            lessonHeader.className = 'lesson-sub-header';
+                            lessonHeader.innerHTML = `<span class="icon">📖</span>${escapeHtml(lesson.title || 'Lesson')}`;
+                            nodesContainer.appendChild(lessonHeader);
+                        }
 
                         (lesson.concepts || []).forEach(concept => {
-                            if (!concept || !concept.uid || !concept.title) return;  // Null guard
+                            if (!concept || !concept.uid || !concept.title) return;
+
+                            // Breadcrumb/live-update index
+                            conceptPathMap[concept.uid] = {
+                                module: mod.title || 'Module',
+                                unit: unit.title || '',
+                                lesson: lesson.title || '',
+                                title: concept.title,
+                                completed: !!concept.completed,
+                                bloom: concept.bloom_level || 0
+                            };
 
                             const row = document.createElement('div');
                             row.className = 'node-row';
@@ -1307,21 +983,23 @@
 
                             const nodeEl = document.createElement('button');
                             nodeEl.className = 'path-node';
-                            nodeEl.style.transform = `translateX(${offset}px)`;
+                            nodeEl.type = 'button';
+                            nodeEl.setAttribute('aria-label', escapeHtml(concept.title) + (concept.completed ? ' (completed)' : ''));
+                            nodeEl.style.setProperty('--node-x-offset', offset + 'px');
                             nodeEl.dataset.uid = concept.uid;
                             nodeEl.dataset.completed = concept.completed || 'false';
                             nodeEl.dataset.bloomLevel = concept.bloom_level || 0;
 
                             // Task #66: Build mastery badge HTML
                             const badge = getMasteryBadge(concept.bloom_level, concept.completed);
-                            const badgeNodeHtml = badge ? `<span class="mastery-badge" title="${badge.label}">${badge.emoji}</span>` : '';
-                            const badgeTooltipHtml = badge ? `<span class="mastery-badge" title="${badge.label}">${badge.emoji}</span>` : '';
+                            const badgeNodeHtml = badge ? `<span class="mastery-badge" title="${escapeHtml(badge.label)}">${badge.emoji}</span>` : '';
+                            const badgeTooltipHtml = badge ? `<span class="mastery-badge" title="${escapeHtml(badge.label)}">${badge.emoji}</span>` : '';
 
                             // Task #51: Low-confidence indicator
                             const srcConf = concept.source_confidence;
                             const isLowConfidence = (typeof srcConf === 'number' && srcConf < 0.3);
                             const lowConfBadge = isLowConfidence
-                                ? '<span class="low-confidence-badge" title="Low source confidence — content may be unverified">&#9888; unverified</span>'
+                                ? '<span class="low-confidence-badge" title="Low source confidence — content may be unverified">unverified</span>'
                                 : '';
                             if (isLowConfidence) {
                                 nodeEl.classList.add('low-confidence');
@@ -1329,17 +1007,30 @@
 
                             nodeEl.innerHTML = `
                                 <div class="path-node-inner">
-                                    <span class="icon"></span>
+                                    <span class="node-icon"></span>
                                 </div>
                                 ${badgeNodeHtml}
-                                <div class="node-tooltip">${concept.title}${lowConfBadge}${badgeTooltipHtml}</div>
+                                <div class="node-tooltip">${escapeHtml(concept.title)}${lowConfBadge}${badgeTooltipHtml}</div>
                             `;
 
-                            nodeEl.onclick = () => {
+                            // Instant pressed visual feedback on mousedown/touchstart
+                            // (fires before click, so feedback is < 50ms)
+                            function onPress() { nodeEl.classList.add('node-pressed'); }
+                            function onRelease() { nodeEl.classList.remove('node-pressed'); }
+                            nodeEl.addEventListener('mousedown', onPress);
+                            nodeEl.addEventListener('touchstart', onPress, { passive: true });
+                            nodeEl.addEventListener('mouseup', onRelease);
+                            nodeEl.addEventListener('mouseleave', onRelease);
+                            nodeEl.addEventListener('touchend', onRelease);
+                            nodeEl.addEventListener('touchcancel', onRelease);
+
+                            nodeEl.addEventListener('click', () => {
+                                if (!structureReady) return;
+                                if (nodeEl.disabled) return;
                                 if (!nodeEl.classList.contains('locked')) {
                                     enterNode(concept.uid, concept.title);
                                 }
-                            };
+                            });
 
                             row.appendChild(nodeEl);
                             nodesContainer.appendChild(row);
@@ -1352,28 +1043,47 @@
                 pathContent.appendChild(modBlock);
             });
 
-            // Post-Process Status
-            const allNodes = document.querySelectorAll('.path-node');
+            // Post-Process Status — mark completed / current / locked
+            const allNodes = pathContent.querySelectorAll('.path-node');
             let foundNext = false;
 
             allNodes.forEach(node => {
+                const iconEl = node.querySelector('.node-icon');
+                if (!iconEl) return;
                 const isCompleted = node.dataset.completed === 'true';
                 if (isCompleted) {
                     node.classList.add('completed');
-                    node.querySelector('.icon').textContent = '✓';
+                    iconEl.textContent = '✓';
                 } else if (!foundNext) {
                     node.classList.add('current');
-                    node.querySelector('.icon').textContent = '★';
+                    iconEl.textContent = '★';
                     foundNext = true;
                 } else {
                     node.classList.add('locked');
-                    node.querySelector('.icon').textContent = '🔒';
+                    node.disabled = true;
+                    node.setAttribute('aria-disabled', 'true');
+                    // Append "(locked)" to existing aria-label so screen readers convey the state
+                    var existingLabel = node.getAttribute('aria-label') || '';
+                    node.setAttribute('aria-label', existingLabel + ' (locked)');
+                    iconEl.textContent = '🔒';
                 }
             });
 
             requestAnimationFrame(drawAllLines);
-            window.addEventListener('resize', drawAllLines);
-            structureReady = true;  // LRN-6: Allow node clicks now
+            window.addEventListener('resize', _onResizeDebounced);
+            structureReady = true;
+        }
+
+        // Debounce resize so the path connector redraw runs once after the
+        // user finishes resizing, not dozens of times per frame on mobile
+        // orientation changes.
+        let _resizeRafToken = null;
+        function _onResizeDebounced() {
+            if (_resizeRafToken) cancelAnimationFrame(_resizeRafToken);
+            _resizeRafToken = requestAnimationFrame(function() {
+                _resizeRafToken = null;
+                drawAllLines();
+            });
         }
 
         function drawAllLines() {
@@ -1389,6 +1099,11 @@
 
         function drawModulePath(svg, rows, container) {
             const containerRect = container.getBoundingClientRect();
+            // Resolve accent colors from computed styles so path strokes
+            // match the live theme (light/dark) without hardcoded hex.
+            const rootStyles = getComputedStyle(document.documentElement);
+            const activeStroke = (rootStyles.getPropertyValue('--status-warning') || '#d4a843').trim();
+            const inactiveStroke = (rootStyles.getPropertyValue('--border-color') || '#d4cdc4').trim();
             let pathsHTML = "";
             let prevX = 0, prevY = 0;
             let first = true;
@@ -1398,28 +1113,19 @@
                 if (!node) return;
 
                 const rect = node.getBoundingClientRect();
-                // Calculate relative to the nodes-container
                 const x = rect.left + rect.width / 2 - containerRect.left;
                 const y = rect.top + rect.height / 2 - containerRect.top;
 
-                // Determine segment color leading to this node
                 const isCompleted = node.classList.contains('completed');
                 const isCurrent = node.classList.contains('current');
-                const strokeColor = (isCompleted || isCurrent) ? "#fcd34d" : "var(--border-color, #e5e7eb)";
+                const strokeColor = (isCompleted || isCurrent) ? activeStroke : inactiveStroke;
 
                 if (first) {
                     first = false;
                 } else {
                     const cpY = (prevY + y) / 2;
                     const pathD = `M ${prevX} ${prevY} C ${prevX} ${cpY}, ${x} ${cpY}, ${x} ${y}`;
-                    pathsHTML += `
-                        <path d="${pathD}" 
-                              stroke="${strokeColor}" 
-                              stroke-width="12" 
-                              fill="none" 
-                              stroke-linecap="round" 
-                              stroke-linejoin="round" />
-                    `;
+                    pathsHTML += `<path d="${pathD}" stroke="${strokeColor}" stroke-width="10" fill="none" stroke-linecap="round" stroke-linejoin="round" />`;
                 }
                 prevX = x; prevY = y;
             });
@@ -1430,14 +1136,7 @@
             svg.innerHTML = pathsHTML;
         }
 
-        function getNodeIcon(status) {
-            if (status === 'completed') return '✓';
-            if (status === 'current') return '★';
-            return '🔒';
-        }
-
         function enterNode(uid, title) {
-            // LRN-6: Guard — don't navigate if structure hasn't rendered yet
             if (!structureReady) {
                 console.warn('[enterNode] Structure not ready yet');
                 return;
@@ -1447,352 +1146,606 @@
                 return;
             }
 
+            // Remember the node we came from so we can restore focus on back.
+            _lastEnteredNodeUid = uid;
+
             pathView.classList.add('hidden');
             sessionView.classList.remove('hidden');
+            // Fade-in animation so the swap feels intentional instead of
+            // snapping into a new layout.
+            sessionView.classList.remove('view-fade-in');
+            void sessionView.offsetWidth;  // restart the CSS animation
+            sessionView.classList.add('view-fade-in');
 
-            // Show concept info bar and context sidebar
-            const conceptInfoBar = document.getElementById('concept-info-bar');
-            if (conceptInfoBar) conceptInfoBar.classList.remove('hidden');
-            const contextSidebar = document.getElementById('context-sidebar');
-            if (contextSidebar) contextSidebar.classList.remove('hidden');
-            // Reset pedagogy sidebar for new concept
-            const pedagogyHints = document.getElementById('pedagogy-hints');
-            if (pedagogyHints) { pedagogyHints.classList.add('hidden'); }
-            const miscList = document.getElementById('misconceptions-list');
-            if (miscList) miscList.innerHTML = '';
-            const anaList = document.getElementById('analogies-list');
-            if (anaList) anaList.innerHTML = '';
-            const conceptTitle = document.getElementById('concept-title-display');
-            if (conceptTitle) {
-                // Task #66: Add mastery badge next to concept title in session view
-                const clickedNode = document.querySelector(`.path-node[data-uid="${uid}"]`);
-                const bloomLvl = clickedNode ? parseInt(clickedNode.dataset.bloomLevel || '0', 10) : 0;
-                const isCompleted = clickedNode ? clickedNode.dataset.completed === 'true' : false;
+            const learnHeader = document.querySelector('.learn-header');
+            if (learnHeader) learnHeader.classList.add('hidden');
+
+            // Update topbar with concept info
+            const conceptTitleEl = document.getElementById('concept-title-display');
+            const clickedNode = document.querySelector(`.path-node[data-uid="${uid}"]`);
+            const bloomLvl = clickedNode ? parseInt(clickedNode.dataset.bloomLevel || '0', 10) : 1;
+            const isCompleted = clickedNode ? clickedNode.dataset.completed === 'true' : false;
+            if (conceptTitleEl) {
                 const sessionBadge = getMasteryBadge(bloomLvl, isCompleted);
-                const badgeHtml = sessionBadge ? ` <span class="mastery-badge" title="${sessionBadge.label}">${sessionBadge.emoji}</span>` : '';
-                conceptTitle.innerHTML = title + badgeHtml;
+                const badgeHtml = sessionBadge ? ` <span class="mastery-badge" title="${escapeHtml(sessionBadge.label)}">${sessionBadge.emoji}</span>` : '';
+                conceptTitleEl.innerHTML = escapeHtml(title) + badgeHtml;
             }
-            const courseTitle = document.getElementById('course-title-display');
+            const courseTitleText = courseTitleEl ? courseTitleEl.textContent : '';
             const breadcrumb = document.getElementById('concept-breadcrumb');
-            if (breadcrumb && courseTitle) breadcrumb.textContent = courseTitle.textContent + ' ›';
+            if (breadcrumb) {
+                // Full breadcrumb: Course › Module › (Unit) › (Lesson)
+                // Unit/lesson segments are only shown when they're
+                // informative (not identical to their parent).
+                const path = conceptPathMap[uid];
+                const parts = [courseTitleText];
+                if (path) {
+                    if (path.module && path.module !== courseTitleText) parts.push(path.module);
+                    if (path.unit && path.unit !== path.module) parts.push(path.unit);
+                    if (path.lesson && path.lesson !== path.unit && path.lesson !== path.module) parts.push(path.lesson);
+                }
+                breadcrumb.textContent = parts.join(' › ') + ' ›';
+            }
 
-            // Toggle Headers
-            const sessionHeader = document.getElementById('session-header');
-            const headerLeft = document.querySelector('.header-left');
-            if (sessionHeader) sessionHeader.classList.remove('hidden');
-            if (headerLeft) headerLeft.classList.add('hidden');
-            // Reset question type badge for new concept
-            const qtypeBadge = document.getElementById('question-type-badge');
-            if (qtypeBadge) qtypeBadge.classList.add('hidden');
+            // Update bloom badge
+            const bloomBadge = document.getElementById('bloom-level-badge');
+            if (bloomBadge && bloomLvl > 0) {
+                bloomBadge.textContent = 'Bloom ' + bloomLvl;
+                bloomBadge.className = 'learn-chat-badge bloom lv' + Math.min(bloomLvl, 6);
+                bloomBadge.classList.remove('hidden');
+            }
 
-            // Set navigation guard — suppress stale boot transcript until FSM sends fresh content
+            // Set navigation guard — suppress stale transcript polls until the
+            // FSM clears its state and streams the new concept content.
             window.navigatingToNode = true;
+            window._navClearanceSeen = false;
 
-            // LRN-7: Safety timeout — reset flag if FSM doesn't respond within 15s
+            // Disable the text input during navigation so the user can't
+            // type into a concept that isn't ready yet.
+            const textInput = document.getElementById('text-input');
+            if (textInput) {
+                textInput.disabled = true;
+                textInput.placeholder = 'Loading concept…';
+            }
+
+            // Safety timeout — if FSM doesn't respond within 45s, surface a
+            // recoverable error state instead of leaving the user in limbo.
             if (window._navGuardTimeout) clearTimeout(window._navGuardTimeout);
             window._navGuardTimeout = setTimeout(() => {
                 if (window.navigatingToNode) {
-                    console.warn('[enterNode] Navigation guard timeout — resetting');
+                    console.warn('[enterNode] Navigation guard timeout — showing retry');
+                    const chat = document.getElementById('chat-stream');
+                    // Remove the stale thinking bubble — leaving "Preparing
+                    // your lesson" up alongside the error is confusing.
+                    if (chat) {
+                        chat.querySelectorAll('.thinking-message').forEach(b => {
+                            try { b.remove(); } catch (e) {}
+                        });
+                    }
+                    // Clear the guard so the user isn't blocked from any
+                    // future transcript updates the FSM finally sends.
                     window.navigatingToNode = false;
-                    const chatEl = document.getElementById('chat-stream');
-                    if (chatEl && chatEl.querySelector('.loading-placeholder')) {
-                        chatEl.innerHTML = `
-                            <div class="message ai" style="opacity: 0.8;">
-                                <div class="msg-avatar">
-                                    <img src="https://ui-avatars.com/api/?name=H&background=3b82f6&color=fff&size=32" alt="AI">
-                                </div>
-                                <div class="msg-content">
-                                    The tutor didn't respond in time. Try clicking the concept again, or use the Skip button.
-                                </div>
-                            </div>
-                        `;
+                    window._navClearanceSeen = false;
+                    // Re-enable the text input as well
+                    const textInputEl = document.getElementById('text-input');
+                    if (textInputEl) {
+                        textInputEl.disabled = false;
+                        textInputEl.placeholder = 'Type your answer…';
+                    }
+                    if (chat) {
+                        const msg = document.createElement('div');
+                        msg.className = 'chat-msg incoming error';
+                        msg.innerHTML =
+                            '<div class="chat-msg-content">' +
+                            '  <img class="chat-msg-avatar" src="/static/img/helga-avatar.svg" alt="Helga">' +
+                            '  <div class="chat-msg-body">' +
+                            '    <div class="chat-msg-text">This concept is taking longer than usual to load. The LLM may be warming up.</div>' +
+                            '    <button type="button" class="nav-retry-btn" id="nav-retry-btn">Retry</button>' +
+                            '  </div>' +
+                            '</div>';
+                        chat.appendChild(msg);
+                        chat.scrollTop = chat.scrollHeight;
+                        const retryBtn = document.getElementById('nav-retry-btn');
+                        if (retryBtn) {
+                            retryBtn.addEventListener('click', function(e) {
+                                e.preventDefault();
+                                msg.remove();
+                                enterNode(uid, title);
+                            });
+                        }
                     }
                 }
-            }, 60000);
+            }, 45000);
 
-            // Clear chat and show loading placeholder
-            const chat = document.getElementById('chat-stream');
-            if (chat) {
-                chat.innerHTML = `
-                    <div class="message ai loading-placeholder" style="opacity: 0.7;">
-                        <div class="msg-avatar">
-                            <img src="https://ui-avatars.com/api/?name=H&background=3b82f6&color=fff&size=32" alt="AI">
-                        </div>
-                        <div class="msg-content">
-                            Starting lesson on <strong>${title}</strong>...
-                        </div>
-                    </div>
-                `;
-            }
-            if (window.resetChatSession) {
-                displayedMessagesCount = 0;
+            // Clear chat stream, optimistic user messages, streaming bubbles,
+            // and session.js's module-local displayedMessagesCount counter.
+            if (typeof window.resetChatSession === 'function') {
+                window.resetChatSession();
+            } else {
+                const chat = document.getElementById('chat-stream');
+                if (chat) chat.innerHTML = '';
             }
 
-            // Send navigation event to FSM
+            // Hide the hero (we show a thinking bubble immediately instead of
+            // stale placeholder text).
+            const hero = document.getElementById('chat-hero');
+            if (hero) hero.classList.add('hidden');
+
+            // Show a thinking bubble immediately so the user sees motion
+            // during the 5-15s FSM warm-up instead of a dead screen.
+            const chatStream = document.getElementById('chat-stream');
+            const template = document.getElementById('thinking-bubble-template');
+            if (chatStream && template) {
+                const frag = template.content.cloneNode(true);
+                chatStream.appendChild(frag);
+                const label = chatStream.querySelector('.thinking-label-text');
+                if (label) label.textContent = 'Preparing your lesson';
+                chatStream.scrollTop = chatStream.scrollHeight;
+            }
+
+            // Send navigation event to FSM.
             if (window.sendEvent) {
-                window.sendEvent('NAVIGATE_TO_TOPIC', { topic_id: uid });
+                window.sendEvent('NAVIGATE_TO_TOPIC', {
+                    topic_id: uid,
+                    course_uid: courseUid
+                });
             }
-        }
 
-        // Back button in session header
-        document.getElementById('back-to-path-btn-session').addEventListener('click', async () => {
-            // LRN-9: Notify FSM to pause session (saves progress, stops audio)
-            if (window.sendEvent) {
-                window.sendEvent('PAUSE_SESSION', {});
-            }
-            // Stop any active playback
-            if (window.stopPlayback) window.stopPlayback();
-
-            const sessionHeader = document.getElementById('session-header');
-            const headerLeft = document.querySelector('.header-left');
-            const contextSidebar = document.getElementById('context-sidebar');
-
-            sessionView.classList.add('hidden');
-            pathView.classList.remove('hidden');
-
-            if (sessionHeader) sessionHeader.classList.add('hidden');
-            if (headerLeft) headerLeft.classList.remove('hidden');
-            if (contextSidebar) contextSidebar.classList.add('hidden');
-            // Hide question type badge on back navigation
-            const qtypeBadge = document.getElementById('question-type-badge');
-            if (qtypeBadge) qtypeBadge.classList.add('hidden');
-
-            // LRN-11: Re-fetch structure to show updated completion status
-            try {
-                const res = await fetch(`/api/course_structure?uid=${courseUid}`);
-                const data = await res.json();
-                if (data.structure) {
-                    renderStructure(data.structure);
+            // Pre-focus the textarea so keyboard users can start typing the
+            // moment Helga asks the first question. It's disabled until the
+            // FSM clears the nav guard, so the focus is mostly for visual
+            // continuity — the browser will keep it focused when the
+            // disabled flag is lifted.
+            requestAnimationFrame(function() {
+                if (textInput) {
+                    try { textInput.focus({ preventScroll: true }); } catch (e) { textInput.focus(); }
                 }
-            } catch (e) {
-                console.warn('Failed to refresh structure on back:', e);
-            }
-        });
-
-
-
-        // Skip button handler
-        const skipBtn = document.getElementById('skip-concept-btn');
-        if (skipBtn) {
-            skipBtn.addEventListener('click', () => {
-                if (window.sendEvent) window.sendEvent('SKIP_CONCEPT', {});
             });
         }
 
-        window.appendMessage = (sender, text) => {
-            const chat = document.getElementById('chat-stream');
-            const msg = document.createElement('div');
-            msg.className = `message ${sender}`;
-
-            let avatar = '';
-            if (sender === 'ai') {
-                avatar = `<div class="msg-avatar"><img src="https://ui-avatars.com/api/?name=H&background=3b82f6&color=fff" alt="AI"></div>`;
-            } else if (sender === 'user') {
-                avatar = `<div class="msg-avatar"><img src="https://ui-avatars.com/api/?name=You&background=10b981&color=fff" alt="You"></div>`;
+        // --- Back button: navigate to the course tree page ---
+        // The session back button leaves /learn entirely and opens
+        // /course/view?uid=X (the authoritative tree view of the course
+        // structure). Before navigating we fire PAUSE_SESSION so the FSM
+        // saves progress, and stop any TTS audio so it doesn't keep
+        // playing after the page change.
+        function exitToPathView() {
+            // Immediate visual feedback: disable the button and show a
+            // loading state so the user knows the click registered.
+            var backBtn = document.getElementById('back-to-path-btn-session');
+            if (backBtn) {
+                backBtn.disabled = true;
+                backBtn.classList.add('is-navigating');
+                backBtn.textContent = 'Leaving…';
             }
 
-            let formattedText = text;
-            if (sender === 'ai' && typeof marked !== 'undefined') {
-                formattedText = marked.parse(text);
+            // Notify FSM to pause the session (stops audio, saves progress)
+            if (window.sendEvent) {
+                window.sendEvent('PAUSE_SESSION', {});
+            }
+            // Stop any active TTS playback
+            if (window._activeAudio) {
+                try { window._activeAudio.pause(); } catch (e) {}
+                window._activeAudio = null;
             }
 
-            msg.innerHTML = `${avatar}<div class="msg-content">${formattedText}</div>`;
-            chat.appendChild(msg);
-            chat.scrollTop = chat.scrollHeight;
+            // Reset navigation guards so returning to /learn later in the
+            // same tab doesn't start in a half-guarded state.
+            window.navigatingToNode = false;
+            window._navClearanceSeen = false;
+            if (window._navGuardTimeout) {
+                clearTimeout(window._navGuardTimeout);
+                window._navGuardTimeout = null;
+            }
+
+            window.location.href = '/course/view?uid=' + encodeURIComponent(courseUid);
+        }
+
+        document.getElementById('back-to-path-btn-session').addEventListener('click', exitToPathView);
+
+        // Global keyboard shortcuts for the learn tab.
+        //   Escape  — exit session view and return to path view. We ignore
+        //             it while the user is typing in the textarea (to avoid
+        //             hijacking IME/autocomplete dismiss).
+        document.addEventListener('keydown', function(e) {
+            if (e.key !== 'Escape') return;
+            // If the completion overlay is up, let its own handler take it.
+            if (document.getElementById('course-complete-overlay')) return;
+            const inSession = !sessionView.classList.contains('hidden');
+            if (!inSession) return;
+            const active = document.activeElement;
+            const isTyping = active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT');
+            if (isTyping) {
+                // Blur first — second Escape then exits. This matches the
+                // Gemini/Claude pattern and avoids fighting IME.
+                active.blur();
+                return;
+            }
+            exitToPathView();
+        });
+
+        // Dynamic aria-label for the pause/resume button so screen readers
+        // announce the current action correctly.
+        const _pauseResumeBtn = document.getElementById('pause-resume');
+        if (_pauseResumeBtn) {
+            const updatePauseAria = function() {
+                const paused = _pauseResumeBtn.dataset.paused === 'true';
+                _pauseResumeBtn.setAttribute('aria-label', paused ? 'Resume session' : 'Pause session');
+                _pauseResumeBtn.setAttribute('title', paused ? 'Resume session' : 'Pause session');
+            };
+            // MutationObserver keeps it in sync with session.js's dataset writes
+            new MutationObserver(updatePauseAria).observe(_pauseResumeBtn, { attributes: true, attributeFilter: ['data-paused'] });
+            updatePauseAria();
+        }
+
+        // Mark a concept complete in the path view + cached structure so
+        // that the user doesn't need a round-trip to RAG to see their
+        // progress update when they hit Back. We look the concept up by
+        // title because CPROG messages only carry the title string.
+        function markConceptCompletedInPath(title) {
+            if (!title) return;
+            // Find the uid in the path map
+            let targetUid = null;
+            Object.keys(conceptPathMap).forEach(function(uid) {
+                const p = conceptPathMap[uid];
+                if (p && p.title === title) targetUid = uid;
+            });
+            if (!targetUid) return;
+
+            conceptPathMap[targetUid].completed = true;
+
+            // Update the DOM node if present
+            const nodeEl = document.querySelector('.path-node[data-uid="' + targetUid + '"]');
+            if (nodeEl) {
+                nodeEl.dataset.completed = 'true';
+                nodeEl.classList.remove('current', 'locked');
+                nodeEl.classList.add('completed', 'just-completed');
+                nodeEl.disabled = false;
+                nodeEl.removeAttribute('aria-disabled');
+                const iconEl = nodeEl.querySelector('.node-icon');
+                if (iconEl) iconEl.textContent = '✓';
+                // Clean up the animation class after it finishes so it can
+                // fire again for the next completion.
+                setTimeout(function() {
+                    nodeEl.classList.remove('just-completed');
+                }, 950);
+            }
+
+            // Also mutate the cachedStructure so exitToPathView's cache
+            // render reflects the completion without a refetch.
+            if (cachedStructure && cachedStructure.modules) {
+                cachedStructure.modules.forEach(function(m) {
+                    (m.units || []).forEach(function(u) {
+                        (u.lessons || []).forEach(function(l) {
+                            (l.concepts || []).forEach(function(c) {
+                                if (c.uid === targetUid) c.completed = true;
+                            });
+                        });
+                    });
+                });
+            }
+        }
+
+        // Mode label map used by the state_update handler
+        const _modeLabels = {
+            'SOCRATIC_LEARNING': { label: 'Socratic', icon: '🎓' },
+            'SPACED_REPETITION': { label: 'Review',   icon: '📝' },
+            'MEMORY_PALACE':     { label: 'Palace',   icon: '🏛' },
+            'LOBBY':             { label: 'Ready',    icon: '⏸' }
         };
 
-        // Question Type Badge Update Handler
-        const QTYPE_META = {
-            'SCENARIO': { icon: '🎬', color: '#3b82f6', name: 'Scenario' },
-            'MECHANISM': { icon: '⚙️', color: '#8b5cf6', name: 'Mechanism' },
-            'CONTRAST': { icon: '⚖️', color: '#ec4899', name: 'Contrast' },
-            'APPLICATION': { icon: '🔧', color: '#f59e0b', name: 'Application' },
-            'EDGE_CASE': { icon: '🔬', color: '#ef4444', name: 'Edge Case' },
-            'SYNTHESIS': { icon: '🧩', color: '#10b981', name: 'Synthesis' },
-        };
-
-        // Listen for status updates that contain QTYPE prefix
-        // Reuse the global socket from session.js instead of creating a duplicate
+        // Reuse the global socket from session.js
         if (window.socket) {
             const learnSocket = window.socket;
+            let lastCprogTitle = null;
+            let lastCprogModule = null;  // detect module-boundary crossings
+            let lastProgressPillText = '';
             learnSocket.on('status_update', (data) => {
                 const msg = data.message || data.status || '';
-                if (msg.startsWith('QTYPE:')) {
-                    const parts = msg.split(':');
-                    // QTYPE:KEY:INDEX:TOTAL
-                    if (parts.length >= 4) {
-                        const key = parts[1];
-                        const idx = parseInt(parts[2]);
-                        const total = parseInt(parts[3]);
-                        updateQuestionTypeBadge(key, idx, total);
-                    }
-                } else if (msg.startsWith('PEDAGOGY:')) {
-                    try {
-                        const payload = JSON.parse(msg.substring(9));
-                        const hintsEl = document.getElementById('pedagogy-hints');
-                        const miscEl = document.getElementById('misconceptions-list');
-                        const anaEl = document.getElementById('analogies-list');
-                        if (hintsEl && miscEl && anaEl) {
-                            miscEl.innerHTML = '';
-                            anaEl.innerHTML = '';
-                            if (payload.misconceptions && payload.misconceptions.length) {
-                                miscEl.innerHTML = '<h4>Common Misconceptions</h4><ul>' +
-                                    payload.misconceptions.map(m => `<li>${m}</li>`).join('') + '</ul>';
-                            }
-                            if (payload.analogies && payload.analogies.length) {
-                                anaEl.innerHTML = '<h4>Analogies</h4><ul>' +
-                                    payload.analogies.map(a => `<li>${a}</li>`).join('') + '</ul>';
-                            }
-                            if (miscEl.innerHTML || anaEl.innerHTML) {
-                                hintsEl.classList.remove('hidden');
-                            }
-                        }
-                    } catch (e) {
-                        console.warn('Failed to parse PEDAGOGY update:', e);
-                    }
-                } else if (msg.startsWith('CPROG:')) {
+                if (msg.startsWith('CPROG:')) {
                     // CPROG:TITLE:COMPLETED:TOTAL
                     const parts = msg.split(':');
                     if (parts.length >= 4) {
                         const conceptTitle = parts[1];
                         const completed = parseInt(parts[2]);
                         const total = parseInt(parts[3]);
-                        // Update concept info bar
                         const titleEl = document.getElementById('concept-title-display');
-                        if (titleEl) titleEl.textContent = conceptTitle;
-                        const infoBar = document.getElementById('concept-info-bar');
-                        if (infoBar) infoBar.classList.remove('hidden');
-                        // Update progress
-                        const fillEl = document.getElementById('session-progress-fill');
-                        const textEl = document.getElementById('session-progress-text');
-                        if (fillEl) fillEl.style.width = `${Math.round((completed / total) * 100)}%`;
-                        if (textEl) textEl.textContent = `${completed} / ${total}`;
+
+                        // Look up the module the new concept belongs to
+                        // so we can detect module-boundary crossings.
+                        let newModule = null;
+                        Object.values(conceptPathMap).forEach(function(p) {
+                            if (p && p.title === conceptTitle) newModule = p.module;
+                        });
+
+                        // Detect concept transition (title changed mid-session).
+                        // Insert a celebratory card + divider so the user sees
+                        // a clean break and feels their progress.
+                        if (titleEl && lastCprogTitle && lastCprogTitle !== conceptTitle) {
+                            insertConceptCompleteCard(lastCprogTitle);
+                            // If the new module differs from the last seen,
+                            // show an extra module-complete card for orientation.
+                            if (lastCprogModule && newModule && lastCprogModule !== newModule) {
+                                insertModuleCompleteCard(lastCprogModule, newModule);
+                            }
+                            insertConceptDivider();
+                            // Mark the previous concept's node as completed
+                            // in the (hidden) path view so returning from
+                            // the session shows fresh state without an API
+                            // round trip.
+                            markConceptCompletedInPath(lastCprogTitle);
+                            // Refresh the XP counter in the global header —
+                            // the FSM awards XP async after each grade; this
+                            // picks it up without a page reload.
+                            refreshGamificationBar();
+                        }
+                        lastCprogTitle = conceptTitle;
+                        if (newModule) lastCprogModule = newModule;
+
+                        if (titleEl) {
+                            // Include mastery badge on title now that the
+                            // concept may have a stored bloom level from a
+                            // previous session.
+                            const newPath = conceptPathMap[(Object.keys(conceptPathMap).find(u => conceptPathMap[u].title === conceptTitle)) || ''];
+                            const bloomLv = newPath && newPath.bloom ? newPath.bloom : 0;
+                            const isDone = newPath && newPath.completed;
+                            const sessionBadge = getMasteryBadge(bloomLv, isDone);
+                            const badgeHtml = sessionBadge ? ' <span class="mastery-badge" title="' + escapeHtml(sessionBadge.label) + '">' + sessionBadge.emoji + '</span>' : '';
+                            titleEl.innerHTML = escapeHtml(conceptTitle) + badgeHtml;
+                        }
+                        const progressPill = document.getElementById('session-progress-pill');
+                        if (progressPill && total > 0) {
+                            const newText = completed + ' / ' + total;
+                            if (newText !== lastProgressPillText) {
+                                progressPill.textContent = newText;
+                                progressPill.classList.remove('hidden');
+                                // Pulse animation on change — feels alive
+                                progressPill.classList.remove('pill-pulse');
+                                void progressPill.offsetWidth;
+                                progressPill.classList.add('pill-pulse');
+                                lastProgressPillText = newText;
+                            }
+                        }
                     }
                 } else if (msg === 'COURSE_COMPLETE') {
-                    // Show completion overlay with next-step options
+                    // Mark the last active concept complete before firing the overlay
+                    if (lastCprogTitle) {
+                        insertConceptCompleteCard(lastCprogTitle);
+                        markConceptCompletedInPath(lastCprogTitle);
+                    }
                     showCourseCompleteOverlay();
+                }
+            });
+
+            // Watch for bloom-level changes on the state_update stream and
+            // pulse the badge on level-ups so the user sees their effort pay
+            // off. The color change always happens (informational), but the
+            // celebratory pulse animation is gated behind the gamification
+            // setting since it's a reward-style flourish.
+            let lastBloomLevel = 0;
+            learnSocket.on('state_update', (data) => {
+                if (!data || typeof data.bloom_level !== 'number') return;
+                if (data.bloom_level > lastBloomLevel && lastBloomLevel > 0) {
+                    const bloomBadge = document.getElementById('bloom-level-badge');
+                    const gamificationOn = !window.isGamificationEnabled || window.isGamificationEnabled();
+                    if (bloomBadge && gamificationOn) {
+                        bloomBadge.classList.remove('bloom-level-up');
+                        void bloomBadge.offsetWidth;
+                        bloomBadge.classList.add('bloom-level-up');
+                        setTimeout(() => bloomBadge.classList.remove('bloom-level-up'), 1200);
+                    }
+                }
+                lastBloomLevel = data.bloom_level;
+
+                // Mode indicator badge text only — let CSS own the colors.
+                // (Folded into the same state_update handler to avoid a
+                // second listener for the same event.)
+                const fsmState = data && data.state;
+                const modeBadge = document.getElementById('mode-indicator-badge');
+                if (modeBadge && fsmState) {
+                    const meta = _modeLabels[fsmState] || _modeLabels['LOBBY'];
+                    modeBadge.textContent = `${meta.icon} ${meta.label}`;
                 }
             });
         }
 
-        window.updateQuestionTypeBadge = function (key, idx, total) {
-            const badge = document.getElementById('question-type-badge');
-            const dotsEl = document.getElementById('qtype-dots');
-            const iconEl = document.getElementById('qtype-icon');
-            const nameEl = document.getElementById('qtype-name');
-            const meta = QTYPE_META[key];
-            if (!badge || !meta) return;
+        // --- Concept / Module celebration cards ---
+        // Inserts a full-width "Congrats, you passed X" card in the chat
+        // AND fires a page-wide confetti burst. This is the user's main
+        // moment of accomplishment between concepts — don't be shy.
+        function insertConceptCompleteCard(title) {
+            const chat = document.getElementById('chat-stream');
+            if (!chat) return;
+            const card = document.createElement('div');
+            card.className = 'chat-concept-congrats';
+            card.setAttribute('role', 'status');
+            card.setAttribute('aria-live', 'polite');
+            card.innerHTML =
+                '<div class="chat-concept-congrats-glow"></div>' +
+                '<div class="chat-concept-congrats-trophy">🏆</div>' +
+                '<div class="chat-concept-congrats-kicker">Congrats!</div>' +
+                '<div class="chat-concept-congrats-line">You passed</div>' +
+                '<div class="chat-concept-congrats-title"></div>' +
+                '<div class="chat-concept-congrats-footer">Keep going — your next concept is loading…</div>';
+            card.querySelector('.chat-concept-congrats-title').textContent = title;
+            chat.appendChild(card);
+            chat.scrollTop = chat.scrollHeight;
 
-            badge.classList.remove('hidden');
-            badge.style.setProperty('--qtype-color', meta.color);
-            badge.style.borderColor = meta.color + '40';
-
-            // Update dots
-            dotsEl.innerHTML = '';
-            for (let i = 0; i < total; i++) {
-                const dot = document.createElement('span');
-                dot.className = 'qtype-dot';
-                if (i < idx) dot.classList.add('completed');
-                else if (i === idx) dot.classList.add('current');
-                dotsEl.appendChild(dot);
+            // Page-wide confetti burst on every concept completion.
+            // showConfetti() respects the gamification toggle, so off-mode
+            // users get the card but no confetti.
+            if (typeof window.showConfetti === 'function') {
+                window.showConfetti();
             }
+        }
 
-            iconEl.textContent = meta.icon;
-            nameEl.textContent = meta.name;
-            nameEl.style.color = meta.color;
-        };
+        function insertModuleCompleteCard(oldModule, newModule) {
+            const chat = document.getElementById('chat-stream');
+            if (!chat) return;
+            const card = document.createElement('div');
+            card.className = 'chat-module-complete';
+            card.innerHTML =
+                '<div class="chat-module-complete-header">' +
+                '<span class="chat-module-complete-sparkle">✨</span>' +
+                '<span>Module complete</span>' +
+                '<span class="chat-module-complete-sparkle">✨</span>' +
+                '</div>' +
+                '<div class="chat-module-complete-old"></div>' +
+                '<div class="chat-module-complete-arrow">↓</div>' +
+                '<div class="chat-module-complete-new"></div>';
+            card.querySelector('.chat-module-complete-old').textContent = oldModule;
+            card.querySelector('.chat-module-complete-new').textContent = newModule;
+            chat.appendChild(card);
+            chat.scrollTop = chat.scrollHeight;
+            if (window.showConfetti) window.showConfetti();
+        }
+
+        function insertConceptDivider() {
+            const chat = document.getElementById('chat-stream');
+            if (!chat) return;
+            const divider = document.createElement('div');
+            divider.className = 'chat-concept-divider';
+            divider.innerHTML =
+                '<span class="chat-concept-divider-line"></span>' +
+                '<span class="chat-concept-divider-label">Next concept</span>' +
+                '<span class="chat-concept-divider-line"></span>';
+            chat.appendChild(divider);
+        }
+
+        function refreshGamificationBar() {
+            // Respect the gamification toggle — skip the fetch entirely
+            // when the user has opted out. The header bar is CSS-hidden in
+            // that case, so there's nothing to update anyway.
+            if (!window.isGamificationEnabled || !window.isGamificationEnabled()) return;
+            fetch('/api/gamification').then(function(r) { return r.ok ? r.json() : null; }).then(function(data) {
+                if (!data) return;
+                const xpEl = document.getElementById('xp-counter');
+                const lvlEl = document.getElementById('level-badge');
+                const streakEl = document.getElementById('streak-counter');
+                if (xpEl) {
+                    const newXp = (data.total_xp || data.xp || 0).toLocaleString() + ' XP';
+                    if (xpEl.textContent !== newXp) {
+                        xpEl.textContent = newXp;
+                        xpEl.classList.remove('xp-bump');
+                        void xpEl.offsetWidth;
+                        xpEl.classList.add('xp-bump');
+                    }
+                }
+                if (lvlEl) lvlEl.textContent = 'Lv ' + (data.level || 1);
+                if (streakEl) streakEl.innerHTML = '&#128293; ' + (data.streak_days || data.streak || 0);
+            }).catch(function() {});
+        }
 
         // --- Course Completion Overlay ---
         window.showCourseCompleteOverlay = function() {
-            // Remove existing overlay if any
             const existing = document.getElementById('course-complete-overlay');
             if (existing) existing.remove();
 
+            // Compute completion stats from the cached structure so the
+            // user sees the scale of what they just finished, not a
+            // generic "great work".
+            let totalConcepts = 0;
+            let totalModules = 0;
+            let bloomSum = 0;
+            let bloomCount = 0;
+            if (cachedStructure && cachedStructure.modules) {
+                totalModules = cachedStructure.modules.length;
+                cachedStructure.modules.forEach(function(m) {
+                    (m.units || []).forEach(function(u) {
+                        (u.lessons || []).forEach(function(l) {
+                            (l.concepts || []).forEach(function(c) {
+                                totalConcepts++;
+                                if (typeof c.bloom_level === 'number' && c.bloom_level > 0) {
+                                    bloomSum += c.bloom_level;
+                                    bloomCount++;
+                                }
+                            });
+                        });
+                    });
+                });
+            }
+            const avgBloom = bloomCount > 0 ? (bloomSum / bloomCount).toFixed(1) : null;
+
             const overlay = document.createElement('div');
             overlay.id = 'course-complete-overlay';
-            overlay.style.cssText = `
-                position: fixed; inset: 0; background: rgba(0,0,0,0.6);
-                display: flex; align-items: center; justify-content: center;
-                z-index: 1000; animation: fadeIn 0.3s ease;
-            `;
+            overlay.className = 'course-complete-overlay';
+            const statsHtml =
+                '<div class="course-complete-stats">' +
+                '<div class="course-complete-stat"><span class="course-complete-stat-value">' + totalConcepts + '</span><span class="course-complete-stat-label">concepts</span></div>' +
+                '<div class="course-complete-stat"><span class="course-complete-stat-value">' + totalModules + '</span><span class="course-complete-stat-label">modules</span></div>' +
+                (avgBloom ? '<div class="course-complete-stat"><span class="course-complete-stat-value">' + avgBloom + '</span><span class="course-complete-stat-label">avg Bloom</span></div>' : '') +
+                '</div>';
             overlay.innerHTML = `
-                <div style="background: var(--bg-primary, #1a1a2e); border-radius: 20px;
-                    padding: 2.5rem; max-width: 420px; width: 90%; text-align: center;
-                    border: 1px solid rgba(16,185,129,0.3); box-shadow: 0 20px 60px rgba(0,0,0,0.5);">
-                    <div style="font-size: 3rem; margin-bottom: 1rem;">🎉</div>
-                    <h2 style="color: #10b981; margin: 0 0 0.5rem;">Course Complete!</h2>
-                    <p style="color: var(--text-secondary, #a0a0b0); margin-bottom: 1.5rem;">
-                        Great work finishing this course. What would you like to do next?
-                    </p>
-                    <div style="display: flex; flex-direction: column; gap: 0.75rem;">
-                        <button onclick="document.getElementById('course-complete-overlay').remove();
-                            window.location.href='/review';"
-                            style="padding: 0.75rem; border-radius: 10px; border: 1px solid rgba(59,130,246,0.3);
-                            background: rgba(59,130,246,0.1); color: #3b82f6; cursor: pointer; font-size: 0.95rem;">
-                            📝 Review with Flashcards
+                <div class="course-complete-card" role="dialog" aria-labelledby="course-complete-title" aria-modal="true">
+                    <span class="course-complete-emoji">🎉</span>
+                    <h2 id="course-complete-title">Course Complete!</h2>
+                    <p>Beautiful work making it all the way through.</p>
+                    ${statsHtml}
+                    <div class="course-complete-actions">
+                        <button type="button" class="course-complete-btn primary" data-action="review">
+                            Review with Flashcards
                         </button>
-                        <button onclick="document.getElementById('course-complete-overlay').remove();
-                            window.location.href='/courses';"
-                            style="padding: 0.75rem; border-radius: 10px; border: 1px solid rgba(16,185,129,0.3);
-                            background: rgba(16,185,129,0.1); color: #10b981; cursor: pointer; font-size: 0.95rem;">
-                            📚 Browse More Courses
+                        <button type="button" class="course-complete-btn" data-action="browse">
+                            Browse More Courses
                         </button>
-                        <button onclick="document.getElementById('course-complete-overlay').remove();"
-                            style="padding: 0.75rem; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);
-                            background: transparent; color: var(--text-secondary, #a0a0b0); cursor: pointer; font-size: 0.85rem;">
+                        <button type="button" class="course-complete-btn subtle" data-action="dismiss">
                             Stay Here
                         </button>
                     </div>
                 </div>
             `;
             document.body.appendChild(overlay);
-        };
+            // Fire confetti + refresh gamification so the XP bonus from
+            // the final concept flashes through the header counter.
+            if (window.showConfetti) window.showConfetti();
+            refreshGamificationBar();
 
-        // --- Mode Indicator Badge ---
-        // Updates the session header to show which learning mode is active
-        const _modeLabels = {
-            'SOCRATIC_LEARNING': { label: 'Socratic Learning', color: '#3b82f6', icon: '🎓' },
-            'SPACED_REPETITION': { label: 'Spaced Repetition', color: '#f59e0b', icon: '📝' },
-            'MEMORY_PALACE': { label: 'Memory Palace', color: '#8b5cf6', icon: '🏛' },
-            'LOBBY': { label: 'Ready', color: '#6b7280', icon: '⏸' }
-        };
+            overlay.addEventListener('click', function(e) {
+                // Dismiss on backdrop click
+                if (e.target === overlay) {
+                    overlay.remove();
+                    return;
+                }
+                const btn = e.target.closest('[data-action]');
+                if (!btn) return;
+                const action = btn.dataset.action;
+                overlay.remove();
+                if (action === 'review') window.location.href = '/review';
+                else if (action === 'browse') window.location.href = '/courses';
+            });
 
-        // Poll state to update mode indicator (piggybacks on existing state_update)
-        learnSocket.on('state_update', (data) => {
-            const fsmState = data && data.state;
-            const modeBadge = document.getElementById('mode-indicator-badge');
-            if (!modeBadge || !fsmState) return;
-            const meta = _modeLabels[fsmState] || _modeLabels['LOBBY'];
-            modeBadge.textContent = `${meta.icon} ${meta.label}`;
-            modeBadge.style.borderColor = meta.color + '40';
-            modeBadge.style.color = meta.color;
-        });
+            // ESC to dismiss
+            const onKey = (e) => {
+                if (e.key === 'Escape') {
+                    overlay.remove();
+                    document.removeEventListener('keydown', onKey);
+                }
+            };
+            document.addEventListener('keydown', onKey);
+        };
     });
 </script>
 
-<!-- Thinking Bubble Template -->
+<!-- Thinking Bubble Template — Gemini/Claude-style.
+     Used by both session.js (FSM status updates) and enterNode() (immediate
+     feedback on node click). Replaced by real message once content arrives. -->
 <template id="thinking-bubble-template">
-    <div class="message ai thinking-message">
-        <div class="msg-avatar">
-            <img src="https://ui-avatars.com/api/?name=H&background=3b82f6&color=fff" alt="AI">
-        </div>
-        <div class="msg-content">
-            <div class="thinking-header">
-                <div class="spinner-tiny"></div>
-                <span class="thinking-text">Thinking...</span>
-                <span class="thinking-toggle-icon">▼</span>
-            </div>
-            <div class="thinking-logs-inline hidden">
-                <div class="logs-content">
-                    <!-- Logs will be appended here -->
+    <div class="chat-msg incoming thinking-message">
+        <div class="chat-msg-content">
+            <img class="chat-msg-avatar" src="/static/img/helga-avatar.svg" alt="Helga">
+            <div class="chat-msg-body">
+                <div class="thinking-indicator" aria-label="Helga is thinking" role="status">
+                    <span class="thinking-dot"></span>
+                    <span class="thinking-dot"></span>
+                    <span class="thinking-dot"></span>
                 </div>
+                <div class="thinking-label"><span class="thinking-label-text">Thinking</span></div>
             </div>
         </div>
+    </div>
 </template>
 {% endblock %}
 
 {% block page_scripts %}
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <!-- session.js loaded via head_scripts block -->
 <script src="{{ url_for('static', filename='js/session-rails.js') }}"></script>
 {% endblock %}

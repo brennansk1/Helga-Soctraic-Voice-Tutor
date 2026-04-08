@@ -11,23 +11,28 @@
     </div>
 
     <!-- Stats row -->
-    <div class="stats-row">
+    <div class="stats-row" id="stats-row">
         <div class="stat-card">
-            <span class="stat-value" id="total-courses">-</span>
+            <span class="stat-value stat-skeleton" id="total-courses">&nbsp;</span>
             <span class="stat-label">Courses</span>
         </div>
         <div class="stat-card">
-            <span class="stat-value" id="concepts-mastered">-</span>
+            <span class="stat-value stat-skeleton" id="concepts-mastered">&nbsp;</span>
             <span class="stat-label">Concepts</span>
         </div>
         <div class="stat-card">
-            <span class="stat-value" id="cards-due">-</span>
+            <span class="stat-value stat-skeleton" id="cards-due">&nbsp;</span>
             <span class="stat-label">Due Today</span>
         </div>
         <div class="stat-card">
-            <span class="stat-value" id="active-streak">-</span>
+            <span class="stat-value stat-skeleton" id="active-streak">&nbsp;</span>
             <span class="stat-label">Streak</span>
         </div>
+    </div>
+    <!-- Stats error banner — hidden by default, shown when API fails -->
+    <div id="stats-error" class="stats-error-banner" style="display: none;">
+        <span>Could not load stats.</span>
+        <button onclick="loadStats()" class="stats-retry-btn" aria-label="Retry loading stats">Retry</button>
     </div>
 
     <!-- Primary action -->
@@ -37,43 +42,43 @@
 
     <!-- Quick links -->
     <div class="quick-links">
-        <a href="/courses" class="quick-card">
-            <span class="qc-icon">📚</span>
+        <a href="/courses" class="quick-card" aria-label="Courses — Create and manage learning paths">
+            <span class="qc-icon" aria-hidden="true">📚</span>
             <div>
                 <strong>Courses</strong>
                 <span>Create & manage learning paths</span>
             </div>
         </a>
-        <a href="/learn" class="quick-card">
-            <span class="qc-icon">💬</span>
+        <a href="/courses" class="quick-card" aria-label="Learn — Socratic dialogue sessions">
+            <span class="qc-icon" aria-hidden="true">💬</span>
             <div>
                 <strong>Learn</strong>
                 <span>Socratic dialogue sessions</span>
             </div>
         </a>
-        <a href="/review" class="quick-card">
-            <span class="qc-icon">🔄</span>
+        <a href="/review" class="quick-card" aria-label="Review — Spaced repetition">
+            <span class="qc-icon" aria-hidden="true">🔄</span>
             <div>
                 <strong>Review</strong>
                 <span>Spaced repetition (FSRS)</span>
             </div>
         </a>
-        <a href="/quiz" class="quick-card">
-            <span class="qc-icon">🧠</span>
+        <a href="/quiz" class="quick-card" aria-label="Quiz — Test your knowledge">
+            <span class="qc-icon" aria-hidden="true">🧠</span>
             <div>
                 <strong>Quiz</strong>
                 <span>Test your knowledge</span>
             </div>
         </a>
-        <a href="/schedule" class="quick-card">
-            <span class="qc-icon">📅</span>
+        <a href="/schedule" class="quick-card" aria-label="Schedule — Review calendar">
+            <span class="qc-icon" aria-hidden="true">📅</span>
             <div>
                 <strong>Schedule</strong>
                 <span>Review calendar</span>
             </div>
         </a>
-        <a href="/settings" class="quick-card">
-            <span class="qc-icon">⚙️</span>
+        <a href="/settings" class="quick-card" aria-label="Settings — Profile, voice, theme">
+            <span class="qc-icon" aria-hidden="true">⚙️</span>
             <div>
                 <strong>Settings</strong>
                 <span>Profile, voice, theme</span>
@@ -123,6 +128,23 @@
     font-weight: 800;
     color: var(--accent-primary);
     line-height: 1.2;
+    min-height: 1.6rem;
+}
+.stat-value.stat-skeleton {
+    display: inline-block;
+    background: linear-gradient(90deg,
+        var(--border-color) 25%,
+        var(--bg-tertiary) 50%,
+        var(--border-color) 75%);
+    background-size: 200% 100%;
+    animation: home-shimmer 1.4s ease-in-out infinite;
+    border-radius: 6px;
+    min-width: 3ch;
+    color: transparent;
+}
+@keyframes home-shimmer {
+    0%   { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
 }
 .stat-label {
     font-size: 0.75rem;
@@ -184,6 +206,50 @@
     color: var(--text-secondary);
 }
 
+.stats-error-banner {
+    text-align: center;
+    padding: 0.6rem 1rem;
+    margin-bottom: 1.5rem;
+    border-radius: 8px;
+    background: var(--status-error-bg, #fef2f0);
+    color: var(--status-error, #c45c4a);
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+}
+.stats-retry-btn {
+    background: transparent;
+    border: 1px solid var(--status-error, #c45c4a);
+    color: var(--status-error, #c45c4a);
+    border-radius: 6px;
+    padding: 0.3rem 0.75rem;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+.stats-retry-btn:hover {
+    background: var(--status-error, #c45c4a);
+    color: #fff;
+}
+.home-empty-state {
+    text-align: center;
+    padding: 2rem 1rem;
+    margin-bottom: 1.5rem;
+    background: var(--bg-secondary);
+    border: 1px dashed var(--border-color);
+    border-radius: 12px;
+}
+.home-empty-state h3 {
+    margin: 0.5rem 0 0.25rem;
+    font-size: 1.1rem;
+}
+.home-empty-state p {
+    color: var(--text-secondary);
+    margin: 0 0 1rem;
+    font-size: 0.9rem;
+}
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(12px); }
     to { opacity: 1; transform: translateY(0); }
@@ -204,27 +270,62 @@ document.addEventListener('DOMContentLoaded', function() {
     loadGreeting();
 });
 
+function setStatValue(id, value) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.classList.remove('stat-skeleton');
+    el.textContent = value;
+}
+
 async function loadStats() {
+    var errorBanner = document.getElementById('stats-error');
+    var statsRow = document.getElementById('stats-row');
+    var ctaDiv = document.getElementById('home-cta');
+    // Hide error banner at start of load (in case this is a retry)
+    if (errorBanner) errorBanner.style.display = 'none';
+    if (statsRow) statsRow.style.display = '';
+
     try {
         var res = await fetch('/api/stats');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
         var data = await res.json();
-        document.getElementById('total-courses').textContent = data.courses || 0;
-        document.getElementById('concepts-mastered').textContent = data.concepts || 0;
-        document.getElementById('active-streak').textContent = data.streak || 0;
+        setStatValue('total-courses', data.courses || 0);
+        setStatValue('concepts-mastered', data.concepts || 0);
+        setStatValue('active-streak', data.streak || 0);
 
         // Update CTA based on whether courses exist
         var ctaBtn = document.getElementById('cta-primary');
         if (data.courses > 0) {
             ctaBtn.textContent = 'Continue Learning';
-            ctaBtn.href = '/learn';
+            ctaBtn.href = '/courses';
+        } else {
+            // Empty state: no courses yet — show a helpful nudge
+            ctaDiv.innerHTML = '<div class="home-empty-state">' +
+                '<div style="font-size: 2rem;" aria-hidden="true">📚</div>' +
+                '<h3>No courses yet</h3>' +
+                '<p>Create your first course to get started with Socratic learning.</p>' +
+                '<a href="/courses" class="cta-btn primary">Create Your First Course</a>' +
+                '</div>';
         }
-    } catch (e) { console.warn('Stats load failed:', e); }
+    } catch (e) {
+        console.warn('Stats load failed:', e);
+        // Show error banner instead of silent zeros
+        if (errorBanner) errorBanner.style.display = 'flex';
+        // Still clear skeletons so they don't shimmer forever
+        setStatValue('total-courses', '--');
+        setStatValue('concepts-mastered', '--');
+        setStatValue('active-streak', '--');
+    }
 
     try {
         var revRes = await fetch('/api/review_stats');
+        if (!revRes.ok) throw new Error('HTTP ' + revRes.status);
         var review = await revRes.json();
-        document.getElementById('cards-due').textContent = review.due_today || 0;
-    } catch (e) { console.warn('Review stats unavailable:', e); }
+        setStatValue('cards-due', review.due_today || 0);
+    } catch (e) {
+        console.warn('Review stats unavailable:', e);
+        setStatValue('cards-due', '--');
+    }
 }
 
 async function loadGreeting() {

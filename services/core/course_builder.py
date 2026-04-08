@@ -10,6 +10,7 @@ import random
 import requests
 import difflib
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Optional, Tuple, Any
 # Content providers removed — all content is LLM-generated
 from services.common.storage import StorageManager
@@ -34,6 +35,14 @@ DATA_ROOT = os.getenv("DATA_ROOT", "/app/data")
 
 # Concurrency guard: only one course build can run at a time (P2-13)
 _build_lock = threading.Lock()
+
+# Minimum title length enforced across the pipeline. Any title shorter than
+# this gets rejected by the normalizer, flagged by the auditor for rename,
+# and skipped by the hydrator. All three stages must share the same value
+# or concepts can slip into the ContentHydrator and be silently dropped
+# (which is how the "IV" concept ended up unhydrated in the Causal Inference
+# course — see the postmortem in the commit message).
+MIN_TITLE_LEN = 3
 
 FORBIDDEN_TITLES = {
     "basics",
@@ -336,7 +345,16 @@ class SkeletonBuilder:
         self.mastery = mastery if mastery is not None else course_depth
         self.starting_from = starting_from if starting_from is not None else 1
         self.course_params = compute_course_params(self.scope, self.mastery, self.starting_from)
+        # Single backing set (legacy) plus per-level buckets. Concept dedup must
+        # only look at sibling concepts — a concept sharing words with its
+        # parent lesson title is NOT a duplicate. See QB-1 audit finding.
         self.used_titles = set()
+        self.used_titles_by_level = {
+            "module": set(),
+            "unit": set(),
+            "lesson": set(),
+            "concept": set(),
+        }
         self.failed_titles = set()
         self.hierarchy = []
         self.model = None
@@ -417,7 +435,9 @@ class SkeletonBuilder:
         cleaned = re.sub(
             r"\s+(of|and|the|in|for|with|a|an|to|at)$", "", cleaned, flags=re.IGNORECASE
         )
-        cleaned = re.sub(r"[^\w\s-]", "", cleaned)
+        # Keep possessive apostrophes ("Plato's Republic") and straight/curly
+        # variants. Stripping them produced "Platos" / "Aristotles" in QB-1.
+        cleaned = re.sub(r"[^\w\s\-'\u2019]", "", cleaned)
 
         if cleaned.lower() in FORBIDDEN_TITLES:
             return ""
@@ -426,13 +446,23 @@ class SkeletonBuilder:
         # Reject single-word titles unless they are acronyms (all caps) or very specific
         # (e.g., proper nouns with 8+ chars that are domain-specific like "Thermodynamics")
         if word_count < 2:
-            # Allow all-caps acronyms like "DNA", "RNA", "TCP"
-            if cleaned.upper() == cleaned and len(cleaned) <= 6:
-                pass  # Allow acronyms
+            # Allow all-caps acronyms between 3 and 6 chars (DNA, RNA, TCP,
+            # API, CSS, JSON, XML). 2-char acronyms ("IV", "AI", "ML", "UI")
+            # are rejected here because they're ambiguous AND the downstream
+            # ContentHydrator rejects any title with len(strip()) < 3, which
+            # would silently drop them from the course. Keep the two layers
+            # in sync — see ContentHydrator.hydrate() for the mirror guard.
+            if cleaned.upper() == cleaned and 3 <= len(cleaned) <= 6:
+                pass  # Allow 3-6 char acronyms
             elif len(cleaned) < 8:
                 # Reject short single words — too generic to be useful
                 return ""
             # Even long single words get checked against forbidden list (already done above)
+
+        # Absolute minimum length — must match ContentHydrator's guard.
+        # Any title the skeleton builder keeps must be hydratable.
+        if len(cleaned) < MIN_TITLE_LEN:
+            return ""
 
         if cleaned:
             cleaned = cleaned[0].upper() + cleaned[1:]
@@ -444,7 +474,8 @@ class SkeletonBuilder:
         return self._normalize_title(title).lower()
 
     def _is_duplicate(
-        self, new_title: str, course_topic: str = "", is_module: bool = False
+        self, new_title: str, course_topic: str = "", is_module: bool = False,
+        level: str = None,
     ) -> bool:
         new_norm = self._sanitize_title(new_title)
         if not new_norm or len(new_norm.split()) < 1:
@@ -469,7 +500,21 @@ class SkeletonBuilder:
         new_words = {w for w in new_norm.split() if len(w) > 4 and w not in topic_words}
         SIMILARITY_THRESHOLD = 0.90  # Raised from 0.85 — less aggressive
 
-        for used in self.used_titles:
+        # QB-1 FIX: When checking a concept, only compare against other concepts.
+        # A concept like "Socratic Irony" under lesson "Cross-Examination Techniques
+        # and Socratic Irony" is NOT a duplicate — it's the natural child. Otherwise
+        # whole modules can end up with zero concepts because every candidate
+        # word-overlaps with its parent lesson/unit title.
+        if is_module:
+            level = "module"
+        if level == "concept":
+            candidates = self.used_titles_by_level.get("concept", set())
+        elif level in ("module", "unit", "lesson"):
+            candidates = self.used_titles_by_level.get(level, set())
+        else:
+            candidates = self.used_titles
+
+        for used in candidates:
             used_clean = self._sanitize_title(used)
 
             # 1. Exact match (fastest)
@@ -762,6 +807,7 @@ class SkeletonBuilder:
         self, topic: str, max_depth: int = 2, module_depths: Dict[str, int] = None
     ) -> str:
         """The actual build logic, called under _build_lock."""
+        _pipeline_start = time.perf_counter()
         course_uid = f"course_{uuid.uuid4().hex[:8]}"
         self.module_depths = module_depths or {}
 
@@ -792,6 +838,9 @@ class SkeletonBuilder:
             "scope": self.scope,
             "mastery": self.mastery,
             "starting_from": self.starting_from,
+            # GAP 1: Persist Bloom boundaries for live tutoring
+            "bloom_floor": cp["bloom_floor"],
+            "bloom_ceiling": cp["bloom_ceiling"],
             "modules": [],
         }
 
@@ -808,6 +857,12 @@ class SkeletonBuilder:
         example_json = constraints["example_json"]
 
         self.used_titles = set()
+        self.used_titles_by_level = {
+            "module": set(),
+            "unit": set(),
+            "lesson": set(),
+            "concept": set(),
+        }
 
         # Build Bloom progression map — distribute levels across modules
         bloom_floor = cp["bloom_floor"]
@@ -884,6 +939,9 @@ class SkeletonBuilder:
         for attempt in range(1, max_retries + 1):
             modules = []
             self.used_titles = set()  # Reset for each attempt
+            self.used_titles_by_level = {
+                "module": set(), "unit": set(), "lesson": set(), "concept": set(),
+            }
 
             # Combine correction header with original prompt if needed
             current_prompt = (
@@ -939,6 +997,7 @@ class SkeletonBuilder:
                     m["level"] = len(modules) + 1
                     modules.append(m)
                     self.used_titles.add(title)
+                    self.used_titles_by_level["module"].add(title)
 
             valid, issues = self._validate_phase(
                 "modules", modules, target_modules, topic
@@ -1001,12 +1060,16 @@ class SkeletonBuilder:
                 self.status_callback(f"STRUCT:MODULE:{m_title}")
 
             # Build module dict instead of Cypher CREATE
+            # GAP 2: Persist per-module Bloom target for live tutoring
+            _bt = module_bloom_targets[i - 1] if module_bloom_targets and (i - 1) < len(module_bloom_targets) else None
             module_dict = {
                 "uid": m_uid,
                 "title": m_title,
                 "ordinal": i,
                 "progression_role": role_desc,
                 "scope": m_scope,
+                "bloom_target": _bt[0] if _bt else cp.get("bloom_ceiling", 3),
+                "bloom_label": _bt[1] if _bt else "Apply",
                 "units": [],
             }
             course_dict["modules"].append(module_dict)
@@ -1025,7 +1088,10 @@ class SkeletonBuilder:
             self.status_callback(
                 f"LOG: Building sub-structures for {len(module_refs)} modules..."
             )
-        self._build_substructures_progressive(module_refs, max_depth, topic, modules)
+        self._build_substructures_progressive(
+            module_refs, max_depth, topic, modules,
+            module_bloom_targets=module_bloom_targets,
+        )
 
         # WIZ-3: Record fallback count in course metadata
         if self.fallback_count > 0:
@@ -1041,12 +1107,16 @@ class SkeletonBuilder:
 
         # Write course structure to JSON
         self.storage.courses.create_course(course_dict)
-        logger.info(f"Course structure written to JSON: {course_uid}")
+        _skeleton_elapsed = time.perf_counter() - _pipeline_start
+        logger.info(
+            f"[TIMING] Skeleton build completed in {_skeleton_elapsed:.1f}s: {course_uid}"
+        )
 
         return course_uid
 
     def _build_substructures_progressive(
-        self, module_refs, max_depth, topic, all_modules_metadata
+        self, module_refs, max_depth, topic, all_modules_metadata,
+        module_bloom_targets=None,
     ):
         """
         Chunked hierarchical generation for reliable structure building.
@@ -1058,23 +1128,62 @@ class SkeletonBuilder:
 
         This provides frequent progress updates and keeps each LLM call focused.
         """
-        base_units = self.depth_profile.get("units_per_module", 1)
-        base_lessons = self.depth_profile.get("lessons_per_unit", 1)
-        # Use three-slider concepts_per_module divided across units/lessons
-        target_concepts_per_module = self.course_params.get("concepts_per_module", self.depth_profile.get("concepts_per_lesson", 2) * base_lessons * base_units)
+        # QB-1 FIX: DEPTH_PROFILES base counts come from the legacy single-depth
+        # system and explode when scope=5 is used with low mastery (e.g. 4×3×2 =
+        # 24 concepts per module where mastery=1 only wants 3). Clamp base_units
+        # and base_lessons so (units × lessons × 2) never exceeds the mastery
+        # target — we still want a hierarchy, but only as deep as the concept
+        # budget allows.
+        target_concepts_per_module = self.course_params.get(
+            "concepts_per_module",
+            self.depth_profile.get("concepts_per_lesson", 2)
+            * self.depth_profile.get("lessons_per_unit", 1)
+            * self.depth_profile.get("units_per_module", 1),
+        )
+
+        profile_units = self.depth_profile.get("units_per_module", 1)
+        profile_lessons = self.depth_profile.get("lessons_per_unit", 1)
+        # Choose the smallest (units, lessons) that can hold at least
+        # target_concepts_per_module/2 leaves without going under 2 concepts
+        # per lesson. Preference is fewer units → more concepts per lesson,
+        # which mirrors how a real syllabus scales with mastery.
+        if target_concepts_per_module <= 3:
+            base_units, base_lessons = 1, 1
+        elif target_concepts_per_module <= 5:
+            base_units, base_lessons = 1, min(profile_lessons, 2)
+        elif target_concepts_per_module <= 7:
+            base_units, base_lessons = min(profile_units, 2), min(profile_lessons, 2)
+        elif target_concepts_per_module <= 10:
+            base_units, base_lessons = min(profile_units, 2), min(profile_lessons, 3)
+        else:
+            base_units, base_lessons = min(profile_units, 3), min(profile_lessons, 3)
+        base_units = max(1, base_units)
+        base_lessons = max(1, base_lessons)
         base_concepts = max(2, target_concepts_per_module // max(1, base_units * base_lessons))
+        logger.info(
+            f"Substructure shape: units={base_units}, lessons_per_unit={base_lessons}, "
+            f"concepts_per_lesson={base_concepts} "
+            f"(target concepts/module={target_concepts_per_module})"
+        )
         mastery_constraint = self.course_params.get("mastery_writing", "")
         mastery_label = self.course_params.get("mastery_label", "Understanding")
 
         # Track full hierarchy for "mergy context" to avoid repetition
         planned_hierarchy_summary = []
 
-        for m_ref in module_refs:
+        for m_idx, m_ref in enumerate(module_refs):
             m_title = m_ref["title"]
             m_role = m_ref["role_desc"]
             m_scope = m_ref["scope"]
             module_dict = m_ref["dict"]
             module_specific_depth = self.module_depths.get(m_title, max_depth)
+            # Per-module Bloom target from the progression schedule. Default to
+            # the mastery ceiling so any concept-level consumer (FSM, audit)
+            # has a valid integer in [1, 6].
+            if module_bloom_targets and m_idx < len(module_bloom_targets):
+                module_bloom_level = module_bloom_targets[m_idx][0]
+            else:
+                module_bloom_level = self.course_params.get("bloom_ceiling", 2)
 
             constraints = self._get_domain_constraints(topic)
             positive_scope_str = ", ".join(m_scope)
@@ -1206,7 +1315,7 @@ class SkeletonBuilder:
                 u_title = self._normalize_title(unit_data.get("title", ""))
                 u_description = unit_data.get("description", "")
                 unit_used_fallback = unit_data.get("llm_fallback", False)
-                if not u_title or self._is_duplicate(u_title, course_topic=topic):
+                if not u_title or self._is_duplicate(u_title, course_topic=topic, level="unit"):
                     u_title = f"{m_title} Part {u_idx}"
                     if not unit_used_fallback:
                         unit_used_fallback = True
@@ -1214,6 +1323,7 @@ class SkeletonBuilder:
                         logger.warning(f"  [FALLBACK] Using fallback title for unit {u_idx} in module '{m_title}' — duplicate or empty.")
 
                 self.used_titles.add(u_title)
+                self.used_titles_by_level["unit"].add(u_title)
                 u_uid = f"unit_{uuid.uuid4().hex[:8]}"
                 unit_dict = {
                     "uid": u_uid,
@@ -1254,16 +1364,15 @@ class SkeletonBuilder:
                     f"Module: {m_title} (Scope: {positive_scope_str})\n"
                     f"Unit: {u_title}\n"
                     f"Unit Scope: {u_description}\n"
-                    f"Mastery Level: {mastery_label} ({self.mastery}/5)\n\n"
-                    f"### SIBLING UNITS IN THIS MODULE (do NOT overlap with these):\n{sibling_units_str}\n\n"
-                    f"### ALREADY GENERATED LESSONS (do NOT repeat or paraphrase):\n{prev_lessons_str}\n\n"
-                    f"Generate exactly {base_lessons} lessons for this unit.\n"
-                    f"Each lesson must cover a DISTINCT aspect within this unit's scope.\n"
+                    f"Bloom Level: {mastery_label}\n\n"
+                    f"### SIBLING UNITS (lessons must NOT overlap with these units' topics):\n{sibling_units_str}\n\n"
+                    f"### ALL LESSONS ALREADY IN THIS COURSE (do NOT repeat or paraphrase):\n{prev_lessons_str}\n\n"
+                    f"Generate exactly {base_lessons} lessons for '{u_title}'.\n"
+                    f"Each lesson must cover a GENUINELY DIFFERENT aspect — different event, period, method, or perspective.\n"
                     f"TITLE RULES:\n"
-                    f"- 3-8 words, complexity appropriate for {mastery_label} level.\n"
-                    f"- Use real terminology from {topic}.\n"
-                    f"- BANNED patterns: 'Introduction to X', 'Overview of X', 'Understanding X', "
-                    f"'Role of X in Y', 'Significance of X', 'Impact of X on Y'.\n\n"
+                    f"- 3-8 words. Specific enough that a reader knows what the lesson covers.\n"
+                    f"- BANNED: 'Introduction to X', 'Overview of X', 'Understanding X', 'X Part 2'.\n"
+                    f"- A student should NOT be able to confuse one lesson for another.\n\n"
                     f"Return JSON array: [{{'title': 'Specific Lesson Name'}}]"
                 )
 
@@ -1294,7 +1403,7 @@ class SkeletonBuilder:
                 for l_idx, lesson_data in enumerate(lessons_data, 1):
                     l_title = self._normalize_title(lesson_data.get("title", ""))
                     lesson_used_fallback = lesson_data.get("llm_fallback", False)
-                    if not l_title or self._is_duplicate(l_title, course_topic=topic):
+                    if not l_title or self._is_duplicate(l_title, course_topic=topic, level="lesson"):
                         l_title = f"{u_title} Lesson {l_idx}"
                         if not lesson_used_fallback:
                             lesson_used_fallback = True
@@ -1302,6 +1411,7 @@ class SkeletonBuilder:
                             logger.warning(f"  [FALLBACK] Using fallback title for lesson {l_idx} in unit '{u_title}' — duplicate or empty.")
 
                     self.used_titles.add(l_title)
+                    self.used_titles_by_level["lesson"].add(l_title)
                     lessons_generated_in_module.append(l_title)
                     l_uid = f"less_{uuid.uuid4().hex[:8]}"
                     lesson_dict = {
@@ -1370,28 +1480,27 @@ class SkeletonBuilder:
                         f"Course: {topic}\n"
                         f"Module: {m_title} (Module {module_dict.get('ordinal',1)}/{len(module_refs)})\n"
                         f"Unit: {u_title} | Lesson: {l_title}\n"
-                        f"THIS MODULE'S Bloom Level: {_mod_bloom} ({_mod_bloom_label})\n\n"
-                        f"### SIBLING LESSONS IN THIS UNIT (concepts must NOT overlap):\n{sibling_lessons_str}\n\n"
-                        f"### CONCEPTS ALREADY GENERATED (do NOT repeat OR rephrase):\n{prev_concepts_str}\n\n"
-                        f"Generate exactly {base_concepts} DISTINCT key concepts for this lesson on '{l_title}'.\n\n"
-                        f"CRITICAL ANTI-DUPLICATION RULES:\n"
-                        f"- Each concept must teach a DIFFERENT SKILL or FACT — not the same idea with different words.\n"
-                        f"- BAD: 'Identify Confounders' + 'Confounding Variables Detection' + 'Spotting Confounders' (all the same thing)\n"
-                        f"- GOOD: 'Confounding Variables' + 'Selection Bias' + 'Measurement Error' (three distinct problems)\n"
-                        f"- If two concept titles could be chapter headings for the SAME chapter, they are duplicates.\n\n"
-                        f"CONCEPT NAMING RULES (Bloom {_mod_bloom} — {_mod_bloom_label}):\n"
+                        f"Bloom Level: {_mod_bloom} ({_mod_bloom_label})\n\n"
+                        f"### SIBLING LESSONS (concepts must NOT overlap with these):\n{sibling_lessons_str}\n\n"
+                        f"### ALL CONCEPTS ALREADY IN THIS COURSE (do NOT repeat, rephrase, or paraphrase ANY):\n{prev_concepts_str}\n\n"
+                        f"Generate exactly {base_concepts} concepts for '{l_title}'.\n\n"
+                        f"ZERO TOLERANCE FOR REDUNDANCY:\n"
+                        f"- Before writing each concept, ask: 'Does this teach something GENUINELY NEW that no existing concept covers?'\n"
+                        f"- Two concepts are duplicates if a student who mastered one would already know the other.\n"
+                        f"- Each concept must cover a DIFFERENT aspect: different event, different person, different mechanism, different time period, or different technique.\n"
+                        f"- NEVER generate two concepts about the same noun (e.g., two concepts about 'land rights' or two about 'codification').\n\n"
+                        f"NAMING (Bloom {_mod_bloom} — {_mod_bloom_label}):\n"
                         f"{naming_guide}\n"
-                        f"- 1-6 words. Each concept must be narrower than the lesson title.\n"
-                        f"- NEVER invent fake theorem or axiom names.\n\n"
-                        f"Each concept needs 2 learning objectives appropriate for Bloom level {_mod_bloom} ({_mod_bloom_label}).\n"
+                        f"- 2-6 words. Specific enough that a reader knows exactly what will be taught.\n\n"
+                        f"Each concept needs 2 learning objectives for Bloom {_mod_bloom}.\n"
                         f"Return JSON: [{{'title': 'Concept Name', 'objectives': ['Learn X', 'Understand Y']}}]"
                     )
 
                     concepts_sys = (
-                        f"Expert curriculum designer for {topic}. "
-                        f"This module is at Bloom level {_mod_bloom} ({_mod_bloom_label}). "
-                        f"Match concept complexity to THIS module's level, not the course maximum. "
-                        f"Return strict JSON array only. Never invent fake theorem or axiom names."
+                        f"Expert {topic} curriculum designer. "
+                        f"Bloom level {_mod_bloom} ({_mod_bloom_label}). "
+                        f"Every concept must be UNIQUE — if you can't think of {base_concepts} truly distinct concepts for this lesson, generate fewer rather than padding with synonyms. "
+                        f"Return strict JSON array only."
                     )
                     concepts_data = llm_generate_json(
                         concepts_prompt,
@@ -1421,11 +1530,12 @@ class SkeletonBuilder:
                     for c_idx, concept_data in enumerate(concepts_data, 1):
                         c_title = self._normalize_title(concept_data.get("title", ""))
                         if not c_title or self._is_duplicate(
-                            c_title, course_topic=topic
+                            c_title, course_topic=topic, level="concept"
                         ):
                             continue  # Skip bad duplicates
 
                         self.used_titles.add(c_title)
+                        self.used_titles_by_level["concept"].add(c_title)
                         concept_titles.append(c_title)
                         concepts_generated_in_unit.append(c_title)
                         c_uid = f"con_{uuid.uuid4().hex[:8]}"
@@ -1437,6 +1547,9 @@ class SkeletonBuilder:
                             ),
                             "complexity_role": m_role,
                             "depth_level": module_specific_depth,
+                            # QB-1 FIX: Persist bloom_level so FSM/audit can read
+                            # the progression target per concept.
+                            "bloom_level": int(module_bloom_level),
                             "ordinal": c_idx,
                         }
                         if concept_data.get("llm_fallback"):
@@ -1445,6 +1558,35 @@ class SkeletonBuilder:
 
                         if self.status_callback:
                             self.status_callback(f"STRUCT:CONCEPT:{c_uid}:{c_title}")
+
+                    # QB-1 FIX: If dedup left the lesson with zero concepts
+                    # (common when the LLM echoes parent-lesson vocabulary),
+                    # backfill with numbered "{lesson} Part N" stubs so the
+                    # structure is never empty. Better a generic concept than
+                    # a black hole in the learning path.
+                    if len(lesson_dict["concepts"]) == 0:
+                        for pad_idx in range(1, base_concepts + 1):
+                            pad_title = f"{l_title} Part {pad_idx}"
+                            pad_uid = f"con_{uuid.uuid4().hex[:8]}"
+                            self.used_titles.add(pad_title)
+                            self.used_titles_by_level["concept"].add(pad_title)
+                            concept_titles.append(pad_title)
+                            concepts_generated_in_unit.append(pad_title)
+                            lesson_dict["concepts"].append({
+                                "uid": pad_uid,
+                                "title": pad_title,
+                                "learning_objectives": [f"Understand {l_title}"],
+                                "complexity_role": m_role,
+                                "depth_level": module_specific_depth,
+                                "bloom_level": int(module_bloom_level),
+                                "ordinal": pad_idx,
+                                "llm_fallback": True,
+                            })
+                            self.fallback_count += 1
+                        logger.warning(
+                            f"  [FALLBACK] Lesson '{l_title}' had 0 concepts after dedup — "
+                            f"backfilled with {base_concepts} Part-N stubs."
+                        )
 
                     if concept_titles:
                         m_summary_lines.append(
@@ -1578,11 +1720,14 @@ class ContentHydrator:
 
         course_title = course.get("title", "General Knowledge")
 
-        # Build hierarchy context and concept list from JSON
+        # Build hierarchy context, concept list, and prerequisite map from JSON
         concept_list = []
         hierarchy_map = {}
         module_source_map = {}
-        concept_ref_map = {}  # Task #51: Map uid -> concept dict for in-place updates
+        concept_ref_map = {}
+        # Pre-compute prerequisites: for each concept, the titles of preceding concepts
+        all_concept_titles_in_order = []
+        prerequisite_map = {}
 
         for module in course.get("modules", []):
             source_file = module.get("source_file", "")
@@ -1591,8 +1736,14 @@ class ContentHydrator:
                     for concept in lesson.get("concepts", []):
                         uid = concept["uid"]
                         title = concept["title"]
+                        # Build prerequisite list from prior concepts in syllabus order
+                        prerequisite_map[uid] = list(all_concept_titles_in_order[-5:])
+                        all_concept_titles_in_order.append(title)
+
                         objectives = json.dumps(concept.get("learning_objectives", []))
                         complexity_role = concept.get("complexity_role", "")
+                        bloom_level = concept.get("bloom_level", self.mastery_level)
+                        depth_level = concept.get("depth_level", self.mastery_level)
 
                         # Check if already hydrated
                         existing_content = self.storage.courses.get_concept_content(
@@ -1602,8 +1753,12 @@ class ContentHydrator:
                             continue
 
                         user_note = concept.get("user_note", "") or module.get("user_note", "")
-                        concept_list.append((uid, title, objectives, complexity_role, user_note))
-                        concept_ref_map[uid] = concept  # Task #51: Store reference for source_confidence
+                        concept_list.append((
+                            uid, title, objectives, complexity_role, user_note,
+                            bloom_level, depth_level, prerequisite_map.get(uid, []),
+                            concept.get("learning_objectives", []),
+                        ))
+                        concept_ref_map[uid] = concept
                         hierarchy_map[uid] = {
                             "module": module["title"],
                             "module_uid": module["uid"],
@@ -1621,186 +1776,178 @@ class ContentHydrator:
         hydrated_count = 0
         failed_count = 0
         hydration_fallback_count = 0  # WIZ-3: Track hydration stub/fallback content
-        current_module_uid = None
-        current_lesson_uid = None
-        module_concepts_covered = []  # Track ALL concepts within a module for cross-lesson dedup
-        lesson_concepts_covered = []  # Track concepts within current lesson
-        local_providers_cache = {}
+        _counter_lock = threading.Lock()
+        _course_lock = threading.Lock()
+        _availability_marked = threading.Event()
+        hydration_start_time = time.perf_counter()
 
-        for uid, title, objectives, complexity_role, user_note in concept_list:
+        # Phase 11A: Parallel concept hydration with ThreadPoolExecutor
+        # Each concept's research + LLM call + file save is independent.
+        # Cap workers at 3 to respect Jetson 8GB RAM constraint.
+        max_workers = min(3, len(concept_list))
+        research_url = os.getenv("RESEARCH_URL", "http://helga-research:5006")
+
+        def _hydrate_one(idx, uid, title, objectives, complexity_role, user_note,
+                         bloom_level, depth_level, prerequisite_titles, learning_objectives_list):
+            """Hydrate a single concept (runs in thread pool)."""
+            nonlocal hydrated_count, failed_count, hydration_fallback_count
+
             h_ctx = hierarchy_map.get(uid, {})
-            l_uid = h_ctx.get("lesson_uid")
-            m_uid = h_ctx.get("module_uid", None)
 
-            # Reset module-level tracking when module changes
-            if m_uid != current_module_uid:
-                current_module_uid = m_uid
-                module_concepts_covered = []
-
-            # Reset lesson-level tracking when lesson changes
-            if l_uid != current_lesson_uid:
-                current_lesson_uid = l_uid
-                lesson_concepts_covered = []
-
-            try:
-                logger.info(
-                    f"Hydrating Concept [{hydrated_count + failed_count + 1}/{len(concept_list)}]: {title}"
-                )
-
-                # 2B: Hydration Pipeline Checks - Verify inputs
-                if not title or len(title.strip()) < 3:
-                    logger.warning(
-                        f"  [SKIP] Concept missing valid title. Skipping hydration."
-                    )
+            # Validate title length
+            if not title or len(title.strip()) < MIN_TITLE_LEN:
+                logger.warning(f"  [SKIP] Concept '{title}' title too short. Skipping.")
+                with _counter_lock:
                     failed_count += 1
-                    continue
+                return
 
-                if not objectives or len(objectives) < 5:
-                    logger.warning(
-                        f"  [WARN] Concept '{title}' missing objectives. Proceeding with limited context."
-                    )
-                    if self.status_callback:
-                        self.status_callback(
-                            f"CHECK:HYDRATION:WARN:No objectives for {title}"
-                        )
+            if self.status_callback:
+                self.status_callback(f"STRUCT:HYDRATING:{uid}:START:{title}")
 
-                if self.status_callback:
-                    self.status_callback(f"STRUCT:HYDRATING:{uid}:START:{title}")
-                text = ""
-
-                # Multi-Source Collection
-                search_queries = [f"{title} {course_title}", title]
-                try:
-                    obj_list = json.loads(objectives)
-                    if isinstance(obj_list, list) and obj_list:
-                        search_queries.append(obj_list[0])
-                except:
-                    pass
-
-                # Content providers removed — LLM generates all content
-                collected_snippets = []
-
-                source_text = "\n\n".join(collected_snippets)
-                # Decision: Use source text if found, otherwise let the structuring call handle it
-                source_type = "multi-source" if collected_snippets else "llm-only"
-                content_to_use = source_text if source_text else ""
-
-                # Research service: fetch external reference material for this concept
-                reference_material = ""
-                research_sources = []
-                research_confidence = 0.0
-                research_url = os.getenv("RESEARCH_URL", "http://helga-research:5006")
-                try:
-                    research_resp = requests.post(
-                        f"{research_url}/api/research_concept",
-                        json={
-                            "title": title,
-                            "module_title": h_ctx.get("module", ""),
-                            "course_title": course_title,
-                        },
-                        timeout=15,
-                    )
-                    if research_resp.status_code == 200:
-                        research_data = research_resp.json()
-                        reference_material = research_data.get("combined_text", "")
-                        research_sources = research_data.get("sources", [])
-                        research_confidence = research_data.get("confidence", 0.0)
-                        if reference_material:
-                            source_type = "research+llm"
-                            logger.info(
-                                f"  [RESEARCH] Got reference material for '{title}' "
-                                f"(confidence={research_confidence:.2f}, {len(research_sources)} sources)"
-                            )
-                    else:
-                        logger.debug(
-                            f"  [RESEARCH] Non-200 response for '{title}': {research_resp.status_code}"
-                        )
-                except Exception as research_err:
-                    logger.warning(f"  [RESEARCH] Research service unavailable for '{title}': {research_err}")
-
-                # Merge research material into content_to_use
-                if reference_material:
-                    content_to_use = (content_to_use + "\n\n" + reference_material).strip()
-
-                # Consolidated Hydration: Pedagogy + Structure in a single LLM call.
-                # Falls back to LLM knowledge if no source text available.
-                if self.status_callback:
-                    self.status_callback(f"STRUCT:HYDRATING:{uid}:STRUCTURING:{title}")
-
-                structured_md = self._condense_and_structure_content(
-                    title,
-                    content_to_use,
-                    course_title,
-                    self.mastery_level,  # Use mastery level, not raw depth
-                    complexity_role,
-                    source_type,
-                    hierarchy_context=h_ctx,
-                    previous_concepts=lesson_concepts_covered,
-                    module_concepts=module_concepts_covered,
-                    research_sources=research_sources,
-                    research_confidence=research_confidence,
-                    user_note=user_note,
+            # Research service call (I/O-bound, benefits from parallelism)
+            reference_material = ""
+            research_sources = []
+            research_confidence = 0.0
+            try:
+                research_resp = requests.post(
+                    f"{research_url}/api/research_concept",
+                    json={
+                        "title": title,
+                        "module_title": h_ctx.get("module", ""),
+                        "course_title": course_title,
+                    },
+                    timeout=15,
                 )
+                if research_resp.status_code == 200:
+                    research_data = research_resp.json()
+                    reference_material = research_data.get("combined_text", "")
+                    research_sources = research_data.get("sources", [])
+                    research_confidence = research_data.get("confidence", 0.0)
+            except Exception as research_err:
+                logger.warning(f"  [RESEARCH] Unavailable for '{title}': {research_err}")
 
-                # WIZ-3: Detect if hydration returned a fallback stub
-                if "[Hydration failed]" in structured_md:
+            content_to_use = reference_material if reference_material else ""
+            source_type = "research+llm" if reference_material else "llm-only"
+
+            # Pre-structure research material into buckets for better LLM utilization
+            research_structured = self._preprocess_research(content_to_use)
+
+            if self.status_callback:
+                self.status_callback(f"STRUCT:HYDRATING:{uid}:STRUCTURING:{title}")
+
+            # LLM structuring call (I/O-bound, benefits from parallelism)
+            structured_md = self._condense_and_structure_content(
+                title,
+                content_to_use,
+                course_title,
+                self.mastery_level,
+                complexity_role,
+                source_type,
+                hierarchy_context=h_ctx,
+                previous_concepts=[],
+                module_concepts=[],
+                research_sources=research_sources,
+                research_confidence=research_confidence,
+                user_note=user_note,
+                bloom_level=bloom_level,
+                learning_objectives=learning_objectives_list,
+                prerequisite_titles=prerequisite_titles,
+                research_structured=research_structured,
+            )
+
+            # WIZ-3: Detect fallback stubs
+            is_fallback = "[Hydration failed]" in structured_md
+            if is_fallback:
+                logger.warning(f"  [FALLBACK] Stub for '{title}' ({uid}).")
+                if self.status_callback:
+                    self.status_callback(f"STRUCT:WARN:CONCEPT_STUB:{title}")
+
+            # Append research citations
+            if research_sources:
+                sources_md = "\n\n## Sources\n"
+                for src in research_sources:
+                    src_title = src.get("title", "Untitled")
+                    src_url = src.get("url", "")
+                    src_type_str = src.get("type", "web")
+                    tier = src.get("domain_tier", "")
+                    tier_str = f" (Tier {tier})" if tier else ""
+                    sources_md += f"- [{src_title}]({src_url}) — {src_type_str}{tier_str}\n"
+                sources_md += f"\n*Source confidence: {research_confidence:.2f}*\n"
+                structured_md += sources_md
+
+            # Task #51: Store source_confidence
+            if uid in concept_ref_map:
+                concept_ref_map[uid]["source_confidence"] = round(research_confidence, 2)
+
+            # Save to filesystem (thread-safe: each concept writes a different file)
+            self.storage.courses.save_concept_content(course_uid, uid, structured_md)
+
+            if self.status_callback:
+                self.status_callback(f"STRUCT:HYDRATED:{uid}:{source_type}:{title}")
+
+            # Update counters atomically
+            with _counter_lock:
+                if is_fallback:
                     hydration_fallback_count += 1
-                    logger.warning(f"  [FALLBACK] Hydration used fallback stub for concept '{title}' ({uid}).")
-                    if self.status_callback:
-                        self.status_callback(f"STRUCT:WARN:CONCEPT_STUB:{title}")
-
-                # Append research source citations to the markdown if available
-                if research_sources:
-                    sources_md = "\n\n## Sources\n"
-                    for src in research_sources:
-                        src_title = src.get("title", "Untitled")
-                        src_url = src.get("url", "")
-                        src_type = src.get("type", "web")
-                        tier = src.get("domain_tier", "")
-                        tier_str = f" (Tier {tier})" if tier else ""
-                        sources_md += f"- [{src_title}]({src_url}) — {src_type}{tier_str}\n"
-                    sources_md += f"\n*Source confidence: {research_confidence:.2f}*\n"
-                    structured_md += sources_md
-
-                lesson_concepts_covered.append(title)
-                module_concepts_covered.append(title)
-
-                # Task #51: Store source_confidence on the concept dict in structure
-                if uid in concept_ref_map:
-                    concept_ref_map[uid]["source_confidence"] = round(research_confidence, 2)
-
-                # Save to filesystem via StorageManager
-                self.storage.courses.save_concept_content(
-                    course_uid, uid, structured_md
-                )
-
-                if self.status_callback:
-                    self.status_callback(f"STRUCT:HYDRATED:{uid}:{source_type}:{title}")
-
                 hydrated_count += 1
 
-                # Progressive availability: mark course "available" after first module completes
-                if hydrated_count == 1:
-                    course["status"] = "available"
-                    course["hydrated_count"] = hydrated_count
-                    self.storage.courses.update_course(course_uid, course)
+                # Progressive availability: mark course available after first concept
+                if hydrated_count == 1 and not _availability_marked.is_set():
+                    _availability_marked.set()
+                    with _course_lock:
+                        course["status"] = "available"
+                        course["hydrated_count"] = 1
+                        self.storage.courses.update_course(course_uid, course)
                     if self.status_callback:
                         self.status_callback("COURSE_AVAILABLE")
-                    logger.info(f"Course '{course_title}' now available for learning (1 concept hydrated, {len(concept_list)-1} remaining)")
+                    logger.info(
+                        f"Course '{course_title}' now available (1 concept hydrated, "
+                        f"{len(concept_list)-1} remaining)"
+                    )
 
-            except Exception as concept_error:
-                failed_count += 1
-                logger.error(
-                    f"  [CONCEPT FAILED] Hydration failed for concept '{title}' ({uid}): {concept_error}",
-                    exc_info=True,
-                )
+        # Execute parallel hydration
+        if max_workers > 1:
+            logger.info(f"  [PARALLEL] Hydrating {len(concept_list)} concepts with {max_workers} workers")
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {}
+                for idx, entry in enumerate(concept_list):
+                    uid, title = entry[0], entry[1]
+                    f = executor.submit(_hydrate_one, idx, *entry)
+                    futures[f] = (uid, title)
 
-            # Batch GC every 10 concepts instead of every single one (significant speedup)
-            if (hydrated_count + failed_count) % 10 == 0:
-                gc.collect()
+                for future in as_completed(futures):
+                    uid, title = futures[future]
+                    try:
+                        future.result()
+                    except Exception as concept_error:
+                        with _counter_lock:
+                            failed_count += 1
+                        logger.error(
+                            f"  [CONCEPT FAILED] '{title}' ({uid}): {concept_error}",
+                            exc_info=True,
+                        )
+                    # Batch GC every 10 concepts
+                    with _counter_lock:
+                        total_done = hydrated_count + failed_count
+                    if total_done % 10 == 0:
+                        gc.collect()
+        else:
+            # Single concept — run directly
+            for idx, entry in enumerate(concept_list):
+                uid, title = entry[0], entry[1]
+                try:
+                    _hydrate_one(idx, *entry)
+                except Exception as concept_error:
+                    with _counter_lock:
+                        failed_count += 1
+                    logger.error(
+                        f"  [CONCEPT FAILED] '{title}' ({uid}): {concept_error}",
+                        exc_info=True,
+                    )
 
-        # Final GC after hydration loop
         gc.collect()
+        hydration_elapsed = time.perf_counter() - hydration_start_time
+        logger.info(f"  [TIMING] Hydration completed in {hydration_elapsed:.1f}s")
 
         total_concepts = len(concept_list)
 
@@ -1841,6 +1988,38 @@ class ContentHydrator:
                     "CHECK:HYDRATION:WARN:Some concepts failed to hydrate."
                 )
 
+    def _preprocess_research(self, combined_text):
+        """Bucket research text into facts, examples, and edge cases for structured LLM injection.
+        Pure Python heuristics — no LLM calls, thread-safe."""
+        result = {"key_facts": "", "examples": "", "edge_cases": "", "remainder": ""}
+        if not combined_text or len(combined_text.strip()) < 50:
+            result["remainder"] = combined_text or ""
+            return result
+
+        sentences = re.split(r'(?<=[.!?])\s+', combined_text)
+        facts, examples, edges, other = [], [], [], []
+
+        fact_kw = {"defined as", "refers to", "is a", "consists of", "known as", "characterized by"}
+        example_kw = {"for example", "such as", "in practice", "case study", "instance", "demonstrated"}
+        edge_kw = {"however", "except", "limitation", "does not apply", "breaks down", "controversy", "although", "caveat"}
+
+        for s in sentences:
+            s_lower = s.lower()
+            if any(kw in s_lower for kw in fact_kw) or (len(s) < 200 and any(c.isdigit() for c in s)):
+                facts.append(s.strip())
+            elif any(kw in s_lower for kw in example_kw):
+                examples.append(s.strip())
+            elif any(kw in s_lower for kw in edge_kw):
+                edges.append(s.strip())
+            else:
+                other.append(s.strip())
+
+        result["key_facts"] = " ".join(facts[:5])
+        result["examples"] = " ".join(examples[:3])
+        result["edge_cases"] = " ".join(edges[:3])
+        result["remainder"] = " ".join(other)[:1500]
+        return result
+
     def _condense_and_structure_content(
         self,
         title: str,
@@ -1855,6 +2034,10 @@ class ContentHydrator:
         research_sources: list = None,
         research_confidence: float = 0.0,
         user_note: str = "",
+        bloom_level: int = 3,
+        learning_objectives: list = None,
+        prerequisite_titles: list = None,
+        research_structured: dict = None,
     ) -> str:
         """Transforms raw crawl data into structured Markdown for Socratic tutoring, Flashcards, and Review."""
         logger.info(f"  [MARKDOWN] Structuring {title} (Depth: {depth})...")
@@ -1876,111 +2059,147 @@ class ContentHydrator:
         depth_desc = f"{mastery_profile['label']} ({mastery_profile['vocabulary']})"
         writing_guide = mastery_profile['writing']
 
+        # Bloom-level labels for calibrated content
+        bloom_labels = {1: "Remember", 2: "Understand", 3: "Apply", 4: "Analyze", 5: "Evaluate", 6: "Create"}
+        bloom_label = bloom_labels.get(bloom_level, "Apply")
+
         sys_prompt = (
             f"Expert Educational Content Architect specializing in {course_title}. "
-            f"Writing level: {depth_desc}. "
-            f"{writing_guide} "
+            f"Writing level: {depth_desc}. {writing_guide} "
+            f"Target cognitive level: Bloom {bloom_level} ({bloom_label}). "
+            "Calibrate all content to this level. "
             "Build a Teaching Guide using ONLY real, established knowledge. "
-            "MATCH YOUR LANGUAGE AND COMPLEXITY TO THE SPECIFIED WRITING LEVEL. "
             "Never invent theorems, axioms, or method names. Output Markdown directly."
         )
 
-        # Truncate source material to keep prompt focused
-        source_material = (
-            raw_text[:5000] if raw_text else "Use your internal knowledge of this topic."
-        )
+        # Build structured research injection (replaces raw blob)
+        research_input = ""
+        rs = research_structured or {}
+        if rs.get("key_facts"):
+            research_input += f"\n### KEY FACTS (from verified sources — synthesize into Key Facts section):\n{rs['key_facts']}\n"
+        if rs.get("examples"):
+            research_input += f"\n### REAL-WORLD EXAMPLES (from sources — synthesize into Examples section):\n{rs['examples']}\n"
+        if rs.get("edge_cases"):
+            research_input += f"\n### EDGE CASES (from sources — use in Edge Cases section):\n{rs['edge_cases']}\n"
+        remainder = rs.get("remainder", raw_text or "")
+        source_material = remainder[:3000] if remainder else "Use your internal knowledge."
+        if not research_input and raw_text:
+            source_material = raw_text[:5000]
 
-        # Build reference material section if research sources are available
-        reference_section = ""
-        if research_sources and research_confidence > 0:
-            ref_source_list = ", ".join(
-                s.get("title", "Unknown") for s in research_sources[:5]
-            )
-            reference_section = (
-                f"\n### REFERENCE MATERIAL (confidence: {research_confidence:.2f}):\n"
-                f"The following vetted reference material has been gathered from: {ref_source_list}.\n"
-                f"Prioritize facts and explanations from this material. "
-                f"Do not copy verbatim — synthesize into your own pedagogical explanation.\n"
-            )
+        # Build static sections (prepended in Python, not LLM-generated)
+        obj_lines = ""
+        if learning_objectives:
+            obj_lines = "\n".join(f"- {o}" for o in learning_objectives[:5])
+        else:
+            obj_lines = f"- Understand the core principles of {title}"
 
-        # Build depth-appropriate section list
-        sections_by_depth = {
-            1: (
-                f"## Core Definition\n[1-2 sentence simple definition in plain language]\n\n"
-                f"## Contextual Explanation\n[~150 word intuitive explanation with an everyday analogy]\n\n"
-                f"## Socratic Hook\n[One simple open-ended question using a concrete scenario]"
-            ),
-            2: (
-                f"## Core Definition\n[1-2 sentence precise definition with key technical terms bolded]\n\n"
-                f"## Component Breakdown\n- **[Part]**: [Description]\n\n"
-                f"## Contextual Explanation\n[~200 word explanation with concrete examples]\n\n"
-                f"## Socratic Hook\n[One open-ended question]"
-            ),
-            3: (
-                f"## Core Definition\n[1-2 sentence precise definition that distinguishes this from related concepts]\n\n"
-                f"## Component Breakdown\n- **[Part]**: [Description]\n\n"
-                f"## Contextual Explanation\n[~250 word technical explanation. Focus on what is UNIQUE to this concept vs sibling concepts.]\n\n"
-                f"## Misconceptions\n- **Belief**: ...\n- **Correction**: ...\n\n"
-                f"## Socratic Hook\n[One open-ended question]"
-            ),
-            4: (
-                f"## Core Definition\n[1-2 sentence formal definition. Include any standard notation or formal criteria.]\n\n"
-                f"## Component Breakdown\n- **[Part]**: [Description with formal detail]\n\n"
-                f"## Contextual Explanation\n[~300 word professional-level explanation. Cover formal conditions, key assumptions, and when/why this method is used. Include relationships to related methods.]\n\n"
-                f"## Misconceptions\n- **Belief**: ...\n- **Correction**: ...\n\n"
-                f"## Advanced Notes\n[Key edge cases, limitations, or conditions under which this breaks down]\n\n"
-                f"## Socratic Hook\n[One probing question about assumptions or edge cases]"
-            ),
-            5: (
-                f"## Core Definition\n[Formal definition with standard notation]\n\n"
-                f"## Component Breakdown\n- **[Part]**: [Description with formal detail]\n\n"
-                f"## Contextual Explanation\n[~400 word research-level explanation. Cover theoretical foundations, key results, and connections to related work.]\n\n"
-                f"## Misconceptions\n- **Belief**: ...\n- **Correction**: ...\n\n"
-                f"## Advanced Notes\n[Theoretical implications and boundary conditions]\n\n"
-                f"## Research Frontiers\n[Open problems and active research directions]\n\n"
-                f"## Socratic Hook\n[One research-level question]"
-            ),
+        prereq_str = ""
+        if prerequisite_titles:
+            prereq_str = ", ".join(prerequisite_titles[-5:])
+        else:
+            prereq_str = "None (first concept)"
+
+        static_header = f"""# {title}
+
+## Metadata
+- **Bloom Target**: {bloom_level} ({bloom_label})
+- **Depth**: {depth}
+- **Path**: {context_path}
+- **Complexity**: {complexity_role}
+- **Source**: {source}
+
+## Learning Objectives
+{obj_lines}
+
+## Prerequisites
+Prior concepts: {prereq_str}
+"""
+
+        # Bloom-calibrated mastery criteria template
+        mastery_templates = {
+            1: "- Recalls the definition accurately\n- Identifies key terms related to the concept",
+            2: "- Explains the concept in their own words\n- Gives a correct example",
+            3: "- Applies the concept to solve a new problem\n- Explains WHY the method works in their scenario",
+            4: "- Breaks down the concept into components and explains relationships\n- Compares with related concepts and identifies trade-offs",
+            5: "- Evaluates when the concept works and when it fails\n- Defends a position with evidence and reasoning",
+            6: "- Proposes a novel application or extension\n- Synthesizes multiple concepts into an original framework",
         }
-        section_template = sections_by_depth.get(depth, sections_by_depth[3])
+        mastery_criteria_hint = mastery_templates.get(bloom_level, mastery_templates[3])
+
+        # Bloom-calibrated core explanation instruction
+        core_instructions = {
+            1: "1-2 sentence simple definition in plain language. No jargon.",
+            2: "1-2 sentence precise definition with key terms explained.",
+            3: "Precise definition that distinguishes this from related concepts. Include method/procedure.",
+            4: "Formal definition with standard notation or criteria. Include assumptions and conditions.",
+            5: "Formal definition with notation. Include theoretical foundations and boundary conditions.",
+        }
+        core_inst = core_instructions.get(depth, core_instructions[3])
+
+        word_targets = {1: 150, 2: 200, 3: 250, 4: 300, 5: 400}
+        word_target = word_targets.get(depth, 250)
+
+        # Build the LLM-generated section template
+        section_template = f"""## Mastery Criteria
+At Bloom {bloom_level} ({bloom_label}), the student demonstrates mastery by:
+{mastery_criteria_hint}
+Grade 3 requires: [Write one sentence describing the specific threshold for THIS concept]
+
+## Core Explanation
+[{core_inst} ~{word_target} words.]
+
+## Key Facts
+[3-5 bullet points of verified facts. Use the KEY FACTS input if available, otherwise use your knowledge.]
+
+## Real-World Examples
+[1-2 concrete examples with specific names/dates/places. Use EXAMPLES input if available.]
+
+## Misconceptions
+- **Belief**: [A common misconception about this concept]
+  **Correction**: [Why it's wrong and what's correct]
+
+## Edge Cases & Limitations
+[When does this concept break down? Use EDGE CASES input if available. 2-3 bullet points.]
+
+## Socratic Hooks
+- Bloom 1-2: [A simple scenario question for beginners]
+- Bloom 3-4: [An application or analysis question]
+- Bloom 5-6: [An evaluation or synthesis question]
+
+## Analogies
+- **Simple**: [An everyday analogy accessible to anyone]
+- **Technical**: [A domain-specific analogy for advanced learners]"""
 
         user_prompt = f"""Topic: {title} | Course: {course_title} | Depth: {depth}/5 ({depth_desc})
 {h_str}
 
 ### WRITING LEVEL: {writing_guide}
 
-### DEDUPLICATION CONTEXT — DO NOT REPEAT content already covered:
-- Concepts already covered in this lesson: {prev_str}
-- Concepts already covered in this module: {module_prev_str}
-Focus ONLY on what makes "{title}" DISTINCT from the above concepts.
-{f"### USER NOTE (the learner specifically requested this focus):{chr(10)}{user_note}{chr(10)}" if user_note else ""}{reference_section}
+### DEDUPLICATION — DO NOT REPEAT content already covered:
+- Lesson concepts: {prev_str}
+- Module concepts: {module_prev_str}
+Focus ONLY on what makes "{title}" DISTINCT.
+{f"### USER NOTE:{chr(10)}{user_note}{chr(10)}" if user_note else ""}{research_input}
 Source Material: {source_material}
 
-Output this EXACT Markdown structure:
-
-# {title}
-
-## Metadata
-- **Depth**: {depth}
-- **Path**: {context_path}
-- **Source**: {source}
+Generate ONLY the sections below. Do NOT generate Metadata, Learning Objectives, or Prerequisites — those are pre-filled.
 
 {section_template}
-
-## Analogies
-- [One helpful analogy that makes this concept intuitive]
 """
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                structured_md = llm_generate(
+                llm_output = llm_generate(
                     user_prompt,
                     sys_prompt=sys_prompt,
-                    max_tokens=2000,
+                    max_tokens=2500,
                     progress_callback=self.status_callback,
                 )
-                if structured_md and "## Core Definition" in structured_md:
+                if llm_output and ("## Mastery Criteria" in llm_output or "## Core" in llm_output):
+                    # Prepend static header to LLM-generated sections
+                    full_md = static_header + "\n" + llm_output
                     return self._validate_markdown_structure(
-                        structured_md,
+                        full_md,
                         title,
                         course_title,
                         depth,
@@ -1991,7 +2210,7 @@ Output this EXACT Markdown structure:
             except Exception as e:
                 logger.warning(f"  [MARKDOWN] Failed {title} (att {attempt + 1}): {e}")
 
-        return f"# {title}\n\n## Metadata\n- **Depth**: {depth}\n- **Context**: {context_path}\n\n## Core Definition\n[Hydration failed]"
+        return static_header + "\n## Core Explanation\n[Hydration failed]\n"
 
     def _chunk_text(self, text: str, chunk_size: int = 300) -> List[str]:
         """Split text into chunks of approximately chunk_size words."""
@@ -2014,18 +2233,17 @@ Output this EXACT Markdown structure:
         context_path: str,
     ) -> str:
         """Validate that LLM output contains all required Markdown sections. Inject stubs for missing ones."""
-        # Base sections required at all depths
         required_sections = {
-            "## Metadata": f"## Metadata\n- **Target Depth**: {depth}\n- **Context Path**: {context_path}\n- **Source**: {source}\n",
-            "## Core Definition": f"## Core Definition\n{title} is a key concept in {course_title}.\n",
-            "## Contextual Explanation": f"## Contextual Explanation\n{(raw_text or '')[:500]}\n",
-            "## Socratic Hook": f"## Socratic Hook\nWhat do you think is the most important aspect of {title}?\n",
+            "## Mastery Criteria": f"## Mastery Criteria\nStudent should demonstrate understanding of {title}.\n",
+            "## Core Explanation": f"## Core Explanation\n{title} is a key concept in {course_title}.\n",
+            "## Misconceptions": "## Misconceptions\n- **Belief**: None identified.\n- **Correction**: N/A\n",
+            "## Socratic Hooks": f"## Socratic Hooks\n- Bloom 1-2: What do you think {title} means?\n- Bloom 3-4: How would you apply {title}?\n- Bloom 5-6: When does {title} break down?\n",
         }
-        # Add depth-dependent sections
+        if depth >= 2:
+            required_sections["## Key Facts"] = f"## Key Facts\n- {title} is a fundamental concept in {course_title}.\n"
+            required_sections["## Real-World Examples"] = f"## Real-World Examples\nExamples of {title} can be found in everyday applications.\n"
         if depth >= 3:
-            required_sections["## Misconceptions"] = "## Misconceptions\n- **Belief**: None identified.\n- **Correction**: N/A\n"
-        if depth >= 4:
-            required_sections["## Advanced Notes"] = f"## Advanced Notes\nSee further reading on {title}.\n"
+            required_sections["## Edge Cases & Limitations"] = f"## Edge Cases & Limitations\n- See further reading on {title}.\n"
 
         for section_header, stub in required_sections.items():
             if section_header not in content:
@@ -2065,10 +2283,28 @@ class SyllabusAuditor:
         "using", "through", "between", "from",
     })
 
+    def _stem(self, word: str) -> str:
+        """Crude suffix stripping for dedup comparison (not linguistic stemming)."""
+        if word.endswith("tion"):
+            return word[:-4] or word
+        if word.endswith("ing") and len(word) > 5:
+            return word[:-3]
+        if word.endswith("ment") and len(word) > 6:
+            return word[:-4]
+        if word.endswith("ness") and len(word) > 6:
+            return word[:-4]
+        if word.endswith("ies"):
+            return word[:-3] + "y"
+        if word.endswith("es") and len(word) > 4:
+            return word[:-2]
+        if word.endswith("s") and not word.endswith("ss") and len(word) > 3:
+            return word[:-1]
+        return word
+
     def _tokenize_title(self, title: str) -> set:
-        """Extract meaningful non-stopword tokens from a title for comparison."""
+        """Extract meaningful stemmed non-stopword tokens from a title."""
         words = re.findall(r'[a-z]+', title.lower())
-        return {w for w in words if w not in self.DEDUP_STOPWORDS and len(w) > 1}
+        return {self._stem(w) for w in words if w not in self.DEDUP_STOPWORDS and len(w) > 1}
 
     def _word_overlap_ratio(self, tokens_a: set, tokens_b: set) -> float:
         """Compute symmetric word overlap ratio between two token sets.
@@ -2103,7 +2339,7 @@ class SyllabusAuditor:
                     if all_concepts[j][2]["uid"] in uids_to_delete:
                         continue
                     ratio = self._word_overlap_ratio(all_concepts[i][3], all_concepts[j][3])
-                    if ratio > 0.6:
+                    if ratio > 0.4:
                         dup_concept = all_concepts[j][2]
                         orig_concept = all_concepts[i][2]
                         logger.info(
@@ -2231,6 +2467,27 @@ class SyllabusAuditor:
 
         if self.status_callback:
             self.status_callback(f"AUDIT:DEDUP:{dedup_count} duplicates removed")
+
+        # ── PASS 1.5: Short-title rescue ──
+        # Any node (module/unit/lesson/concept) whose title is shorter than
+        # MIN_TITLE_LEN gets renamed here, BEFORE hydration runs. Without
+        # this, bare 2-char acronyms like "IV" or "ML" leaked through the
+        # skeleton and were silently dropped by ContentHydrator's length
+        # guard — the course would end up with fewer .md files than concepts.
+        logger.info(f"=== PASS 1.5: Short-title rescue (min={MIN_TITLE_LEN}) ===")
+        short_renames = self._rescue_short_titles(course)
+        if short_renames > 0:
+            self.storage.courses.update_course(course_uid, course)
+            logger.info(
+                f"Pass 1.5 complete: renamed {short_renames} node(s) "
+                f"with titles shorter than {MIN_TITLE_LEN} chars"
+            )
+            if self.status_callback:
+                self.status_callback(
+                    f"AUDIT:SHORT_TITLE:{short_renames} node(s) renamed"
+                )
+        else:
+            logger.info("Pass 1.5 complete: all titles meet minimum length")
 
         # ── PASS 2: LLM quality review ──
         logger.info("=== PASS 2: LLM quality review ===")
@@ -2476,6 +2733,156 @@ class SyllabusAuditor:
         # Save updated course
         self.storage.courses.update_course(course_uid, course)
         return applied
+
+    def _rescue_short_titles(self, course: dict) -> int:
+        """Find and rename any node whose title is shorter than MIN_TITLE_LEN.
+
+        Walks modules → units → lessons → concepts. For each too-short title,
+        calls the LLM with parent-context (course + module + unit + lesson)
+        to get an expanded name. Falls back to a deterministic heuristic
+        ("{short_title} Fundamentals", or "{parent_title} Part N") if the
+        LLM returns another too-short value or fails entirely.
+
+        Returns the number of nodes renamed.
+        """
+        topic = course.get("title", "course")
+        renamed = 0
+        # Track titles we assign in this pass so we don't introduce collisions.
+        claimed = set()
+        for m in course.get("modules", []):
+            claimed.add(m["title"].lower().strip())
+            for u in m.get("units", []):
+                claimed.add(u["title"].lower().strip())
+                for l in u.get("lessons", []):
+                    claimed.add(l["title"].lower().strip())
+                    for c in l.get("concepts", []):
+                        claimed.add(c["title"].lower().strip())
+
+        def _is_short(t: str) -> bool:
+            return not t or len(t.strip()) < MIN_TITLE_LEN
+
+        def _expand(short_title: str, level: str, context: dict) -> str:
+            """Ask the LLM for an expanded, teachable version of a too-short title."""
+            parts = []
+            if context.get("course"):
+                parts.append(f"Course: {context['course']}")
+            if context.get("module"):
+                parts.append(f"Module: {context['module']}")
+            if context.get("unit"):
+                parts.append(f"Unit: {context['unit']}")
+            if context.get("lesson"):
+                parts.append(f"Lesson: {context['lesson']}")
+            ctx_block = "\n".join(parts)
+            prompt = (
+                f"{ctx_block}\n\n"
+                f"The following {level} title is too short to be teachable "
+                f"on its own: '{short_title}'.\n\n"
+                f"Return a single specific, textbook-style {level} title "
+                f"(4-8 words) that preserves the original meaning but is "
+                f"unambiguous in context. If '{short_title}' is an acronym, "
+                f"expand it. No quotes, no commentary — just the title.\n"
+            )
+            try:
+                raw = llm_generate(
+                    prompt,
+                    sys_prompt=(
+                        "You are a curriculum editor. Rename short or "
+                        "abbreviated titles into specific, teachable names. "
+                        "Output only the new title on a single line."
+                    ),
+                    max_tokens=60,
+                )
+                if raw:
+                    candidate = raw.strip().strip('"\'').splitlines()[0].strip()
+                    # Strip common prefixes the LLM adds
+                    for p in ("title:", "new title:", "answer:"):
+                        if candidate.lower().startswith(p):
+                            candidate = candidate[len(p):].strip()
+                    if candidate and len(candidate) >= MIN_TITLE_LEN:
+                        return candidate
+            except Exception as e:
+                logger.debug(f"Short-title LLM rename failed for '{short_title}': {e}")
+            return ""
+
+        def _fallback_name(short_title: str, level: str, context: dict) -> str:
+            """Deterministic fallback when the LLM can't expand the title."""
+            parent = (
+                context.get("lesson")
+                or context.get("unit")
+                or context.get("module")
+                or context.get("course")
+                or "Concept"
+            )
+            # Prefer "{short} Fundamentals" if it's not already claimed,
+            # otherwise fall back to "{parent} — {short}".
+            if short_title:
+                attempt = f"{short_title.strip()} Fundamentals"
+                if attempt.lower() not in claimed and len(attempt) >= MIN_TITLE_LEN:
+                    return attempt
+            return f"{parent} — {short_title}".strip(" —")
+
+        def _unique(base: str) -> str:
+            """Avoid collisions with existing titles in this course."""
+            key = base.lower().strip()
+            if key not in claimed:
+                return base
+            n = 2
+            while f"{base} {n}".lower() in claimed:
+                n += 1
+            return f"{base} {n}"
+
+        def _rename_if_short(node: dict, level: str, context: dict) -> bool:
+            nonlocal renamed
+            title = node.get("title", "")
+            if not _is_short(title):
+                return False
+            old_key = title.lower().strip() if title else ""
+            # Remove the old entry from `claimed` so the replacement can take it
+            if old_key in claimed:
+                claimed.discard(old_key)
+            new_title = _expand(title, level, context)
+            if not new_title:
+                new_title = _fallback_name(title, level, context)
+            new_title = _unique(new_title)
+            claimed.add(new_title.lower().strip())
+            logger.info(
+                f"Short-title rescue: {level} {node.get('uid', '')} "
+                f"'{title}' -> '{new_title}'"
+            )
+            if self.status_callback:
+                self.status_callback(
+                    f"LOG: Audit expanded short {level} title: "
+                    f"'{title}' -> '{new_title}'"
+                )
+            node["title"] = new_title
+            renamed += 1
+            return True
+
+        # Walk the hierarchy top-down so parent contexts are available when
+        # renaming child nodes.
+        for module in course.get("modules", []):
+            m_ctx = {"course": topic}
+            _rename_if_short(module, "module", m_ctx)
+            for unit in module.get("units", []):
+                u_ctx = {"course": topic, "module": module.get("title", "")}
+                _rename_if_short(unit, "unit", u_ctx)
+                for lesson in unit.get("lessons", []):
+                    l_ctx = {
+                        "course": topic,
+                        "module": module.get("title", ""),
+                        "unit": unit.get("title", ""),
+                    }
+                    _rename_if_short(lesson, "lesson", l_ctx)
+                    for concept in lesson.get("concepts", []):
+                        c_ctx = {
+                            "course": topic,
+                            "module": module.get("title", ""),
+                            "unit": unit.get("title", ""),
+                            "lesson": lesson.get("title", ""),
+                        }
+                        _rename_if_short(concept, "concept", c_ctx)
+
+        return renamed
 
     def _rename_node(self, course: dict, node_type: str, uid: str, new_title: str):
         """Find and rename a node in the JSON structure."""

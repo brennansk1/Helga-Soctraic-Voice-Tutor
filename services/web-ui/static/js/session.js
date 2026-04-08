@@ -10,17 +10,22 @@ let toggleLogsBtn, thinkingLogsContainer, thinkingLogsCode;
 let displayedMessagesCount = 0;
 window.navigatingToNode = false; // Guard flag: suppress stale transcript during navigation
 
+// Full reset of the chat session DOM + module-local counters. Call this
+// from enterNode() before any NAVIGATE_TO_TOPIC to guarantee no leftover
+// messages, optimistic bubbles, or streaming state from a previous concept
+// can bleed into the new one. The streaming bubble teardown lives in
+// _tearDownStreamingBubble() defined further down the file where
+// _streamingBubble is in scope.
 window.resetChatSession = function () {
     console.log("[resetChatSession] Clearing chat state");
     const chatStream = document.getElementById('chat-stream');
     if (chatStream) {
-        // Remove only standard messages, keep thinking bubbles if they are fresh?
-        // Actually, for a clean restart, we probably want to keep the "Initializing..." bubble
-        // but for safety, let's keep the .thinking-message check.
-        const childrenToRemove = Array.from(chatStream.children).filter(child => !child.classList.contains('thinking-message'));
-        childrenToRemove.forEach(child => chatStream.removeChild(child));
+        chatStream.innerHTML = '';
     }
     displayedMessagesCount = 0;
+    if (typeof window._tearDownStreamingBubble === 'function') {
+        window._tearDownStreamingBubble();
+    }
 };
 
 // Global socket variable (initialized in DOMContentLoaded)
@@ -42,6 +47,7 @@ function updateUI(state) {
         return;
     }
     currentState = state;
+    window.currentState = state;  // exposed for other modules (session-rails)
 
     // Update pause overlay
     const pauseOverlay = document.getElementById('pause-overlay');
@@ -49,11 +55,9 @@ function updateUI(state) {
         pauseOverlay.classList.toggle('hidden', state.state !== 'PAUSED');
     }
 
-    // Update pause/resume button
-    const pauseResumeBtn = document.getElementById('pause-resume');
-    if (pauseResumeBtn) {
-        pauseResumeBtn.textContent = state.state === 'PAUSED' ? 'Resume' : 'Pause';
-    }
+    // Pause button visibility is now driven by active TTS audio state,
+    // not FSM state — the FSM never actually enters a PAUSED state.
+    // See the interval-based visibility sync further down.
 
     // Update mode and rail visibility
     const newMode = getModeFromState(state.state);
@@ -62,42 +66,268 @@ function updateUI(state) {
         toggleRails(currentMode);
     }
 
+    // --- Chatbox topbar sync ---
+    // Keep the chatbox topbar (concept title, bloom badge, progress pill)
+    // in sync with the FSM's current_lesson_node so concept transitions
+    // via next_syllabus_item() are reflected without relying solely on
+    // status_update CPROG broadcasts (which can race the state poll).
+    if (state.current_lesson_title) {
+        const titleEl = document.getElementById('concept-title-display');
+        if (titleEl && titleEl.textContent.trim() !== state.current_lesson_title.trim()) {
+            titleEl.textContent = state.current_lesson_title;
+        }
+    }
+    if (typeof state.bloom_level === 'number' && state.bloom_level > 0) {
+        const bloomBadge = document.getElementById('bloom-level-badge');
+        if (bloomBadge) {
+            bloomBadge.textContent = 'Bloom ' + state.bloom_level;
+            bloomBadge.className = 'learn-chat-badge bloom lv' + Math.min(state.bloom_level, 6);
+            bloomBadge.classList.remove('hidden');
+        }
+    }
+    // Progress pill (completed/total) in the topbar.
+    //   completed_topics = what's been finished
+    //   syllabus_length  = remaining queue (already excludes current concept)
+    //   current_lesson_uid is the "in-progress" concept — it counts as the
+    //   ordinal position the user is currently working on.
+    const progressPill = document.getElementById('session-progress-pill');
+    if (progressPill) {
+        const completed = Array.isArray(state.completed_topics) ? state.completed_topics.length : 0;
+        const remaining = (typeof state.syllabus_length === 'number') ? state.syllabus_length : 0;
+        const total = completed + remaining;
+        if (total > 0) {
+            const newText = completed + ' / ' + total;
+            // Pulse on change so progress feels alive.
+            if (progressPill.textContent !== newText && progressPill.textContent !== '0 / 0') {
+                progressPill.classList.remove('pill-pulse');
+                void progressPill.offsetWidth;
+                progressPill.classList.add('pill-pulse');
+            }
+            progressPill.textContent = newText;
+            progressPill.classList.remove('hidden');
+        } else {
+            progressPill.classList.add('hidden');
+        }
+    }
+
+    // Mastery progress bar — shows how close the user is to completing
+    // the current concept. The FSM gate is streak >= 2 AND questions >= 3,
+    // so "progress" = min(streak/2, (questions/3)) clipped to [0, 1].
+    const masteryBar = document.getElementById('mastery-progress-fill');
+    const masteryWrap = document.getElementById('mastery-progress-wrap');
+    if (masteryBar && masteryWrap) {
+        const streak = typeof state.concept_correct_streak === 'number' ? state.concept_correct_streak : 0;
+        const questions = typeof state.concept_question_count === 'number' ? state.concept_question_count : 0;
+        const isLearning = state.state === 'SOCRATIC_LEARNING' && state.current_lesson_uid;
+        if (isLearning && questions > 0) {
+            // Both gates must be met — reflect the slower one so the bar
+            // doesn't jump to 100% and then stall.
+            const streakPct = Math.min(1, streak / 2);
+            const questionsPct = Math.min(1, questions / 3);
+            const pct = Math.min(streakPct, questionsPct) * 100;
+            masteryBar.style.width = pct + '%';
+            masteryWrap.classList.remove('hidden');
+            // Tooltip describes the gate for curious users
+            masteryWrap.title = streak + ' correct in a row · ' + questions + ' question' + (questions === 1 ? '' : 's') + ' answered';
+        } else {
+            masteryWrap.classList.add('hidden');
+        }
+    }
+
     // Update chat stream
     updateChatStream(state.transcript);
 
-    // Update specific mode UIs
-    if (currentMode === 1) {
-        updateContextRail(state.course_structure, state.graph_node ? state.graph_node.uid : null);
-        if (state.graph_node) {
-            renderPedagogy(state.graph_node);
-        }
-    } else if (currentMode === 2) {
+    // Update specific mode UIs. Context rail / pedagogy sidebar is hidden
+    // in the Gemini-style learn tab — skip those DOM writes entirely and
+    // only render the rails for non-learn pages (flashcards, palace).
+    if (currentMode === 2) {
         updateFlashcard(state);
     } else if (currentMode === 3) {
         updatePalace(state);
     }
 }
 
-// Simple markdown to HTML renderer for chat messages
+// Markdown to HTML renderer for chat messages.
+// Supports: headers, bold, italic, inline code, fenced code blocks,
+// bulleted lists, numbered lists, paragraphs. Escapes HTML first.
 function renderMarkdown(text) {
     if (!text) return '';
-    let html = text
-        // Escape HTML entities first
+    // 1. Escape HTML entities first
+    let s = String(text)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        // Headers (## before #)
-        .replace(/^### (.+)$/gm, '<strong>$1</strong>')
-        .replace(/^## (.+)$/gm, '<strong>$1</strong>')
-        .replace(/^# (.+)$/gm, '<strong>$1</strong>')
-        // Bold **text**
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        // Italic *text*
-        .replace(/\*(.+?)\*/g, '<em>$1</em>')
-        // Line breaks (double newline = paragraph, single = br)
-        .replace(/\n\n/g, '</p><p>')
-        .replace(/\n/g, '<br>');
-    return '<p>' + html + '</p>';
+        .replace(/>/g, '&gt;');
+
+    // 2. Extract fenced code blocks ``` first so their contents aren't
+    //    touched by the other transforms. Replaced with a placeholder.
+    const codeBlocks = [];
+    s = s.replace(/```(\w+)?\n?([\s\S]*?)```/g, (_, lang, code) => {
+        const idx = codeBlocks.length;
+        codeBlocks.push('<pre><code>' + code.replace(/\n$/, '') + '</code></pre>');
+        return `\x00CB${idx}\x00`;
+    });
+
+    // 3. Headers — render as bold paragraphs (no h1/h2 visual weight
+    //    inside chat bubbles — keeps spacing tight).
+    s = s.replace(/^#{1,6}\s+(.+)$/gm, '<strong>$1</strong>');
+
+    // 4. Bold **text** and italic *text* / _text_
+    s = s.replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/(?<!\w)\*([^\n*]+?)\*(?!\w)/g, '<em>$1</em>');
+    s = s.replace(/(?<!\w)_([^\n_]+?)_(?!\w)/g, '<em>$1</em>');
+
+    // 5. Inline code `text`
+    s = s.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+
+    // 6. Lists — detect consecutive lines starting with -, *, or N.
+    const lines = s.split('\n');
+    const out = [];
+    let inUL = false, inOL = false, paraBuf = [];
+    const flushPara = () => {
+        if (paraBuf.length) {
+            out.push('<p>' + paraBuf.join('<br>') + '</p>');
+            paraBuf = [];
+        }
+    };
+    const closeLists = () => {
+        if (inUL) { out.push('</ul>'); inUL = false; }
+        if (inOL) { out.push('</ol>'); inOL = false; }
+    };
+    for (const line of lines) {
+        const ulMatch = /^[-*]\s+(.+)$/.exec(line);
+        const olMatch = /^\d+\.\s+(.+)$/.exec(line);
+        if (ulMatch) {
+            flushPara();
+            if (inOL) { out.push('</ol>'); inOL = false; }
+            if (!inUL) { out.push('<ul>'); inUL = true; }
+            out.push('<li>' + ulMatch[1] + '</li>');
+        } else if (olMatch) {
+            flushPara();
+            if (inUL) { out.push('</ul>'); inUL = false; }
+            if (!inOL) { out.push('<ol>'); inOL = true; }
+            out.push('<li>' + olMatch[1] + '</li>');
+        } else if (line.trim() === '') {
+            flushPara();
+            closeLists();
+        } else {
+            closeLists();
+            paraBuf.push(line);
+        }
+    }
+    flushPara();
+    closeLists();
+    s = out.join('');
+
+    // 7. Restore fenced code blocks
+    s = s.replace(/\x00CB(\d+)\x00/g, (_, i) => codeBlocks[Number(i)] || '');
+    return s;
+}
+
+// Play TTS audio for a message (with caching via browser)
+window._activeAudio = null;
+const _TTS_PLAY_SVG = '<svg class="tts-icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+const _TTS_STOP_SVG = '<svg class="tts-icon-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12"/></svg>';
+const _TTS_LOADING_HTML = '<span class="tts-btn-spinner" aria-hidden="true"></span>';
+
+async function playMessageTTS(text, btn) {
+    if (!text) return;
+
+    // Stop any currently playing audio
+    if (window._activeAudio) {
+        try { window._activeAudio.pause(); } catch(e){}
+        window._activeAudio = null;
+        document.querySelectorAll('.tts-play-btn.active, .tts-play-btn.loading').forEach(b => {
+            b.classList.remove('active', 'loading');
+            b.innerHTML = _TTS_PLAY_SVG;
+        });
+    }
+
+    // Immediate loading state — the TTS generate + blob fetch typically
+    // takes 1-3 seconds, long enough that users think the button is broken
+    // without visible feedback. The `.loading` class drives a CSS spinner
+    // on the button background so the whole button looks "working".
+    btn.classList.add('loading');
+    btn.innerHTML = _TTS_LOADING_HTML;
+
+    try {
+        const voice = localStorage.getItem('helga-voice') || 'af_heart';
+        const resp = await fetch('/api/tts', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({text: text, voice: voice})
+        });
+        if (!resp.ok) throw new Error('TTS failed');
+        const blob = await resp.blob();
+        const audio = new Audio(URL.createObjectURL(blob));
+        window._activeAudio = audio;
+        // Swap to the stop icon once playback actually starts
+        btn.classList.remove('loading');
+        btn.classList.add('active');
+        btn.innerHTML = _TTS_STOP_SVG;
+        audio.onended = function() {
+            btn.classList.remove('active');
+            btn.innerHTML = _TTS_PLAY_SVG;
+            window._activeAudio = null;
+        };
+        audio.play();
+    } catch (e) {
+        console.warn('TTS error:', e);
+        btn.classList.remove('loading', 'active');
+        btn.innerHTML = _TTS_PLAY_SVG;
+        if (typeof window.showToast === 'function') {
+            window.showToast('TTS unavailable right now', 'error');
+        }
+    }
+}
+
+// Load user avatar from profile settings
+async function loadUserAvatar() {
+    try {
+        const r = await fetch('/api/profile');
+        if (r.ok) {
+            const profile = await r.json();
+            if (profile.avatar_url && profile.avatar_url.trim()) {
+                window._userAvatarSrc = profile.avatar_url;
+            }
+        }
+    } catch(e) { /* use default */ }
+}
+loadUserAvatar();
+
+// Track whether the user has scrolled up to read history — used so new
+// messages don't yank them back to the bottom mid-read. Re-enabled when
+// they scroll back near the bottom themselves.
+let _userPinnedToBottom = true;
+
+function _attachChatScrollTracker(chatStream) {
+    if (!chatStream || chatStream.dataset.scrollTrackerBound === '1') return;
+    chatStream.dataset.scrollTrackerBound = '1';
+    chatStream.addEventListener('scroll', function () {
+        const distanceFromBottom = chatStream.scrollHeight - (chatStream.scrollTop + chatStream.clientHeight);
+        // Within 80px of the bottom counts as "pinned" — feels natural.
+        _userPinnedToBottom = distanceFromBottom < 80;
+        const btn = document.getElementById('chat-scroll-bottom-btn');
+        if (btn) btn.classList.toggle('visible', !_userPinnedToBottom);
+    }, { passive: true });
+
+    // Wire the jump-to-latest button once — it lives next to the chat list
+    // in learn.html.
+    const jumpBtn = document.getElementById('chat-scroll-bottom-btn');
+    if (jumpBtn && jumpBtn.dataset.bound !== '1') {
+        jumpBtn.dataset.bound = '1';
+        jumpBtn.addEventListener('click', function () {
+            chatStream.scrollTop = chatStream.scrollHeight;
+            _userPinnedToBottom = true;
+            jumpBtn.classList.remove('visible');
+        });
+    }
+}
+
+function _scrollChatToBottom(chatStream, force) {
+    if (!chatStream) return;
+    if (force || _userPinnedToBottom) {
+        chatStream.scrollTop = chatStream.scrollHeight;
+    }
 }
 
 function updateChatStream(transcript) {
@@ -111,78 +341,224 @@ function updateChatStream(transcript) {
         console.error("[updateChatStream] chat-stream element NOT FOUND");
         return;
     }
+    _attachChatScrollTracker(chatStream);
     console.log("[updateChatStream] Current transcript length:", transcript.length, "displayedCount:", displayedMessagesCount);
 
-    // Navigation guard: when navigating to a new node, the stale boot transcript
-    // ("Mnemosyne online...") may arrive before the FSM processes NAVIGATE_TO_TOPIC.
-    // We filter it out but DO NOT block — fresh content renders immediately.
+    // Helper: wipe the chat stream while preserving transient elements
+    // that represent in-flight LLM work (the thinking bubble inserted by
+    // enterNode() and any streaming bubble receiving stream_token events).
+    // Without this guard, the nav-guard clearance step below would yank
+    // the dots animation off the screen mid-generation, leaving the user
+    // staring at an empty chat until the canonical message arrives.
+    const _preserveInFlightElements = function () {
+        const keep = [];
+        chatStream.querySelectorAll('.thinking-message, .stream-bubble').forEach(function (el) {
+            keep.push(el);
+        });
+        while (chatStream.firstChild) chatStream.removeChild(chatStream.firstChild);
+        keep.forEach(function (el) { chatStream.appendChild(el); });
+    };
+
+    // Navigation guard — prevents transcript leakage between concepts/courses.
+    //
+    // When enterNode() is called, it sets window.navigatingToNode = true and
+    // sends NAVIGATE_TO_TOPIC to the FSM. The FSM clears its transcript at
+    // the start of navigate_to_topic() and then runs an LLM call (slow) to
+    // generate the opening question. During this window, polling may still
+    // return the PREVIOUS concept's transcript — we must not render it.
+    //
+    // Two-phase guard:
+    //   Phase A (clearanceSeen === false): suppress ALL updates until we
+    //     observe a transcript of length 0 OR a known boot message. Seeing
+    //     that is proof the FSM has wiped its state.
+    //   Phase B (clearanceSeen === true): accept new content, render it,
+    //     and drop the guard.
     if (window.navigatingToNode) {
-        // If transcript is only the boot message, skip this update
-        const isBootOnly = transcript.length === 1 &&
-            (transcript[0].text || '').toLowerCase().includes('mnemosyne online');
-        if (isBootOnly || transcript.length === 0) {
-            console.log("[updateChatStream] Navigate guard: skipping boot/empty transcript");
+        const isBoot = transcript.length <= 1 && (
+            transcript.length === 0 ||
+            (transcript[0].text || '').toLowerCase().includes('mnemosyne online') ||
+            (transcript[0].text || '').toLowerCase().includes('helga online')
+        );
+
+        if (!window._navClearanceSeen) {
+            if (isBoot) {
+                // FSM has cleared. Mark clearance and keep chat blank — next
+                // non-boot update will carry the fresh concept content.
+                window._navClearanceSeen = true;
+                _preserveInFlightElements();
+                displayedMessagesCount = 0;
+                console.log("[updateChatStream] Nav guard: FSM transcript cleared, waiting for fresh content");
+            } else {
+                // Still seeing stale content — suppress this update entirely
+                console.log("[updateChatStream] Nav guard: suppressing stale transcript (len=" + transcript.length + ")");
+            }
             return;
         }
-        // Fresh content from FSM — clear guard and reset for clean render
-        console.log("[updateChatStream] Navigate guard: fresh content arrived, clearing guard");
-        window.navigatingToNode = false;
-        if (window._navGuardTimeout) clearTimeout(window._navGuardTimeout);
-        while (chatStream.firstChild) {
-            chatStream.removeChild(chatStream.firstChild);
+
+        // Phase B: clearance already seen. Fresh content arriving?
+        if (isBoot) {
+            // Still empty, still waiting
+            return;
         }
+        // First non-boot update after clearance — render it fresh
+        console.log("[updateChatStream] Nav guard: fresh content arrived, releasing guard");
+        window.navigatingToNode = false;
+        window._navClearanceSeen = false;
+        if (window._navGuardTimeout) clearTimeout(window._navGuardTimeout);
+        _preserveInFlightElements();
         displayedMessagesCount = 0;
+
+        // Re-enable the text input now that the new concept is ready
+        const textInputEl = document.getElementById('text-input');
+        if (textInputEl) {
+            textInputEl.disabled = false;
+            textInputEl.placeholder = 'Type your answer…';
+        }
     }
 
     // Reset chat on transcript length mismatch
     if (transcript.length < displayedMessagesCount) {
         console.log("Transcript reset detected. Clearing chat stream.");
-        while (chatStream.firstChild) {
-            chatStream.removeChild(chatStream.firstChild);
-        }
+        _preserveInFlightElements();
         displayedMessagesCount = 0;
     }
 
     // Add new messages
     const newMessages = transcript.slice(displayedMessagesCount);
     if (newMessages.length > 0) {
+        // Hide hero on first message
+        const hero = document.getElementById('chat-hero');
+        if (hero && transcript.length > 0) hero.classList.add('hidden');
+
+        // A real message has arrived — any lingering thinking bubble
+        // should be removed so the dots don't sit next to the answer.
+        const staleThinking = chatStream.querySelectorAll('.thinking-message');
+        staleThinking.forEach(b => { try { b.remove(); } catch (e) {} });
+
+        // Also remove any optimistic user bubbles — the canonical transcript
+        // version (with grade badge, etc.) takes over.
+        const optimistic = chatStream.querySelectorAll('.chat-msg[data-optimistic="true"]');
+        optimistic.forEach(b => { try { b.remove(); } catch (e) {} });
+
+        // Helper: plain HTML escape for user-typed content (no markdown)
+        const escapeUserText = (s) => String(s || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+
         newMessages.forEach((message, idx) => {
+            const isAI = (message.sender === 'ai' || message.sender === 'helga');
+            const isUser = message.sender === 'user';
+
+            // Concept-transition dividers are now inserted by the CPROG
+            // handler in learn.html, which is authoritative (title change
+            // directly from the FSM). Relying on AI text prefix matches
+            // here double-inserted dividers and broke when the LLM phrased
+            // transitions differently.
+            //
+            // Detect "Resuming <title>" / "We were discussing" — these are
+            // FSM-generated strings from resume_course() that mark a
+            // resumed session. Insert a subtle resume marker so the user
+            // gets a clear "picked up where you left off" signal.
+            if (isAI && message.text && /^(resuming |we were discussing )/i.test(message.text.trim())) {
+                // Only insert once per resume event (idx 0 of the new batch
+                // guarantees we're at the boundary).
+                const alreadyMarked = chatStream.querySelector('.chat-resume-marker:last-child');
+                if (!alreadyMarked || idx === 0) {
+                    const resumeEl = document.createElement('div');
+                    resumeEl.className = 'chat-resume-marker';
+                    resumeEl.innerHTML =
+                        '<span class="chat-resume-marker-icon">↺</span>' +
+                        '<span>Picked up where you left off</span>';
+                    chatStream.appendChild(resumeEl);
+                }
+            }
+
             const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${message.sender} new-message`;
+            messageDiv.className = `chat-msg ${isAI ? 'incoming' : 'outgoing'}`;
             messageDiv.dataset.index = displayedMessagesCount + idx;
 
-            let avatar = '';
-            if (message.sender === 'ai' || message.sender === 'helga') {
-                avatar = `<div class="msg-avatar"><img src="https://ui-avatars.com/api/?name=H&background=3b82f6&color=fff" alt="Helga"></div>`;
-            } else if (message.sender === 'user') {
-                avatar = `<div class="msg-avatar"><img src="https://ui-avatars.com/api/?name=You&background=10b981&color=fff" alt="You"></div>`;
-            }
+            // Avatar
+            const avatarSrc = isAI
+                ? '/static/img/helga-avatar.svg'
+                : (window._userAvatarSrc || '/static/img/user-avatar.svg');
+            const avatarAlt = isAI ? 'Helga' : 'You';
+            const fallbackAvatar = isAI ? 'helga-avatar.svg' : 'user-avatar.svg';
 
-            const playBtn = (message.sender === 'ai' || message.sender === 'helga') ? '<button class="play-btn">▶</button>' : '';
-
-            // Grade badge: show on the AI message right after a user answer
+            // Grade badge — attach to the USER message that was graded, not
+            // to the AI's follow-up question. That way the badge sits on the
+            // thing being evaluated.
             let gradeBadge = '';
-            if ((message.sender === 'ai' || message.sender === 'helga') && message.grade) {
-                const gradeMap = {1: ['Needs Work', 'grade-1'], 2: ['Getting There', 'grade-2'], 3: ['Good', 'grade-3'], 4: ['Excellent', 'grade-4']};
+            if (isUser && message.grade) {
+                const gradeMap = {1: ['Needs Work', 'g1'], 2: ['Getting There', 'g2'], 3: ['Good', 'g3'], 4: ['Excellent', 'g4']};
                 const [label, cls] = gradeMap[message.grade] || ['', ''];
-                if (label) gradeBadge = `<span class="grade-badge ${cls}">${label}</span>`;
+                if (label) gradeBadge = `<span class="chat-msg-grade-badge ${cls}">${label}</span>`;
             }
+
+            // Action buttons live OUTSIDE the bubble body — positioned to
+            // the right of the message so they have their own background
+            // instead of blending into the bubble. Only AI messages get
+            // TTS + copy; user messages don't need them.
+            const actions = isAI ? `
+                <div class="chat-msg-actions-side">
+                    <button class="chat-msg-action-btn tts-play-btn" title="Play audio" aria-label="Play audio">
+                        <svg class="tts-icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                    </button>
+                    <button class="chat-msg-action-btn copy-btn" title="Copy message" aria-label="Copy message">
+                        <svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+                    </button>
+                </div>
+            ` : '';
+
+            const rawText = message.text || '';
+            // AI messages render markdown (bold/italic/lists/code).
+            // User messages are escaped only — rendering user text as
+            // markdown leads to surprising behavior when users type
+            // asterisks or underscores in answers.
+            const renderedText = isAI
+                ? renderMarkdown(rawText)
+                : escapeUserText(rawText);
 
             messageDiv.innerHTML = `
-                ${avatar}
-                <div class="msg-content" data-rawtext="${message.text.replace(/"/g, '&quot;')}">
-                    ${gradeBadge}
-                    ${renderMarkdown(message.text)}
-                    ${playBtn}
+                <div class="chat-msg-content">
+                    <img class="chat-msg-avatar" src="${avatarSrc}" alt="${avatarAlt}"
+                         onerror="this.src='/static/img/${fallbackAvatar}'">
+                    <div class="chat-msg-body">
+                        ${gradeBadge}
+                        <div class="chat-msg-text">${renderedText}</div>
+                    </div>
+                    ${actions}
                 </div>
             `;
+
+            // Wire TTS button
+            if (isAI) {
+                const ttsBtn = messageDiv.querySelector('.tts-play-btn');
+                if (ttsBtn) {
+                    ttsBtn.addEventListener('click', function() {
+                        playMessageTTS(rawText, ttsBtn);
+                    });
+                }
+                const copyBtn = messageDiv.querySelector('.copy-btn');
+                if (copyBtn) {
+                    copyBtn.addEventListener('click', function() {
+                        navigator.clipboard.writeText(rawText).then(function() {
+                            copyBtn.classList.add('active');
+                            setTimeout(function() { copyBtn.classList.remove('active'); }, 1000);
+                        });
+                    });
+                }
+            }
+
             chatStream.appendChild(messageDiv);
         });
         displayedMessagesCount = transcript.length;
-    }
 
-    // Auto-scroll to the bottom
-    chatStream.scrollTop = chatStream.scrollHeight;
+        // Only follow the stream if the user hasn't scrolled up to read.
+        // Navigation transitions (enterNode) force a scroll via their own
+        // call so fresh concepts always start at the top of the new chat.
+        _scrollChatToBottom(chatStream, false);
+    }
 }
 
 
@@ -190,87 +566,75 @@ function handleThinkingUpdate(data) {
     const message = data.message;
     const logEntry = data.log;
 
-    console.log('[handleThinkingUpdate] Received data:', JSON.stringify(data));
-
-    // Normalize message (handle LOG: prefix)
+    // Normalize message (strip LOG: prefix)
     let displayMessage = message || '';
-    if (displayMessage.startsWith('LOG: ')) {
-        displayMessage = displayMessage.substring(5);
-    } else if (displayMessage.startsWith('LOG:')) {
-        displayMessage = displayMessage.substring(4);
+    if (displayMessage.startsWith('LOG: ')) displayMessage = displayMessage.substring(5);
+    else if (displayMessage.startsWith('LOG:')) displayMessage = displayMessage.substring(4);
+
+    // Translate internal phase names into something a user would
+    // understand. The FSM emits "Reviewing History...", "Mode: QUESTION...",
+    // "Formulating Response..." etc — pipeline details the user doesn't
+    // need. Map them all to a single friendly "Thinking" state with a
+    // short stage hint. If the message doesn't match a known phase, we
+    // drop it on the floor rather than showing raw backend logs in chat.
+    const phaseHints = [
+        [/reviewing history/i,       'Reading your last answer'],
+        [/mode:/i,                   'Choosing teaching mode'],
+        [/formulating/i,             'Writing a response'],
+        [/analyzing context/i,       'Loading concept content'],
+        [/preparing pedagog/i,       'Picking a question angle'],
+        [/grading/i,                 'Grading your answer'],
+        [/fetching pedagog/i,        'Loading teaching notes'],
+        [/generating question/i,     'Writing a question'],
+        [/generating bridge/i,       'Connecting to the next concept'],
+    ];
+    let userFacingHint = null;
+    for (const [pat, hint] of phaseHints) {
+        if (pat.test(displayMessage)) { userFacingHint = hint; break; }
     }
 
-    // Handle Thinking UI for Inline Chat
-    if (data.progress !== undefined) {
+    // Only show the thinking bubble when progress is actively being
+    // reported by a known pipeline stage. Skip unrelated updates (STRUCT,
+    // CHECK, CPROG, PEDAGOGY, QTYPE, etc.) — those have their own
+    // handlers and should never paint a thinking bubble in the chat.
+    if (data.progress !== undefined && userFacingHint) {
         const chatStream = document.getElementById('chat-stream');
 
-        // Ensure we are in session view
+        // Force session view open if needed (e.g. creation hand-off)
         const sessionView = document.getElementById('session-view');
         if (sessionView && sessionView.classList.contains('hidden')) {
-            console.log('[handleThinkingUpdate] Force switching to session view');
             sessionView.classList.remove('hidden');
-            document.getElementById('path-view').classList.add('hidden');
-            // Toggle headers (if any left, or just ensure correct one is shown)
-            const sessionHeader = document.getElementById('session-header');
-            if (sessionHeader) sessionHeader.classList.remove('hidden');
-            const headerLeft = document.querySelector('.header-left');
-            if (headerLeft) headerLeft.classList.add('hidden');
-
+            const pv = document.getElementById('path-view');
+            if (pv) pv.classList.add('hidden');
             currentMode = 1;
             toggleRails(1);
         }
 
         if (chatStream) {
-            let activeBubble = chatStream.lastElementChild;
-            const isThinkingBubble = activeBubble && activeBubble.classList.contains('thinking-message');
-            const isCompleted = activeBubble && activeBubble.classList.contains('completed');
-
-            // Create new bubble if needed
-            if ((!isThinkingBubble || isCompleted) && data.progress < 100) {
+            // Reuse an existing thinking bubble, or clone a fresh one.
+            let bubble = chatStream.querySelector('.thinking-message');
+            if (!bubble && data.progress < 100) {
                 const template = document.getElementById('thinking-bubble-template');
                 if (template) {
-                    const node = template.content.cloneNode(true);
-                    chatStream.appendChild(node);
-                    activeBubble = chatStream.lastElementChild;
-
-                    // Add Click Listener for Toggle
-                    const header = activeBubble.querySelector('.thinking-header');
-                    const logs = activeBubble.querySelector('.thinking-logs-inline');
-                    if (header && logs) {
-                        header.addEventListener('click', () => {
-                            logs.classList.toggle('hidden');
-                            header.classList.toggle('expanded');
-                        });
-                    }
-                    chatStream.scrollTop = chatStream.scrollHeight;
+                    const frag = template.content.cloneNode(true);
+                    chatStream.appendChild(frag);
+                    bubble = chatStream.querySelector('.thinking-message');
+                    // Hide the hero the moment we start thinking
+                    const hero = document.getElementById('chat-hero');
+                    if (hero) hero.classList.add('hidden');
+                    _scrollChatToBottom(chatStream, false);
                 }
             }
 
-            // Update Active Bubble
-            if (activeBubble && activeBubble.classList.contains('thinking-message') && !activeBubble.classList.contains('completed')) {
-                // Update Label
-                const textSpan = activeBubble.querySelector('.thinking-text');
-                if (textSpan) textSpan.textContent = displayMessage || "Thinking...";
+            if (bubble) {
+                // Update the subtle stage label under the dots.
+                const labelEl = bubble.querySelector('.thinking-label-text');
+                if (labelEl) labelEl.textContent = userFacingHint;
 
-                // Append Log
-                const logsContent = activeBubble.querySelector('.logs-content');
-                if (logsContent) {
-                    const logItem = document.createElement('div');
-                    logItem.className = 'log-item';
-                    const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: "numeric", minute: "numeric", second: "numeric" });
-                    logItem.innerText = `[${time}] ${displayMessage || 'Update'}`;
-                    logsContent.appendChild(logItem);
-                    // activeBubble.querySelector('.thinking-logs-inline').scrollTop = logsContent.scrollHeight;
-                }
-
-                // Completion
+                // Remove the bubble entirely when the pipeline completes —
+                // the real answer arrives via the transcript shortly after.
                 if (data.progress >= 100) {
-                    activeBubble.classList.add('completed');
-                    if (textSpan) textSpan.textContent = "Thought Process";
-                    const spinner = activeBubble.querySelector('.spinner-tiny');
-                    if (spinner) spinner.style.display = 'none'; // Hide spinner
-
-                    // Optional: Auto-collapse if open? It starts hidden.
+                    try { bubble.remove(); } catch (e) {}
                 }
             }
         }
@@ -380,9 +744,9 @@ function handleThinkingUpdate(data) {
         // thinkingLogsCode.textContent += logEntry + '\n'; // LEGACY
     }
 
-    // Scroll chat stream
+    // Scroll chat stream (respect user scroll position)
     const chatStream = document.getElementById('chat-stream');
-    if (chatStream) chatStream.scrollTop = chatStream.scrollHeight;
+    _scrollChatToBottom(chatStream, false);
 }
 
 
@@ -410,18 +774,47 @@ function sendEvent(eventType, payload) {
         })
         .catch(error => {
             console.error('[sendEvent] Error sending event:', error);
-            // Visual feedback for the user
+            // Visual feedback for the user — use the same bubble structure as
+            // real messages so the error is styled correctly in the Gemini
+            // chat layout (the old .message.ai class had no CSS on /learn).
             const chatStream = document.getElementById('chat-stream');
             if (chatStream) {
+                // Remove any stale thinking bubble so the error replaces it
+                const stale = chatStream.querySelectorAll('.thinking-message');
+                stale.forEach(b => { try { b.remove(); } catch (e) {} });
+
                 const errorDiv = document.createElement('div');
-                errorDiv.className = 'message ai error-message';
-                errorDiv.style.border = '1px solid red';
-                errorDiv.style.color = 'red';
-                errorDiv.textContent = `Error sending message: ${error.message}. Is the server online?`;
+                errorDiv.className = 'chat-msg incoming error';
+                errorDiv.innerHTML =
+                    '<div class="chat-msg-content">' +
+                    '  <img class="chat-msg-avatar" src="/static/img/helga-avatar.svg" alt="Helga">' +
+                    '  <div class="chat-msg-body">' +
+                    '    <div class="chat-msg-text"></div>' +
+                    '  </div>' +
+                    '</div>';
+                errorDiv.querySelector('.chat-msg-text').textContent =
+                    'Could not reach the server — ' + (error.message || 'unknown error') + '. Check that the core service is running, then try again.';
                 chatStream.appendChild(errorDiv);
                 chatStream.scrollTop = chatStream.scrollHeight;
-            } else {
-                alert(`Error communicating with server: ${error.message}`);
+
+                // Also drop the navigation guard so the next interaction
+                // isn't silently suppressed by updateChatStream().
+                if (window.navigatingToNode) {
+                    window.navigatingToNode = false;
+                    window._navClearanceSeen = false;
+                    if (window._navGuardTimeout) {
+                        clearTimeout(window._navGuardTimeout);
+                        window._navGuardTimeout = null;
+                    }
+                    const textInputEl = document.getElementById('text-input');
+                    if (textInputEl) {
+                        textInputEl.disabled = false;
+                        textInputEl.placeholder = 'Type your answer…';
+                    }
+                }
+            }
+            if (typeof window.showToast === 'function') {
+                window.showToast('Server error: ' + (error.message || 'connection failed'), 'error');
             }
         });
 }
@@ -429,49 +822,111 @@ function sendEvent(eventType, payload) {
 function sendTextMessage() {
     const textInput = document.getElementById('text-input');
     const sendBtn = document.getElementById('send-btn');
-    const text = textInput.value.trim();
+    const inputWrapper = textInput ? textInput.closest('.learn-chat-input-wrapper') : null;
+    const text = textInput ? textInput.value.trim() : '';
 
     // Input Guard: prevent empty sends or rapid double-submissions
-    if (!text || (sendBtn && sendBtn.disabled)) {
-        console.log('[SEND_MESSAGE] Guard block: Text is empty or button disabled.');
-        textInput.focus();
+    if (!text || (sendBtn && sendBtn.disabled) || (textInput && textInput.disabled)) {
+        if (textInput) textInput.focus();
         return;
     }
 
     // Disable briefly to prevent rapid fire
     if (sendBtn) sendBtn.disabled = true;
+    if (inputWrapper) inputWrapper.classList.remove('has-content');
 
-    // Clear previous thinking logs and hide container
-    if (thinkingLogsCode && thinkingLogsContainer) {
-        thinkingLogsCode.textContent = '';
-        thinkingLogsContainer.classList.add('hidden');
-    }
-    if (toggleLogsBtn) toggleLogsBtn.classList.remove('open');
-
-    console.log('[SEND_MESSAGE] Calling sendEvent with TEXT_INPUT');
-
-    // Optimistic render: show user message immediately (don't wait for 2s state poll)
+    // Optimistic render: show user message immediately (don't wait for 2s state poll).
+    // Mark with data-optimistic so we can match it up when the real transcript
+    // arrives and avoid double-rendering.
     const chatStream = document.getElementById('chat-stream');
     if (chatStream) {
+        const hero = document.getElementById('chat-hero');
+        if (hero) hero.classList.add('hidden');
+
+        // Remove any stale thinking bubble — the user is responding
+        const staleThinking = chatStream.querySelectorAll('.thinking-message');
+        staleThinking.forEach(b => { try { b.remove(); } catch (e) {} });
+
         const msgDiv = document.createElement('div');
-        msgDiv.className = 'message user new-message';
+        msgDiv.className = 'chat-msg outgoing';
+        msgDiv.dataset.optimistic = 'true';
+        const userAvatar = window._userAvatarSrc || '/static/img/user-avatar.svg';
+        const safeText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         msgDiv.innerHTML = `
-            <div class="msg-avatar"><img src="https://ui-avatars.com/api/?name=You&background=10b981&color=fff" alt="You"></div>
-            <div class="msg-content">${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+            <div class="chat-msg-content">
+                <img class="chat-msg-avatar" src="${userAvatar}" alt="You"
+                     onerror="this.src='/static/img/user-avatar.svg'">
+                <div class="chat-msg-body">
+                    <div class="chat-msg-text">${safeText}</div>
+                </div>
+            </div>
         `;
         chatStream.appendChild(msgDiv);
+        // User just sent something — that's a "new turn" moment; snap to
+        // bottom unconditionally and re-pin the auto-follow behavior.
         chatStream.scrollTop = chatStream.scrollHeight;
-        displayedMessagesCount++;
+        _userPinnedToBottom = true;
+        // Do NOT increment displayedMessagesCount here — the real transcript
+        // update will include this message and updateChatStream() will match
+        // it against the optimistic bubble.
     }
 
     sendEvent('TEXT_INPUT', { text: text });
-    textInput.value = '';
+    if (textInput) {
+        textInput.value = '';
+        // Reset textarea height
+        textInput.style.height = '';
+    }
 
-    // Re-enable and focus
+    // Re-enable send button after a short debounce
     if (sendBtn) {
         setTimeout(() => { sendBtn.disabled = false; }, 500);
     }
-    textInput.focus();
+    if (textInput) textInput.focus();
+
+    // After the FSM has had time to grade the answer and award XP
+    // (typically ~3-5s), pull the fresh gamification state so the header
+    // counter reflects the reward. The FSM awards XP async so we can't
+    // rely on the immediate state_update for this value.
+    setTimeout(refreshGamificationBarFromSession, 3500);
+}
+
+// Pull gamification state and tick the header bar without rebuilding
+// anything. Safe to call from any page — the elements are in base.html.
+function refreshGamificationBarFromSession() {
+    if (localStorage.getItem('helga-gamification') === 'false') return;
+    fetch('/api/gamification').then(function(r) { return r.ok ? r.json() : null; }).then(function(data) {
+        if (!data) return;
+        var xpEl = document.getElementById('xp-counter');
+        var lvlEl = document.getElementById('level-badge');
+        var streakEl = document.getElementById('streak-counter');
+        if (xpEl) {
+            var newXp = (data.total_xp || data.xp || 0).toLocaleString() + ' XP';
+            if (xpEl.textContent !== newXp) {
+                xpEl.textContent = newXp;
+                xpEl.classList.remove('xp-bump');
+                void xpEl.offsetWidth;
+                xpEl.classList.add('xp-bump');
+            }
+        }
+        if (lvlEl) {
+            var newLvl = 'Lv ' + (data.level || 1);
+            if (lvlEl.textContent !== newLvl) {
+                lvlEl.textContent = newLvl;
+                // Trigger level-up toast via the existing helper in base.html
+                if (typeof window.showLevelUpToast === 'function' && data.level) {
+                    // Only show if this isn't the initial fetch — guard via a flag
+                    if (window._lastKnownLevel != null && data.level > window._lastKnownLevel) {
+                        window.showLevelUpToast(data.level);
+                    }
+                    window._lastKnownLevel = data.level;
+                } else if (window._lastKnownLevel == null) {
+                    window._lastKnownLevel = data.level;
+                }
+            }
+        }
+        if (streakEl) streakEl.innerHTML = '&#128293; ' + (data.streak_days || data.streak || 0);
+    }).catch(function() { /* non-fatal */ });
 }
 
 
@@ -528,10 +983,8 @@ function setupSocketListeners() {
 
 }
 
-// Chat mode state
-let chatModeEnabled = false;
-
-// Voice selector state
+// Voice selector state (element may not exist on the learn page — the
+// settings page owns voice selection now).
 let voiceSelector = null;
 
 // Event listeners
@@ -553,13 +1006,6 @@ document.addEventListener('DOMContentLoaded', function () {
     progressFill = document.getElementById('progress-fill');
     closeModalBtn = document.getElementById('close-modal');
 
-    // Restore chat mode preference from localStorage
-    const savedChatMode = localStorage.getItem('chatModeEnabled');
-    if (savedChatMode === 'true') {
-        chatModeEnabled = true;
-        applyChatMode();
-    }
-
     // Fetch and populate voices
     fetchAndPopulateVoices();
 
@@ -580,40 +1026,84 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // Chat mode toggle
-    const chatModeToggle = document.getElementById('chat-mode-toggle');
-    if (chatModeToggle) {
-        chatModeToggle.addEventListener('click', () => {
-            toggleChatMode();
-        });
-    }
-
     // Voice selector
     if (voiceSelector) {
         voiceSelector.addEventListener('change', handleVoiceChange);
     }
 
-    // Pause/Resume
+    // Pause/Resume button — primary purpose is controlling active TTS
+    // playback (pause/unpause the voice reading a message). If no TTS
+    // audio is active, the button is hidden via the .no-audio class so
+    // the user isn't staring at a dead control. We also still forward
+    // PAUSE_SESSION to the FSM as a safety net so progress gets saved
+    // if the session is left idle.
     const pauseResumeBtn = document.getElementById('pause-resume');
     if (pauseResumeBtn) {
+        // Default state: no audio playing → hide the button.
+        pauseResumeBtn.classList.add('no-audio');
+
         pauseResumeBtn.addEventListener('click', function () {
-            const isPaused = this.textContent === 'Pause';
-            sendEvent(isPaused ? 'PAUSE' : 'RESUME', {});
-            this.textContent = isPaused ? 'Resume' : 'Pause';
+            const audio = window._activeAudio;
+            if (audio && !audio.ended) {
+                if (audio.paused) {
+                    audio.play();
+                    this.dataset.paused = 'false';
+                } else {
+                    audio.pause();
+                    this.dataset.paused = 'true';
+                }
+                return;
+            }
+            // No active audio — button shouldn't even be visible, but if
+            // somehow it is, do nothing rather than spam the FSM.
         });
     }
 
-    // Text input
+    // Visibility observer — show the pause button when audio starts,
+    // hide it when audio ends or is cleared.
+    let _audioWatchTimer = null;
+    function _syncPauseBtnVisibility() {
+        const btn = document.getElementById('pause-resume');
+        if (!btn) return;
+        const audio = window._activeAudio;
+        const hasAudio = !!(audio && !audio.ended);
+        btn.classList.toggle('no-audio', !hasAudio);
+        if (hasAudio) {
+            btn.dataset.paused = audio.paused ? 'true' : 'false';
+        }
+    }
+    // Lightweight polling — audio events are hard to capture since the
+    // audio element is created dynamically in playMessageTTS().
+    setInterval(_syncPauseBtnVisibility, 500);
+
+    // Text input — textarea with auto-grow + Enter-to-send (Shift+Enter = newline)
     const textInput = document.getElementById('text-input');
     if (textInput) {
-        textInput.addEventListener('keypress', (e) => {
+        const inputWrapper = textInput.closest('.learn-chat-input-wrapper');
+
+        // Enter = send, Shift+Enter = newline (in textarea)
+        textInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 sendTextMessage();
             }
         });
+
+        // Auto-grow + has-content tracking — drives the send button's
+        // enabled/disabled visual state without relying on :valid.
+        const updateInputState = () => {
+            if (!inputWrapper) return;
+            const hasContent = textInput.value.trim().length > 0;
+            inputWrapper.classList.toggle('has-content', hasContent);
+            // Auto-grow the textarea
+            textInput.style.height = 'auto';
+            const maxH = 180;
+            textInput.style.height = Math.min(textInput.scrollHeight, maxH) + 'px';
+        };
+        textInput.addEventListener('input', updateInputState);
+        textInput.addEventListener('change', updateInputState);
     }
-    const sendBtn = document.getElementById('send-btn'); // Corrected ID from 'send-text' to 'send-btn' based on learn.html
+    const sendBtn = document.getElementById('send-btn');
     if (sendBtn) {
         sendBtn.addEventListener('click', sendTextMessage);
     }
@@ -742,66 +1232,6 @@ function handleVoiceChange() {
     }
 }
 
-// Chat mode functions
-function toggleChatMode() {
-    chatModeEnabled = !chatModeEnabled;
-    localStorage.setItem('chatModeEnabled', chatModeEnabled);
-
-    if (chatModeEnabled) {
-        applyChatMode();
-    } else {
-        applyFocusMode();
-    }
-}
-
-function applyChatMode() {
-    const sessionContainer = document.getElementById('session-container');
-    const textInput = document.getElementById('text-input');
-    const contextRail = document.getElementById('context-rail');
-    const flashcardRail = document.getElementById('flashcard-rail');
-    const palaceRail = document.getElementById('palace-rail');
-    const chatModeToggle = document.getElementById('chat-mode-toggle');
-
-    if (sessionContainer) {
-        sessionContainer.classList.add('chat-mode');
-    }
-
-    // Hide context rails
-    if (contextRail) contextRail.classList.add('hidden');
-    if (flashcardRail) flashcardRail.classList.add('hidden');
-    if (palaceRail) palaceRail.classList.add('hidden');
-
-    // Focus text input
-    if (textInput) {
-        textInput.focus();
-    }
-
-    // Update toggle button state
-    if (chatModeToggle) {
-        chatModeToggle.textContent = 'Chat Mode: ON';
-        chatModeToggle.classList.add('active');
-    }
-
-}
-
-function applyFocusMode() {
-    const sessionContainer = document.getElementById('session-container');
-    const chatModeToggle = document.getElementById('chat-mode-toggle');
-
-    if (sessionContainer) {
-        sessionContainer.classList.remove('chat-mode');
-    }
-
-    // Show context rails based on current mode
-    toggleRails(currentMode);
-
-    // Update toggle button state
-    if (chatModeToggle) {
-        chatModeToggle.textContent = 'Chat Mode: OFF';
-        chatModeToggle.classList.remove('active');
-    }
-}
-
 // --- Typing Indicator ---
 function showTypingIndicator() {
     const chatStream = document.getElementById('chat-stream');
@@ -843,11 +1273,12 @@ function addTTSButton(messageEl, text) {
 }
 
 // --- Confetti Animation Trigger ---
-// Call showConfetti() to display a CSS-only confetti burst.
-// The container auto-removes after 2.5s.
+// Call showConfetti() to display a page-wide confetti burst.
+// Uses inline styles for random per-piece physics (horizontal drift,
+// rotation speed, fall duration, color, size) so each burst feels alive.
+// The container auto-removes after the slowest piece lands.
 // Respects gamification setting — no confetti when gamification is disabled.
 function showConfetti() {
-    // Skip celebration animations when gamification is toggled off
     if (localStorage.getItem('helga-gamification') === 'false') return;
 
     var existing = document.querySelector('.confetti-container');
@@ -856,10 +1287,37 @@ function showConfetti() {
     var container = document.createElement('div');
     container.className = 'confetti-container';
 
-    for (var i = 0; i < 20; i++) {
+    var colors = [
+        '#e74c3c', '#3498db', '#2ecc71', '#f1c40f',
+        '#9b59b6', '#e67e22', '#1abc9c', '#d4a843',
+        '#2e6b8a', '#c45c4a', '#4a8c6f'
+    ];
+    var count = 90;
+    var maxDuration = 0;
+
+    for (var i = 0; i < count; i++) {
         var piece = document.createElement('div');
-        piece.className = 'confetti-piece';
+        piece.className = 'confetti-piece confetti-burst';
+        // Randomized positioning + physics per piece
+        var left = Math.random() * 100;          // %
+        var drift = (Math.random() - 0.5) * 220; // px horizontal drift
+        var rotate = (Math.random() * 720) - 360; // deg total rotation
+        var delay = Math.random() * 0.35;        // s
+        var duration = 2.6 + Math.random() * 1.8; // s
+        var size = 6 + Math.random() * 9;        // px
+        var isCircle = Math.random() > 0.5;
+        var color = colors[Math.floor(Math.random() * colors.length)];
+        piece.style.left = left + '%';
+        piece.style.background = color;
+        piece.style.width = size + 'px';
+        piece.style.height = (size * (0.8 + Math.random() * 1.4)) + 'px';
+        piece.style.borderRadius = isCircle ? '50%' : '2px';
+        piece.style.animationDelay = delay + 's';
+        piece.style.animationDuration = duration + 's';
+        piece.style.setProperty('--confetti-drift', drift + 'px');
+        piece.style.setProperty('--confetti-rotate', rotate + 'deg');
         container.appendChild(piece);
+        if (duration + delay > maxDuration) maxDuration = duration + delay;
     }
 
     document.body.appendChild(container);
@@ -868,7 +1326,7 @@ function showConfetti() {
         if (container.parentNode) {
             container.parentNode.removeChild(container);
         }
-    }, 2500);
+    }, (maxDuration + 0.4) * 1000);
 }
 window.showConfetti = showConfetti;
 
@@ -933,9 +1391,36 @@ let _streamingBubble = null;       // DOM element for the in-progress streaming 
 let _streamingText = '';           // Accumulated raw text so far
 let _streamRafPending = false;     // requestAnimationFrame guard to batch DOM writes
 
+// Exposed to resetChatSession() so enterNode() can tear down in-flight
+// streaming state before starting a new concept.
+window._tearDownStreamingBubble = function () {
+    if (_streamingBubble) {
+        try { _streamingBubble.remove(); } catch (e) {}
+    }
+    _streamingBubble = null;
+    _streamingText = '';
+    _streamRafPending = false;
+};
+
 function handleStreamToken(data) {
     const token = data.token || '';
     const done = data.done || false;
+
+    // Respect the navigation guard. When the user jumps to a new concept,
+    // enterNode() sets navigatingToNode=true and clears the DOM. The FSM's
+    // previous NLG call may still be emitting stream_token messages over
+    // the socket — we must NOT paint them into the new concept's chat.
+    // Drop any token (and any lingering in-flight bubble) until the guard
+    // releases.
+    if (window.navigatingToNode) {
+        if (_streamingBubble) {
+            try { _streamingBubble.remove(); } catch (e) {}
+            _streamingBubble = null;
+            _streamingText = '';
+            _streamRafPending = false;
+        }
+        return;
+    }
 
     if (done) {
         // Stream finished — mark bubble as complete so updateChatStream()
@@ -954,19 +1439,36 @@ function handleStreamToken(data) {
 
     _streamingText += token;
 
-    // Create the streaming bubble if it does not exist yet
+    // Create the streaming bubble if it does not exist yet.
+    // Use the same .chat-msg.incoming structure as updateChatStream() so
+    // the Gemini-style CSS in learn-chat.css applies — previously the
+    // bubble used legacy .message.helga classes that had no styling in
+    // the new chatbox and rendered as orphaned text below the input bar.
     if (!_streamingBubble) {
         const chatStream = document.getElementById('chat-stream');
         if (!chatStream) return;
 
+        // Hide the hero as soon as content starts streaming
+        const hero = document.getElementById('chat-hero');
+        if (hero) hero.classList.add('hidden');
+
         _streamingBubble = document.createElement('div');
-        _streamingBubble.className = 'message helga streaming new-message';
+        _streamingBubble.className = 'chat-msg incoming streaming stream-bubble';
         _streamingBubble.innerHTML = `
-            <div class="msg-avatar"><img src="https://ui-avatars.com/api/?name=H&background=3b82f6&color=fff" alt="Helga"></div>
-            <div class="msg-content streaming-content"></div>
+            <div class="chat-msg-content">
+                <img class="chat-msg-avatar" src="/static/img/helga-avatar.svg" alt="Helga"
+                     onerror="this.src='/static/img/helga-avatar.svg'">
+                <div class="chat-msg-body">
+                    <div class="chat-msg-text streaming-content"></div>
+                </div>
+            </div>
         `;
         chatStream.appendChild(_streamingBubble);
+        // New stream — scroll to reveal the first token. This counts as a
+        // "new turn" moment so we force the scroll regardless of user
+        // pinning state.
         chatStream.scrollTop = chatStream.scrollHeight;
+        _userPinnedToBottom = true;
     }
 
     // Batch DOM updates with requestAnimationFrame to avoid layout thrashing
@@ -980,9 +1482,7 @@ function handleStreamToken(data) {
                     contentEl.innerHTML = renderMarkdown(_streamingText);
                 }
                 var chatStream = document.getElementById('chat-stream');
-                if (chatStream) {
-                    chatStream.scrollTop = chatStream.scrollHeight;
-                }
+                _scrollChatToBottom(chatStream, false);
             }
         });
     }
@@ -1001,7 +1501,7 @@ updateChatStream = function (transcript) {
     // the canonical messages render (they include the final text).
     var chatStream = document.getElementById('chat-stream');
     if (chatStream) {
-        var doneBubbles = chatStream.querySelectorAll('.message.stream-done');
+        var doneBubbles = chatStream.querySelectorAll('.chat-msg.stream-done');
         doneBubbles.forEach(function (b) { b.remove(); });
     }
 

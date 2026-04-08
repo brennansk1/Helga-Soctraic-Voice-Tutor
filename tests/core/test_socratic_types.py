@@ -37,41 +37,47 @@ class TestSocraticQuestionTypes:
 
 
 class TestGetTypedSocraticPrompt:
-    def test_returns_string(self):
+    def test_returns_message_list(self):
         result = get_typed_socratic_prompt(
-            'SCENARIO', 'Some context about physics', [], 'Newton Laws'
+            'SCENARIO', 'Some context about physics', []
         )
-        assert isinstance(result, str)
+        assert isinstance(result, list)
         assert len(result) > 0
+        # Each entry should be a message dict with role and content
+        for msg in result:
+            assert 'role' in msg
+            assert 'content' in msg
 
     def test_contains_type_instruction(self):
         result = get_typed_socratic_prompt(
-            'MECHANISM', 'Context', [], 'Topic'
+            'MECHANISM', 'Context', []
         )
-        # The prompt should contain the type-specific instruction
+        # Combine all message content for searching
+        full_text = ' '.join(msg['content'] for msg in result)
         mechanism_type = next(qt for qt in SOCRATIC_QUESTION_TYPES if qt['key'] == 'MECHANISM')
-        assert mechanism_type['instruction'][:20].lower() in result.lower() or 'mechanism' in result.lower()
+        assert mechanism_type['instruction'][:20].lower() in full_text.lower() or 'mechanism' in full_text.lower()
 
     def test_contains_context(self):
         result = get_typed_socratic_prompt(
-            'SCENARIO', 'Quantum entanglement is...', [], 'Quantum Physics'
+            'SCENARIO', 'Quantum entanglement is...', []
         )
-        assert 'Quantum' in result or 'quantum' in result
+        full_text = ' '.join(msg['content'] for msg in result)
+        assert 'Quantum' in full_text or 'quantum' in full_text
 
     def test_all_types_produce_output(self):
         for qt in SOCRATIC_QUESTION_TYPES:
             result = get_typed_socratic_prompt(
-                qt['key'], 'Test context', [], 'Test Topic'
+                qt['key'], 'Test context', []
             )
-            assert isinstance(result, str)
-            assert len(result) > 10
+            assert isinstance(result, list)
+            assert len(result) > 0
 
     def test_invalid_type_fallback(self):
         # Should not crash on an unknown type
         result = get_typed_socratic_prompt(
-            'NONEXISTENT', 'Context', [], 'Topic'
+            'NONEXISTENT', 'Context', []
         )
-        assert isinstance(result, str)
+        assert isinstance(result, list)
 
 
 class TestQuestionTypeProgression:

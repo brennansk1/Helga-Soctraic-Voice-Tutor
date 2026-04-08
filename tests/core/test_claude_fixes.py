@@ -86,6 +86,20 @@ def _make_fsm():
         fsm.maintenance_paused = False
         fsm.data_root = '/tmp/test_data'
         fsm.state_file = '/tmp/test_data/user_state.json'
+        fsm.socratic_type_index = 0
+        fsm.concept_correct_streak = 0
+        fsm.concept_question_count = 0
+        fsm.current_bloom_level = 1
+        fsm.bloom_correct_streak = 0
+        fsm.current_locus_uid = None
+        fsm.current_locus_desc = None
+        fsm.last_lesson_title = None
+        fsm.current_context = ""
+        fsm.course_bloom_floor = 1
+        fsm.course_bloom_ceiling = 6
+        fsm.concept_bloom_target = None
+        fsm.passed_question_types = set()
+        fsm.prior_concepts_summary = []
         return fsm
 
 
@@ -400,8 +414,9 @@ class TestDuplicateListCoursesRemoved:
     """Verify the duplicate 'list_courses' line was removed from LOBBY handler."""
 
     def test_no_duplicate_list_courses(self):
-        import inspect
-        source_file = inspect.getfile(MnemosyneFSM)
+        source_file = os.path.join(
+            os.path.dirname(__file__), '..', '..', 'services', 'core', 'fsm_logic.py'
+        )
         with open(source_file, 'r') as f:
             content = f.read()
         

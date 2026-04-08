@@ -4,9 +4,32 @@
 <main class="page-settings" style="max-width: 720px; margin: 0 auto; padding: 2rem 1rem;">
     <h1 style="margin-bottom: 1.5rem;">Settings</h1>
 
+    <!-- Profile loading overlay — shown while /api/profile is being fetched -->
+    <div id="settings-loading" class="settings-loading-overlay">
+        <div class="settings-loading-spinner" aria-label="Loading settings"></div>
+        <span>Loading settings...</span>
+    </div>
+    <!-- Profile load error banner — hidden by default -->
+    <div id="settings-load-error" class="settings-load-error" style="display: none;">
+        <span>Could not load your settings. Showing defaults.</span>
+        <button onclick="location.reload()" class="settings-retry-btn" aria-label="Reload settings page">Retry</button>
+    </div>
+
     <!-- Profile Section -->
     <section class="settings-section" id="section-profile">
         <h2>Profile</h2>
+        <div class="setting-row profile-picture-row">
+            <label>Profile Picture</label>
+            <div class="avatar-upload-group">
+                <img id="avatar-preview" class="avatar-preview" src="/static/img/user-avatar.svg" alt="Your avatar">
+                <div class="avatar-upload-controls">
+                    <input type="file" id="avatar-upload" accept="image/png,image/jpeg,image/webp,image/svg+xml" style="display:none;">
+                    <button type="button" class="btn-secondary" id="avatar-upload-btn" aria-label="Upload profile picture">Upload image</button>
+                    <button type="button" class="btn-secondary" id="avatar-clear-btn" aria-label="Reset to default avatar">Use default</button>
+                </div>
+            </div>
+            <p class="setting-hint">This picture appears next to your messages in the learning chat. Max 2MB.</p>
+        </div>
         <div class="setting-row">
             <label for="display-name">Display Name</label>
             <input type="text" id="display-name" placeholder="Your name" maxlength="50" autocomplete="off">
@@ -79,7 +102,7 @@
                 <option value="bm_george">George (British M)</option>
                 <option value="bm_lewis">Lewis (British M)</option>
             </select>
-            <button id="voice-preview" class="btn-small">Preview</button>
+            <button id="voice-preview" class="btn-small" aria-label="Preview selected voice">Preview</button>
         </div>
     </section>
 
@@ -87,19 +110,79 @@
     <section class="settings-section" id="section-data">
         <h2>Data</h2>
         <div class="setting-row">
-            <button id="export-data" class="btn-secondary">Export Learning Data</button>
+            <button id="export-data" class="btn-secondary" aria-label="Export learning data as JSON">Export Learning Data</button>
             <p class="setting-hint">Download your progress, courses, and review history as JSON.</p>
         </div>
         <div class="setting-row danger-zone">
-            <button id="reset-progress" class="btn-danger">Reset All Progress</button>
+            <button id="reset-progress" class="btn-danger" aria-label="Reset all learning progress">Reset All Progress</button>
             <p class="setting-hint">This cannot be undone. Course content is preserved.</p>
         </div>
     </section>
 
-    <div id="settings-toast" class="toast hidden"></div>
+    <div id="settings-toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+    <!-- Reset confirmation modal — styled, consistent with the rest of the app -->
+    <div id="reset-confirm-backdrop" class="settings-confirm-backdrop" role="dialog" aria-modal="true" aria-labelledby="reset-confirm-title">
+        <div class="settings-confirm-dialog">
+            <h3 id="reset-confirm-title">Reset all progress?</h3>
+            <p>This resets every course, concept, and flashcard review. Course content itself is preserved, but all your completion data will be lost. This cannot be undone.</p>
+            <div class="settings-confirm-actions">
+                <button type="button" class="btn-secondary" id="reset-cancel-btn">Cancel</button>
+                <button type="button" class="btn-danger" id="reset-confirm-btn">Reset Progress</button>
+            </div>
+        </div>
+    </div>
 </main>
 
 <style>
+/* Settings loading overlay */
+.settings-loading-overlay {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    margin-bottom: 1.25rem;
+    color: var(--text-secondary, #6b7c6e);
+    font-size: 0.9rem;
+}
+.settings-loading-spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border-color, #d4cdc4);
+    border-top-color: var(--accent-primary, #2e6b8a);
+    border-radius: 50%;
+    animation: settings-spinner 0.7s linear infinite;
+}
+@keyframes settings-spinner { to { transform: rotate(360deg); } }
+.settings-loading-overlay.hidden { display: none; }
+/* Settings load error */
+.settings-load-error {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 0.6rem 1rem;
+    margin-bottom: 1.25rem;
+    border-radius: 8px;
+    background: var(--status-error-bg, #fef2f0);
+    color: var(--status-error, #c45c4a);
+    font-size: 0.9rem;
+}
+.settings-retry-btn {
+    background: transparent;
+    border: 1px solid var(--status-error, #c45c4a);
+    color: var(--status-error, #c45c4a);
+    border-radius: 6px;
+    padding: 0.3rem 0.75rem;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+.settings-retry-btn:hover {
+    background: var(--status-error, #c45c4a);
+    color: #fff;
+}
 .settings-section {
     background: var(--bg-secondary, #fff);
     border: 1px solid var(--border-color, #d4cdc4);
@@ -132,6 +215,31 @@
     font-size: 0.85rem;
     color: var(--text-secondary, #6b7c6e);
     margin: 0.25rem 0 0 0;
+}
+/* Avatar upload */
+.profile-picture-row .avatar-upload-group {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+.avatar-preview {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid var(--border-color, #d4cdc4);
+    background: var(--bg-tertiary, #e8f4f0);
+    box-shadow: var(--shadow-soft, 0 2px 8px rgba(0,0,0,0.06));
+}
+.avatar-upload-controls {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+.avatar-upload-controls .btn-secondary {
+    padding: 0.45rem 0.85rem;
+    font-size: 0.85rem;
 }
 .setting-row input[type="text"],
 .setting-row input[type="number"],
@@ -235,6 +343,72 @@ input:checked + .slider:before { transform: translateX(22px); }
     transition: opacity 0.3s;
 }
 .toast.hidden { opacity: 0; pointer-events: none; }
+
+/* Styled confirm modal for destructive settings actions */
+.settings-confirm-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(2px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10050;
+}
+.settings-confirm-backdrop.active {
+    display: flex;
+    animation: settings-confirm-fade 0.15s ease-out;
+}
+@keyframes settings-confirm-fade { from { opacity: 0; } to { opacity: 1; } }
+.settings-confirm-dialog {
+    background: var(--bg-secondary, #fff);
+    border: 1px solid var(--border-color, #d4cdc4);
+    border-radius: 12px;
+    padding: 1.5rem;
+    max-width: 440px;
+    width: 90%;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+}
+.settings-confirm-dialog h3 {
+    margin: 0 0 0.5rem 0;
+    color: var(--status-error, #c45c4a);
+    font-size: 1.1rem;
+}
+.settings-confirm-dialog p {
+    margin: 0 0 1.25rem 0;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+.settings-confirm-actions {
+    display: flex;
+    gap: 0.6rem;
+    justify-content: flex-end;
+}
+.settings-confirm-dialog .btn-secondary,
+.settings-confirm-dialog .btn-danger {
+    padding: 0.5rem 1.1rem;
+    font-size: 0.88rem;
+}
+.btn-danger.is-working {
+    position: relative;
+    color: transparent;
+    pointer-events: none;
+}
+.btn-danger.is-working::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 14px;
+    height: 14px;
+    margin: -7px 0 0 -7px;
+    border: 2px solid rgba(196, 92, 74, 0.35);
+    border-top-color: var(--status-error, #c45c4a);
+    border-radius: 50%;
+    animation: settings-btn-spin 0.7s linear infinite;
+}
+@keyframes settings-btn-spin { to { transform: rotate(360deg); } }
 </style>
 
 <script>
@@ -258,31 +432,90 @@ input:checked + .slider:before { transform: translateX(22px); }
                 method: 'PATCH',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({[key]: value})
-            }).then(() => showToast('Saved')).catch(() => showToast('Save failed'));
+            }).then(r => {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                showToast('Saved');
+            }).catch(() => showToast('Save failed — check your connection and try again'));
         }, SAVE_DELAY);
     }
 
-    // Load profile
-    fetch('/api/profile').then(r => r.json()).then(data => {
-        profile = data;
-        document.getElementById('display-name').value = data.display_name || '';
-        document.getElementById('font-scale').value = data.font_scale || 1.0;
-        document.getElementById('font-scale-label').textContent = Math.round((data.font_scale || 1.0) * 100) + '%';
-        document.getElementById('daily-goal').value = data.daily_goal || 5;
-        document.getElementById('gamification-toggle').checked = data.gamification_enabled !== false;
-        document.getElementById('sound-toggle').checked = data.sound_effects !== false;
-        document.getElementById('voice-select').value = data.default_voice || 'af_heart';
+    // Load profile — fail loudly instead of silently so the user knows why
+    // their settings didn't populate.
+    const loadingOverlay = document.getElementById('settings-loading');
+    const loadErrorBanner = document.getElementById('settings-load-error');
+    fetch('/api/profile')
+        .then(r => {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        })
+        .then(data => {
+            profile = data || {};
+            document.getElementById('display-name').value = profile.display_name || '';
+            document.getElementById('font-scale').value = profile.font_scale || 1.0;
+            document.getElementById('font-scale-label').textContent = Math.round((profile.font_scale || 1.0) * 100) + '%';
+            document.getElementById('daily-goal').value = profile.daily_goal || 5;
+            const gamificationOn = profile.gamification_enabled !== false;
+            document.getElementById('gamification-toggle').checked = gamificationOn;
+            // Sync localStorage + data-gamification attribute so other tabs/
+            // pages and base.html's FOUC guard see the authoritative value
+            // from the profile, not a stale local cache.
+            localStorage.setItem('helga-gamification', gamificationOn ? 'true' : 'false');
+            if (gamificationOn) {
+                document.documentElement.removeAttribute('data-gamification');
+            } else {
+                document.documentElement.setAttribute('data-gamification', 'off');
+            }
+            document.getElementById('sound-toggle').checked = profile.sound_effects !== false;
+            document.getElementById('voice-select').value = profile.default_voice || 'af_heart';
 
-        // Theme
-        const currentTheme = data.theme || localStorage.getItem('helga-theme') || 'light';
-        document.querySelectorAll('.theme-btn').forEach(b => {
-            b.classList.toggle('active', b.dataset.theme === currentTheme);
+            // Avatar
+            if (profile.avatar_url && profile.avatar_url.trim()) {
+                document.getElementById('avatar-preview').src = profile.avatar_url;
+            }
+
+            // Theme
+            const currentTheme = profile.theme || localStorage.getItem('helga-theme') || 'light';
+            document.querySelectorAll('.theme-btn').forEach(b => {
+                b.classList.toggle('active', b.dataset.theme === currentTheme);
+            });
+
+            // Hide loading overlay on success
+            if (loadingOverlay) loadingOverlay.classList.add('hidden');
+        })
+        .catch(err => {
+            console.error('Failed to load profile', err);
+            // Hide loading overlay and show persistent error banner
+            if (loadingOverlay) loadingOverlay.classList.add('hidden');
+            if (loadErrorBanner) loadErrorBanner.style.display = 'flex';
         });
-    });
 
     // Display name
     document.getElementById('display-name').addEventListener('input', function() {
         autoSave('display_name', this.value);
+    });
+
+    // Avatar upload
+    document.getElementById('avatar-upload-btn').addEventListener('click', function() {
+        document.getElementById('avatar-upload').click();
+    });
+    document.getElementById('avatar-upload').addEventListener('change', function(e) {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        if (file.size > 2 * 1024 * 1024) {
+            showToast('Image must be under 2MB');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+            const dataUrl = evt.target.result;
+            document.getElementById('avatar-preview').src = dataUrl;
+            autoSave('avatar_url', dataUrl);
+        };
+        reader.readAsDataURL(file);
+    });
+    document.getElementById('avatar-clear-btn').addEventListener('click', function() {
+        document.getElementById('avatar-preview').src = '/static/img/user-avatar.svg';
+        autoSave('avatar_url', '');
     });
 
     // Theme
@@ -333,45 +566,89 @@ input:checked + .slider:before { transform: translateX(22px); }
         autoSave('default_voice', this.value);
     });
 
-    // Voice preview
+    // Voice preview — inline dots animation so the wait feels intentional
     document.getElementById('voice-preview').addEventListener('click', function() {
         const voice = document.getElementById('voice-select').value;
-        this.disabled = true;
-        this.textContent = '...';
+        const self = this;
+        self.disabled = true;
+        self.innerHTML = '<span class="inline-dots" aria-hidden="true"><span></span><span></span><span></span></span>';
         fetch('/api/tts', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({text: 'Hello! I am your Socratic tutor, Helga.', voice: voice})
-        }).then(r => r.blob()).then(blob => {
+        }).then(r => {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.blob();
+        }).then(blob => {
             const url = URL.createObjectURL(blob);
             const audio = new Audio(url);
-            audio.onended = () => { this.disabled = false; this.textContent = 'Preview'; };
+            self.textContent = 'Playing…';
+            audio.onended = () => { self.disabled = false; self.textContent = 'Preview'; };
+            audio.onerror = () => { self.disabled = false; self.textContent = 'Preview'; showToast('Preview failed'); };
             audio.play();
         }).catch(() => {
-            this.disabled = false;
-            this.textContent = 'Preview';
+            self.disabled = false;
+            self.textContent = 'Preview';
             showToast('Preview failed');
         });
     });
 
-    // Reset progress
+    // Reset progress — styled confirm modal (replaces native confirm())
+    const resetBackdrop = document.getElementById('reset-confirm-backdrop');
+    const resetCancelBtn = document.getElementById('reset-cancel-btn');
+    const resetConfirmBtn = document.getElementById('reset-confirm-btn');
+
+    function closeResetModal() {
+        resetBackdrop.classList.remove('active');
+        resetConfirmBtn.classList.remove('is-working');
+        resetConfirmBtn.disabled = false;
+    }
+
     document.getElementById('reset-progress').addEventListener('click', function() {
-        if (confirm('Are you sure? This will reset ALL learning progress. Course content is preserved.')) {
-            fetch('/api/profile/reset', {method: 'POST'})
-                .then(() => showToast('Progress reset'))
-                .catch(() => showToast('Reset failed'));
+        resetBackdrop.classList.add('active');
+    });
+    resetCancelBtn.addEventListener('click', closeResetModal);
+    resetBackdrop.addEventListener('click', function(e) {
+        if (e.target === resetBackdrop) closeResetModal();
+    });
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && resetBackdrop.classList.contains('active')) closeResetModal();
+    });
+    resetConfirmBtn.addEventListener('click', async function() {
+        resetConfirmBtn.classList.add('is-working');
+        resetConfirmBtn.disabled = true;
+        try {
+            const r = await fetch('/api/profile/reset', {method: 'POST'});
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            closeResetModal();
+            showToast('Progress reset');
+        } catch (err) {
+            closeResetModal();
+            showToast('Reset failed');
         }
     });
 
     // Export data
     document.getElementById('export-data').addEventListener('click', function() {
-        fetch('/api/stats').then(r => r.json()).then(data => {
+        const self = this;
+        self.disabled = true;
+        self.textContent = 'Exporting...';
+        fetch('/api/stats').then(r => {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        }).then(data => {
             const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
             a.download = 'helga_data_export.json';
             a.click();
-        }).catch(() => showToast('Export failed'));
+            self.disabled = false;
+            self.textContent = 'Export Learning Data';
+        }).catch(() => {
+            showToast('Export failed — could not fetch data');
+            self.disabled = false;
+            self.textContent = 'Export Learning Data';
+        });
     });
 })();
 </script>

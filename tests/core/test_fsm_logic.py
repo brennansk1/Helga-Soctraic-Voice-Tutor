@@ -88,28 +88,6 @@ class TestDetectIgnorance(unittest.TestCase):
         self.assertTrue(self.fsm._detect_ignorance("I have no idea about this topic"))
 
 
-class TestDetectHesitation(unittest.TestCase):
-    """Tests for the _detect_hesitation method."""
-    
-    def setUp(self):
-        with patch.object(MnemosyneFSM, '__init__', lambda self, *a, **kw: None):
-            self.fsm = MnemosyneFSM.__new__(MnemosyneFSM)
-    
-    def test_hesitation_markers(self):
-        self.assertTrue(self.fsm._detect_hesitation("um well maybe it's about cells", 3.0))
-    
-    def test_long_pause(self):
-        """Long latency (>8s) should trigger hesitation."""
-        self.assertTrue(self.fsm._detect_hesitation("the answer is DNA", 9.0))
-    
-    def test_confident_fast(self):
-        self.assertFalse(self.fsm._detect_hesitation("Photosynthesis uses chlorophyll", 2.0))
-    
-    def test_single_marker_below_threshold(self):
-        """A single marker with short pause should not trigger."""
-        self.assertFalse(self.fsm._detect_hesitation("maybe it's about energy", 2.0))
-
-
 class TestNavigateToTopicLectureMode(unittest.TestCase):
     """Verify that navigate_to_topic forces LECTURE mode for opening microlecture."""
     
@@ -141,31 +119,30 @@ class TestNavigateToTopicLectureMode(unittest.TestCase):
             self.fsm.current_lesson_node = None
             self.fsm.current_context = None
             self.fsm.audio_url = 'http://mock:5000'
+            # Bloom progression attributes
+            self.fsm.course_bloom_floor = 1
+            self.fsm.course_bloom_ceiling = 6
+            self.fsm.concept_bloom_target = None
+            self.fsm.passed_question_types = set()
+            self.fsm.prior_concepts_summary = []
     
     @patch.object(MnemosyneFSM, 'ask_socratic_question')
-    def test_navigate_forces_lecture_mode(self, mock_ask):
-        """When navigating to a topic, initial_mode must be LECTURE."""
-        # Mock get_concept_details to return a valid concept
+    def test_navigate_opens_with_scenario_probe(self, mock_ask):
+        """Fix 1: Navigate to topic should open with SCENARIO probe, not forced LECTURE."""
         self.fsm.get_concept_details = MagicMock(return_value={
             'uid': 'con_123',
             'title': 'Photosynthesis',
             'resource_text': 'The process of converting light to energy'
         })
-        
+
         self.fsm.navigate_to_topic('con_123')
-        
-        # Verify ask_socratic_question was called with initial_mode="LECTURE"
+
+        # Verify ask_socratic_question was called WITHOUT initial_mode="LECTURE"
         mock_ask.assert_called_once()
         call_args = mock_ask.call_args
-        # Check either positional or keyword argument
-        if call_args.kwargs and 'initial_mode' in call_args.kwargs:
-            self.assertEqual(call_args.kwargs['initial_mode'], 'LECTURE',
-                           "navigate_to_topic must force LECTURE mode for opening microlecture")
-        elif len(call_args.args) > 1:
-            self.assertEqual(call_args.args[1], 'LECTURE',
-                           "navigate_to_topic must force LECTURE mode for opening microlecture")
-        else:
-            self.fail("ask_socratic_question was not called with initial_mode argument")
+        initial_mode = call_args.kwargs.get('initial_mode') if call_args.kwargs else None
+        self.assertIsNone(initial_mode,
+                         "navigate_to_topic should not force LECTURE — Socratic probe first")
 
 
 class TestNoSecondDetectIgnorance(unittest.TestCase):
@@ -173,8 +150,7 @@ class TestNoSecondDetectIgnorance(unittest.TestCase):
     
     def test_only_one_detect_ignorance(self):
         """There should be exactly one _detect_ignorance method in fsm_logic.py."""
-        import inspect
-        source_file = inspect.getfile(MnemosyneFSM)
+        source_file = os.path.join(os.path.dirname(__file__), '..', '..', 'services', 'core', 'fsm_logic.py')
         with open(source_file, 'r') as f:
             content = f.read()
         

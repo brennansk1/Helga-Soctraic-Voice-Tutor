@@ -61,15 +61,16 @@ class TestPageRendering:
         ("/test", 200, b"Test"),
         ("/review", 200, b"Review"),
         ("/schedule", 200, b"Schedule"),
-        ("/palace", 200, b"Memory Palace"),
-        ("/account", 200, b"Account"),
+        ("/palace", 302, None),
+        ("/account", 302, None),
     ]
 
     @pytest.mark.parametrize("path,expected_status,expected_text", PAGES)
     def test_page_renders(self, client, path, expected_status, expected_text):
         rv = client.get(path)
         assert rv.status_code == expected_status, f"{path} returned {rv.status_code}"
-        assert expected_text in rv.data, f"'{expected_text}' not found in {path}"
+        if expected_text is not None:
+            assert expected_text in rv.data, f"'{expected_text}' not found in {path}"
 
     def test_status_page_renders(self, client):
         """Status page does service health checks — mock them."""

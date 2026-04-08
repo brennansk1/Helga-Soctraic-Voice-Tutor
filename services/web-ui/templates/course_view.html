@@ -4,11 +4,11 @@
 <div class="cv-container">
     <!-- Top bar -->
     <div class="cv-topbar">
-        <button class="cv-back" onclick="window.location.href='/courses'">
-            <span class="cv-back-arrow">←</span> Back to Courses
+        <button class="cv-back" onclick="window.location.href='/courses'" aria-label="Back to Courses">
+            <span class="cv-back-arrow" aria-hidden="true">←</span> Back to Courses
         </button>
         <div class="cv-actions" id="cv-actions" style="display:none;">
-            <button class="btn-alpine btn-alpine-primary" id="cv-start-btn" onclick="startLearning()">Start Learning</button>
+            <button class="btn-alpine btn-alpine-primary" id="cv-start-btn" onclick="startLearning()" aria-label="Start learning this course">Start Learning</button>
         </div>
     </div>
 
@@ -19,9 +19,54 @@
         <div class="cv-meta" id="cv-meta"></div>
     </div>
 
+    <!-- Emoji legend — collapsible so it doesn't dominate the page -->
+    <details class="cv-legend" id="cv-legend">
+        <summary class="cv-legend-summary">
+            <span class="cv-legend-chevron">›</span>
+            <span>Legend</span>
+            <span class="cv-legend-hint">what the icons mean</span>
+        </summary>
+        <div class="cv-legend-body">
+            <div class="cv-legend-group">
+                <h4>Structure</h4>
+                <table class="cv-legend-table">
+                    <tbody>
+                        <tr><td class="cv-legend-icon">📦</td><td class="cv-legend-name">Module</td><td class="cv-legend-desc">A top-level section of the course</td></tr>
+                        <tr><td class="cv-legend-icon">📖</td><td class="cv-legend-name">Unit</td><td class="cv-legend-desc">A themed group of lessons within a module</td></tr>
+                        <tr><td class="cv-legend-icon">📝</td><td class="cv-legend-name">Lesson</td><td class="cv-legend-desc">A collection of related concepts</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="cv-legend-group">
+                <h4>Mastery (Bloom's taxonomy)</h4>
+                <table class="cv-legend-table">
+                    <tbody>
+                        <tr><td class="cv-legend-icon">🌱</td><td class="cv-legend-name">Seedling</td><td class="cv-legend-desc">Remember — you can recall the concept</td></tr>
+                        <tr><td class="cv-legend-icon">🌿</td><td class="cv-legend-name">Growing</td><td class="cv-legend-desc">Understand — you can explain it in your own words</td></tr>
+                        <tr><td class="cv-legend-icon">🌲</td><td class="cv-legend-name">Rooted</td><td class="cv-legend-desc">Apply — you can use it to solve problems</td></tr>
+                        <tr><td class="cv-legend-icon">🏔️</td><td class="cv-legend-name">Summit</td><td class="cv-legend-desc">Analyze — you can break it into its parts</td></tr>
+                        <tr><td class="cv-legend-icon">⭐</td><td class="cv-legend-name">Edelweiss</td><td class="cv-legend-desc">Evaluate / Create — mastered, you can extend it</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="cv-legend-group">
+                <h4>Progress</h4>
+                <table class="cv-legend-table">
+                    <tbody>
+                        <tr><td class="cv-legend-icon"><span class="cv-legend-dot done"></span></td><td class="cv-legend-name">Completed</td><td class="cv-legend-desc">You've passed this concept</td></tr>
+                        <tr><td class="cv-legend-icon"><span class="cv-legend-dot"></span></td><td class="cv-legend-name">Not started</td><td class="cv-legend-desc">Click the concept to begin</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </details>
+
     <!-- Structure tree -->
     <div class="cv-tree" id="cv-tree">
-        <div class="cv-loading">Loading course structure...</div>
+        <div class="cv-loading">
+            <div class="cv-loading-spinner" aria-hidden="true"></div>
+            <span>Loading course structure…</span>
+        </div>
     </div>
 </div>
 
@@ -82,6 +127,110 @@
     align-items: center;
     gap: 0.3rem;
 }
+/* --- Legend (collapsible) --- */
+.cv-legend {
+    max-width: 900px;
+    margin: 0 auto 1.25rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    overflow: hidden;
+}
+.cv-legend-summary {
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.85rem 1.15rem;
+    cursor: pointer;
+    user-select: none;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-size: 0.92rem;
+    transition: background 0.15s;
+}
+.cv-legend-summary:hover { background: var(--bg-tertiary); }
+.cv-legend-summary::-webkit-details-marker { display: none; }
+.cv-legend-chevron {
+    display: inline-block;
+    font-size: 1.1rem;
+    color: var(--text-secondary);
+    transform: rotate(0);
+    transition: transform 0.2s;
+}
+.cv-legend[open] .cv-legend-chevron { transform: rotate(90deg); }
+.cv-legend-hint {
+    font-weight: 400;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    margin-left: auto;
+}
+.cv-legend-body {
+    padding: 0.25rem 1.15rem 1.1rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.25rem;
+    border-top: 1px solid var(--border-color);
+}
+.cv-legend-body .cv-legend-group:nth-child(1) { grid-column: 1; }
+.cv-legend-body .cv-legend-group:nth-child(2) { grid-column: 2; grid-row: 1 / span 2; }
+.cv-legend-body .cv-legend-group:nth-child(3) { grid-column: 1; }
+.cv-legend-group h4 {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-secondary);
+    margin: 0.85rem 0 0.4rem 0;
+}
+.cv-legend-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+.cv-legend-table td {
+    padding: 0.35rem 0.25rem;
+    vertical-align: middle;
+    border-bottom: 1px solid var(--border-color);
+}
+.cv-legend-table tr:last-child td { border-bottom: none; }
+.cv-legend-icon {
+    width: 28px;
+    text-align: center;
+    font-size: 1.05rem;
+    line-height: 1;
+}
+.cv-legend-name {
+    font-weight: 700;
+    color: var(--text-primary);
+    white-space: nowrap;
+    padding-right: 0.65rem !important;
+}
+.cv-legend-desc {
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    line-height: 1.4;
+}
+.cv-legend-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--border-color);
+}
+.cv-legend-dot.done { background: var(--status-success); }
+@media (max-width: 640px) {
+    .cv-legend-body {
+        grid-template-columns: 1fr;
+    }
+    .cv-legend-body .cv-legend-group:nth-child(1),
+    .cv-legend-body .cv-legend-group:nth-child(2),
+    .cv-legend-body .cv-legend-group:nth-child(3) {
+        grid-column: 1;
+        grid-row: auto;
+    }
+}
+
 .cv-tree {
     display: flex;
     flex-direction: column;
@@ -91,7 +240,20 @@
     text-align: center;
     color: var(--text-secondary);
     padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.9rem;
 }
+.cv-loading-spinner {
+    width: 34px;
+    height: 34px;
+    border: 3px solid var(--border-color);
+    border-top-color: var(--accent-primary);
+    border-radius: 50%;
+    animation: cv-spin 0.9s linear infinite;
+}
+@keyframes cv-spin { to { transform: rotate(360deg); } }
 
 /* Module card */
 .cv-module {
@@ -219,6 +381,35 @@
     transition: width 0.3s;
 }
 
+/* Start Learning button loading state */
+.btn-alpine.is-loading {
+    opacity: 0.65;
+    pointer-events: none;
+    position: relative;
+}
+.btn-alpine.is-loading::after {
+    content: '';
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: cv-spin 0.7s linear infinite;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+}
+
+/* Focus outlines for keyboard navigation */
+.cv-concept:focus-visible {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 2px;
+}
+.cv-module-header:focus-visible {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: -2px;
+}
+
 @media (max-width: 600px) {
     .cv-container { padding: 1rem 0.5rem; }
     .cv-unit { padding-left: 2rem; }
@@ -247,14 +438,19 @@
     }
 
     async function load() {
+        var controller = new AbortController();
+        var timeoutId = setTimeout(function() { controller.abort(); }, 10000);
         try {
             // Fetch structure + details in parallel
             var [structRes, detRes] = await Promise.all([
-                fetch('/api/course_structure?uid=' + courseUid),
-                fetch('/api/course_details?uid=' + courseUid)
+                fetch('/api/course_structure?uid=' + courseUid, { signal: controller.signal }),
+                fetch('/api/course_details?uid=' + courseUid, { signal: controller.signal })
             ]);
+            clearTimeout(timeoutId);
+            if (!structRes.ok) throw new Error('Course structure HTTP ' + structRes.status);
             var structData = await structRes.json();
-            var detData = await detRes.json();
+            var detData = detRes.ok ? await detRes.json() : {};
+            if (structData.error) throw new Error(structData.error);
             var course = structData.structure || {};
             var modules = course.modules || [];
 
@@ -287,6 +483,15 @@
             var treeEl = document.getElementById('cv-tree');
             treeEl.innerHTML = '';
 
+            if (modules.length === 0) {
+                treeEl.innerHTML =
+                    '<div class="cv-loading" style="text-align:center;">' +
+                    '<p>This course has no modules yet. It may still be building — check back in a moment.</p>' +
+                    '<button type="button" class="btn-alpine btn-alpine-primary" onclick="window.location.reload()" style="margin-top:1rem;">Refresh</button>' +
+                    '</div>';
+                return;
+            }
+
             modules.forEach(function(mod, mi) {
                 var stats = countConcepts(mod);
                 var modEl = document.createElement('div');
@@ -294,16 +499,30 @@
 
                 // Header
                 var progPct = stats.total > 0 ? Math.round(stats.completed / stats.total * 100) : 0;
+                var isFirstMod = mi === 0;
                 modEl.innerHTML =
-                    '<div class="cv-module-header" onclick="this.parentElement.classList.toggle(\'open\')">' +
-                        '<div class="cv-module-num">' + (mi + 1) + '</div>' +
+                    '<div class="cv-module-header" role="button" tabindex="0" aria-expanded="' + (isFirstMod ? 'true' : 'false') + '" aria-label="' + escapeHtml(mod.title) + ' — ' + stats.total + ' concepts, ' + stats.completed + ' completed">' +
+                        '<div class="cv-module-num" aria-hidden="true">' + (mi + 1) + '</div>' +
                         '<div class="cv-module-info">' +
                             '<div class="cv-module-title">' + escapeHtml(mod.title) + '</div>' +
                             '<div class="cv-module-count">' + stats.total + ' concepts · ' + stats.completed + ' completed</div>' +
                         '</div>' +
-                        '<div class="cv-module-progress"><div class="cv-module-progress-fill" style="width:' + progPct + '%"></div></div>' +
-                        '<div class="cv-module-chevron">›</div>' +
+                        '<div class="cv-module-progress" role="progressbar" aria-valuenow="' + progPct + '" aria-valuemin="0" aria-valuemax="100"><div class="cv-module-progress-fill" style="width:' + progPct + '%"></div></div>' +
+                        '<div class="cv-module-chevron" aria-hidden="true">›</div>' +
                     '</div>';
+                // Toggle handler with aria-expanded update
+                var header = modEl.querySelector('.cv-module-header');
+                header.addEventListener('click', function() {
+                    var parent = this.parentElement;
+                    parent.classList.toggle('open');
+                    this.setAttribute('aria-expanded', parent.classList.contains('open') ? 'true' : 'false');
+                });
+                header.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        this.click();
+                    }
+                });
 
                 // Body
                 var bodyEl = document.createElement('div');
@@ -323,15 +542,26 @@
                             var bloom = concept.bloom_level || 0;
                             var badge = BLOOM_BADGES[Math.min(bloom, 6)] || '';
                             var dotClass = concept.completed ? 'completed' : '';
+                            var statusText = concept.completed ? 'completed' : 'not started';
                             var conceptEl = document.createElement('div');
                             conceptEl.className = 'cv-concept';
-                            conceptEl.onclick = function() {
+                            conceptEl.setAttribute('role', 'link');
+                            conceptEl.setAttribute('tabindex', '0');
+                            conceptEl.setAttribute('aria-label', escapeHtml(concept.title) + ' (' + statusText + ')');
+                            function navigateToConcept() {
                                 window.location.href = '/learn?course_uid=' + courseUid + '&concept_uid=' + concept.uid;
-                            };
+                            }
+                            conceptEl.onclick = navigateToConcept;
+                            conceptEl.addEventListener('keydown', function(e) {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault();
+                                    navigateToConcept();
+                                }
+                            });
                             conceptEl.innerHTML =
-                                '<div class="cv-concept-dot ' + dotClass + '"></div>' +
+                                '<div class="cv-concept-dot ' + dotClass + '" aria-hidden="true"></div>' +
                                 '<div class="cv-concept-name">' + escapeHtml(concept.title) + '</div>' +
-                                (badge ? '<span class="cv-concept-badge">' + badge + '</span>' : '');
+                                (badge ? '<span class="cv-concept-badge" aria-hidden="true">' + badge + '</span>' : '');
                             lessonEl.appendChild(conceptEl);
                         });
                         unitEl.appendChild(lessonEl);
@@ -343,8 +573,18 @@
             });
 
         } catch(e) {
-            document.getElementById('cv-tree').innerHTML = '<div class="cv-loading">Error loading course structure.</div>';
+            clearTimeout(timeoutId);
             console.error(e);
+            var isAbort = e.name === 'AbortError';
+            var msg = isAbort
+                ? 'Loading is taking too long. The server may be slow or unreachable.'
+                : ('Error loading course: ' + (e.message || 'Unknown error'));
+            document.getElementById('cv-title').textContent = 'Failed to load course';
+            document.getElementById('cv-tree').innerHTML =
+                '<div class="cv-loading" style="text-align:center;">' +
+                '<p>' + escapeHtml(msg) + '</p>' +
+                '<a href="/courses" class="btn-alpine btn-alpine-primary" style="display:inline-block;margin-top:1rem;text-decoration:none;">Back to Courses</a>' +
+                '</div>';
         }
     }
 
@@ -355,12 +595,52 @@
     }
 
     window.startLearning = function() {
-        fetch('/api/set_active_course', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({uid: courseUid, title: document.getElementById('cv-title').textContent})
-        }).catch(function(){});
-        window.location.href = '/learn?course_uid=' + courseUid;
+        // Visible loading feedback — the structure fetch can take a few
+        // hundred milliseconds and a dead button feels broken.
+        var startBtn = document.getElementById('cv-start-btn');
+        var origText = startBtn ? startBtn.textContent : 'Start Learning';
+        if (startBtn) {
+            startBtn.classList.add('is-loading');
+            startBtn.disabled = true;
+            startBtn.textContent = 'Loading…';
+        }
+        var navTimeout = setTimeout(function() {
+            if (startBtn) { startBtn.classList.remove('is-loading'); startBtn.disabled = false; startBtn.textContent = origText || 'Start Learning'; }
+        }, 8000);
+        // Find first incomplete concept to jump to
+        fetch('/api/course_structure?uid=' + courseUid).then(function(r) { return r.json(); }).then(function(cs) {
+            clearTimeout(navTimeout);
+            var firstIncomplete = null;
+            var mods = (cs.structure || {}).modules || [];
+            for (var mi = 0; mi < mods.length && !firstIncomplete; mi++) {
+                var units = mods[mi].units || [];
+                for (var ui = 0; ui < units.length && !firstIncomplete; ui++) {
+                    var lessons = units[ui].lessons || [];
+                    for (var li = 0; li < lessons.length && !firstIncomplete; li++) {
+                        var concepts = lessons[li].concepts || [];
+                        for (var ci = 0; ci < concepts.length; ci++) {
+                            if (!concepts[ci].completed) {
+                                firstIncomplete = concepts[ci].uid;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            // Set active course (fire and forget)
+            fetch('/api/set_active_course', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({uid: courseUid, title: document.getElementById('cv-title').textContent})
+            }).catch(function(){});
+            // Navigate to learn with the concept
+            var url = '/learn?course_uid=' + courseUid;
+            if (firstIncomplete) url += '&concept_uid=' + firstIncomplete;
+            window.location.href = url;
+        }).catch(function() {
+            clearTimeout(navTimeout);
+            window.location.href = '/learn?course_uid=' + courseUid;
+        });
     };
 
     document.addEventListener('DOMContentLoaded', load);

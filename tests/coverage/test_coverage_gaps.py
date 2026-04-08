@@ -226,120 +226,37 @@ class TestFSRSEngineEdgeCases:
 # SERVICE MANAGER TESTS (was 77% — targeting error paths and fallbacks)
 # ─────────────────────────────────────────────────────────────────────
 class TestServiceManagerEdgeCases:
-    """Tests for ServiceManager error paths and fallback branches."""
+    """Tests for ServiceManager no-op stub. Original Docker-based manager was
+    replaced with no-op stub when migrating to SQLite WAL mode."""
 
     @pytest.fixture(autouse=True)
     def setup(self):
-        with patch("services.core.service_manager.docker"):
-            from service_manager import ServiceManager
-            self.ServiceManager = ServiceManager
+        from service_manager import ServiceManager
+        self.ServiceManager = ServiceManager
 
     def test_init_defaults(self):
         sm = self.ServiceManager()
-        assert sm.compose_cmd == ['docker']
-        assert sm.use_docker_sdk is False
+        # No-op stub should initialize without error
+        assert sm is not None
 
     def test_init_custom_compose_cmd(self):
         sm = self.ServiceManager(compose_cmd=['docker-compose'])
-        assert sm.compose_cmd == ['docker-compose']
-
-    def test_find_docker_path_fallback(self):
-        """Lines 100-101: when 'which docker' fails."""
-        sm = self.ServiceManager()
-        # The method should always return something
-        assert isinstance(sm.docker_path, str)
-        assert len(sm.docker_path) > 0
-
-    def test_execute_docker_cmd_success(self):
-        """Lines 106-113: successful docker command."""
-        sm = self.ServiceManager()
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=0, stdout="OK", stderr=""
-            )
-            result = sm._execute_docker_cmd(["ps"])
-            assert result is True
-
-    def test_execute_docker_cmd_failure(self):
-        """Lines 114-116: failed docker command."""
-        sm = self.ServiceManager()
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=1, stdout="", stderr="Error"
-            )
-            result = sm._execute_docker_cmd(["stop", "nonexistent"])
-            assert result is False
-
-    def test_execute_docker_cmd_exception(self):
-        """Lines 117-119: docker command throws exception."""
-        sm = self.ServiceManager()
-        with patch("subprocess.run", side_effect=OSError("no docker")):
-            result = sm._execute_docker_cmd(["ps"])
-            assert result is False
-
-    def test_stop_service_retries(self):
-        """Lines 121-126: stop_service with retries."""
-        sm = self.ServiceManager()
-        with patch.object(sm, '_execute_docker_cmd', return_value=False):
-            with patch("time.sleep"):
-                result = sm.stop_service('helga-rag-engine', retries=2)
-                assert result is False
-                assert sm._execute_docker_cmd.call_count == 2
-
-    def test_start_service_retries(self):
-        """Lines 128-133: start_service with retries."""
-        sm = self.ServiceManager()
-        with patch.object(sm, '_execute_docker_cmd', return_value=False):
-            with patch("time.sleep"):
-                result = sm.start_service('helga-rag-engine', retries=2)
-                assert result is False
-
-    def test_stop_service_succeeds_first_try(self):
-        sm = self.ServiceManager()
-        with patch.object(sm, '_execute_docker_cmd', return_value=True):
-            result = sm.stop_service('helga-rag-engine')
-            assert result is True
-
-    def test_verify_service_unknown_service(self):
-        """Line 136: unknown service returns True."""
-        sm = self.ServiceManager()
-        result = sm.verify_service_healthy('unknown-service')
-        assert result is True
-
-    def test_verify_service_healthy_success(self):
-        """Lines 142-145: successful health check."""
-        sm = self.ServiceManager()
-        with patch("requests.get") as mock_get:
-            mock_resp = MagicMock()
-            mock_resp.status_code = 200
-            mock_resp.json.return_value = {"status": "healthy"}
-            mock_get.return_value = mock_resp
-
-            result = sm.verify_service_healthy('helga-rag-engine')
-            assert result is True
-
-    def test_verify_service_unhealthy(self):
-        """Lines 146-148: failed health checks exhaust retries."""
-        sm = self.ServiceManager()
-        with patch("requests.get", side_effect=ConnectionError("refused")):
-            with patch("time.sleep"):
-                result = sm.verify_service_healthy('helga-rag-engine')
-                assert result is False
+        assert sm is not None
 
     def test_stop_for_ingestion(self):
-        """Lines 150-159: stop_for_ingestion stops all services."""
+        """No-op stub — should return without error."""
         sm = self.ServiceManager()
-        with patch.object(sm, 'stop_service') as mock_stop:
-            result = sm.stop_for_ingestion()
-            assert result is True
-            assert mock_stop.call_count == 3
+        result = sm.stop_for_ingestion()
+        assert result is None  # No-op returns None
 
     def test_restart_after_ingestion(self):
-        """Lines 161-170: restart_after_ingestion restores services."""
+        """No-op stub — should return without error."""
         sm = self.ServiceManager()
-        with patch.object(sm, '_execute_docker_cmd', return_value=True), \
-             patch.object(sm, 'start_service', return_value=True), \
-             patch.object(sm, 'verify_service_healthy', return_value=True), \
-             patch("time.sleep"):
-            result = sm.restart_after_ingestion()
-            assert result is True
+        result = sm.restart_after_ingestion()
+        assert result is None  # No-op returns None
+
+    def test_check_service_health(self):
+        """No-op stub always returns True."""
+        sm = self.ServiceManager()
+        result = sm.check_service_health('helga-rag-engine')
+        assert result is True

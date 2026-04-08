@@ -67,6 +67,10 @@ class LLMClient:
                     timeout=timeout
                 )
                 resp.raise_for_status()
+                # Force UTF-8 — Ollama emits UTF-8 but some setups omit the
+                # charset parameter, causing requests to fall back to latin-1
+                # and produce mojibake on smart quotes / em dashes.
+                resp.encoding = "utf-8"
                 content = (resp.json()
                            .get("choices", [{}])[0]
                            .get("message", {})
@@ -156,6 +160,9 @@ class LLMClient:
                 stream=True
             )
             resp.raise_for_status()
+            # Force UTF-8 so multi-byte characters (smart quotes, em dashes)
+            # don't get split and misdecoded mid-chunk.
+            resp.encoding = "utf-8"
 
             in_think_block = False
             for line in resp.iter_lines(decode_unicode=True):

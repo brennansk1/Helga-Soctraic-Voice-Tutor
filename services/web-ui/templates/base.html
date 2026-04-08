@@ -113,7 +113,7 @@
         }
     </style>
     <link rel="icon"
-        href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧠</text></svg>">
+        href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏔️</text></svg>">
 </head>
 
 <body class="{% block body_class %}{% endblock %}">
@@ -163,6 +163,112 @@
     <!-- Toast Container -->
     <div id="toast-container"></div>
 
+    <!-- Global Course Creation Banner —
+         visible on every page whenever a build is in progress. Lets the
+         user leave /courses without losing sight of the ongoing build. -->
+    <a id="creation-banner" class="creation-banner" href="/courses?reattach=1" role="status" aria-live="polite">
+        <span class="creation-banner-spinner" aria-hidden="true"></span>
+        <span class="creation-banner-text">
+            <span class="creation-banner-label">Building:</span>
+            <span id="creation-banner-topic">course</span>
+            <span class="creation-banner-phase" id="creation-banner-phase">starting</span>
+        </span>
+        <span class="creation-banner-progress">
+            <span class="creation-banner-pct" id="creation-banner-pct">0%</span>
+            <span class="creation-banner-arrow" aria-hidden="true">›</span>
+        </span>
+    </a>
+
+    <style>
+    .creation-banner {
+        position: fixed;
+        bottom: 1rem;
+        right: 1rem;
+        z-index: 9000;
+        display: none;  /* shown by JS when active */
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.65rem 1rem;
+        background: var(--bg-secondary, #ffffff);
+        color: var(--text-primary, #2d3a2e);
+        border: 1px solid var(--accent-primary, #2e6b8a);
+        border-radius: 12px;
+        box-shadow: var(--shadow-soft, 0 4px 16px rgba(0,0,0,0.12));
+        text-decoration: none;
+        font-size: 0.9rem;
+        font-weight: 500;
+        max-width: 360px;
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .creation-banner:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+    }
+    .creation-banner.visible {
+        display: flex;
+    }
+    .creation-banner-spinner {
+        width: 18px;
+        height: 18px;
+        border: 2.5px solid var(--border-color, #d4cdc4);
+        border-top-color: var(--accent-primary, #2e6b8a);
+        border-radius: 50%;
+        animation: creation-banner-spin 0.9s linear infinite;
+        flex-shrink: 0;
+    }
+    @keyframes creation-banner-spin {
+        to { transform: rotate(360deg); }
+    }
+    .creation-banner-text {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .creation-banner-label {
+        font-weight: 700;
+        color: var(--accent-primary, #2e6b8a);
+        margin-right: 0.25rem;
+    }
+    .creation-banner-phase {
+        display: inline-block;
+        margin-left: 0.35rem;
+        padding: 0.1rem 0.45rem;
+        font-size: 0.72rem;
+        font-weight: 600;
+        background: var(--bg-primary, #f5f0eb);
+        color: var(--text-secondary, #6b7c6e);
+        border-radius: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+    .creation-banner-progress {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        flex-shrink: 0;
+    }
+    .creation-banner-pct {
+        font-weight: 700;
+        color: var(--accent-primary, #2e6b8a);
+        font-variant-numeric: tabular-nums;
+    }
+    .creation-banner-arrow {
+        font-size: 1.3rem;
+        color: var(--accent-primary, #2e6b8a);
+        line-height: 1;
+    }
+    @media (max-width: 600px) {
+        .creation-banner {
+            left: 0.5rem;
+            right: 0.5rem;
+            bottom: 0.5rem;
+            max-width: none;
+        }
+    }
+    </style>
+
     <!-- Settings Modal -->
     <div id="settings-modal" class="settings-modal hidden" role="dialog" aria-modal="true" aria-label="Settings">
         <div class="settings-content">
@@ -182,7 +288,7 @@
                     <button id="font-increase" class="font-size-btn" aria-label="Increase font size">+</button>
                 </div>
             </div>
-            <button id="settings-close" class="settings-close">Close</button>
+            <button id="settings-close" class="settings-close" aria-label="Close settings">Close</button>
         </div>
     </div>
 
@@ -192,6 +298,9 @@
     <script>
         // ---- Level-up toast notification (Task #63) ----
         function showLevelUpToast(newLevel) {
+            // Respect the gamification toggle — the user explicitly opted
+            // out of celebratory UI when they flipped this off.
+            if (localStorage.getItem('helga-gamification') === 'false') return;
             var toast = document.getElementById('level-up-toast');
             if (!toast) return;
             toast.textContent = 'Level Up! You\u2019ve reached Level ' + newLevel + '!';
@@ -203,19 +312,89 @@
         // Expose globally so session.js, review.html, etc. can call it
         window.showLevelUpToast = showLevelUpToast;
 
+        // Central helper so modules can check gamification state without
+        // duplicating the localStorage probe everywhere.
+        window.isGamificationEnabled = function () {
+            return localStorage.getItem('helga-gamification') !== 'false';
+        };
+
+        // ---- Global Course Creation Banner ----
+        // Polls /api/creation_status every 4s on every page; surfaces the
+        // banner when a build is active so the user can navigate away from
+        // /courses without losing the progress view.
+        (function() {
+            var banner = document.getElementById('creation-banner');
+            if (!banner) return;
+            var topicEl = document.getElementById('creation-banner-topic');
+            var phaseEl = document.getElementById('creation-banner-phase');
+            var pctEl   = document.getElementById('creation-banner-pct');
+
+            // On /courses the page owns its own in-modal progress view; we
+            // still show the banner but it'll feel redundant on that page.
+            // Suppress it there so the user isn't staring at two things.
+            var onCoursesPage = window.location.pathname === '/courses' ||
+                                window.location.pathname === '/courses/';
+
+            var currentUid = null;
+
+            function phaseLabel(phase) {
+                switch (phase) {
+                    case 'skeleton':  return 'skeleton';
+                    case 'audit':     return 'audit';
+                    case 'hydration': return 'writing';
+                    case 'complete':  return 'complete';
+                    case 'error':     return 'error';
+                    default:          return phase || 'starting';
+                }
+            }
+
+            function applyState(d) {
+                if (!d || !d.active) {
+                    banner.classList.remove('visible');
+                    currentUid = null;
+                    return;
+                }
+                if (onCoursesPage) {
+                    banner.classList.remove('visible');
+                    return;
+                }
+                topicEl.textContent = d.topic || 'course';
+                phaseEl.textContent = phaseLabel(d.phase);
+                pctEl.textContent = (d.progress_pct != null ? d.progress_pct : 0) + '%';
+                banner.classList.add('visible');
+                currentUid = d.course_uid || currentUid;
+            }
+
+            function poll() {
+                fetch('/api/creation_status', { cache: 'no-store' })
+                    .then(function(r) { return r.ok ? r.json() : null; })
+                    .then(applyState)
+                    .catch(function() { /* stay quiet — network blip */ });
+            }
+
+            // Initial check immediately, then every 4s
+            poll();
+            setInterval(poll, 4000);
+        })();
+
         // Hamburger menu toggle
         const hamburgerBtn = document.getElementById('hamburger-btn');
         const appNav = document.getElementById('app-nav');
         if (hamburgerBtn && appNav) {
+            // Initialize aria-expanded state
+            hamburgerBtn.setAttribute('aria-expanded', 'false');
+            hamburgerBtn.setAttribute('aria-controls', 'app-nav');
             hamburgerBtn.addEventListener('click', () => {
-                appNav.classList.toggle('nav-open');
+                const isOpen = appNav.classList.toggle('nav-open');
                 hamburgerBtn.classList.toggle('active');
+                hamburgerBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
             });
             // Close menu when a link is clicked
-            appNav.querySelectorAll('.nav-link').forEach(link => {
+            appNav.querySelectorAll('.nav-link, .settings-btn').forEach(link => {
                 link.addEventListener('click', () => {
                     appNav.classList.remove('nav-open');
                     hamburgerBtn.classList.remove('active');
+                    hamburgerBtn.setAttribute('aria-expanded', 'false');
                 });
             });
         }
@@ -238,15 +417,16 @@
                 if (streakEl) streakEl.innerHTML = '&#128293; ' + (data.streak_days || data.streak || 0);
                 // Daily goal dots
                 var dotsEl = document.getElementById('daily-goal-dots');
-                if (dotsEl && data.daily_goal) {
+                if (dotsEl && data.daily_goal && data.daily_goal > 0) {
                     dotsEl.innerHTML = '';
-                    var filled = Math.min(data.daily_xp || 0, data.daily_goal);
-                    for (var d = 0; d < data.daily_goal; d++) {
+                    var goalCap = Math.min(data.daily_goal, 20); // Cap dots to prevent DOM bloat
+                    var filled = Math.min(data.daily_xp || 0, goalCap);
+                    for (var d = 0; d < goalCap; d++) {
                         var dot = document.createElement('span');
                         dot.className = 'goal-dot' + (d < filled ? ' filled' : '');
                         dotsEl.appendChild(dot);
                     }
-                    dotsEl.title = filled + '/' + data.daily_goal + ' daily goal';
+                    dotsEl.title = filled + '/' + goalCap + ' daily goal';
                 }
                 bar.classList.remove('hidden');
             }

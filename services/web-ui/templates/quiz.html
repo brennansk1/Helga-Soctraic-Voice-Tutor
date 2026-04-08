@@ -23,7 +23,7 @@
         <!-- Controls -->
         <div class="controls">
             <input type="text" id="test-input" placeholder="Type your answer..." class="text-input">
-            <button id="test-send-btn" class="control-btn send-btn" title="Send"
+            <button id="test-send-btn" class="control-btn send-btn" title="Send" aria-label="Send"
                 style="background-color: var(--accent-tertiary);">➤</button>
         </div>
     </div>
@@ -267,10 +267,17 @@
     // UX-7: Course selection before quiz starts
     async function showCourseSelection() {
         chatStream.innerHTML = '';
-        addMessageText("Loading courses...", 'ai');
+        const loader = addLoadingMessage('Loading courses…');
 
+        // Timeout so this page can't sit on "Loading courses..." forever
+        // when /api/courses hangs.
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
         try {
-            const res = await fetch('/api/courses');
+            const res = await fetch('/api/courses', { signal: controller.signal });
+            clearTimeout(timeoutId);
+            removeLoadingMessage(loader);
+            if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
 
             if (!data.courses || data.courses.length === 0) {
@@ -360,7 +367,20 @@
             chatStream.appendChild(div);
 
         } catch (e) {
-            addMessageText("Error loading courses.", 'ai');
+            clearTimeout(timeoutId);
+            removeLoadingMessage(loader);
+            const msg = e.name === 'AbortError'
+                ? "Couldn't reach the course API — the server is slow or unreachable."
+                : "Error loading courses: " + (e.message || e);
+            addMessageText(msg, 'ai');
+            // Offer a retry instead of leaving the page dead
+            const retry = document.createElement('button');
+            retry.className = 'btn-alpine btn-alpine-secondary';
+            retry.style.cssText = 'margin-top:0.75rem;';
+            retry.textContent = 'Retry';
+            retry.addEventListener('click', () => { retry.remove(); showCourseSelection(); });
+            chatStream.appendChild(retry);
+            chatStream.scrollTop = chatStream.scrollHeight;
         }
     }
 
@@ -373,18 +393,37 @@
         loadQuestion();
     }
 
+    function addLoadingMessage(labelText) {
+        const div = document.createElement('div');
+        div.className = 'message ai quiz-loading-msg';
+        div.innerHTML =
+            '<span class="inline-dots" aria-hidden="true"><span></span><span></span><span></span></span>' +
+            ' <span class="quiz-loading-label"></span>';
+        div.querySelector('.quiz-loading-label').textContent = labelText;
+        chatStream.appendChild(div);
+        chatStream.scrollTop = chatStream.scrollHeight;
+        return div;
+    }
+
+    function removeLoadingMessage(el) {
+        if (el && el.parentNode) el.parentNode.removeChild(el);
+    }
+
     async function loadQuestion() {
-        addMessageText("Generating question...", 'ai');
+        const loader = addLoadingMessage('Generating question…');
         try {
             let url = '/api/quiz';
             if (selectedCourseUid) {
                 url += `?course_uid=${encodeURIComponent(selectedCourseUid)}`;
             }
             const res = await fetch(url);
+            if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
+            removeLoadingMessage(loader);
 
             if (data.error) {
                 addMessageText(`Error: ${data.error}`, 'ai');
+                addRetryQuestionButton();
                 return;
             }
 
@@ -397,8 +436,25 @@
             inputField.focus();
 
         } catch (e) {
-            addMessageText("Connection error while fetching quiz.", 'ai');
+            removeLoadingMessage(loader);
+            console.error('Quiz fetch error:', e);
+            addMessageText("Connection error while fetching quiz. The server may be unavailable.", 'ai');
+            if (window.showToast) window.showToast('Failed to load question', 'error');
+            addRetryQuestionButton();
         }
+    }
+
+    function addRetryQuestionButton() {
+        const btn = document.createElement('button');
+        btn.className = 'btn-alpine btn-alpine-secondary';
+        btn.style.cssText = 'margin-top:0.5rem;';
+        btn.textContent = 'Try again';
+        btn.addEventListener('click', () => {
+            btn.remove();
+            loadQuestion();
+        });
+        chatStream.appendChild(btn);
+        chatStream.scrollTop = chatStream.scrollHeight;
     }
 
     async function submitAnswer() {
@@ -422,11 +478,8 @@
         inputField.value = '';
         waitingForAnswer = false;
 
-        // Loading indicator
-        const loadingMsg = document.createElement('div');
-        loadingMsg.className = 'message ai';
-        loadingMsg.innerHTML = '<em>Grading...</em>';
-        chatStream.appendChild(loadingMsg);
+        // Loading indicator — animated dots match the rest of the app
+        const loadingMsg = addLoadingMessage('Grading your answer…');
 
         try {
             const res = await fetch('/api/quiz/grade', {
@@ -440,9 +493,10 @@
                     course_uid: currentCourseUid
                 })
             });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
 
-            chatStream.removeChild(loadingMsg);
+            removeLoadingMessage(loadingMsg);
 
             const isPass = data.grade === 'PASS';
             const gradeColor = isPass ? 'var(--status-success, #2ecc71)' : 'var(--status-error, #e74c3c)';
@@ -483,8 +537,13 @@
             if (changeBtn) changeBtn.addEventListener('click', showCourseSelection);
 
         } catch (e) {
-            chatStream.removeChild(loadingMsg);
-            addMessageText("Error grading answer.", 'ai');
+            removeLoadingMessage(loadingMsg);
+            console.error('Grade error:', e);
+            addMessageText("Error grading answer. Your answer has been preserved -- press Send to retry.", 'ai');
+            if (window.showToast) window.showToast('Failed to grade answer', 'error');
+            waitingForAnswer = true;  // let the user resubmit
+            inputField.value = text;
+            inputField.focus();
         }
     }
 

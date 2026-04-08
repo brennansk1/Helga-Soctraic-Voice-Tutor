@@ -23,6 +23,24 @@
     </div>
 </div>
 
+<!-- Delete Confirmation Modal -->
+<div id="delete-confirm-backdrop" class="alpine-modal-backdrop" onclick="if(event.target===this) closeDeleteConfirm();">
+    <div class="alpine-modal" style="max-width: 440px;">
+        <h2 style="color: var(--status-error, #c45c4a);">Delete Course?</h2>
+        <p style="color: var(--text-secondary); margin: 0.75rem 0 0.5rem 0;">
+            You are about to delete
+            <strong id="delete-confirm-title" style="color: var(--text-primary);"></strong>.
+        </p>
+        <p style="color: var(--text-secondary); margin: 0 0 1.5rem 0; font-size: 0.9rem;">
+            This permanently removes the course structure, content, and your progress. This cannot be undone.
+        </p>
+        <div style="display: flex; gap: 0.75rem; justify-content: flex-end;">
+            <button type="button" class="btn-alpine btn-alpine-secondary" onclick="closeDeleteConfirm()">Cancel</button>
+            <button type="button" id="delete-confirm-btn" class="btn-alpine btn-alpine-danger" onclick="confirmDeleteCourse()">Delete Course</button>
+        </div>
+    </div>
+</div>
+
 <!-- Quick Create Modal -->
 <div id="quick-create-backdrop" class="alpine-modal-backdrop" onclick="if(event.target===this) closeQuickCreate();">
     <div class="alpine-modal">
@@ -94,7 +112,7 @@
                 </select>
             </div>
             <div style="display: flex; gap: 0.75rem; margin-top: 1.5rem;">
-                <button class="btn-alpine btn-alpine-primary" style="flex: 1;" onclick="submitQuickCreate()">Create Course</button>
+                <button id="qc-submit-btn" class="btn-alpine btn-alpine-primary" style="flex: 1;" onclick="submitQuickCreate(this)">Create Course</button>
                 <button class="btn-alpine btn-alpine-secondary" onclick="closeQuickCreate()">Cancel</button>
             </div>
         </div>

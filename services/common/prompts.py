@@ -164,7 +164,8 @@ SOCRATIC_QUESTION_TYPES = [
 
 def get_typed_socratic_prompt(question_type_key, context_text, conversation_history,
                                system_note=None, misconceptions=None, analogies=None,
-                               style_modifier=None, user_profile=None, bloom_level=1):
+                               style_modifier=None, user_profile=None, bloom_level=1,
+                               prior_concepts=None):
     """
     Generates a Socratic prompt with a specific question TYPE instruction injected.
 
@@ -190,11 +191,12 @@ def get_typed_socratic_prompt(question_type_key, context_text, conversation_hist
         analogies=analogies,
         style_modifier=style_modifier,
         user_profile=user_profile,
-        bloom_level=bloom_level
+        bloom_level=bloom_level,
+        prior_concepts=prior_concepts,
     )
 
 
-def get_socratic_tutor_prompt(context_text, conversation_history, system_note=None, misconceptions=None, analogies=None, style_modifier=None, user_profile=None, bloom_level=1):
+def get_socratic_tutor_prompt(context_text, conversation_history, system_note=None, misconceptions=None, analogies=None, style_modifier=None, user_profile=None, bloom_level=1, prior_concepts=None):
     """
     Generates a Socratic question or response as a messages array.
 
@@ -204,11 +206,13 @@ def get_socratic_tutor_prompt(context_text, conversation_history, system_note=No
     hook = ""
     notes = ""
     if context_text:
-        hook_match = re.search(r"## Socratic Hook\n(.*?)(?=\n## |\Z)", context_text, re.DOTALL)
+        # Match both old "Socratic Hook" and new "Socratic Hooks" section names
+        hook_match = re.search(r"## Socratic Hooks?\n(.*?)(?=\n## |\Z)", context_text, re.DOTALL)
         if hook_match:
             hook = hook_match.group(1).strip()
 
-        notes_match = re.search(r"## Advanced Notes\n(.*?)(?=\n## |\Z)", context_text, re.DOTALL)
+        # Match both old "Advanced Notes" and new "Edge Cases & Limitations"
+        notes_match = re.search(r"## (?:Advanced Notes|Edge Cases & Limitations)\n(.*?)(?=\n## |\Z)", context_text, re.DOTALL)
         if notes_match:
             notes = notes_match.group(1).strip()
 
@@ -276,6 +280,12 @@ def get_socratic_tutor_prompt(context_text, conversation_history, system_note=No
     bloom_name, bloom_directive = bloom_labels.get(bloom_level, bloom_labels[1])
     bloom_str = f"\nCOGNITIVE LEVEL (Bloom's Taxonomy): Level {bloom_level} — {bloom_name}. {bloom_directive}"
 
+    # GAP 7: Prior concepts for continuity across transitions
+    prior_str = ""
+    if prior_concepts:
+        summaries = [f"{p.get('title', '?')} (Bloom {p.get('bloom_achieved', '?')})" for p in prior_concepts[-3:]]
+        prior_str = f"\nPREVIOUS CONCEPTS COVERED: {', '.join(summaries)}. You may reference these to build connections."
+
     # Build system prompt
     system_content = f"""{persona_str}
 
@@ -303,9 +313,9 @@ STRICT OUTPUT RULES:
 - NEVER include meta-commentary ("Let's explore", "Great question", "That's interesting").
 - NEVER repeat the context material verbatim.
 - NEVER prefix your response with a role label like "Tutor:" or "Lecturer:".
-{style_constraint}{profile_str}{misc_str}{analog_str}{bloom_str}{hook_str}{notes_str}
+{style_constraint}{profile_str}{misc_str}{analog_str}{bloom_str}{prior_str}{hook_str}{notes_str}
 
-REFERENCE MATERIAL (for your knowledge only, user has not read this):
+INSTRUCTOR NOTES (pedagogical guidance only — the student has NOT seen any of this material):
 "{context_text}" """
 
     messages = [{"role": "system", "content": system_content}]
@@ -324,14 +334,37 @@ REFERENCE MATERIAL (for your knowledge only, user has not read this):
     return messages
 
 
-def get_socratic_grading_prompt(concept, question, user_answer, context_text=""):
+def get_socratic_grading_prompt(concept, question, user_answer, context_text="",
+                                 bloom_level=None, learning_objectives=None,
+                                 mastery_criteria=None):
     """
     Generates a prompt to grade a Socratic answer using FSRS grades.
+    GAP 5: Now Bloom-aware — grading criteria scale with cognitive level.
 
     Returns:
         list: Messages array for chat completions API
     """
     context_str = f'\nSource Truth Context: "{context_text}"\n' if context_text else ""
+
+    # GAP 5: Bloom-scaled grading criteria — concept-specific overrides generic
+    bloom_criteria = ""
+    if mastery_criteria:
+        bloom_criteria = f"\nCONCEPT-SPECIFIC MASTERY CRITERIA:\n{mastery_criteria}"
+    elif bloom_level and bloom_level > 1:
+        bloom_map = {
+            2: "Bloom 2 (Understand): Grade 3 requires the student to explain in their own words, not just recall.",
+            3: "Bloom 3 (Apply): Grade 3 requires demonstrating how to apply the concept to a situation.",
+            4: "Bloom 4 (Analyze): Grade 3 requires breaking down, comparing, or identifying relationships.",
+            5: "Bloom 5 (Evaluate): Grade 3 requires judging, critiquing, or defending a position.",
+            6: "Bloom 6 (Create): Grade 3 requires proposing or synthesizing something original.",
+        }
+        bloom_criteria = f"\nCOGNITIVE LEVEL: {bloom_map.get(bloom_level, bloom_map.get(3, ''))}"
+
+    objectives_str = ""
+    if learning_objectives and len(learning_objectives) > 0:
+        obj_list = ", ".join(str(o) for o in learning_objectives[:3])
+        objectives_str = f"\nLearning Objectives: {obj_list}"
+
     return [{"role": "system", "content": f"""You are a strict grading assistant. Grade the student's answer.
 
 Concept: {concept}
@@ -344,7 +377,7 @@ Evaluate the student's mastery. Be STRICT — do not give Grade 3 unless the ans
 - Grade 2 (Hard): Partially correct but vague, just keywords without reasoning, restating facts without explaining WHY, or missing the core mechanism. If the student copies text without showing they understand it, this is Grade 2.
 - Grade 3 (Good): Correct AND explains the reasoning/mechanism. The student must show they understand WHY, not just WHAT. They connect cause to effect or explain the underlying logic.
 - Grade 4 (Easy): EXCEPTIONAL — novel connection, unprompted edge case, precise mechanism explanation, or multi-concept synthesis. RARE (1 in 5 correct answers).
-
+{bloom_criteria}{objectives_str}
 GRADING RULES:
 - If the student admits they don't know -> Grade 1, always.
 - If the answer is just keywords or definitions without reasoning -> Grade 2, not 3.
@@ -375,7 +408,8 @@ Return ONLY the single word: LECTURE or QUESTION."""}]
 # --- MICRO-LECTURE PROMPTS ---
 
 def get_micro_lecture_prompt(topic, context_text, history=[], style_modifier="standard",
-                             missing_concepts=None, next_question_type=None, bloom_level=1):
+                             missing_concepts=None, next_question_type=None, bloom_level=1,
+                             prior_concepts=None):
     """
     Generates a short explanation (Micro-Lecture) for introducing a topic or after failed attempts.
     The lecture always ends with a follow-up question whose type matches the current

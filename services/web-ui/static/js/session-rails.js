@@ -13,8 +13,17 @@ function toggleRails(mode) {
 
 function updateContextRail(courseData, nodeId) {
     if (!courseData) {
-        // Fetch it if not provided in the state
-        fetch('/api/course_structure')
+        // Fetch it if not provided in the state. /api/course_structure
+        // requires a ?uid= param or it 502s — grab it from the URL or the
+        // global FSM state first.
+        const uid = (new URLSearchParams(window.location.search)).get('course_uid')
+                    || (window.currentState && window.currentState.active_course_uid);
+        if (!uid) {
+            const rail = document.getElementById('context-rail');
+            if (rail) rail.innerHTML = '';
+            return;
+        }
+        fetch('/api/course_structure?uid=' + encodeURIComponent(uid))
             .then(response => response.json())
             .then(data => renderContextRail(data, nodeId))
             .catch(error => {

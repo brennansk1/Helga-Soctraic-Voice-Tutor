@@ -63,8 +63,12 @@ class TestLearnTab(unittest.TestCase):
 
         import app
         importlib.reload(app)
-        
-        self.client = app.socketio.test_client(app.app)
+
+        # socketio.test_client requires a real SocketIO instance; skip if mocked
+        try:
+            self.client = app.socketio.test_client(app.app)
+        except (TypeError, AttributeError):
+            self.client = None
 
     def tearDown(self):
         if hasattr(self, 'app_path') and self.app_path in sys.path:
@@ -74,10 +78,13 @@ class TestLearnTab(unittest.TestCase):
     def test_socket_message(self):
         # Test handle_text_input directly
         from app import handle_text_input
-        with patch('app.requests.post') as mock_post:
+        mock_request = MagicMock()
+        mock_request.sid = 'test-sid-123'
+        with patch('app.requests.post') as mock_post, \
+             patch('app.request', mock_request):
             data = {'text': 'Hello'}
             handle_text_input(data)
-            
+
             # Verify it posts to Core
             self.assertTrue(mock_post.called)
             args, kwargs = mock_post.call_args

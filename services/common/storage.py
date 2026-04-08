@@ -232,6 +232,22 @@ class CourseStore:
         if "status" not in course_dict:
             course_dict["status"] = "skeleton"
 
+        # AUTO-10: Write SQLite row first; only write JSON if SQLite succeeds
+        db_path = os.path.join(self.data_dir, "helga.db")
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO courses (uid, title, overview, status, teaching_style)
+                VALUES (?, ?, ?, ?, ?)
+            """, (
+                uid,
+                course_dict.get("title", ""),
+                course_dict.get("overview", ""),
+                course_dict.get("status", "unknown"),
+                course_dict.get("teaching_style", "")
+            ))
+            conn.commit()
+
         course_dir = os.path.join(self.courses_dir, uid)
         os.makedirs(course_dir, exist_ok=True)
         os.makedirs(os.path.join(course_dir, "content"), exist_ok=True)
@@ -239,25 +255,6 @@ class CourseStore:
         structure_path = os.path.join(course_dir, "structure.json")
         with open(structure_path, "w") as f:
             json.dump(course_dict, f, indent=2)
-            
-        # Update SQLite metadata
-        try:
-            db_path = os.path.join(self.data_dir, "helga.db")
-            with sqlite3.connect(db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT OR REPLACE INTO courses (uid, title, overview, status, teaching_style)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (
-                    uid, 
-                    course_dict.get("title", ""), 
-                    course_dict.get("overview", ""), 
-                    course_dict.get("status", "unknown"),
-                    course_dict.get("teaching_style", "")
-                ))
-                conn.commit()
-        except Exception as e:
-            logger.error(f"Failed to update course metadata in SQLite: {e}")
 
         logger.info(f"Created course structure: {structure_path}")
         return uid
@@ -332,27 +329,60 @@ class CourseStore:
         return courses
 
     def delete_course(self, uid: str) -> bool:
-        """Delete course directory and SQLite metadata."""
+        """Delete course directory and ALL related SQLite rows.
+
+        Cascades the delete to every table that references course_uid so no
+        orphan rows leak into review stats, activity logs, flashcard queues,
+        or progress history. Previously this only cleared the `courses` row,
+        leaving stale flashcards/progress/activity entries behind that would
+        pollute aggregate queries (e.g., review stats counting cards from a
+        deleted course, or fresh rebuilds inheriting old progress).
+        """
         if uid in self._cache:
             del self._cache[uid]
-            
+
         course_dir = os.path.join(self.courses_dir, uid)
         deleted = False
         if os.path.exists(course_dir):
             shutil.rmtree(course_dir)
-            logger.info(f"Deleted course: {uid}")
+            logger.info(f"Deleted course directory: {uid}")
             deleted = True
-            
-        # Update metadata table
+
+        # Cascade delete across every table that references course_uid.
         try:
             db_path = os.path.join(self.data_dir, "helga.db")
             with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("DELETE FROM courses WHERE uid=?", (uid,))
+                cascade_tables = [
+                    ("courses", "uid"),
+                    ("user_progress", "course_uid"),
+                    ("flashcards", "course_uid"),
+                    ("scheduled_reviews", "course_uid"),
+                    ("activity_log", "course_uid"),
+                ]
+                total_rows = 0
+                for table, col in cascade_tables:
+                    try:
+                        cursor.execute(
+                            f"DELETE FROM {table} WHERE {col}=?", (uid,)
+                        )
+                        if cursor.rowcount > 0:
+                            total_rows += cursor.rowcount
+                            logger.info(
+                                f"Deleted {cursor.rowcount} row(s) from {table} "
+                                f"for course {uid}"
+                            )
+                    except sqlite3.OperationalError as e:
+                        # Table or column may not exist in older schemas — skip.
+                        logger.debug(f"Cascade skip for {table}: {e}")
                 conn.commit()
+                if total_rows > 0:
+                    logger.info(
+                        f"Course {uid} cascade delete removed {total_rows} total row(s)"
+                    )
         except Exception as e:
-            logger.error(f"Failed to delete course metadata in SQLite: {e}")
-            
+            logger.error(f"Failed to cascade delete course {uid}: {e}")
+
         return deleted
 
     def get_flat_concepts(self, uid: str) -> List[dict]:
@@ -373,6 +403,9 @@ class CourseStore:
                             "lesson_title": lesson["title"],
                             "depth_level": concept.get("depth_level", 3),
                             "learning_objectives": concept.get("learning_objectives", []),
+                            "bloom_level": concept.get("bloom_level"),
+                            "complexity_role": concept.get("complexity_role", ""),
+                            "module_bloom_target": module.get("bloom_target"),
                             "text": "",  # Will be loaded from .md on demand
                         })
         return concepts

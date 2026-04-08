@@ -58,42 +58,69 @@ class TestSkeletonStrategy(unittest.TestCase):
 
         def llm_side_effect(prompt, **kwargs):
             self.captured_prompts.append(prompt)
-            
+
             # 1. MODULES GENERATION (top-level build prompt)
-            if "Create a progressive sequence" in prompt:
-                self.generated_counts["modules"] += 2
+            if "PROGRESSIVE modules" in prompt or "Create exactly" in prompt:
+                self.generated_counts["modules"] += 3
                 return [
                     {
-                        "title": "Newtonian Mechanics", 
-                        "level": 1, 
-                        "rationale": "Basics", 
+                        "title": "Newtonian Mechanics",
+                        "level": 1,
+                        "rationale": "Basics",
                         "scope": ["Force", "Mass", "Acceleration"]
                     },
                     {
-                        "title": "Quantum Physics", 
-                        "level": 2, 
-                        "rationale": "Advanced", 
+                        "title": "Thermodynamics",
+                        "level": 2,
+                        "rationale": "Intermediate",
+                        "scope": ["Heat", "Entropy", "Energy Transfer"]
+                    },
+                    {
+                        "title": "Quantum Physics",
+                        "level": 3,
+                        "rationale": "Advanced",
                         "scope": ["Superposition", "Entanglement", "Qubits"]
                     }
                 ]
-            
+
             # 2. UNITS GENERATION
-            if "Task: Create a flat list of exactly" in prompt and "Units" in prompt:
+            if "TASK: Generate exactly" in prompt and "Units" in prompt:
                 self.generated_counts["units_lessons"] += 1
-                return [{"title": "Kinematics Unit", "focus": "Basics of motion"}]
+                if "Newtonian" in prompt:
+                    return [{"title": "Kinematics Unit", "description": "Basics of motion"}]
+                elif "Thermodynamics" in prompt:
+                    return [{"title": "Heat Flow Unit", "description": "Thermal energy transfer"}]
+                else:
+                    return [{"title": "Wave Particle Unit", "description": "Quantum duality"}]
 
             # 3. LESSONS GENERATION
-            if "Task: Extract exactly" in prompt and "Lesson topics" in prompt:
-                return [{"title": "Velocity Vectors", "objective": "Learn vectors"}]
+            if "Generate exactly" in prompt and "lessons for" in prompt:
+                if "Kinematics" in prompt:
+                    return [{"title": "Velocity Vectors"}]
+                elif "Heat Flow" in prompt:
+                    return [{"title": "Conduction Convection"}]
+                else:
+                    return [{"title": "Photon Behavior"}]
 
             # 4. CONCEPTS GENERATION
-            if "Task: Extract" in prompt and "Concepts" in prompt:
+            if "Generate exactly" in prompt and "concepts for" in prompt:
                 self.generated_counts["concepts"] += 1
-                return [
-                    {"title": "Scalar Speed", "objectives": ["Def 1"]},
-                    {"title": "Vector Velocity", "objectives": ["Def 2"]}
-                ]
-            
+                if "Velocity" in prompt:
+                    return [
+                        {"title": "Scalar Speed", "objectives": ["Def 1"]},
+                        {"title": "Vector Velocity", "objectives": ["Def 2"]}
+                    ]
+                elif "Conduction" in prompt:
+                    return [
+                        {"title": "Fourier Heat Law", "objectives": ["Def 1"]},
+                        {"title": "Thermal Conductivity", "objectives": ["Def 2"]}
+                    ]
+                else:
+                    return [
+                        {"title": "Wave Function Collapse", "objectives": ["Def 1"]},
+                        {"title": "Quantum Tunneling", "objectives": ["Def 2"]}
+                    ]
+
             return []
 
         mock_llm.side_effect = llm_side_effect
@@ -110,54 +137,48 @@ class TestSkeletonStrategy(unittest.TestCase):
         assert self.builder.storage.courses.create_course.called, "storage.courses.create_course was not called"
         course_data = self.builder.storage.courses.create_course.call_args[0][0]
         modules = course_data.get("modules", [])
-        
+
         print(f"[STRUCTURE] Total Modules Created: {len(modules)}")
-        
-        if len(modules) >= 2:
-            print("✅ PASS: Modules created.")
+
+        if len(modules) >= 3:
+            print("PASS: Modules created.")
             if "scope" in modules[0]:
-                print("✅ PASS: Module creation includes 'scope' property.")
+                print("PASS: Module creation includes 'scope' property.")
             else:
-                self.fail("❌ FAIL: Module creation missing 'scope' property!")
+                self.fail("FAIL: Module creation missing 'scope' property!")
         else:
-            self.fail(f"❌ FAIL: Expected 2+ modules, found {len(modules)}")
-    
+            self.fail(f"FAIL: Expected 3+ modules, found {len(modules)}")
+
         # Verify Units, Lessons, Concepts
         unit_count = sum(len(m.get("units", [])) for m in modules)
         lesson_count = sum(len(u.get("lessons", [])) for m in modules for u in m.get("units", []))
         concept_count = sum(len(l.get("concepts", [])) for m in modules for u in m.get("units", []) for l in u.get("lessons", []))
 
         print(f"[STRUCTURE] Units: {unit_count}, Lessons: {lesson_count}, Concepts: {concept_count}")
-        self.assertGreaterEqual(unit_count, 2, "Expected at least 2 units created")
-        self.assertGreaterEqual(lesson_count, 2, "Expected at least 2 lessons created")
+        self.assertGreaterEqual(unit_count, 3, "Expected at least 3 units created")
+        self.assertGreaterEqual(lesson_count, 3, "Expected at least 3 lessons created")
 
-        # CHECK 2: BLUEPRINT PROTOCOL IN PROMPTS
-        # New format uses BLUEPRINT PROTOCOL with POSITIVE/NEGATIVE SCOPE
-        blueprint_prompts = [p for p in self.captured_prompts if "BLUEPRINT PROTOCOL" in p]
-        
-        print(f"[PROMPTS] Captured {len(blueprint_prompts)} blueprint-constrained prompts.")
-        self.assertGreaterEqual(len(blueprint_prompts), 2, "Expected blueprint prompts for each module")
-        
-        # Verify Newtonian Mechanics prompts enforce positive/negative scope
-        newton_prompts = [p for p in blueprint_prompts if "Newtonian Mechanics" in p or "Kinematics" in p]
-        
+        # CHECK 2: SCOPE CONSTRAINTS IN PROMPTS
+        # New format uses "Module Scope (STAY WITHIN THIS)" and "SCOPE BOUNDARY"
+        scope_prompts = [p for p in self.captured_prompts if "Module Scope" in p or "SCOPE BOUNDARY" in p]
+
+        print(f"[PROMPTS] Captured {len(scope_prompts)} scope-constrained prompts.")
+        self.assertGreaterEqual(len(scope_prompts), 3, "Expected scope-constrained prompts for each module")
+
+        # Verify Newtonian Mechanics prompts include positive scope keywords
+        newton_prompts = [p for p in scope_prompts if "Newtonian Mechanics" in p or "Kinematics" in p]
+
         for p in newton_prompts:
-            # Positive Scope Check
-            if "POSITIVE SCOPE" in p and ("Force" in p or "Mass" in p or "Acceleration" in p):
-                print("✅ PASS: Positive scope keywords found in Newtonian prompt.")
+            # Positive Scope Check (module scope should appear)
+            if "Force" in p or "Mass" in p or "Acceleration" in p:
+                print("PASS: Positive scope keywords found in Newtonian prompt.")
             else:
-                print(f"⚠️ WARNING: Newtonian prompt missing Positive scope keywords.")
-            
-            # Negative Scope Check (Should forbid Quantum)
-            if "NEGATIVE SCOPE" in p and ("Superposition" in p or "Entanglement" in p or "Qubits" in p):
-                 print("✅ PASS: Negative scope excludes Quantum topics.")
-            else:
-                 self.fail(f"❌ FAIL: Newtonian prompt FAILED to forbid Quantum topics!\nPrompt snippet: {p[:500]}")
+                print("WARNING: Newtonian prompt missing positive scope keywords.")
 
         # CHECK 3: QUALITY & ROBUSTNESS
         print(f"[STATS] Generated: {self.generated_counts}")
-        self.assertGreaterEqual(self.generated_counts['modules'], 2)
-        self.assertGreaterEqual(self.generated_counts['units_lessons'], 2)
+        self.assertGreaterEqual(self.generated_counts['modules'], 3)
+        self.assertGreaterEqual(self.generated_counts['units_lessons'], 3)
         
         # Check Forbidden List growth in later prompts
         if len(self.captured_prompts) > 2:
@@ -412,7 +433,7 @@ class TestCourseStructureQuality(unittest.TestCase):
             call_count['n'] += 1
 
             # --- MODULE generation ---
-            if "Create a progressive sequence" in prompt:
+            if "PROGRESSIVE modules" in prompt or "Create exactly" in prompt:
                 return [
                     {"title": "Carbon Bonding Fundamentals", "level": 1,
                      "rationale": "Core orbital theory.",
@@ -426,25 +447,25 @@ class TestCourseStructureQuality(unittest.TestCase):
                 ]
 
             # --- UNIT generation ---
-            if "Task: Create a flat list of exactly" in prompt and "Units" in prompt:
+            if "TASK: Generate exactly" in prompt and "Units" in prompt:
                 if "Carbon Bonding" in prompt:
-                    return [{"title": "Atomic Orbital Theory", "focus": "Orbitals"}]
+                    return [{"title": "Atomic Orbital Theory", "description": "Orbitals"}]
                 elif "Functional Group" in prompt:
-                    return [{"title": "Hydroxyl Chemistry", "focus": "Alcohols"}]
+                    return [{"title": "Hydroxyl Chemistry", "description": "Alcohols"}]
                 else:
-                    return [{"title": "Molecular Asymmetry", "focus": "Chirality"}]
+                    return [{"title": "Molecular Asymmetry", "description": "Chirality"}]
 
             # --- LESSON generation ---
-            if "Task: Extract exactly" in prompt and "Lesson topics" in prompt:
+            if "Generate exactly" in prompt and "lessons for" in prompt:
                 if "Atomic Orbital" in prompt:
-                    return [{"title": "Electron Configuration", "objective": "Shells"}]
+                    return [{"title": "Electron Configuration"}]
                 elif "Hydroxyl" in prompt:
-                    return [{"title": "Alcohol Oxidation", "objective": "Reactions"}]
+                    return [{"title": "Alcohol Oxidation"}]
                 else:
-                    return [{"title": "Chiral Centers", "objective": "CIP"}]
+                    return [{"title": "Chiral Centers"}]
 
             # --- CONCEPT generation ---
-            if "Task: Extract" in prompt and "Concepts" in prompt:
+            if "Generate exactly" in prompt and "concepts for" in prompt:
                 if "Electron Configuration" in prompt:
                     return [
                         {"title": "Aufbau Principle", "objectives": ["Energy-level filling order"]},
@@ -621,7 +642,7 @@ class TestCourseStructureQuality(unittest.TestCase):
             captured_prompts.append(prompt)
             
             # First call for modules: Return only 2 (Insufficient!)
-            if "Create a progressive sequence" in prompt and "CRITICAL SELF-CORRECTION" not in prompt:
+            if ("PROGRESSIVE modules" in prompt or "Create exactly" in prompt) and "CRITICAL SELF-CORRECTION" not in prompt:
                 return [
                     {"title": "Intro to Logic", "level": 1, "rationale": "Base", "scope": ["Logic"]},
                     {"title": "Formal Logic", "level": 2, "rationale": "Adv", "scope": ["Formal"]}
@@ -669,17 +690,20 @@ class TestCourseStructureQuality(unittest.TestCase):
 
         # Classify prompts
         module_prompts = [p for p in self.captured_prompts
-                          if "Create a progressive sequence" in p]
-        substructure_prompts = [p for p in self.captured_prompts
-                                if "Task: Create a nested structure" in p]
+                          if "PROGRESSIVE modules" in p or "Create exactly" in p]
+        unit_prompts = [p for p in self.captured_prompts
+                        if "TASK: Generate exactly" in p and "Units" in p]
+        lesson_prompts = [p for p in self.captured_prompts
+                          if "Generate exactly" in p and "lessons for" in p]
         concept_prompts = [p for p in self.captured_prompts
-                           if "Task: Extract" in p and "Concepts" in p]
+                           if "Generate exactly" in p and "concepts for" in p]
 
         print("\n" + "=" * 60)
         print("CONTEXT PROPAGATION AUDIT")
         print("=" * 60)
         print(f"Module prompts: {len(module_prompts)}")
-        print(f"Substructure prompts: {len(substructure_prompts)}")
+        print(f"Unit prompts: {len(unit_prompts)}")
+        print(f"Lesson prompts: {len(lesson_prompts)}")
         print(f"Concept prompts: {len(concept_prompts)}")
 
         # --- CHECK A: Course topic appears in every prompt ---
@@ -689,52 +713,47 @@ class TestCourseStructureQuality(unittest.TestCase):
                 missing_topic.append(i)
         self.assertEqual(len(missing_topic), 0,
                          f"Course topic missing from prompt(s): {missing_topic}")
-        print("✅ PASS: Course topic present in every prompt.")
+        print("PASS: Course topic present in every prompt.")
 
-        # --- CHECK B: Blueprint protocol in substructure + concept prompts ---
-        blueprint_prompts = substructure_prompts + concept_prompts
-        self.assertGreater(len(blueprint_prompts), 0, "No substructure/concept prompts captured")
+        # --- CHECK B: Scope constraints in unit + concept prompts ---
+        # New format uses "Module Scope (STAY WITHIN THIS)" and "SCOPE BOUNDARY"
+        scoped_prompts = unit_prompts + concept_prompts
+        self.assertGreater(len(scoped_prompts), 0, "No unit/concept prompts captured")
 
-        for p in blueprint_prompts:
-            self.assertIn("BLUEPRINT PROTOCOL", p,
-                          f"Missing BLUEPRINT PROTOCOL in prompt: {p[:100]}...")
-            self.assertIn("POSITIVE SCOPE", p,
-                          f"Missing POSITIVE SCOPE in prompt: {p[:100]}...")
-            self.assertIn("NEGATIVE SCOPE", p,
-                          f"Missing NEGATIVE SCOPE in prompt: {p[:100]}...")
-        print("✅ PASS: Blueprint protocol (positive/negative scope) in all substructure prompts.")
+        for p in unit_prompts:
+            self.assertIn("Module Scope", p,
+                          f"Missing Module Scope in unit prompt: {p[:100]}...")
+        print("PASS: Module scope referenced in unit prompts.")
 
-        # --- CHECK C: Negative scope actually contains OTHER modules' scope items ---
-        # For the "Carbon Bonding" module, Negative scope should include
-        # items from Functional Group or Stereochemistry modules
-        carbon_prompts = [p for p in blueprint_prompts if "Carbon Bonding" in p]
-        for p in carbon_prompts:
-            # Should exclude scope items from other modules
-            has_cross_scope = any(term in p for term in
-                                  ["Alcohols", "Aldehydes", "Enantiomers",
-                                   "Diastereomers", "Carboxylic Acids"])
-            self.assertTrue(has_cross_scope,
-                            "Carbon Bonding prompts should have negative scope from other modules")
-        print("✅ PASS: Cross-module negative scope correctly injected.")
+        # --- CHECK C: Module scope items appear in unit prompts ---
+        # For the "Carbon Bonding" module, scope should include Hybridization/Sigma/Pi
+        carbon_unit_prompts = [p for p in unit_prompts if "Carbon Bonding" in p]
+        for p in carbon_unit_prompts:
+            has_scope = any(term in p for term in
+                           ["Hybridization", "Sigma Bonds", "Pi Bonds"])
+            self.assertTrue(has_scope,
+                            "Carbon Bonding unit prompts should contain module scope items")
+        print("PASS: Module scope items correctly injected into unit prompts.")
 
-        # --- CHECK D: Forbidden list grows over time ---
+        # --- CHECK D: Used titles / hierarchy context grows over time ---
         # Later prompts should reference previously-generated titles
         if len(self.captured_prompts) >= 4:
             late_prompt = self.captured_prompts[-1]
-            # Should reference some earlier title in GLOBAL CONTEXT
+            # Should reference some earlier title in used-titles or hierarchy context
             has_prior = any(term in late_prompt for term in
                            ["Carbon Bonding", "Atomic Orbital", "Hybridization",
                             "Functional Group", "Hydroxyl"])
             if has_prior:
-                print("✅ PASS: Forbidden list grows — later prompts reference prior titles.")
+                print("PASS: Used titles list grows — later prompts reference prior titles.")
             else:
-                print("⚠️ WARNING: Forbidden list may not be populating in later prompts.")
+                print("WARNING: Used titles list may not be populating in later prompts.")
 
-        # --- CHECK E: Academic depth is specified ---
-        for p in blueprint_prompts:
-            self.assertIn("ACADEMIC DEPTH", p,
-                          "Missing ACADEMIC DEPTH in substructure prompt")
-        print("✅ PASS: Academic depth specified in all prompts.")
+        # --- CHECK E: Mastery/Bloom level is specified ---
+        for p in scoped_prompts:
+            has_level = "Bloom Level" in p or "Mastery Level" in p or "mastery level" in p
+            self.assertTrue(has_level,
+                            f"Missing Bloom/Mastery level in prompt: {p[:100]}...")
+        print("PASS: Bloom/mastery level specified in all scoped prompts.")
 
         print("\n--- CONTEXT PROPAGATION AUDIT COMPLETE ---")
 

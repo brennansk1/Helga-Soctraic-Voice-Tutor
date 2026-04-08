@@ -19,7 +19,7 @@ def test_clean_failed_courses(temp_data_dir):
     good_dir = os.path.join(courses_dir, "course_good")
     os.makedirs(good_dir)
     with open(os.path.join(good_dir, "structure.json"), "w") as f:
-        json.dump({"uid": "course_good", "status": "skeleton"}, f)
+        json.dump({"uid": "course_good", "status": "ready"}, f)
         
     # 2. Create a "failed" course
     failed_dir = os.path.join(courses_dir, "course_failed")
@@ -33,15 +33,15 @@ def test_clean_failed_courses(temp_data_dir):
     with open(os.path.join(hydration_failed_dir, "structure.json"), "w") as f:
         json.dump({"uid": "course_hydration_failed", "status": "hydration_failed"}, f)
 
-    # 4. Create a folder without structure.json (should be ignored)
+    # 4. Create a folder without structure.json (incomplete build — should be removed)
     other_dir = os.path.join(courses_dir, "other")
     os.makedirs(other_dir)
 
     # Run cleaner
     clean_failed_courses(temp_data_dir)
-    
+
     # Verify
     assert os.path.exists(good_dir)
     assert not os.path.exists(failed_dir)
     assert not os.path.exists(hydration_failed_dir)
-    assert os.path.exists(other_dir)
+    assert not os.path.exists(other_dir)  # No structure.json = incomplete, removed

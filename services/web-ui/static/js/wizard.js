@@ -9,6 +9,7 @@ const wizardState = {
     description: '',
     prior_knowledge: 'new',
     teaching_style: '',
+    content_source: 'llm',  // UI-6: Store content_source at step 1
     modules: [],
     clarification_answers: [],
     course_uid: null
@@ -30,12 +31,15 @@ function wizardNext() {
         wizardState.description = document.getElementById('wiz-description').value.trim();
         wizardState.prior_knowledge = document.querySelector('input[name="wiz-background"]:checked')?.value || 'new';
         wizardState.teaching_style = document.getElementById('wiz-style').value;
+        // UI-6: Capture content_source at step 1 so it persists across navigation
+        var csEl = document.querySelector('input[name="wizard_content_source"]:checked');
+        wizardState.content_source = csEl ? csEl.value : 'llm';
     }
 
     if (step === 2) {
         collectModulesFromDOM();
         if (wizardState.modules.length === 0) {
-            showToast('Add at least one module', 'warning');
+            wizardToast('Add at least one module', 'warning');
             return;
         }
     }
@@ -179,7 +183,7 @@ async function suggestModules() {
             container.appendChild(card);
         });
     } catch (e) {
-        showToast('Failed to generate suggestions', 'error');
+        wizardToast('Failed to generate suggestions', 'error');
     }
 
     btn.disabled = false;
@@ -281,7 +285,7 @@ async function suggestConcepts(modIdx) {
             container.appendChild(card);
         });
     } catch (e) {
-        showToast('Failed to suggest concepts', 'error');
+        wizardToast('Failed to suggest concepts', 'error');
     } finally {
         // Reset Suggest button state
         if (suggestBtn) {
@@ -305,8 +309,17 @@ function collectConceptsFromDOM() {
 // --- Step 4: Clarifying Questions ---
 
 async function generateClarifyingQuestions() {
-    document.getElementById('wiz-questions-loading').style.display = 'block';
-    document.getElementById('wiz-questions-list').style.display = 'none';
+    const loadingEl = document.getElementById('wiz-questions-loading');
+    const listEl = document.getElementById('wiz-questions-list');
+    // Reset the loader to its animated default — a previous failure may
+    // have replaced the inner HTML with an error paragraph.
+    loadingEl.style.display = 'block';
+    loadingEl.innerHTML =
+        '<div class="chat-msg tutor typing" style="display:inline-flex; margin-bottom:1rem;">' +
+        '<span class="dot"></span><span class="dot"></span><span class="dot"></span>' +
+        '</div>' +
+        '<p>Generating clarifying questions…</p>';
+    listEl.style.display = 'none';
 
     try {
         const resp = await fetch('/api/clarify_course', {
@@ -314,11 +327,11 @@ async function generateClarifyingQuestions() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(wizardState)
         });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const data = await resp.json();
         const questions = data.questions || [];
 
-        const container = document.getElementById('wiz-questions-list');
-        container.innerHTML = '';
+        listEl.innerHTML = '';
         questions.forEach((q, idx) => {
             const card = document.createElement('div');
             card.className = 'question-card';
@@ -327,14 +340,19 @@ async function generateClarifyingQuestions() {
                 ${q.context ? `<div class="q-context">${escapeHtml(q.context)}</div>` : ''}
                 <textarea class="q-answer" data-idx="${idx}" rows="2" placeholder="Your answer (optional)..."></textarea>
             `;
-            container.appendChild(card);
+            listEl.appendChild(card);
         });
 
-        document.getElementById('wiz-questions-loading').style.display = 'none';
-        container.style.display = 'flex';
+        loadingEl.style.display = 'none';
+        listEl.style.display = 'flex';
     } catch (e) {
-        document.getElementById('wiz-questions-loading').innerHTML =
-            '<p style="color: var(--status-error);">Failed to generate questions. You can proceed without them.</p>';
+        // Replace the loader with an error state + retry button so the user
+        // has a path forward rather than being stranded on a spinner.
+        loadingEl.innerHTML =
+            '<p style="color: var(--status-error); margin-bottom: 0.75rem;">Failed to generate questions. You can retry, or proceed without them.</p>' +
+            '<button type="button" class="btn-alpine btn-alpine-secondary" id="wiz-questions-retry-btn">Retry</button>';
+        const retryBtn = document.getElementById('wiz-questions-retry-btn');
+        if (retryBtn) retryBtn.addEventListener('click', generateClarifyingQuestions);
     }
 }
 
@@ -356,14 +374,25 @@ async function startCustomGeneration() {
     const progressEl = document.getElementById('wiz-gen-progress');
     const treeEl = document.getElementById('wiz-gen-tree');
 
+    statusEl.style.color = '';  // reset from a previous failed attempt
     statusEl.textContent = 'Creating course structure...';
     progressEl.style.width = '5%';
+    progressEl.style.background = '';  // reset success/error tint
     treeEl.innerHTML = '<div class="build-tree-placeholder"><div class="skeleton-pulse"></div><span>Generating structure...</span></div>';
 
-    // Connect Socket.IO for progress updates
+    // Connect Socket.IO for progress updates. Socket is kept alive for 5s
+    // after the REST call returns so trailing STRUCT events aren't dropped.
     const socket = io();
     let conceptCount = 0;
     let hydratedCount = 0;
+
+    // Safety timeout — if no events arrive within 60s, surface the problem.
+    const stallTimer = setTimeout(() => {
+        if (conceptCount === 0 && hydratedCount === 0) {
+            statusEl.textContent = 'Still waiting for the server… the build may be slow to start.';
+            statusEl.style.color = 'var(--status-warning)';
+        }
+    }, 60000);
 
     socket.on('status_update', data => {
         const msg = data.message || '';
@@ -404,35 +433,64 @@ async function startCustomGeneration() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(wizardState)
         });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const result = await resp.json();
+        clearTimeout(stallTimer);
 
         if (result.course_uid) {
             wizardState.course_uid = result.course_uid;
             progressEl.style.width = '100%';
+            progressEl.style.background = 'var(--status-success)';
             statusEl.textContent = 'Course created successfully!';
             document.getElementById('wiz-gen-complete').style.display = 'block';
 
             const summaryEl = document.getElementById('wiz-gen-summary');
             summaryEl.textContent = `${wizardState.title} — ${wizardState.modules.length} modules`;
 
-            document.getElementById('wiz-start-learning-btn').onclick = async () => {
-                await fetch('/api/set_active_course', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ uid: result.course_uid, title: wizardState.title })
-                });
+            const startBtn = document.getElementById('wiz-start-learning-btn');
+            startBtn.onclick = async () => {
+                startBtn.classList.add('is-loading');
+                startBtn.disabled = true;
+                try {
+                    await fetch('/api/set_active_course', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ uid: result.course_uid, title: wizardState.title })
+                    });
+                } catch (_) { /* best effort */ }
                 window.location.href = '/learn?course_uid=' + result.course_uid;
             };
         } else {
             statusEl.textContent = 'Error: ' + (result.error || 'Unknown error');
             statusEl.style.color = 'var(--status-error)';
+            showCustomGenerationRetry(statusEl);
         }
     } catch (e) {
+        clearTimeout(stallTimer);
         statusEl.textContent = 'Failed to create course: ' + e.message;
         statusEl.style.color = 'var(--status-error)';
+        showCustomGenerationRetry(statusEl);
     }
 
-    socket.disconnect();
+    // Keep the socket alive for a few more seconds so trailing STRUCT/
+    // HYDRATED events can still paint into the tree before we disconnect.
+    setTimeout(() => { try { socket.disconnect(); } catch (_) {} }, 5000);
+}
+
+function showCustomGenerationRetry(statusEl) {
+    if (!statusEl) return;
+    // Avoid double-injecting the retry button on repeated failures
+    if (statusEl.nextElementSibling && statusEl.nextElementSibling.classList.contains('wiz-gen-retry')) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn-alpine btn-alpine-secondary wiz-gen-retry';
+    btn.style.marginTop = '0.75rem';
+    btn.textContent = 'Try again';
+    btn.addEventListener('click', () => {
+        btn.remove();
+        startCustomGeneration();
+    });
+    statusEl.parentNode.insertBefore(btn, statusEl.nextSibling);
 }
 
 // --- Utilities ---
@@ -443,9 +501,17 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
-function showToast(msg, type) {
-    if (window.showToast) window.showToast(msg, type);
-    else alert(msg);
+// Thin wrapper kept for call-site compatibility. The real showToast lives
+// in static/js/toast.js (loaded in base.html before every page's scripts).
+// Previously this wrapper recursed into itself via window.showToast because
+// function declarations alias the function onto window — calling it would
+// stack-overflow on every wizard warning/error.
+function wizardToast(msg, type) {
+    if (typeof window.showToast === 'function' && window.showToast !== wizardToast) {
+        window.showToast(msg, type);
+    } else {
+        console.warn('[wizard] ' + (type || 'info') + ': ' + msg);
+    }
 }
 
 // --- Init ---

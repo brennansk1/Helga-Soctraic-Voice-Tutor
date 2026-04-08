@@ -5,32 +5,32 @@
 {% block content %}
 <div class="schedule-wrapper theme-schedule">
     <!-- Stats Bar -->
-    <div class="stats-bar">
+    <div class="stats-bar" id="stats-bar">
         <div class="stat-card streak">
             <span class="stat-icon">🔥</span>
             <div class="stat-info">
-                <span class="stat-value" id="stat-streak">0</span>
+                <span class="stat-value skeleton-value" id="stat-streak">&nbsp;</span>
                 <span class="stat-label">Day Streak</span>
             </div>
         </div>
         <div class="stat-card upcoming">
             <span class="stat-icon">📅</span>
             <div class="stat-info">
-                <span class="stat-value" id="stat-upcoming">0</span>
+                <span class="stat-value skeleton-value" id="stat-upcoming">&nbsp;</span>
                 <span class="stat-label">This Week</span>
             </div>
         </div>
         <div class="stat-card overdue">
             <span class="stat-icon">⚠️</span>
             <div class="stat-info">
-                <span class="stat-value" id="stat-overdue">0</span>
+                <span class="stat-value skeleton-value" id="stat-overdue">&nbsp;</span>
                 <span class="stat-label">Overdue</span>
             </div>
         </div>
         <div class="stat-card retention">
             <span class="stat-icon">🧠</span>
             <div class="stat-info">
-                <span class="stat-value" id="stat-retention">0%</span>
+                <span class="stat-value skeleton-value" id="stat-retention">&nbsp;</span>
                 <span class="stat-label">Retention</span>
             </div>
         </div>
@@ -39,9 +39,9 @@
     <!-- Calendar Section -->
     <div class="calendar-section">
         <div class="calendar-header">
-            <button class="cal-nav-btn" id="prev-month">‹</button>
+            <button class="cal-nav-btn" id="prev-month" aria-label="Previous month">‹</button>
             <h2 class="cal-month-title" id="cal-month-title">February 2026</h2>
-            <button class="cal-nav-btn" id="next-month">›</button>
+            <button class="cal-nav-btn" id="next-month" aria-label="Next month">›</button>
         </div>
         <div class="cal-weekdays">
             <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span>
@@ -56,7 +56,7 @@
     <div class="day-detail-panel hidden" id="day-detail-panel">
         <div class="detail-header">
             <h3 id="detail-date-title">Reviews for Today</h3>
-            <button class="close-btn" id="close-detail-panel">✕</button>
+            <button class="close-btn" id="close-detail-panel" aria-label="Close detail panel">✕</button>
         </div>
         <div class="detail-list" id="detail-list">
             <!-- Populated by JS -->
@@ -111,7 +111,49 @@
         font-size: 1.5rem;
         font-weight: 800;
         color: var(--text-primary);
+        min-width: 2ch;
+        display: inline-block;
     }
+    /* Skeleton pulse while stats are loading (removed once values arrive). */
+    .stat-value.skeleton-value {
+        background: linear-gradient(90deg,
+            var(--border-color) 25%,
+            var(--bg-tertiary) 50%,
+            var(--border-color) 75%);
+        background-size: 200% 100%;
+        animation: skeleton-shimmer 1.4s ease-in-out infinite;
+        border-radius: 6px;
+        min-width: 3ch;
+        color: transparent;
+    }
+    @keyframes skeleton-shimmer {
+        0%   { background-position: -200% 0; }
+        100% { background-position: 200% 0; }
+    }
+    /* Calendar fade-in animation used when re-rendering on month change */
+    .cal-grid.is-loading {
+        opacity: 0.45;
+        pointer-events: none;
+        transition: opacity 0.15s;
+    }
+    .detail-loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.6rem;
+        padding: 1.25rem;
+        color: var(--text-secondary);
+        font-size: 0.85rem;
+    }
+    .detail-loading-spinner {
+        width: 18px;
+        height: 18px;
+        border: 2px solid var(--border-color);
+        border-top-color: var(--accent-primary);
+        border-radius: 50%;
+        animation: schedule-spin 0.8s linear infinite;
+    }
+    @keyframes schedule-spin { to { transform: rotate(360deg); } }
 
     .stat-label {
         font-size: 0.75rem;
@@ -480,6 +522,16 @@
         .cal-day {
             font-size: 0.75rem;
             border-radius: 6px;
+            aspect-ratio: auto;
+            min-height: 36px;
+        }
+
+        .cal-grid {
+            gap: 2px;
+        }
+
+        .cal-weekdays {
+            gap: 2px;
         }
 
         .day-detail-panel {
@@ -513,15 +565,29 @@
         let currentDate = new Date();
         let calendarData = {};  // date -> card count from FSRS
 
+        function clearStatSkeletons() {
+            ['stat-streak', 'stat-upcoming', 'stat-overdue', 'stat-retention'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.remove('skeleton-value');
+            });
+        }
+
         // Load unified stats from flashcard FSRS data
         async function loadStats() {
+            const grid = document.getElementById('cal-grid');
+            if (grid) grid.classList.add('is-loading');
+            // Clear any previous error banner on retry
+            const prevBanner = document.getElementById('schedule-error-banner');
+            if (prevBanner) prevBanner.remove();
             try {
                 const res = await fetch('/api/review_stats');
+                if (!res.ok) throw new Error('HTTP ' + res.status);
                 const data = await res.json();
                 document.getElementById('stat-streak').textContent = data.streak || 0;
                 document.getElementById('stat-upcoming').textContent = data.upcoming_7d || 0;
                 document.getElementById('stat-overdue').textContent = data.due_today || 0;
                 document.getElementById('stat-retention').textContent = `${data.avg_retention || 0}%`;
+                clearStatSkeletons();
                 calendarData = data.calendar || {};
                 renderCalendar();
             } catch (e) {
@@ -529,12 +595,42 @@
                 // Fallback to legacy schedule stats
                 try {
                     const res2 = await fetch('/api/schedule/stats');
+                    if (!res2.ok) throw new Error('HTTP ' + res2.status);
                     const data2 = await res2.json();
                     document.getElementById('stat-streak').textContent = data2.streak || 0;
                     document.getElementById('stat-upcoming').textContent = data2.upcoming || 0;
                     document.getElementById('stat-overdue').textContent = data2.overdue || 0;
                     document.getElementById('stat-retention').textContent = `${data2.retention || 0}%`;
-                } catch (e2) { console.error('Legacy stats also failed:', e2); }
+                    clearStatSkeletons();
+                } catch (e2) {
+                    console.error('Legacy stats also failed:', e2);
+                    // Drop the skeleton and surface a clear zero so the user
+                    // isn't staring at a shimmer forever.
+                    ['stat-streak','stat-upcoming','stat-overdue','stat-retention'].forEach(id => {
+                        const el = document.getElementById(id);
+                        if (el) { el.classList.remove('skeleton-value'); el.textContent = '—'; }
+                    });
+                    if (window.showToast) window.showToast('Could not load schedule stats', 'error');
+                    // Show inline error banner above calendar
+                    const calSection = document.querySelector('.calendar-section');
+                    if (calSection) {
+                        let banner = document.getElementById('schedule-error-banner');
+                        if (!banner) {
+                            banner = document.createElement('div');
+                            banner.id = 'schedule-error-banner';
+                            banner.style.cssText = 'max-width:900px; margin:0 auto 1rem; padding:0.75rem 1rem; background:rgba(239,68,68,0.1); border:1px solid var(--status-error); border-radius:12px; color:var(--status-error); font-size:0.9rem; display:flex; align-items:center; gap:0.75rem;';
+                            banner.innerHTML = '<span>Could not load review data. The server may be unavailable.</span>' +
+                                '<button style="margin-left:auto; padding:0.4rem 0.8rem; border-radius:8px; border:1px solid var(--status-error); background:transparent; color:var(--status-error); cursor:pointer; font-weight:600; font-size:0.8rem;">Retry</button>';
+                            banner.querySelector('button').addEventListener('click', () => {
+                                banner.remove();
+                                loadStats();
+                            });
+                            calSection.parentNode.insertBefore(banner, calSection);
+                        }
+                    }
+                }
+            } finally {
+                if (grid) grid.classList.remove('is-loading');
             }
         }
 
@@ -591,6 +687,21 @@
                 dayEl.addEventListener('click', () => showDayDetail(dateStr, cardCount));
                 grid.appendChild(dayEl);
             }
+
+            // Check if any day in this month has reviews; show empty-state hint if not
+            const monthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+            const hasAnyReviews = Object.keys(calendarData).some(k => k.startsWith(monthPrefix) && calendarData[k] > 0);
+            // Remove any existing empty-month notice before potentially adding one
+            const existingNotice = document.getElementById('cal-empty-month-notice');
+            if (existingNotice) existingNotice.remove();
+            if (!hasAnyReviews) {
+                const notice = document.createElement('div');
+                notice.id = 'cal-empty-month-notice';
+                notice.className = 'empty-state';
+                notice.style.cssText = 'margin-top:1rem; padding:1rem; text-align:center; color:var(--text-secondary); font-size:0.9rem;';
+                notice.textContent = 'No reviews scheduled this month.';
+                grid.parentNode.insertBefore(notice, grid.nextSibling);
+            }
         }
 
         // Show day detail panel with flashcard info
@@ -603,14 +714,25 @@
             titleEl.textContent = `Reviews for ${d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}`;
 
             listEl.innerHTML = '';
+            panel.classList.remove('hidden');
 
             if (cardCount === 0) {
                 listEl.innerHTML = '<div class="empty-state">No flashcards due this day. Keep studying!</div>';
             } else {
+                // Immediate loading feedback — the due_cards fetch can take
+                // a noticeable amount of time on large libraries.
+                listEl.innerHTML =
+                    '<div class="detail-loading">' +
+                    '<span class="detail-loading-spinner" aria-hidden="true"></span>' +
+                    '<span>Loading cards…</span>' +
+                    '</div>';
+
                 // Fetch actual cards due for this date
                 try {
                     const res = await fetch(`/api/due_cards?target_date=${encodeURIComponent(dateStr)}`);
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
                     const data = await res.json();
+                    listEl.innerHTML = '';
                     const cards = data.cards || [];
 
                     if (cards.length === 0) {
@@ -643,10 +765,14 @@
                         });
                     }
                 } catch (e) {
-                    const info = document.createElement('div');
-                    info.className = 'empty-state';
-                    info.textContent = `${cardCount} card(s) scheduled. Click below to start reviewing.`;
-                    listEl.appendChild(info);
+                    console.error('Day detail fetch error:', e);
+                    listEl.innerHTML = '';
+                    const errDiv = document.createElement('div');
+                    errDiv.className = 'empty-state';
+                    errDiv.style.color = 'var(--status-error)';
+                    errDiv.textContent = `Could not load card details. ${cardCount} card(s) are scheduled.`;
+                    listEl.appendChild(errDiv);
+                    if (window.showToast) window.showToast('Failed to load card details', 'error');
                 }
 
                 // "Start Review" button
@@ -657,7 +783,6 @@
                 startBtn.textContent = `Start Review (${cardCount} cards)`;
                 listEl.appendChild(startBtn);
             }
-            panel.classList.remove('hidden');
         }
 
         // Navigation

@@ -68,7 +68,6 @@ If plants make their own food, why do they need water?
             depth=1,
             complexity_role="Teacher",
             source="test_script",
-            pedagogy_data={"misconceptions": [{"belief": "Plants eat soil", "correction": "Plants make food"}]},
             hierarchy_context={"module": "Plant Biology", "unit": "Energy", "lesson": "Light Reactions"},
             previous_concepts=["Cell Structure"]
         )
@@ -97,13 +96,12 @@ If plants make their own food, why do they need water?
             source="test_script"
         )
 
-        # Assertions
+        # Assertions — fallback returns minimal structure with Hydration failed marker
         self.assertIn("# Topological Data Analysis", result)
         self.assertIn("## Metadata", result)
-        self.assertIn("(Fallback)", result)
-        self.assertIn("## Contextual Explanation", result)
-        self.assertIn("Complex math text...", result) # Raw text should be preserved
-        print("\n[SUCCESS] Fallback logic used correctly preserved raw text and structure.")
+        self.assertIn("## Core Explanation", result)
+        self.assertIn("[Hydration failed]", result)
+        print("\n[SUCCESS] Fallback logic produced minimal structure on LLM failure.")
 
     @patch('services.core.course_builder.llm_generate')
     def test_hydrate_uses_llm_text_when_no_sources(self, mock_llm):

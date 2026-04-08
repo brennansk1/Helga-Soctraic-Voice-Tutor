@@ -534,7 +534,8 @@ def proxy_stats():
     try:
         resp = requests.get(f'{SERVICES["rag"]}/api/stats', timeout=2)
         return jsonify(resp.json()), resp.status_code
-    except:
+    except Exception as e:
+        logger.warning(f"Stats proxy failed: {e}")
         return jsonify({'courses': 0, 'concepts': 0, 'streak': 0}), 200
 
 @app.route('/api/event', methods=['POST'])
@@ -600,17 +601,27 @@ def delete_course():
 
 @app.route('/api/set_active_course', methods=['POST'])
 def set_active_course():
+    """Set the FSM's active course WITHOUT triggering a slow resume flow.
+
+    The old implementation emitted RESUME_COURSE which calls the LLM to
+    generate a resume-discussion question for the last saved concept. When
+    called from the courses page's Start button (fire-and-forget), that LLM
+    call raced with the learn page's own NAVIGATE_TO_TOPIC → two concurrent
+    streams would append tokens from two different concepts into the same
+    transcript. SET_CONTEXT is the right event here: it just swaps
+    active_course_uid and clears stale transcript/queue state if the course
+    changed. No LLM call, no race.
+    """
     data = request.json
     try:
-        # FSM handles course resumption via events
         event = {
-            'type': 'RESUME_COURSE',
+            'type': 'SET_CONTEXT',
             'payload': {
-                'uid': data.get('uid'),
+                'course_uid': data.get('uid'),
                 'title': data.get('title')
             }
         }
-        resp = requests.post(f'{SERVICES["core"]}/event', json=event, timeout=60)
+        resp = requests.post(f'{SERVICES["core"]}/event', json=event, timeout=5)
         return jsonify(resp.json()), resp.status_code
     except Exception as e:
         return jsonify({'error': str(e)}), 502
@@ -1068,7 +1079,14 @@ def create_custom_course_wizard():
                         # Continue with other files, don't fail the entire request
         
         logger.info(f"Saved {files_saved} source files for course '{title}'")
-        
+
+        # WIZ-8: Validate source file paths exist before forwarding to RAG
+        for module in modules:
+            src = module.get('source_file')
+            if src and not os.path.isfile(src):
+                logger.warning(f"Source file missing for module '{module.get('title', '?')}': {src}")
+                module.pop('source_file', None)
+
         # Forward to RAG service for course creation
         payload = {
             'title': title,
@@ -1234,8 +1252,21 @@ def proxy_due_concepts():
         return jsonify({'concepts': []}), 200
 
 
+def _monitored_spawn(fn, name):
+    """PERF-4: Wrap gevent.spawn with auto-restart on crash."""
+    def _wrapper():
+        while True:
+            try:
+                fn()
+            except Exception as e:
+                logger.error(f"Greenlet '{name}' crashed: {e}. Restarting in 5s...")
+                import gevent as _g
+                _g.sleep(5)
+    return gevent.spawn(_wrapper)
+
+
 if __name__ == '__main__':
-    gevent.spawn(state_poller)
-    gevent.spawn(health_check_poller)
+    _monitored_spawn(state_poller, "state_poller")
+    _monitored_spawn(health_check_poller, "health_check_poller")
     # STT/Audio service connections removed — text-only mode
     socketio.run(app, host='0.0.0.0', port=5000)

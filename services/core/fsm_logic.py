@@ -34,10 +34,32 @@ from services.common.prompts import (
 from fsrs_engine import FSRSEngine
 
 
+def _repair_mojibake(text):
+    """Detect and repair UTF-8-as-latin-1 mojibake (e.g. 'Thatâs' → 'That's').
+
+    Caused by UTF-8 bytes being decoded as latin-1/cp1252 somewhere upstream.
+    Only runs when telltale sequences appear to avoid corrupting legitimate
+    extended-latin text.
+    """
+    if not text:
+        return text
+    telltales = ("â", "Ã©", "Ã¨", "Ã ", "Ã§", "Ã¼", "Ã¶", "Ã¤", "Â ", "Â·", "â")
+    if not any(t in text for t in telltales):
+        return text
+    try:
+        repaired = text.encode("latin-1", errors="strict").decode("utf-8", errors="strict")
+        return repaired
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return text
+
+
 def clean_llm_response(text):
     """Remove LLM artifacts and extract clean conversational text."""
     if not text:
         return ""
+
+    # Repair any UTF-8/latin-1 mojibake before further processing
+    text = _repair_mojibake(text)
 
     # --- Phase 1: Strip known LLM/training artifacts ---
 
@@ -216,6 +238,7 @@ class MnemosyneFSM:
         # State Variables
         self.active_course_uid = None
         self.creation_in_progress = False  # Guard for concurrent generation
+        self._creation_thread = None  # AUTO-5: Track creation thread for cleanup
         self.creation_status = {
             "active": False,
             "topic": None,
@@ -263,6 +286,17 @@ class MnemosyneFSM:
         # 1=Remember, 2=Understand, 3=Apply, 4=Analyze, 5=Evaluate, 6=Create
         self.current_bloom_level = 1
         self.bloom_correct_streak = 0  # Consecutive correct at current bloom level
+        # Course-level Bloom boundaries (loaded from structure.json)
+        self.course_bloom_floor = 1
+        self.course_bloom_ceiling = 6
+        # Per-concept target Bloom level (from structure.json)
+        self.concept_bloom_target = None
+        # GAP 4: Track which question type categories were passed (Grade >= 3)
+        self.passed_question_types = set()
+        # GAP 7: Prior concepts summary for inter-concept continuity
+        self.prior_concepts_summary = []
+        # Mastery criteria extracted from concept markdown for grading
+        self.current_mastery_criteria = ""
 
         # Adaptive Learning State
         self.current_misconceptions = []
@@ -555,11 +589,32 @@ class MnemosyneFSM:
             if replay_text:
                 self.speak(replay_text, record=False)
             return
-        # LRN-2: Handle SET_CONTEXT to set active course from learn tab
+        # LRN-2: Handle SET_CONTEXT to set active course from learn tab.
+        # ANTI-LEAK: when the user switches to a DIFFERENT course from the
+        # one currently active, wipe per-session state (transcript, history,
+        # syllabus queue, current concept). Without this, the old course's
+        # chat messages bleed into the new course's view.
         elif event_type == "SET_CONTEXT":
             uid = event.get("payload", {}).get("course_uid")
             if uid:
+                prev_uid = self.active_course_uid
                 self.active_course_uid = uid
+                if prev_uid and prev_uid != uid:
+                    logging.info(
+                        f"SET_CONTEXT: switching course {prev_uid} → {uid}, "
+                        f"clearing transcript/history/queue"
+                    )
+                    self.transcript = []
+                    self.conversation_history = []
+                    self.syllabus_queue = []
+                    self.current_lesson_node = None
+                    self.last_lesson_title = None
+                    self.current_context = ""
+                    self.concept_correct_streak = 0
+                    self.concept_question_count = 0
+                    self.current_bloom_level = 1
+                    self.bloom_correct_streak = 0
+                    self.socratic_type_index = 0
                 try:
                     course = self.storage.courses.get_course(uid)
                     self.current_teaching_style = (
@@ -569,7 +624,30 @@ class MnemosyneFSM:
                     logging.warning(f"SET_CONTEXT meta load failed: {e}")
             return
         elif event_type == "NAVIGATE_TO_TOPIC" and topic_uid:
-            # LRN-5: Require active_course_uid — cross-course search is slow and error-prone
+            # ANTI-LEAK: allow the frontend to pin the course_uid in the same
+            # event so we don't race SET_CONTEXT. If a course_uid is supplied
+            # and differs from the current active course, switch context
+            # first and wipe stale state before loading the new concept.
+            payload = event.get("payload", {})
+            payload_course_uid = payload.get("course_uid")
+            if payload_course_uid and payload_course_uid != self.active_course_uid:
+                logging.info(
+                    f"NAVIGATE_TO_TOPIC: switching course "
+                    f"{self.active_course_uid} → {payload_course_uid}"
+                )
+                self.active_course_uid = payload_course_uid
+                self.transcript = []
+                self.conversation_history = []
+                self.syllabus_queue = []
+                self.last_lesson_title = None
+                self.current_context = ""
+                try:
+                    course = self.storage.courses.get_course(payload_course_uid)
+                    self.current_teaching_style = (
+                        course.get("teaching_style", "") if course else ""
+                    )
+                except Exception as e:
+                    logging.warning(f"NAVIGATE_TO_TOPIC course load failed: {e}")
             if not self.active_course_uid:
                 logging.warning(
                     f"NAVIGATE_TO_TOPIC with no active_course_uid for {topic_uid}"
@@ -740,12 +818,141 @@ class MnemosyneFSM:
             return True
         return False
 
+    def _load_course_bloom_bounds(self, course):
+        """Load Bloom floor/ceiling from course dict, with fallback for old courses."""
+        bf = course.get("bloom_floor")
+        bc = course.get("bloom_ceiling")
+        if bf is not None and bc is not None:
+            self.course_bloom_floor = bf
+            self.course_bloom_ceiling = bc
+        else:
+            # Fallback: recompute from sliders for old courses
+            from services.core.course_builder import compute_course_params
+            _cp = compute_course_params(
+                scope=course.get("scope", 2),
+                mastery=course.get("mastery", 2),
+                starting_from=course.get("starting_from", 1),
+            )
+            self.course_bloom_floor = _cp["bloom_floor"]
+            self.course_bloom_ceiling = _cp["bloom_ceiling"]
+        logging.info(f"Course Bloom bounds: floor={self.course_bloom_floor}, ceiling={self.course_bloom_ceiling}")
+
+    def _seed_bloom_for_concept(self):
+        """Seed bloom level from course floor and set concept target from metadata."""
+        self.current_bloom_level = self.course_bloom_floor or 1
+        self.concept_bloom_target = (
+            self.current_lesson_node.get("bloom_level")
+            or self.current_lesson_node.get("module_bloom_target")
+            or self.course_bloom_ceiling
+            or 6
+        )
+        self.bloom_correct_streak = 0
+        self.passed_question_types = set()
+
+    def _redact_context_for_tutor(self, context_text):
+        """GAP 6: Strip answer-key sections from context to prevent LLM leakage.
+        Keep pedagogical sections (Mastery Criteria, Prerequisites, Misconceptions,
+        Edge Cases, Socratic Hooks, Analogies)."""
+        if not context_text:
+            return context_text
+        import re as _re
+        text = context_text
+        for section in ("Core Definition", "Core Explanation", "Contextual Explanation",
+                        "Component Breakdown", "Key Facts", "Real-World Examples"):
+            text = _re.sub(
+                rf"## {section}\s*\n.*?(?=\n## |\Z)", "", text, flags=_re.DOTALL
+            )
+        return text.strip()
+
+    def _extract_mastery_criteria(self, content):
+        """Extract the Mastery Criteria section from concept markdown for grading."""
+        if not content:
+            return ""
+        import re as _re
+        match = _re.search(r"## Mastery Criteria\s*\n(.*?)(?=\n## |\Z)", content, _re.DOTALL)
+        return match.group(1).strip() if match else ""
+
+    def _extract_bloom_hook(self, content, bloom_level):
+        """Extract the Socratic Hook matching the current Bloom band."""
+        if not content:
+            return ""
+        import re as _re
+        # Try new multi-hook format first
+        match = _re.search(r"## Socratic Hooks?\s*\n(.*?)(?=\n## |\Z)", content, _re.DOTALL)
+        if not match:
+            return ""
+        hooks_text = match.group(1)
+        if bloom_level <= 2:
+            band = "1-2"
+        elif bloom_level <= 4:
+            band = "3-4"
+        else:
+            band = "5-6"
+        band_match = _re.search(rf"Bloom {band}:\s*(.+?)(?:\n|$)", hooks_text)
+        if band_match:
+            return band_match.group(1).strip().strip('"\'')
+        # Fallback: return first hook line
+        lines = [l.strip().lstrip("- ") for l in hooks_text.split("\n") if l.strip()]
+        return lines[0] if lines else ""
+
+    def _extract_bloom_analogies(self, content, bloom_level):
+        """Extract analogies matching the current Bloom band."""
+        if not content:
+            return []
+        import re as _re
+        match = _re.search(r"## Analogies\s*\n(.*?)(?=\n## |\Z)", content, _re.DOTALL)
+        if not match:
+            return []
+        text = match.group(1)
+        analogies = []
+        if bloom_level <= 2:
+            # Prefer Simple
+            simple = _re.search(r"\*\*Simple\*\*:\s*(.+?)(?:\n|$)", text)
+            if simple:
+                analogies.append(simple.group(1).strip())
+        else:
+            # Prefer Technical, fallback to Simple
+            tech = _re.search(r"\*\*Technical\*\*:\s*(.+?)(?:\n|$)", text)
+            if tech:
+                analogies.append(tech.group(1).strip())
+            simple = _re.search(r"\*\*Simple\*\*:\s*(.+?)(?:\n|$)", text)
+            if simple:
+                analogies.append(simple.group(1).strip())
+        if not analogies:
+            analogies = [l.strip().lstrip("- ") for l in text.split("\n") if l.strip() and not l.strip().startswith("#")]
+        return analogies
+
+    def _check_mastery_gate(self):
+        """GAP 4: Strengthened mastery gate — checks streak, bloom target, and question diversity."""
+        streak_met = self.concept_correct_streak >= 2 and self.concept_question_count >= 3
+        bloom_met = self.current_bloom_level >= (self.concept_bloom_target or 1)
+        diversity_met = len(self.passed_question_types) >= 3
+        if streak_met and bloom_met and diversity_met:
+            return True
+        reasons = []
+        if not streak_met:
+            reasons.append(f"streak={self.concept_correct_streak}/2, count={self.concept_question_count}/3")
+        if not bloom_met:
+            reasons.append(f"bloom={self.current_bloom_level}/{self.concept_bloom_target}")
+        if not diversity_met:
+            reasons.append(f"types={len(self.passed_question_types)}/3")
+        logging.info(f"Mastery gate not met ({', '.join(reasons)}): recycling question types")
+        return False
+
+    def _next_unpassed_type_index(self):
+        """Fix 6: Find the first question type not yet passed by the student."""
+        for i, qt in enumerate(SOCRATIC_QUESTION_TYPES):
+            if qt["key"] not in self.passed_question_types:
+                return i
+        return 0  # All passed — start from beginning
+
     def report_status(self):
         self.play_sound("RETENTION_HISS")
         self.speak(f"All systems nominal. Battery at {self.battery_level} percent.")
 
     def get_concept_details(self, uid):
-        """Helper to fetch concept details from local storage."""
+        """Helper to fetch concept details from local storage.
+        GAP 3: Now returns bloom metadata alongside content."""
         try:
             if self.active_course_uid:
                 concept = self.storage.courses.get_concept_by_uid(
@@ -760,6 +967,10 @@ class MnemosyneFSM:
                         "title": concept["title"],
                         "text": content,
                         "resource_text": content,
+                        "bloom_level": concept.get("bloom_level"),
+                        "learning_objectives": concept.get("learning_objectives", []),
+                        "complexity_role": concept.get("complexity_role", ""),
+                        "depth_level": concept.get("depth_level"),
                     }
             # Fallback: search across all courses
             result = self.storage.courses.find_concept_across_courses(uid)
@@ -818,7 +1029,7 @@ class MnemosyneFSM:
             if os.path.exists(tmp_path):
                 try:
                     os.remove(tmp_path)
-                except:
+                except OSError:
                     pass
             return False
 
@@ -896,6 +1107,9 @@ class MnemosyneFSM:
                 "uid": concept_details["uid"],
                 "title": concept_details["title"],
                 "text": file_context or concept_details.get("resource_text", ""),
+                "bloom_level": concept_details.get("bloom_level"),
+                "learning_objectives": concept_details.get("learning_objectives", []),
+                "complexity_role": concept_details.get("complexity_role", ""),
             }
             self.current_context = self.current_lesson_node["text"][:10000]
             self.syllabus_queue = []  # Clear existing queue when navigating
@@ -911,14 +1125,13 @@ class MnemosyneFSM:
             # Progress: 40% - Initiating Socratic Logic
             self.send_status_update("Preparing Pedagogical Strategy...", progress=40)
 
-            # Guarantee opening microlecture when navigating to a new topic
-            self.socratic_type_index = 0  # Reset question type for new topic
-            self.concept_correct_streak = 0  # Reset mastery tracking for new topic
+            # Reset teaching state and seed Bloom from course/concept metadata
+            self.socratic_type_index = 0
+            self.concept_correct_streak = 0
             self.concept_question_count = 0
-            self.current_bloom_level = 1  # Reset Bloom's level for new topic
-            self.bloom_correct_streak = 0
+            self._seed_bloom_for_concept()
             self.ask_socratic_question(
-                "Initiate concept exploration.", initial_mode="LECTURE"
+                "Initiate concept exploration."
             )
         else:
             self.speak("I couldn't find information for that topic.")
@@ -941,6 +1154,7 @@ class MnemosyneFSM:
         try:
             course = self.storage.courses.get_course(uid)
             if course:
+                self._load_course_bloom_bounds(course)
                 self.current_teaching_style = course.get("teaching_style", "")
                 if self.current_teaching_style:
                     logging.info(
@@ -969,9 +1183,13 @@ class MnemosyneFSM:
             for c in concepts:
                 content = self.storage.courses.get_concept_content(uid, c["uid"])
                 if content and len(content.strip()) > 50:
-                    self.syllabus_queue.append(
-                        {"uid": c["uid"], "title": c["title"], "text": content}
-                    )
+                    self.syllabus_queue.append({
+                        "uid": c["uid"], "title": c["title"], "text": content,
+                        "bloom_level": c.get("bloom_level"),
+                        "learning_objectives": c.get("learning_objectives", []),
+                        "complexity_role": c.get("complexity_role", ""),
+                        "module_bloom_target": c.get("module_bloom_target"),
+                    })
                 else:
                     skipped += 1
             if skipped > 0:
@@ -1018,6 +1236,7 @@ class MnemosyneFSM:
 
             self.state = "SOCRATIC_LEARNING"
             self.active_course_uid = target_uid
+            self._load_course_bloom_bounds(target_course)
 
             # Try to restore progress for this course
             restored = self._load_course_progress(target_uid)
@@ -1037,9 +1256,13 @@ class MnemosyneFSM:
             self.syllabus_queue = []
             for c in concepts:
                 content = self.storage.courses.get_concept_content(target_uid, c["uid"])
-                self.syllabus_queue.append(
-                    {"uid": c["uid"], "title": c["title"], "text": content}
-                )
+                self.syllabus_queue.append({
+                    "uid": c["uid"], "title": c["title"], "text": content,
+                    "bloom_level": c.get("bloom_level"),
+                    "learning_objectives": c.get("learning_objectives", []),
+                    "complexity_role": c.get("complexity_role", ""),
+                    "module_bloom_target": c.get("module_bloom_target"),
+                })
 
             if not self.syllabus_queue:
                 self.syllabus_queue = [target_course]
@@ -1081,6 +1304,12 @@ class MnemosyneFSM:
                 "palace_index": getattr(self, '_palace_index', 0),
                 "palace_locus_uid": self.current_locus_uid,
                 "palace_locus_desc": self.current_locus_desc,
+                # New progression state
+                "concept_bloom_target": self.concept_bloom_target,
+                "passed_question_types": list(self.passed_question_types),
+                "prior_concepts_summary": self.prior_concepts_summary,
+                "course_bloom_floor": self.course_bloom_floor,
+                "course_bloom_ceiling": self.course_bloom_ceiling,
             }
 
             if "courses" not in full_state:
@@ -1119,6 +1348,12 @@ class MnemosyneFSM:
                 self._palace_index = data.get("palace_index", 0)
                 self.current_locus_uid = data.get("palace_locus_uid")
                 self.current_locus_desc = data.get("palace_locus_desc", "")
+                # Restore new progression state
+                self.concept_bloom_target = data.get("concept_bloom_target")
+                self.passed_question_types = set(data.get("passed_question_types", []))
+                self.prior_concepts_summary = data.get("prior_concepts_summary", [])
+                self.course_bloom_floor = data.get("course_bloom_floor", self.course_bloom_floor)
+                self.course_bloom_ceiling = data.get("course_bloom_ceiling", self.course_bloom_ceiling)
                 # Restore context
                 if self.current_lesson_node:
                     self.current_context = self.current_lesson_node.get("text", "")[
@@ -1152,25 +1387,15 @@ class MnemosyneFSM:
         self.state = "SHUTDOWN"
         logging.info("Initiating shutdown sequence.")
 
+        # AUTO-5: Mark creation as aborted if in progress
+        if self.creation_in_progress:
+            self.creation_status["phase"] = "aborted"
+            self.creation_status["active"] = False
+            self.creation_in_progress = False
+            logging.warning("Course creation aborted due to shutdown")
+
         # Save state before exit
         self._save_current_course_progress()
-
-        # Synchronous speak and play_sound for graceful shutdown
-        try:
-            voice_id = self.user_settings.get("voice_id", "Vivian")
-            requests.post(
-                f"{self.audio_url}/tts",
-                json={
-                    "text": "Saving session state. Powering down.",
-                    "voice_id": voice_id,
-                },
-            )
-        except requests.exceptions.RequestException as e:
-            logging.error(f"Failed to speak during shutdown: {e}", exc_info=True)
-        try:
-            requests.post(f"{self.audio_url}/earcon", json={"name": "SLEEP_CHIME"})
-        except requests.exceptions.RequestException as e:
-            logging.error(f"Failed to play sound during shutdown: {e}", exc_info=True)
 
         logging.info("Shutdown complete. Exiting process.")
         sys.exit(0)
@@ -1207,9 +1432,13 @@ class MnemosyneFSM:
                             content = self.storage.courses.get_concept_content(
                                 self.active_course_uid, c["uid"]
                             )
-                            self.syllabus_queue.append(
-                                {"uid": c["uid"], "title": c["title"], "text": content or ""}
-                            )
+                            self.syllabus_queue.append({
+                                "uid": c["uid"], "title": c["title"], "text": content or "",
+                                "bloom_level": c.get("bloom_level"),
+                                "learning_objectives": c.get("learning_objectives", []),
+                                "complexity_role": c.get("complexity_role", ""),
+                                "module_bloom_target": c.get("module_bloom_target"),
+                            })
                 except Exception as e:
                     logging.warning(f"Failed to auto-populate syllabus on skip: {e}")
 
@@ -1219,6 +1448,14 @@ class MnemosyneFSM:
                 self.current_lesson_node = None
                 return
 
+        # GAP 7: Capture prior concept summary before transitioning
+        if self.current_lesson_node:
+            self.prior_concepts_summary.append({
+                "title": self.current_lesson_node.get("title", ""),
+                "bloom_achieved": self.current_bloom_level,
+            })
+            self.prior_concepts_summary = self.prior_concepts_summary[-5:]
+
         # Pop next concept and start it
         self.current_lesson_node = self.syllabus_queue.pop(0)
         self.current_context = self.current_lesson_node.get("text", "")[:10000]
@@ -1226,15 +1463,16 @@ class MnemosyneFSM:
         # Reset teaching state for new concept
         self.socratic_type_index = 0
         self.socratic_retry_count = 0
-        self.concept_correct_streak = 0  # Reset mastery tracking for new concept
+        self.concept_correct_streak = 0
         self.concept_question_count = 0
-        self.current_bloom_level = 1  # Reset Bloom's level for new concept
-        self.bloom_correct_streak = 0
+        # GAP 1+3: Seed Bloom from course floor and set concept target
+        self._seed_bloom_for_concept()
         self.conversation_history = []
 
         # Fetch pedagogy context for the new concept
         self.current_misconceptions = []
         self.current_analogies = []
+        self.current_mastery_criteria = ""
         try:
             if self.active_course_uid:
                 content = self.storage.courses.get_concept_content(
@@ -1251,17 +1489,14 @@ class MnemosyneFSM:
                             for l in misc_match.group(1).split("\n")
                             if l.strip() and not l.strip().startswith("#")
                         ]
-                    ana_match = _re.search(
-                        r"##+ Analogies\s*\n(.*?)(?=\n##\s|\Z)", content, _re.DOTALL
+                    # Use Bloom-aware extraction for analogies and hooks
+                    self.current_analogies = self._extract_bloom_analogies(
+                        content, self.current_bloom_level
                     )
-                    if ana_match:
-                        self.current_analogies = [
-                            l.strip().lstrip("- ")
-                            for l in ana_match.group(1).split("\n")
-                            if l.strip() and not l.strip().startswith("#")
-                        ]
+                    # Extract mastery criteria for grading
+                    self.current_mastery_criteria = self._extract_mastery_criteria(content)
         except Exception as e:
-            logging.warning(f"Failed to fetch pedagogy on skip: {e}")
+            logging.warning(f"Failed to fetch pedagogy context: {e}")
 
         self.speak(f"Moving to {self.current_lesson_node['title']}.")
         self.conversation_history.append((None, f"Moving to {self.current_lesson_node['title']}."))
@@ -1274,7 +1509,7 @@ class MnemosyneFSM:
             f"CPROG:{self.current_lesson_node['title']}:{completed_count}:{total_count}"
         )
 
-        self.ask_socratic_question("Initiate concept exploration.", initial_mode="LECTURE")
+        self.ask_socratic_question("Initiate concept exploration.")
 
     def next_syllabus_item(self):
         if self.current_lesson_node and self.current_lesson_node.get("uid"):
@@ -1348,9 +1583,13 @@ class MnemosyneFSM:
                             content = self.storage.courses.get_concept_content(
                                 self.active_course_uid, c["uid"]
                             )
-                            self.syllabus_queue.append(
-                                {"uid": c["uid"], "title": c["title"], "text": content or ""}
-                            )
+                            self.syllabus_queue.append({
+                                "uid": c["uid"], "title": c["title"], "text": content or "",
+                                "bloom_level": c.get("bloom_level"),
+                                "learning_objectives": c.get("learning_objectives", []),
+                                "complexity_role": c.get("complexity_role", ""),
+                                "module_bloom_target": c.get("module_bloom_target"),
+                            })
                     if self.syllabus_queue:
                         logging.info(f"Auto-populated syllabus with {len(self.syllabus_queue)} remaining concepts")
                 except Exception as e:
@@ -1453,7 +1692,7 @@ class MnemosyneFSM:
         )
 
         self.ask_socratic_question(
-            "Initiate concept exploration.", initial_mode="LECTURE"
+            "Initiate concept exploration."
         )
 
     def ask_socratic_question(self, context_trigger, initial_mode=None):
@@ -1477,6 +1716,9 @@ class MnemosyneFSM:
                 if self._detect_ignorance(last_text.lower()):
                     teaching_mode = "LECTURE"
                 elif self._last_socratic_grade <= 1:
+                    teaching_mode = "LECTURE"
+                # Fix 5: Grade 2 with 2+ consecutive partials → scaffolding lecture
+                elif self._last_socratic_grade == 2 and self.socratic_retry_count >= 2:
                     teaching_mode = "LECTURE"
 
         logging.info(f"Teaching Mode Selected: {teaching_mode}")
@@ -1509,21 +1751,25 @@ class MnemosyneFSM:
             f"QTYPE:{current_q_type['key']}:{q_type_idx}:{len(SOCRATIC_QUESTION_TYPES)}"
         )
 
+        # GAP 6: Redact answer-key sections from tutor context to prevent leakage
+        redacted_context = self._redact_context_for_tutor(self.current_context)
+
         # SELECT PROMPT BASED ON MODE
         if teaching_mode == "LECTURE":
             prompt = get_micro_lecture_prompt(
                 self.current_lesson_node["title"],
-                self.current_context,
+                redacted_context,
                 structured_history,
                 style_modifier=self.current_teaching_style,
                 missing_concepts=self.current_misconceptions or None,
                 next_question_type=current_q_type["key"],
                 bloom_level=self.current_bloom_level,
+                prior_concepts=self.prior_concepts_summary,
             )
         else:
             prompt = get_typed_socratic_prompt(
                 current_q_type["key"],
-                self.current_context,
+                redacted_context,
                 structured_history,
                 system_note=system_note,
                 misconceptions=self.current_misconceptions,
@@ -1531,6 +1777,7 @@ class MnemosyneFSM:
                 style_modifier=self.current_teaching_style,
                 user_profile=self.user_profile,
                 bloom_level=self.current_bloom_level,
+                prior_concepts=self.prior_concepts_summary,
             )
         # Tune max_tokens: lectures need more room for explanations, questions are shorter
         token_limit = 500 if teaching_mode == "LECTURE" else 400
@@ -1623,6 +1870,20 @@ class MnemosyneFSM:
             "beats me",
             "pass",
             "skip",
+            # Fix 7: Additional confusion/ignorance signals
+            "i'm confused",
+            "confused",
+            "can you explain",
+            "what does that mean",
+            "what do you mean",
+            "i have no idea",
+            "i'm lost",
+            "lost",
+            "explain please",
+            "explain it",
+            "i need help",
+            "don't understand",
+            "don't get it",
         ]
         raw_lower = text.lower().strip()
         text_lower = raw_lower.strip(".,!?")
@@ -1660,11 +1921,15 @@ class MnemosyneFSM:
         else:
             # Socratic Grading
             self.send_status_update("Grading...")
+            # GAP 5: Pass Bloom level, objectives, and mastery criteria to grading
             prompt = get_socratic_grading_prompt(
                 self.current_lesson_node["title"],
                 self.last_question,
                 text,
                 context_text=self.current_context,
+                bloom_level=self.current_bloom_level,
+                learning_objectives=self.current_lesson_node.get("learning_objectives", []),
+                mastery_criteria=getattr(self, 'current_mastery_criteria', ''),
             )
             try:
                 logging.info(f"LLM Grading Request for: {self.current_lesson_node['title']}")
@@ -1722,6 +1987,9 @@ class MnemosyneFSM:
         self.concept_question_count += 1
         if grade >= 3:
             self.concept_correct_streak += 1
+            # GAP 4: Track which question type categories were passed
+            q_idx = min(self.socratic_type_index, len(SOCRATIC_QUESTION_TYPES) - 1)
+            self.passed_question_types.add(SOCRATIC_QUESTION_TYPES[q_idx]["key"])
         else:
             self.concept_correct_streak = 0
 
@@ -1732,7 +2000,9 @@ class MnemosyneFSM:
         BLOOM_LABELS = {1: "Remember", 2: "Understand", 3: "Apply", 4: "Analyze", 5: "Evaluate", 6: "Create"}
         if grade >= 3:
             self.bloom_correct_streak += 1
-            if self.bloom_correct_streak >= 2 and self.current_bloom_level < 6:
+            # GAP 1: Cap Bloom advancement at course ceiling
+            effective_ceiling = self.course_bloom_ceiling or 6
+            if self.bloom_correct_streak >= 2 and self.current_bloom_level < effective_ceiling:
                 self.current_bloom_level += 1
                 self.bloom_correct_streak = 0
                 logging.info(
@@ -1760,19 +2030,21 @@ class MnemosyneFSM:
         if grade <= 1:
             self.socratic_retry_count += 1
             if self.socratic_retry_count >= 3:
-                # Escalate after 3 failures — micro-lecture then advance to next type
+                # Fix 2+3: Micro-lecture + verification on SAME type (don't advance)
                 self.socratic_retry_count = 0
-                self.socratic_type_index += 1
-                logging.info("Retry limit reached (grade 1): escalating to micro-lecture and advancing type")
+                current_type_name = SOCRATIC_QUESTION_TYPES[
+                    min(self.socratic_type_index, len(SOCRATIC_QUESTION_TYPES) - 1)
+                ]["name"].lower()
+                logging.info(f"Retry limit reached (grade 1): micro-lecture + verification on {current_type_name}")
                 self.ask_socratic_question(
-                    "[SYSTEM NOTE: Student failed 3 times on this question type. "
-                    "Give a clear, simple explanation of the concept (2-3 sentences), "
-                    "then transition smoothly to a follow-up question.]",
+                    f"[SYSTEM NOTE: Student failed 3 times on this question type. "
+                    f"Give a clear, simple explanation of the concept (2-3 sentences), "
+                    f"then ask a SIMPLER verification question — still a {current_type_name} question — "
+                    f"to check they understood your explanation.]",
                     initial_mode="LECTURE",
                 )
             else:
                 self.play_sound("FRICTION_GRIND")
-                # Give a hint via the LLM — it will produce explanation + question in one response
                 feedback_prefix = f"[SYSTEM NOTE: Student's answer was incorrect. Their feedback: '{feedback}'. " if feedback else "[SYSTEM NOTE: Student answered incorrectly. "
                 self.ask_socratic_question(
                     feedback_prefix + "Briefly acknowledge what went wrong, then re-ask a simpler version of the same question type to guide them.]"
@@ -1781,21 +2053,22 @@ class MnemosyneFSM:
         elif grade == 2:
             self.socratic_retry_count += 1
             if self.socratic_retry_count >= 3:
-                # After 3 partial attempts, clarify and advance
+                # Fix 2+3: Clarify + verification on SAME type (don't advance)
                 self.socratic_retry_count = 0
-                self.socratic_type_index += 1
-                logging.info("Retry limit reached (grade 2): clarifying and advancing type")
+                current_type_name = SOCRATIC_QUESTION_TYPES[
+                    min(self.socratic_type_index, len(SOCRATIC_QUESTION_TYPES) - 1)
+                ]["name"].lower()
+                logging.info(f"Retry limit reached (grade 2): clarify + verification on {current_type_name}")
                 self.ask_socratic_question(
-                    "[SYSTEM NOTE: Student struggled 3 times with partial answers. "
-                    "Briefly clarify the key point they kept missing, "
-                    "then transition smoothly to the next question type.]",
+                    f"[SYSTEM NOTE: Student struggled 3 times with partial answers on this {current_type_name} question. "
+                    f"Briefly clarify the key point they kept missing, "
+                    f"then ask a simplified version of the same {current_type_name} question focusing on what they missed.]",
                     initial_mode="LECTURE",
                 )
             else:
                 self.play_sound("FRICTION_GRIND")
                 if missing_concepts:
                     concepts_str = ", ".join(missing_concepts)
-                    # Single LLM call that acknowledges the gap and asks a targeted follow-up
                     self.ask_socratic_question(
                         f"[SYSTEM NOTE: Student's answer was partially correct but missed: {concepts_str}. "
                         f"Briefly acknowledge what they got right, point out what's missing, "
@@ -1811,48 +2084,46 @@ class MnemosyneFSM:
         elif grade >= 4:
             self.play_sound("SUCCESS_CHORD")
             self.socratic_retry_count = 0
-            # Accelerate: skip next type too
-            self.socratic_type_index += 2
+            # Fix 4: Advance +1, not +2. Student must prove each type.
+            # Fix 9: Capture previous type name for transition bridge
+            prev_type_name = SOCRATIC_QUESTION_TYPES[
+                min(self.socratic_type_index, len(SOCRATIC_QUESTION_TYPES) - 1)
+            ]["name"].lower()
+            self.socratic_type_index += 1
             if self.socratic_type_index >= len(SOCRATIC_QUESTION_TYPES):
-                # Multi-question mastery gate: require >=2 consecutive correct AND >=3 total questions
-                if self.concept_correct_streak >= 2 and self.concept_question_count >= 3:
-                    # Concept mastered — speak feedback + completion in one message
+                if self._check_mastery_gate():
                     completion_msg = (feedback or "Excellent work.") + " You've mastered this concept. Let's move on to the next one."
                     self.speak(completion_msg)
-                    # Tag the last transcript entry with the grade for badge display
                     if self.transcript and self.transcript[-1].get("sender") == "helga":
                         self.transcript[-1]["grade"] = grade
                     if self.current_lesson_node and self.current_lesson_node.get("uid"):
                         self.completed_topics.add(self.current_lesson_node["uid"])
                     self.next_syllabus_item()
                 else:
-                    # Mastery gate not met — reset type index to ask more questions
-                    logging.info(
-                        f"Mastery gate not met (streak={self.concept_correct_streak}, "
-                        f"count={self.concept_question_count}): recycling question types"
-                    )
-                    self.socratic_type_index = 0
+                    # Fix 6: Continue from next unpassed type, not reset to 0
+                    self.socratic_type_index = self._next_unpassed_type_index()
                     self.ask_socratic_question(
                         "[SYSTEM NOTE: Student is doing well but needs a bit more practice. "
                         "Ask another question to confirm their understanding.]"
                     )
             else:
-                # Combine feedback with transition to next question type
+                # Fix 9: Transition bridge references what student demonstrated
                 next_type = SOCRATIC_QUESTION_TYPES[self.socratic_type_index]
                 feedback_note = f"[SYSTEM NOTE: Student gave an excellent answer. Their feedback: '{feedback}'. " if feedback else "[SYSTEM NOTE: Student answered excellently. "
                 self.ask_socratic_question(
-                    feedback_note + f"Briefly acknowledge their insight, then smoothly transition to a {next_type['name'].lower()} question to deepen their understanding.]"
+                    feedback_note + f"Briefly affirm what they demonstrated about {prev_type_name} — specifically what they got right. Then build on that by asking a {next_type['name'].lower()} question that extends their reasoning.]"
                 )
 
         else:  # Grade == 3 (Good)
             self.play_sound("SUCCESS_CHORD")
             self.socratic_retry_count = 0
-            # Advance to next question type
+            # Fix 9: Capture previous type name for transition bridge
+            prev_type_name = SOCRATIC_QUESTION_TYPES[
+                min(self.socratic_type_index, len(SOCRATIC_QUESTION_TYPES) - 1)
+            ]["name"].lower()
             self.socratic_type_index += 1
             if self.socratic_type_index >= len(SOCRATIC_QUESTION_TYPES):
-                # Multi-question mastery gate: require >=2 consecutive correct AND >=3 total questions
-                if self.concept_correct_streak >= 2 and self.concept_question_count >= 3:
-                    # Concept complete — speak feedback + completion in one message
+                if self._check_mastery_gate():
                     completion_msg = (feedback or "Well done.") + " You've demonstrated solid understanding of this concept. Let's move on."
                     self.speak(completion_msg)
                     if self.transcript and self.transcript[-1].get("sender") == "helga":
@@ -1861,30 +2132,62 @@ class MnemosyneFSM:
                         self.completed_topics.add(self.current_lesson_node["uid"])
                     self.next_syllabus_item()
                 else:
-                    # Mastery gate not met — reset type index to ask more questions
-                    logging.info(
-                        f"Mastery gate not met (streak={self.concept_correct_streak}, "
-                        f"count={self.concept_question_count}): recycling question types"
-                    )
-                    self.socratic_type_index = 0
+                    # Fix 6: Continue from next unpassed type, not reset to 0
+                    self.socratic_type_index = self._next_unpassed_type_index()
                     self.ask_socratic_question(
                         "[SYSTEM NOTE: Student is doing well but needs a bit more practice. "
                         "Ask another question to confirm their understanding.]"
                     )
             else:
-                # Combine feedback with transition to next question type
+                # Fix 9: Transition bridge references what student demonstrated
                 next_type = SOCRATIC_QUESTION_TYPES[self.socratic_type_index]
                 feedback_note = f"[SYSTEM NOTE: Student answered correctly. Their feedback: '{feedback}'. " if feedback else "[SYSTEM NOTE: Student answered correctly. "
                 self.ask_socratic_question(
-                    feedback_note + f"Briefly affirm their answer, then smoothly transition to a {next_type['name'].lower()} question to push their understanding further.]"
+                    feedback_note + f"Briefly affirm what they demonstrated about {prev_type_name} — specifically what they got right. Then build on that by asking a {next_type['name'].lower()} question that extends their reasoning.]"
                 )
 
-        # Tag the last tutor transcript entry with the grade for badge display
-        if self.transcript:
-            for entry in reversed(self.transcript):
-                if entry.get("sender") in ("helga", "ai") and "grade" not in entry:
-                    entry["grade"] = grade
-                    break
+        # Tag the most recent tutor response with the grade for badge display.
+        # Every grade branch above guarantees exactly one speak()/ask_socratic_question()
+        # call, so transcript[-1] is the grading/feedback message we want to badge.
+        if self.transcript and self.transcript[-1].get("sender") in ("helga", "ai"):
+            self.transcript[-1]["grade"] = grade
+
+        # Award XP via gamification API (fire-and-forget). Only grade >= 3 earns XP;
+        # the API enforces this, but short-circuit here to avoid a pointless HTTP call.
+        if grade >= 3:
+            try:
+                import threading as _t
+                def _award_xp_async():
+                    try:
+                        import requests as _req
+                        _req.post(
+                            f"{self.rag_url}/api/gamification/award_xp",
+                            json={
+                                "grade": int(grade),
+                                "bloom_level": int(self.current_bloom_level),
+                                "action": "answer",
+                                "first_try": int(self.socratic_retry_count) == 0,
+                            },
+                            timeout=5,
+                        )
+                    except Exception as _e:
+                        logging.debug(f"award_xp call failed: {_e}")
+                _t.Thread(target=_award_xp_async, daemon=True).start()
+            except Exception as _e:
+                logging.debug(f"award_xp thread start failed: {_e}")
+
+        # Also schedule FSRS review on each answer (not just concept completion)
+        # so that partial progress still creates review cards.
+        try:
+            if self.current_lesson_node and self.current_lesson_node.get("uid"):
+                self.storage.schedule.schedule_concept_review(
+                    self.active_course_uid or "unknown",
+                    self.current_lesson_node["uid"],
+                    self.current_lesson_node.get("title", ""),
+                    rating=int(grade),
+                )
+        except Exception as _e:
+            logging.debug(f"FSRS per-answer schedule failed: {_e}")
 
     # --- MODE 2: SPACED REPETITION ---
     def enter_mode_2(self, text):
@@ -2009,8 +2312,8 @@ class MnemosyneFSM:
                     grade=grade,
                     status="reviewed",
                 )
-            except:
-                pass
+            except Exception as e:
+                logging.warning(f"Failed to update flashcard progress: {e}")
 
             self.speak("Correct.")
             self.next_card()
@@ -2555,10 +2858,14 @@ class MnemosyneFSM:
                 self.send_status_update("Restarting Systems...")
                 sm.restart_after_ingestion()
 
-        threading.Thread(target=_creation_pipeline).start()
+        # AUTO-5: Track thread reference for cleanup on shutdown
+        t = threading.Thread(target=_creation_pipeline, daemon=True)
+        self._creation_thread = t
+        t.start()
 
     def start_creation(self, text, epub_filepath=None):
-        logging.info(f"DEBUG: start_creation called with text='{text}', epub={epub_filepath}")
+        # LOG-1: Use debug level for diagnostic messages
+        logging.debug(f"start_creation called with text='{text}', epub={epub_filepath}")
 
         # Extract topic and depth from command
         depth = 3
@@ -2824,7 +3131,10 @@ class MnemosyneFSM:
                 self.creation_status["active"] = False
                 sm.restart_after_ingestion()
 
-        threading.Thread(target=_creation_pipeline).start()
+        # AUTO-5: Track thread reference for cleanup on shutdown
+        t = threading.Thread(target=_creation_pipeline, daemon=True)
+        self._creation_thread = t
+        t.start()
 
         self.speak(f"I am researching {topic}. This may take a moment.")
 
@@ -2952,7 +3262,7 @@ class MnemosyneFSM:
                 self.state = "LOBBY"
                 self.speak("Course deleted. Returning to lobby.")
 
-            # Update Disk State
+            # Update Disk State — use atomic write to prevent corruption
             if os.path.exists(self.state_file):
                 with open(self.state_file, "r") as f:
                     full_state = json.load(f)
@@ -2964,8 +3274,7 @@ class MnemosyneFSM:
                 if full_state.get("last_active_uid") == uid:
                     full_state["last_active_uid"] = None
 
-                with open(self.state_file, "w") as f:
-                    json.dump(full_state, f, indent=2)
+                self._atomic_write(self.state_file, json.dumps(full_state, indent=2))
                 logging.info(f"Deleted state for course {uid}")
         except Exception as e:
             logging.error(f"Failed to delete course state: {e}")
@@ -3009,6 +3318,10 @@ class MnemosyneFSM:
             "concept_question_count": self.concept_question_count,
             "bloom_level": self.current_bloom_level,
             "bloom_correct_streak": self.bloom_correct_streak,
+            "concept_bloom_target": getattr(self, 'concept_bloom_target', None),
+            "passed_question_types": list(getattr(self, 'passed_question_types', set())),
+            "course_bloom_floor": getattr(self, 'course_bloom_floor', 1),
+            "course_bloom_ceiling": getattr(self, 'course_bloom_ceiling', 6),
         }
 
         # Include draft state if in drafting mode

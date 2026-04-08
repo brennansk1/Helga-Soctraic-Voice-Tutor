@@ -250,7 +250,10 @@ def structure():
                 mod["units"].append(unit_dict)
             structure["modules"].append(mod)
 
-        return jsonify({"title": course.get("title", ""), "structure": structure})
+        # LRN-10: Cache structure for 30s to reduce N-query load on large courses
+        resp = jsonify({"title": course.get("title", ""), "structure": structure})
+        resp.headers["Cache-Control"] = "private, max-age=30"
+        return resp
     except Exception as e:
         logger.error(f"structure error: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
@@ -1281,7 +1284,8 @@ def create_custom_course_wizard():
             storage.courses.update_course(course_uid, course_dict)
         except Exception as hydration_err:
             logger.error(f"Content hydration failed: {hydration_err}", exc_info=True)
-            course_dict["status"] = "hydration_failed"
+            # WIZ-4: Mark as "partial" not "failed" — allows user to retry hydration
+            course_dict["status"] = "partial"
             storage.courses.update_course(course_uid, course_dict)
             raise Exception(f"Content hydration failed: {str(hydration_err)}")
 
@@ -1444,16 +1448,51 @@ def _get_anchor_for_locus(course_uid: str, locus_uid: str) -> dict:
 
 @app.route("/api/due_concepts", methods=["GET"])
 def due_concepts_endpoint():
-    """Return concepts due for spaced repetition review."""
+    """Return concepts due for spaced repetition review.
+
+    Combines two sources so early-stage progress is visible before flashcards
+    exist: (1) flashcards with next_review_date <= today, (2) scheduled concept
+    reviews written by the FSM per-answer. Deduped on concept_uid.
+    """
+    from datetime import date as _dt_date
     course_uid = request.args.get("course_uid")
+    today_iso = _dt_date.today().isoformat()
+    seen_uids = set()
+    results = []
     try:
         cards = storage.flashcards.get_due_cards(
             course_uid=course_uid if course_uid else None
         )
-        return jsonify({"concepts": [dict(c) if not isinstance(c, dict) else c for c in cards]})
+        for c in cards:
+            d = dict(c) if not isinstance(c, dict) else c
+            uid = d.get("concept_uid") or d.get("uid")
+            if uid and uid not in seen_uids:
+                seen_uids.add(uid)
+                results.append(d)
     except Exception as e:
-        logger.error(f"Error fetching due concepts: {e}")
-        return jsonify({"error": str(e)}), 500
+        logger.warning(f"due_concepts: flashcards fetch failed: {e}")
+    try:
+        scheduled = storage.schedule.get_scheduled_reviews(
+            end_date=today_iso,
+            course_uid=course_uid if course_uid else None,
+        )
+        for r in scheduled:
+            if r.get("status") == "completed":
+                continue
+            uid = r.get("unit_uid")
+            if uid and uid not in seen_uids:
+                seen_uids.add(uid)
+                results.append({
+                    "concept_uid": uid,
+                    "course_uid": r.get("course_uid"),
+                    "front": r.get("unit_title", ""),
+                    "back": "",
+                    "next_review_date": r.get("scheduled_date"),
+                    "source": "scheduled_review",
+                })
+    except Exception as e:
+        logger.warning(f"due_concepts: scheduled reviews fetch failed: {e}")
+    return jsonify({"concepts": results})
 
 
 # --- VG-03: Update Mastery API ---
@@ -1564,7 +1603,7 @@ def _get_profile_db():
     for key, val in [
         ('display_name', ''), ('theme', 'light'), ('font_scale', '1.0'),
         ('default_voice', 'af_heart'), ('gamification_enabled', 'true'),
-        ('sound_effects', 'true'), ('daily_goal', '5'),
+        ('sound_effects', 'true'), ('daily_goal', '5'), ('avatar_url', ''),
     ]:
         conn.execute("INSERT OR IGNORE INTO user_profile (key, value) VALUES (?, ?)", (key, val))
     for key, val in [
@@ -1644,7 +1683,7 @@ def update_profile():
     conn = _get_profile_db()
     try:
         valid_keys = {'display_name', 'theme', 'font_scale', 'default_voice',
-                      'gamification_enabled', 'sound_effects', 'daily_goal'}
+                      'gamification_enabled', 'sound_effects', 'daily_goal', 'avatar_url'}
         for key, value in data.items():
             if key not in valid_keys:
                 continue
