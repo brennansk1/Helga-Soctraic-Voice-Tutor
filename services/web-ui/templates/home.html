@@ -100,7 +100,7 @@
 }
 .hero-section h1 {
     font-size: 2.2rem;
-    font-weight: 800;
+    font-weight: var(--font-weight-bold);
     margin: 0 0 0.25rem 0;
     color: var(--text-primary);
 }
@@ -125,7 +125,7 @@
 .stat-value {
     display: block;
     font-size: 1.6rem;
-    font-weight: 800;
+    font-weight: var(--font-weight-bold);
     color: var(--accent-primary);
     line-height: 1.2;
     min-height: 1.6rem;
@@ -208,29 +208,30 @@
 
 .stats-error-banner {
     text-align: center;
-    padding: 0.6rem 1rem;
-    margin-bottom: 1.5rem;
-    border-radius: 8px;
-    background: var(--status-error-bg, #fef2f0);
-    color: var(--status-error, #c45c4a);
-    font-size: 0.9rem;
+    padding: var(--space-2) var(--space-4);
+    margin-bottom: var(--space-5);
+    border: 1px solid var(--color-danger);
+    border-radius: var(--border-radius-sm);
+    background: var(--bg-danger);
+    color: var(--color-danger);
+    font-size: var(--font-size-sm);
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
 }
 .stats-retry-btn {
     background: transparent;
-    border: 1px solid var(--status-error, #c45c4a);
-    color: var(--status-error, #c45c4a);
-    border-radius: 6px;
-    padding: 0.3rem 0.75rem;
+    border: 1px solid var(--color-danger);
+    color: var(--color-danger);
+    border-radius: var(--border-radius-sm);
+    padding: var(--space-1) var(--space-3);
     cursor: pointer;
-    font-size: 0.85rem;
-    font-weight: 600;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
 }
 .stats-retry-btn:hover {
-    background: var(--status-error, #c45c4a);
+    background: var(--color-danger);
     color: var(--text-inverted);
 }
 .home-empty-state {

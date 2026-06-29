@@ -99,6 +99,13 @@
     --color-info: var(--accent-primary);
     --color-warning: var(--status-warning);
     --color-danger: var(--status-error);
+
+    /* Soft tint backgrounds for status banners/badges (FE2.8) */
+    --bg-success: #e8f4ee;
+    --bg-warning: #faf2e0;
+    --bg-danger: #fbece8;
+    --bg-info: #e8f1f6;
+    --accent-primary-shadow: #1d4a6a;
 }
 
 /* Alpine Dark Theme */
@@ -116,6 +123,11 @@
     --accent-tertiary: #6aac8f;
     --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.2);
     --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.3);
+    --bg-success: #1e3329;
+    --bg-warning: #3a2f1a;
+    --bg-danger: #3a221e;
+    --bg-info: #1e2e3a;
+    --accent-primary-shadow: #12283a;
 }
 
 /* Light Theme — same as :root defaults */
