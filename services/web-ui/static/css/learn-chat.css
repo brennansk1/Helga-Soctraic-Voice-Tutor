@@ -229,9 +229,18 @@
     padding: 0;
 }
 .chat-msg-action-btn:hover { background: var(--bg-primary); color: var(--accent-primary); }
-.chat-msg-action-btn.active { color: var(--accent-primary); border-color: var(--accent-primary); }
 .chat-msg-action-btn svg { width: 16px; height: 16px; fill: currentColor; }
-.chat-msg-action-btn.playing { color: var(--accent-primary); }
+/* Playing (TTS) or just-copied: filled accent so the active state is obvious. */
+.chat-msg-action-btn.active {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    color: var(--text-inverted);
+}
+/* TTS fetching audio: dim + spin the icon (voice-spin defined in style.css). */
+.chat-msg-action-btn.tts-play-btn.loading { opacity: 0.7; cursor: default; }
+.chat-msg-action-btn.tts-play-btn.loading svg { animation: voice-spin 0.9s linear infinite; }
+/* Keep the actions visible while audio plays, even without hover. */
+.chat-msg:has(.tts-play-btn.active) .chat-msg-actions-side { opacity: 1; }
 
 /* ---- Thinking indicator ------------------------------------------------- */
 .thinking-indicator { display: flex; align-items: center; gap: var(--space-1); height: 20px; }

@@ -3535,11 +3535,23 @@ select:focus {
     margin-left: 0.25rem;
 }
 
-/* Voice input (STT) mic button states */
-#mic-btn.recording { color: #e5484d; animation: mic-pulse 1.2s ease-in-out infinite; }
-#mic-btn.transcribing { opacity: 0.6; animation: mic-blink 1s ease-in-out infinite; }
-@keyframes mic-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.14); } }
-@keyframes mic-blink { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.85; } }
+/* Voice input (STT) mic button states — professional recording affordance:
+   a filled danger button with an expanding pulse ring (not a scale jitter). */
+#mic-btn.recording {
+    background: var(--color-danger);
+    color: var(--text-inverted);
+    border-color: var(--color-danger);
+    animation: mic-pulse-ring 1.5s ease-out infinite;
+}
+#mic-btn.recording:hover { background: var(--color-danger); color: var(--text-inverted); }
+#mic-btn.transcribing { opacity: 0.75; pointer-events: none; }
+#mic-btn.transcribing svg { animation: voice-spin 0.9s linear infinite; }
+@keyframes mic-pulse-ring {
+    0%   { box-shadow: 0 0 0 0 rgba(196, 92, 74, 0.5); }
+    70%  { box-shadow: 0 0 0 12px rgba(196, 92, 74, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(196, 92, 74, 0); }
+}
+@keyframes voice-spin { to { transform: rotate(360deg); } }
 
 .path-node.low-confidence .path-node-inner {
     border-color: var(--status-warning, #d4a843);

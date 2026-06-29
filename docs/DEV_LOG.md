@@ -343,6 +343,13 @@ send/mic/pause) + disclaimer. Neutralized the conflicting legacy `.chat-msg` pad
 width in style.css (load order verified: style.css → learn-chat.css). Bumped cache-buster
 `?v=2 → ?v=3`. Validated: braces balanced, all 37 referenced tokens defined.
 
+**Voice controls polish (TTS/STT/pause).** Made the chat's voice affordances professional +
+token-based: mic recording is now a filled-danger button with an expanding pulse ring (was a
+hardcoded color + scale jitter); transcribing spins the icon; the per-message TTS button has
+proper play → loading (dim+spinner) → active (accent-filled stop icon) states and stays
+visible while audio plays; pause/resume icon swaps via `data-paused` (JS-confirmed). No
+`stt-preview`/`pause-overlay`/rails exist in the current markup (that legacy CSS is dead).
+
 **Still page-by-page (FE3):** home, courses+wizard, review, schedule, quiz, settings,
 course_view/structure layout polish (colors done; spacing/component consistency next) — and
 the larger Tasks #6/#7 (structured status events, SSE streaming, dashboard, onboarding).
