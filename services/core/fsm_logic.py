@@ -1904,6 +1904,47 @@ class MnemosyneFSM:
 
         return False
 
+    def _parse_grade_response(self, content):
+        """Parse a grading LLM response into {grade, missing_concepts, feedback,
+        reason}. Tolerant of code fences, stray prose, and "Grade N" strings. On
+        None or unparseable content, grade defaults to 2 (partial) — never a
+        passing grade, so a grading failure can't silently credit mastery (B3.3)."""
+        fail = {"grade": 2, "missing_concepts": [], "feedback": "", "reason": ""}
+        if not content:
+            logging.error("LLM Grading returned None")
+            return fail
+        try:
+            text = content
+            if "```json" in text:
+                text = text.split("```json")[1].split("```")[0].strip()
+            elif "```" in text:
+                text = text.split("```")[1].split("```")[0].strip()
+            match = re.search(r"\{[^{}]*\}", text, re.DOTALL)
+            if match:
+                text = match.group(0)
+            try:
+                text = re.sub(r'"grade":\s*"Grade\s*(\d)"', r'"grade": \1', text)
+                result = json.loads(text)
+            except Exception as e:
+                grade_match = re.search(r'"grade":\s*(\d)', text)
+                if grade_match:
+                    result = {"grade": int(grade_match.group(1))}
+                else:
+                    any_grade = re.search(r'\bgrade\b.*?(\d)', text, re.IGNORECASE)
+                    if any_grade:
+                        result = {"grade": int(any_grade.group(1))}
+                    else:
+                        raise e
+            return {
+                "grade": int(result.get("grade", 3)),
+                "missing_concepts": result.get("missing_concepts", []),
+                "feedback": result.get("feedback", ""),
+                "reason": result.get("reason", ""),
+            }
+        except Exception as e:
+            logging.warning(f"Grading parse error: {e}")
+            return fail
+
     def handle_socratic_answer(self, text):
         latency = time.time() - self.question_start_time
         self.question_start_time = 0
@@ -1935,62 +1976,23 @@ class MnemosyneFSM:
                 learning_objectives=self.current_lesson_node.get("learning_objectives", []),
                 mastery_criteria=getattr(self, 'current_mastery_criteria', ''),
             )
-            try:
-                logging.info(f"LLM Grading Request for: {self.current_lesson_node['title']}")
-                # Grammar-constrain the grade to valid JSON (Ollama >= 0.5). The
-                # regex/repair path below stays as a fallback for older Ollama.
-                content = self._call_llm(prompt, max_tokens=500, timeout=45,
-                                         json_schema=GRADE_JSON_SCHEMA)
-                if content:
-                    logging.info(f"LLM Grading Content: {content[:200]}...")
-                    # Robust JSON extraction
-                    if "```json" in content:
-                        content = content.split("```json")[1].split("```")[0].strip()
-                    elif "```" in content:
-                        content = content.split("```")[1].split("```")[0].strip()
+            logging.info(f"LLM Grading Request for: {self.current_lesson_node['title']}")
+            # Grammar-constrain the grade to valid JSON (Ollama >= 0.5); the
+            # tolerant parser below is the fallback for older Ollama. A grading
+            # failure resolves to grade 2 (partial), never a passing grade (B3.3).
+            content = self._call_llm(prompt, max_tokens=500, timeout=45,
+                                     json_schema=GRADE_JSON_SCHEMA)
+            result = self._parse_grade_response(content)
+            grade = result["grade"]
+            missing_concepts = result["missing_concepts"]
+            feedback = result["feedback"]
 
-                    # Try to find JSON object in the response
-                    json_match = re.search(r"\{[^{}]*\}", content, re.DOTALL)
-                    if json_match:
-                        content = json_match.group(0)
-
-                    try:
-                        content = re.sub(
-                            r'"grade":\s*"Grade\s*(\d)"', r'"grade": \1', content
-                        )
-                        result = json.loads(content)
-                    except Exception as e:
-                        grade_match = re.search(r'"grade":\s*(\d)', content)
-                        if grade_match:
-                            result = {"grade": int(grade_match.group(1))}
-                        else:
-                            # Last resort: look for any digit that could be a grade
-                            any_grade = re.search(r'\bgrade\b.*?(\d)', content, re.IGNORECASE)
-                            if any_grade:
-                                result = {"grade": int(any_grade.group(1))}
-                            else:
-                                raise e
-                    grade = int(result.get("grade", 3))
-                    missing_concepts = result.get("missing_concepts", [])
-                    feedback = result.get("feedback", "")
-
-                    # Log to Session Notes
-                    if self.current_lesson_node:
-                        self.append_session_note(
-                            self.current_lesson_node["uid"],
-                            f"Question: {self.last_question} | Answer: {text[:50]}... | Grade: {grade} | Reasoning: {result.get('reason', 'N/A')}",
-                        )
-                else:
-                    logging.error("LLM Grading returned None")
-                    # Do NOT default a grading failure to a passing grade (>=3):
-                    # that silently credits a wrong/ungraded answer toward mastery.
-                    # Grade 2 = partial → resets streak, holds Bloom, re-asks the
-                    # same question type without false progress. (B3.3)
-                    grade = 2
-            except Exception as e:
-                logging.warning(f"Grading parse error: {e}")
-                # Parse failure must not pass the student. See note above. (B3.3)
-                grade = 2
+            # Log to Session Notes only when the grader actually responded.
+            if content and self.current_lesson_node:
+                self.append_session_note(
+                    self.current_lesson_node["uid"],
+                    f"Question: {self.last_question} | Answer: {text[:50]}... | Grade: {grade} | Reasoning: {result.get('reason', 'N/A')}",
+                )
 
         # Store grade for rule-based mode selection (replaces LLM classifier)
         self._last_socratic_grade = grade

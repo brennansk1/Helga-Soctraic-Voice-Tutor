@@ -101,3 +101,39 @@ The RAG service does course CRUD, search, flashcards, quiz. Search was substring
 
 **Deferred → Task #8 (runtime-validated):** dense vectors (sqlite-vec) + reranker + chunking,
 benchmarked in-container / on the M4.
+
+---
+
+## B3 — Tutoring Engine / Socratic (`services/core/fsm_logic.py`)
+
+### 1. Understanding
+9-state FSM; `transition()` dispatch (globals → state-specific). Socratic loop: select one
+of 6 question types → grade the answer (1-4) → Bloom progression + mastery gate → advance.
+Grading already hardened earlier: B3.3 (no false-pass → grade 2) + schema-constrained JSON.
+
+### 2. Best tools / optimized?
+- Cleaner than the audit implied: **0 bare excepts**; the only "DEBUG" logs are already
+  commented out (LOG-1 effectively done).
+- `handle_socratic_answer()` was ~290 lines with a large inline JSON-grade parser mixing
+  LLM I/O, parsing, and side effects — hard to test in isolation.
+- Real gaps are **pedagogy features**, not mechanical debt: no hint ladder, misconceptions
+  are transient (not persisted for review), no answer-key verifier, prereqs built but not
+  enforced. These need live-LLM behavior and can't be unit-tested in CI.
+- `_call_llm()` flattens role history into one user string (loses turn structure). Could add
+  `LLMClient.chat_messages()` — deferred: changes live-LLM I/O with no local way to validate
+  the output difference; not worth blind change now.
+
+### 3. Features weighed
+- Pedagogy upgrades (LearnLM prompt, hint ladder, misconception persistence, answer-key
+  verify, prereq gating, pyBKT mastery) — HIGH learning-outcome value but runtime/LLM-bound.
+  **Queued as Task #9 (Tier C)**; validate with `tools/grading_eval.py` on real Ollama.
+- Extracting the grade parser — pure, testable, improves readability now. Done.
+
+### 4. Refactored (this commit), tests green
+- Extracted `_parse_grade_response(content) -> {grade, missing_concepts, feedback, reason}`
+  from `handle_socratic_answer()` — pure, tolerant of fences/prose/"Grade N", preserves the
+  B3.3 grade-2-on-failure rule. `handle_socratic_answer` now calls it (shorter, clearer).
+- Tests: existing grading tests still green; **+5 direct parser tests** (clean JSON, fenced,
+  "Grade N" string, None→2, garbage→2). 12 grading tests pass.
+
+**Deferred → Task #9 (runtime-validated):** the pedagogy features above; `chat_messages()`.

@@ -82,13 +82,13 @@ T   Helga Trunk ...................................................... ✅
 ├─ B3  Tutoring Engine (Socratic) .................................. ✅
 │  ├─ B3.1  9-state FSM dispatch ................................... ✅
 │  ├─ B3.2  Socratic question types (6) ............................ ✅
-│  ├─ B3.3  Grading (1–5) .......................................... 🚫 no JSON-mode; wrong→grade 3 on parse fail
-│  ├─ B3.4  Bloom progression ...................................... ✅ (but see B1.1.4)
-│  ├─ B3.5  Mastery gate ........................................... 🚫 unreachable for low-mastery courses
-│  ├─ B3.6  Hint laddering / scaffolding ........................... ⬜
-│  ├─ B3.7  Misconception persistence .............................. ⬜
-│  ├─ B3.8  Answer-key verification layer .......................... ⬜
-│  └─ B3.9  Prereq enforcement at tutoring time .................... ⬜
+│  ├─ B3.3  Grading — constrained JSON + grade-2 fallback + parser . ✅
+│  ├─ B3.4  Bloom progression ...................................... ✅
+│  ├─ B3.5  Mastery gate ........................................... ✅ (verified reachable — not a bug)
+│  ├─ B3.6  Hint laddering / scaffolding ........................... ⬜ (Task #9)
+│  ├─ B3.7  Misconception persistence .............................. ⬜ (Task #9)
+│  ├─ B3.8  Answer-key verification layer .......................... ⬜ (Task #9)
+│  └─ B3.9  Prereq enforcement at tutoring time .................... ⬜ (Task #9)
 ├─ B4  Spaced Repetition ........................................... 🚫
 │  ├─ B4.1  FSRSEngine ............................................. 🚫 py-fsrs imported, NEVER used; hand-rolled formula sign-inverted
 │  ├─ B4.2  SM-2 legacy ............................................ 🧩 deprecated, half-wired

@@ -175,6 +175,26 @@ class TestGradingLogic(unittest.TestCase):
         _, kwargs = self.fsm._call_llm.call_args
         self.assertEqual(kwargs.get('json_schema'), GRADE_JSON_SCHEMA)
 
+    def test_parse_grade_clean_json(self):
+        r = self.fsm._parse_grade_response('{"grade": 4, "feedback": "Great", "missing_concepts": ["x"]}')
+        self.assertEqual(r["grade"], 4)
+        self.assertEqual(r["feedback"], "Great")
+        self.assertEqual(r["missing_concepts"], ["x"])
+
+    def test_parse_grade_code_fenced(self):
+        r = self.fsm._parse_grade_response('```json\n{"grade": 3, "feedback": "ok"}\n```')
+        self.assertEqual(r["grade"], 3)
+
+    def test_parse_grade_string_form(self):
+        r = self.fsm._parse_grade_response('{"grade": "Grade 2", "feedback": "partial"}')
+        self.assertEqual(r["grade"], 2)
+
+    def test_parse_grade_none_is_partial(self):
+        self.assertEqual(self.fsm._parse_grade_response(None)["grade"], 2)
+
+    def test_parse_grade_garbage_is_partial(self):
+        self.assertEqual(self.fsm._parse_grade_response("no grade here at all")["grade"], 2)
+
     def test_ignorance_detection_bypasses_grading(self):
         """If user says 'I don't know', should bypass LLM grading and get grade 1."""
         self.fsm.current_lesson_node = {'uid': 'node1', 'title': 'Test Node', 'text': 'Context'}
