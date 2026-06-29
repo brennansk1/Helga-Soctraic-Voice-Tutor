@@ -166,6 +166,59 @@ class LLMClient:
             instruction, images=[image], max_tokens=max_tokens, timeout=timeout,
         )
 
+    def _raw_chat(self, messages, tools=None, temperature=0.4, timeout=60):
+        """Single chat round returning the full assistant MESSAGE dict (so callers
+        can see tool_calls). Used by chat_with_tools."""
+        payload = {"model": self.model, "messages": messages,
+                   "temperature": temperature, "stream": False}
+        if tools:
+            payload["tools"] = tools
+        resp = requests.post(self.api_url, json=payload, timeout=timeout)
+        resp.raise_for_status()
+        resp.encoding = "utf-8"
+        return resp.json().get("choices", [{}])[0].get("message", {}) or {}
+
+    def chat_with_tools(self, system_prompt, user_message, registry,
+                        max_rounds=3, max_tool_calls=3, temperature=0.4, timeout=60):
+        """Agentic tool-use loop (B14). The model may call tools from `registry`
+        (tier-gated for this model — the registry enforces that and the output
+        caps); each call is executed with failsafes and fed back. Loops until the
+        model stops calling tools or `max_rounds` is hit (both scaled to the model
+        tier by the caller). Returns {"text": final, "tool_calls": [...]}. Never
+        raises — a tool/transport failure ends the loop with best-effort text."""
+        messages = [{"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message}]
+        tools = registry.to_ollama_tools(self.model)
+        used = []
+        last_text = ""
+        for _ in range(max(1, max_rounds)):
+            try:
+                msg = self._raw_chat(messages, tools=tools, temperature=temperature, timeout=timeout)
+            except Exception as e:
+                logger.warning(f"tool chat round failed: {e}")
+                break
+            content = re.sub(r'<think>.*?</think>', '', msg.get("content", "") or "", flags=re.DOTALL).strip()
+            tool_calls = msg.get("tool_calls") or []
+            if not tool_calls:
+                return {"text": content, "tool_calls": used}
+            last_text = content
+            messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls})
+            for tc in tool_calls[:max(1, max_tool_calls)]:
+                fn = tc.get("function", {}) or {}
+                name = fn.get("name", "")
+                try:
+                    args = json.loads(fn.get("arguments") or "{}")
+                except (json.JSONDecodeError, TypeError):
+                    args = {}
+                res = registry.execute(self.model, name, args)
+                used.append({"name": name, "args": args, "result": res})
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.get("id", name),
+                    "content": res.get("result") if res.get("ok") else ("ERROR: " + str(res.get("error", ""))),
+                })
+        return {"text": last_text, "tool_calls": used}
+
     def chat_stream(self, system_prompt, user_message, max_tokens=512,
                     temperature=0.6, timeout=120):
         """Stream a chat completion. Yields text chunks.

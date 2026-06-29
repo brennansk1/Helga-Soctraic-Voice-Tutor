@@ -442,3 +442,53 @@ KaTeX math rendering in the chat).
 471 tests pass; JS (session/search/courses) + Python (app/storage/librarian) + all Jinja balanced.
 Live-validate on the M4: vision responses, the visual look, and (with sqlite-vec installed) hybrid
 search quality. Add the KaTeX vendor files for rendered (vs raw) math.
+
+---
+
+## Task #14 — MCP-style tutor tool + data layer (model-tier-scaled guardrails)
+
+**Goal (user):** "build a MCP — not a server — ensuring that during key parts of the
+tutoring service it has data it can pull from and a large variety of tools that can be
+helpful in teaching, with failsafes and guardrails in proportion to the quality of the
+model." + "research and add all tools you think would be beneficial given the model's
+benchmarks and ability, with the needed safeguards." + "keep in mind we are using qwen3.5:9b."
+
+**Design.** Ollama-native function-calling (MCP-aligned shape, no separate process).
+`services/common/tutor_tools.py`:
+- `model_tier()` — boundary-aware regex (fixes the "14b"→"4b" substring trap; handles
+  `a3b`/MoE). **qwen3.5:9b → tier 2.** `TIER_POLICY` scales calls/rounds/output-cap/
+  timeout/max-safety by tier (tier 1: 1 call·1 round·1200ch·5s·safety≤1; tier 2: 3·3·
+  4000·8s·≤2; tier 3: 5·5·8000·12s·≤3).
+- `ToolRegistry` — tier **and** safety gated; `to_ollama_tools()` exposes only permitted
+  tools per model. `execute()` = the failsafe boundary: validates args against the JSON
+  schema, denies over-tier/over-safety calls, runs with a thread timeout, caps output,
+  catches every exception into `{ok, error}` — **never raises** into the tutor loop.
+- 25 tools, all guarded lazy imports (missing lib → clean structured error, no crash):
+  math (`math_check`, `solve_equation`, `differentiate`, `integrate`, `evaluate_numeric`,
+  `factor`/`expand`, `compute_limit`, `linear_algebra`), stats (`descriptive_statistics`,
+  `linear_regression`), science (`convert_units`, `physical_constant`, `periodic_element`),
+  visuals→PNG data-URI (`plot_function`, `plot_points`, `draw_graph`), cs/lang
+  (`regex_test`, `analyze_sentence`, `readability`), data pulls
+  (`search_concepts`, `get_concept_content`, `get_mastery`, `wikipedia_lookup` — registered
+  only when the host injects callbacks), and `run_python` (sandboxed, tier-3/safety-3,
+  **OFF by default** via `HELGA_ENABLE_CODE_TOOL`).
+
+**LLMClient agentic loop** (`services/core/llm_client.py`): `chat_with_tools()` — bounded
+tool-use loop (`to_ollama_tools` → execute → feed `role:"tool"` back), returns
+`{text, tool_calls}`, never raises; `_raw_chat()` returns the full assistant message so
+tool_calls are visible.
+
+**qwen3.5:9b allocation (tier 2):** gets **24/25 tools** — the entire safe teaching
+toolkit — and is correctly **denied only `run_python`** (code exec is gated by the
+safety-3 ceiling regardless of the env flag). ≤3 tool calls/turn, ≤3 rounds, 4000-char
+outputs, 8s/tool. Pedagogy guardrail: tool results inform the tutor's hint/verification —
+they are never handed to the student as the answer.
+
+**Tests:** `tests/core/test_tutor_tools.py` (tiers, gating, the four failsafes, real
+sympy/scipy/matplotlib/networkx tool logic, guarded missing libs, run_python off-by-default)
++ `tests/core/test_chat_with_tools.py` (loop executes→answers, no-tool early return,
+bounded by max_rounds, bad args don't crash). Full suite green.
+
+**Deferred (B14.8, needs M4/Ollama):** wire `chat_with_tools` into the FSM at the grading
+and hint moments; live-validate qwen3.5:9b's tool-call reliability; for production code-exec,
+replace the `-I` subprocess with a real sandbox before enabling the flag.

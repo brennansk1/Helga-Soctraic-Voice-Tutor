@@ -295,6 +295,28 @@ course-creation time (never in the live dialogue turn). Runtime-validated on the
 
 ---
 
+## B14 — MCP-style tutor tool + data layer (Task #14)
+
+Ollama-native tool-calling (MCP-aligned shape, no separate server). Failsafes/guardrails
+scale to the model's capability TIER — for our default **qwen3.5:9b = tier 2**.
+
+```
+B14  Tutor tools & data ............................................ 🔨
+├─ B14.1  Model capability tiers + per-tier policy ............... ✅ model_tier(), TIER_POLICY
+├─ B14.2  ToolRegistry — tier+safety gating, ollama tool schema . ✅
+├─ B14.3  Executor failsafes (validate/timeout/cap/no-raise) .... ✅ tested
+├─ B14.4  LLMClient.chat_with_tools agentic loop ................ ✅ bounded rounds, tested
+├─ B14.5  25 tools (math/stats/science/viz/cs/lang + data) ...... ✅ guarded lazy deps
+├─ B14.6  Sandboxed run_python — tier-3/safety-3, OFF default ... ✅ (env opt-in; needs real sandbox in prod)
+├─ B14.7  Data pulls (search/content/mastery/wikipedia) ......... ✅ injected callbacks
+└─ B14.8  Wire chat_with_tools into the FSM Socratic loop ....... ⬜ (live-validate on M4)
+```
+qwen3.5:9b (tier 2) gets 24/25 tools (all but the code-exec tool): ≤3 tool calls/turn, ≤3
+rounds, 4000-char outputs, 8s/tool. Pedagogy: tool results feed the tutor's hint/verification,
+never handed to the student as the answer. 25 unit tests (tiers/gating/failsafes/tool logic/loop).
+
+---
+
 ## IMPLEMENTATION PROGRESS (branch `claude/hopeful-jackson-bc8db4`)
 
 All landed with tests green (381 passing; 1 pre-existing live-Ollama test deselected).
