@@ -63,3 +63,14 @@ def test_pipeline_stage_pct_clamped():
     with patch.object(fsm_mod, 'requests') as req:
         fsm.send_pipeline_stage("PREFLIGHT", pct=-5)
         assert req.post.call_args.kwargs['json']['event']['pct'] == 0
+
+
+def test_call_llm_forwards_images_to_client():
+    # B13: the Socratic loop can pass an image to the multimodal model.
+    fsm = _make_fsm()
+    fsm.llm_client = MagicMock()
+    fsm.llm_client.chat.return_value = "It's a force diagram."
+    out = fsm._call_llm([{"role": "system", "content": "Discuss the image."}],
+                        images=["data:image/png;base64,AAAA"])
+    assert out == "It's a force diagram."
+    assert fsm.llm_client.chat.call_args.kwargs['images'] == ["data:image/png;base64,AAAA"]

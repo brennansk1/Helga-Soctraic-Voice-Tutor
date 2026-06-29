@@ -380,7 +380,7 @@ class MnemosyneFSM:
         except Exception as e:
             logging.warning(f"Failed to broadcast state: {e}")
 
-    def _call_llm(self, messages, max_tokens=1000, timeout=60, json_schema=None):
+    def _call_llm(self, messages, max_tokens=1000, timeout=60, json_schema=None, images=None):
         """Call the LLM via Ollama client.
 
         Args:
@@ -389,6 +389,9 @@ class MnemosyneFSM:
             timeout: Request timeout in seconds
             json_schema: Optional JSON Schema dict to grammar-constrain the output
                 (Ollama >= 0.5). Use for structured responses like grading.
+            images: Optional list of images (data URIs / base64) for the multimodal
+                model (qwen3.5:9b) — lets the Socratic loop see a diagram or a photo
+                of the student's work and discuss it.
 
         Returns:
             str: The LLM response text, or None on failure
@@ -411,6 +414,7 @@ class MnemosyneFSM:
             max_tokens=max_tokens,
             timeout=timeout,
             json_schema=json_schema,
+            images=images,
         )
         return result if result else None
 

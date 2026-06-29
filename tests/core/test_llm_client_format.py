@@ -69,3 +69,11 @@ def test_data_uri_passes_through_unchanged():
     uri = "data:image/jpeg;base64,/9j/4AAQSkZJRg"
     parts = LLMClient._user_content("caption?", [uri])
     assert parts[1]["image_url"]["url"] == uri
+
+
+def test_describe_image_sends_vision_payload():
+    with patch("llm_client.requests.post", return_value=_mock_resp("a labelled circuit diagram")) as p:
+        out = LLMClient(model="qwen3.5:9b").describe_image("data:image/png;base64,AAAA")
+        assert out == "a labelled circuit diagram"
+        content = _sent_payload(p)["messages"][1]["content"]
+        assert isinstance(content, list) and content[1]["type"] == "image_url"

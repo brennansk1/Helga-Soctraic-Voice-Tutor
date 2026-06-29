@@ -152,6 +152,20 @@ class LLMClient:
             logger.warning(f"Failed to parse JSON from LLM response: {raw[:200]}")
             return None
 
+    def describe_image(self, image, instruction=None, max_tokens=400, timeout=90):
+        """Vision helper (qwen3.5:9b): caption/analyse an image. `image` is a data
+        URI or base64 string. Returns the model's description — for alt text,
+        relevance filtering of scraped figures, or grounding a Socratic question
+        about a diagram. Empty string on failure / non-vision model."""
+        instruction = instruction or (
+            "Describe this image for an educational context. State what it depicts, "
+            "any labels or key features, and whether it is a diagram, photo, or chart."
+        )
+        return self.chat(
+            "You are a precise visual analyst for a tutoring system.",
+            instruction, images=[image], max_tokens=max_tokens, timeout=timeout,
+        )
+
     def chat_stream(self, system_prompt, user_message, max_tokens=512,
                     temperature=0.6, timeout=120):
         """Stream a chat completion. Yields text chunks.
