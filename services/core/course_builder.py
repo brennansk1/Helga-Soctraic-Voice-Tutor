@@ -1,5 +1,4 @@
 import os
-import gc
 import time
 import logging
 import re
@@ -201,6 +200,17 @@ STARTING_FROM_PROFILES = {
 }
 
 
+BLOOM_LABELS = {1: "Remember", 2: "Understand", 3: "Apply", 4: "Analyze", 5: "Evaluate", 6: "Create"}
+
+
+def progressive_bloom(index: int, total: int, floor: int, ceiling: int) -> int:
+    """Per-module Bloom target: module #index (0-based) of `total`, ramped
+    linearly from `floor` to `ceiling`. Single source of truth so every call
+    site computes the same value (B1.1.4)."""
+    progress = index / max(total - 1, 1)
+    return max(floor, min(ceiling, floor + round(progress * (ceiling - floor))))
+
+
 def compute_course_params(scope=2, mastery=2, starting_from=1):
     """Compute course structure parameters from three sliders."""
     s = SCOPE_PROFILES.get(scope, SCOPE_PROFILES[2])
@@ -368,7 +378,9 @@ class SkeletonBuilder:
             self.storage = StorageManager(data_dir)
 
     def close(self):
-        gc.collect()
+        # No-op: on a 24GB host speculative gc.collect() only adds latency.
+        # Kept for callers that invoke close() after a build.
+        pass
 
     def _get_blacklist_str(self) -> str:
         hierarchy_str = " > ".join(self.hierarchy) if self.hierarchy else "Course Root"
@@ -514,6 +526,13 @@ class SkeletonBuilder:
         else:
             candidates = self.used_titles
 
+        # PERF-2: reuse one matcher with new_norm cached as seq2, and gate the
+        # expensive ratio() behind difflib's O(1)/O(n) upper-bound estimators —
+        # identical results, far fewer full comparisons than building a fresh
+        # SequenceMatcher per candidate (mirrors difflib.get_close_matches).
+        matcher = difflib.SequenceMatcher()
+        matcher.set_seq2(new_norm)
+
         for used in candidates:
             used_clean = self._sanitize_title(used)
 
@@ -553,11 +572,16 @@ class SkeletonBuilder:
                     self.failed_titles.add(new_title)
                     return True
 
-            # 4. Similarity ratio (most expensive, only as last resort)
-            ratio = difflib.SequenceMatcher(None, new_norm, used_clean).ratio()
-            if ratio > SIMILARITY_THRESHOLD:
+            # 4. Similarity ratio (most expensive — gated by cheap upper bounds)
+            matcher.set_seq1(used_clean)
+            if (
+                matcher.real_quick_ratio() > SIMILARITY_THRESHOLD
+                and matcher.quick_ratio() > SIMILARITY_THRESHOLD
+                and matcher.ratio() > SIMILARITY_THRESHOLD
+            ):
                 logger.warning(
-                    f"Similarity collision: '{new_norm}' vs '{used_clean}' (ratio {ratio:.2f})"
+                    f"Similarity collision: '{new_norm}' vs '{used_clean}' "
+                    f"(ratio {matcher.ratio():.2f})"
                 )
                 self.failed_titles.add(new_title)
                 return True
@@ -869,15 +893,11 @@ class SkeletonBuilder:
         bloom_ceiling = cp["bloom_ceiling"]
         bloom_labels = {1: "Remember", 2: "Understand", 3: "Apply", 4: "Analyze", 5: "Evaluate", 6: "Create"}
 
-        # Calculate per-module bloom targets
-        bloom_range = bloom_ceiling - bloom_floor
+        # Calculate per-module bloom targets (single shared formula — B1.1.4)
         module_bloom_targets = []
         for i in range(target_modules):
-            progress = i / max(target_modules - 1, 1)  # 0.0 to 1.0
-            bloom = bloom_floor + round(progress * bloom_range)
-            bloom = max(bloom_floor, min(bloom_ceiling, bloom))
-            label = bloom_labels.get(bloom, "Apply")
-            module_bloom_targets.append((bloom, label))
+            bloom = progressive_bloom(i, target_modules, bloom_floor, bloom_ceiling)
+            module_bloom_targets.append((bloom, bloom_labels.get(bloom, "Apply")))
 
         # Build the progression schedule string for the prompt
         progression_schedule = "\n".join([
@@ -1201,10 +1221,7 @@ class SkeletonBuilder:
             bloom_labels_map = {1: "Remember", 2: "Understand", 3: "Apply", 4: "Analyze", 5: "Evaluate", 6: "Create"}
             bloom_floor = self.course_params.get("bloom_floor", 1)
             bloom_ceiling = self.course_params.get("bloom_ceiling", 5)
-            bloom_range = bloom_ceiling - bloom_floor
-            progress = (ordinal - 1) / max(total_modules - 1, 1)
-            module_bloom = bloom_floor + round(progress * bloom_range)
-            module_bloom = max(bloom_floor, min(bloom_ceiling, module_bloom))
+            module_bloom = progressive_bloom(ordinal - 1, total_modules, bloom_floor, bloom_ceiling)
             module_bloom_label = bloom_labels_map.get(module_bloom, "Apply")
 
             bloom_descriptors = {
@@ -1926,11 +1943,6 @@ class ContentHydrator:
                             f"  [CONCEPT FAILED] '{title}' ({uid}): {concept_error}",
                             exc_info=True,
                         )
-                    # Batch GC every 10 concepts
-                    with _counter_lock:
-                        total_done = hydrated_count + failed_count
-                    if total_done % 10 == 0:
-                        gc.collect()
         else:
             # Single concept — run directly
             for idx, entry in enumerate(concept_list):
@@ -1945,7 +1957,6 @@ class ContentHydrator:
                         exc_info=True,
                     )
 
-        gc.collect()
         hydration_elapsed = time.perf_counter() - hydration_start_time
         logger.info(f"  [TIMING] Hydration completed in {hydration_elapsed:.1f}s")
 

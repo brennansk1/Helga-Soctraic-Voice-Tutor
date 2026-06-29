@@ -64,12 +64,12 @@ T   Helga Trunk ...................................................... ✅
 │  ├─ B1.1  SkeletonBuilder (modules→units→lessons→concepts) ........ ✅
 │  │   ├─ B1.1.1  3-slider param system (scope/mastery/start) ....... ✅
 │  │   ├─ B1.1.2  Module gen w/ 3-retry ............................. ✅
-│  │   ├─ B1.1.3  O(n²) difflib dedup .............................. 🧩 PERF
-│  │   └─ B1.1.4  Bloom target computed 3× w/ drifting defaults .... 🚫 BUG
+│  │   ├─ B1.1.3  difflib dedup — matcher reuse + upper-bound gating ✅ PERF
+│  │   └─ B1.1.4  Bloom target — single progressive_bloom() helper . ✅
 │  ├─ B1.2  SyllabusAuditor (dedup + LLM quality pass) ............. ✅
 │  ├─ B1.3  ContentHydrator (research+LLM per concept) ............. ✅
 │  │   ├─ B1.3.1  ThreadPool(3) + per-concept 15s research HTTP .... 🧩 PERF
-│  │   └─ B1.3.2  gc.collect() every 10 concepts ................... 🧩 anti-pattern
+│  │   └─ B1.3.2  speculative gc.collect() removed ................. ✅
 │  ├─ B1.4  Custom Course Wizard ................................... ✅ (3 overlapping endpoints)
 │  └─ B1.5  EPUB ingestion ......................................... 🚫 returns 202, no real impl
 ├─ B2  Knowledge / RAG Layer ....................................... 🚫
