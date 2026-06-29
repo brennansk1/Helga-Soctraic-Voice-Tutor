@@ -152,8 +152,33 @@ function updateUI(state) {
 // bulleted lists, numbered lists, paragraphs. Escapes HTML first.
 function renderMarkdown(text) {
     if (!text) return '';
-    // 1. Escape HTML entities first
-    let s = String(text)
+    let s = String(text);
+
+    // 0. Extract LaTeX math FIRST — before HTML-escape and markdown transforms,
+    //    since TeX contains <, >, &, _, *, ^ that those steps would mangle. Render
+    //    with KaTeX if it's loaded (offline vendor), else fall back to the raw TeX
+    //    so equations are at least readable. Restored at the very end (step 8).
+    const mathSpans = [];
+    const pushMath = (tex, display) => {
+        let html = null;
+        if (window.katex && typeof window.katex.renderToString === 'function') {
+            try { html = window.katex.renderToString(tex, { displayMode: display, throwOnError: false, trust: false }); }
+            catch (e) { html = null; }
+        }
+        if (html === null) {
+            const esc = tex.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            html = display ? '<pre class="math-raw">' + esc + '</pre>' : '<code class="math-raw">' + esc + '</code>';
+        }
+        return '\x00MATH' + (mathSpans.push(html) - 1) + '\x00';
+    };
+    s = s.replace(/\$\$([\s\S]+?)\$\$/g, (m, t) => pushMath(t.trim(), true));   // $$ block $$
+    s = s.replace(/\\\[([\s\S]+?)\\\]/g, (m, t) => pushMath(t.trim(), true));   // \[ block \]
+    s = s.replace(/\\\(([\s\S]+?)\\\)/g, (m, t) => pushMath(t.trim(), false));  // \( inline \)
+    // $ inline $ — only when it looks like LaTeX (has \ ^ _ { }), so currency ($5) is left alone.
+    s = s.replace(/\$([^\$\n]+?)\$/g, (m, t) => /[\\^_{}]/.test(t) ? pushMath(t.trim(), false) : m);
+
+    // 1. Escape HTML entities
+    s = s
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
@@ -229,6 +254,9 @@ function renderMarkdown(text) {
 
     // 7. Restore fenced code blocks
     s = s.replace(/\x00CB(\d+)\x00/g, (_, i) => codeBlocks[Number(i)] || '');
+
+    // 8. Restore KaTeX-rendered math (extracted in step 0).
+    s = s.replace(/\x00MATH(\d+)\x00/g, (_, i) => mathSpans[Number(i)] || '');
     return s;
 }
 

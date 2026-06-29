@@ -48,9 +48,9 @@ async function loadCourses() {
             grid.innerHTML = `
                 <div class="empty-state" style="grid-column: 1/-1;">
                     <div class="empty-icon">📚</div>
-                    <h3>No courses yet</h3>
-                    <p>Create your first course to start learning!</p>
-                    <button class="btn-alpine btn-alpine-primary" onclick="openQuickCreate()" style="margin-top: 1rem;">Quick Create</button>
+                    <h3>Start your first course</h3>
+                    <p>Pick any topic — Helga will build a structured course and teach it to you through questions.</p>
+                    <button class="btn-alpine btn-alpine-primary" onclick="openQuickCreate()" style="margin-top: 1rem;">Create a course</button>
                 </div>
             `;
             return;

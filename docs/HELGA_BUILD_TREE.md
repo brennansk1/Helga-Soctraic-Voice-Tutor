@@ -73,7 +73,7 @@ T   Helga Trunk ...................................................... ✅
 │  ├─ B1.4  Custom Course Wizard ................................... ✅ (3 overlapping endpoints)
 │  └─ B1.5  EPUB ingestion ......................................... 🚫 returns 202, no real impl
 ├─ B2  Knowledge / RAG Layer ....................................... 🔨
-│  ├─ B2.1  Semantic retrieval — lazy model + RRF core (Task #8) ... 🔨
+│  ├─ B2.1  Semantic retrieval — lazy model + RRF + guarded hybrid . 🔨 (?mode=hybrid, FTS5 fallback; needs sqlite-vec)
 │  ├─ B2.2  Keyword search — SQLite FTS5 (title+content, bm25) ..... ✅
 │  ├─ B2.3  Chunking / passages .................................... ⬜ (Task #8)
 │  ├─ B2.4  Reranking .............................................. ⬜ (Task #8)
@@ -281,7 +281,7 @@ B13  Multimodal & Visuals .......................................... 🔨
 ├─ B13.1  Model swap → Qwen3.5-9B (multimodal) ................... ✅ config unified (compose/.env/
 │                                                                    deploy/main/llm_client/llm_utils)
 ├─ B13.2  Vision-capable LLM client (images param) .............. ✅ chat(images=…) + tests
-├─ B13.3  Chat renders images (safe-scheme md ![]()) ........... ✅ images; ⬜ Mermaid (needs vendored lib, offline)
+├─ B13.3  Chat renders images + LaTeX math ..................... ✅ images + KaTeX (offline, raw-TeX fallback); ⬜ Mermaid
 ├─ B13.4  Hydration: diagram-as-code step (Mermaid + Socratic Q)  ⬜ (constrained output, B1)
 ├─ B13.5  Online image extraction + license filter + cache ...... ⬜ (research_server, B12/#10)
 ├─ B13.6  VLM relevance/caption/alt-text pass ................... ⬜ (now native via qwen3.5:9b)

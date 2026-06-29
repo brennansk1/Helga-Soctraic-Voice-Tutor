@@ -110,6 +110,9 @@ def _substring_concept_search(query, course_uid):
 def search():
     query = request.args.get("q", "")
     course_uid = request.args.get("course_uid")
+    # Optional: ?mode=hybrid routes through dense+FTS5 fusion when available.
+    # The default (mode absent or any value other than "hybrid") uses FTS5 only.
+    mode = request.args.get("mode", "fts")
     if not query:
         return jsonify({"error": "No query"}), 400
 
@@ -131,11 +134,30 @@ def search():
     if results:
         return jsonify({"results": results})
 
-    # Concept search via SQLite FTS5 (ranked, searches title AND body content).
-    # Falls back to the legacy substring scan if FTS5 is unavailable or errors.
+    # Concept search.
+    # Default: SQLite FTS5 (ranked, searches title AND body content).
+    # Optional hybrid mode: FTS5 + dense via sqlite-vec, fused with RRF.
+    #   - Hybrid is only active when ?mode=hybrid AND sqlite-vec is available.
+    #   - If dense deps are absent the hybrid path silently degrades to FTS5.
+    #   - Never raises — always falls back to substring search on any exception.
     try:
-        fts_rows = storage.search.search(query, course_uid=course_uid, limit=10)
-        for row in fts_rows:
+        if mode == "hybrid" and storage.search.is_dense_available():
+            # Lazy-load the embedding model; if it fails, fall back to FTS5.
+            try:
+                embed_fn = get_embed_model().encode
+            except Exception as embed_err:
+                logger.warning(f"hybrid search: embed model unavailable ({embed_err}), using FTS5")
+                embed_fn = None
+            concept_rows = storage.search.hybrid_search(
+                query,
+                embed_fn=embed_fn,
+                course_uid=course_uid,
+                limit=10,
+            )
+        else:
+            concept_rows = storage.search.search(query, course_uid=course_uid, limit=10)
+
+        for row in concept_rows:
             content = row.get("content") or ""
             results.append(
                 {
@@ -146,7 +168,7 @@ def search():
                 }
             )
     except Exception as e:
-        logger.warning(f"FTS search failed, falling back to substring: {e}")
+        logger.warning(f"Search failed, falling back to substring: {e}")
         results = _substring_concept_search(query, course_uid)
 
     return jsonify({"results": results})

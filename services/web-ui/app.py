@@ -582,6 +582,15 @@ def update_thinking_status():
         socketio.emit('status_update', data)
     return jsonify({'status': 'ok'}), 200
 
+@app.route('/api/search', methods=['GET'])
+def proxy_search():
+    """Proxy global search to the RAG FTS5 /search (used by the header search UI)."""
+    try:
+        resp = requests.get(f'{SERVICES["rag"]}/search', params=request.args, timeout=5)
+        return jsonify(resp.json()), resp.status_code
+    except requests.exceptions.RequestException:
+        return jsonify({'results': []}), 200
+
 @app.route('/api/courses', methods=['GET'])
 def get_courses():
     try:

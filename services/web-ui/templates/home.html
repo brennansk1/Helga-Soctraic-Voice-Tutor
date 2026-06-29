@@ -40,6 +40,9 @@
         <a href="/courses" class="cta-btn primary" id="cta-primary">Create Your First Course</a>
     </div>
 
+    <!-- Continue learning (populated by loadRecentCourses() when courses exist) -->
+    <div id="continue-learning" style="display: none; margin-bottom: 2rem;"></div>
+
     <!-- Quick links -->
     <div class="quick-links">
         <a href="/courses" class="quick-card" aria-label="Courses — Create and manage learning paths">
@@ -251,6 +254,95 @@
     margin: 0 0 1rem;
     font-size: 0.9rem;
 }
+/* --- First-run onboarding guide --- */
+.empty-state-intro {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin: 0 0 1rem;
+}
+.how-it-works {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    text-align: left;
+}
+.how-it-works li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
+}
+.hiw-icon {
+    font-size: 1.4rem;
+    flex-shrink: 0;
+    margin-top: 0.05rem;
+}
+.how-it-works li div {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+.how-it-works li strong {
+    font-size: 0.9rem;
+    color: var(--text-primary);
+}
+.how-it-works li span {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+/* --- Continue learning section --- */
+.section-heading {
+    font-size: 1rem;
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 0 0 0.75rem;
+}
+.recent-courses-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.recent-course-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
+}
+.recent-course-title {
+    font-size: 0.95rem;
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+.recent-resume-btn {
+    padding: 0.4rem 1.1rem;
+    font-size: 0.85rem;
+    flex-shrink: 0;
+    background: var(--accent-primary);
+    color: var(--text-inverted);
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    transition: opacity 0.15s;
+}
+.recent-resume-btn:hover { opacity: 0.88; }
+
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(12px); }
     to { opacity: 1; transform: translateY(0); }
@@ -297,15 +389,20 @@ async function loadStats() {
         // Update CTA based on whether courses exist
         var ctaBtn = document.getElementById('cta-primary');
         if (data.courses > 0) {
-            ctaBtn.textContent = 'Continue Learning';
+            ctaBtn.textContent = 'Browse all courses';
             ctaBtn.href = '/courses';
+            loadRecentCourses();
         } else {
-            // Empty state: no courses yet — show a helpful nudge
-            ctaDiv.innerHTML = '<div class="home-empty-state">' +
-                '<div style="font-size: 2rem;" aria-hidden="true">📚</div>' +
-                '<h3>No courses yet</h3>' +
-                '<p>Create your first course to get started with Socratic learning.</p>' +
-                '<a href="/courses" class="cta-btn primary">Create Your First Course</a>' +
+            // Empty state: first-run — show a friendly how-it-works guide + CTA
+            ctaDiv.innerHTML =
+                '<div class="home-empty-state">' +
+                    '<p class="empty-state-intro">Here\'s how Helga works:</p>' +
+                    '<ol class="how-it-works">' +
+                        '<li><span class="hiw-icon" aria-hidden="true">📚</span><div><strong>Create a course</strong><span>Type a topic and Helga builds a structured syllabus with concepts at your level.</span></div></li>' +
+                        '<li><span class="hiw-icon" aria-hidden="true">💬</span><div><strong>Learn Socratically</strong><span>Helga asks questions instead of lecturing — you reason through each concept out loud.</span></div></li>' +
+                        '<li><span class="hiw-icon" aria-hidden="true">🔄</span><div><strong>Review with spaced repetition</strong><span>Flashcards surface at the right time so knowledge sticks long-term.</span></div></li>' +
+                    '</ol>' +
+                    '<a href="/courses" class="cta-btn primary" style="margin-top: 1.5rem;">Create your first course</a>' +
                 '</div>';
         }
     } catch (e) {
@@ -326,6 +423,44 @@ async function loadStats() {
     } catch (e) {
         console.warn('Review stats unavailable:', e);
         setStatValue('cards-due', '--');
+    }
+}
+
+async function loadRecentCourses() {
+    try {
+        var res = await fetch('/api/courses');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        var data = await res.json();
+        var courses = (data.courses || []).filter(function(c) {
+            var s = (c.status || '').toLowerCase();
+            return s === 'ready' || s === 'available';
+        }).slice(0, 3);
+        if (courses.length === 0) return;
+
+        var container = document.getElementById('continue-learning');
+        if (!container) return;
+
+        var cards = courses.map(function(c) {
+            // XSS-safe: build text nodes, not innerHTML interpolation
+            var safeTitle = c.title
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+            var safeUid = encodeURIComponent(c.uid);
+            return '<div class="recent-course-card">' +
+                '<span class="recent-course-title">' + safeTitle + '</span>' +
+                '<a href="/learn?course_uid=' + safeUid + '" class="cta-btn recent-resume-btn">Resume</a>' +
+                '</div>';
+        }).join('');
+
+        container.innerHTML =
+            '<h2 class="section-heading">Continue learning</h2>' +
+            '<div class="recent-courses-list">' + cards + '</div>';
+        container.style.display = 'block';
+    } catch (e) {
+        // Non-fatal — dashboard still usable without recent courses
+        console.warn('Recent courses load failed:', e);
     }
 }
 

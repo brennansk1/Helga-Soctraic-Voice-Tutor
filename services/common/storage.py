@@ -16,7 +16,7 @@ import uuid
 import shutil
 import threading
 from datetime import datetime, date, timedelta
-from typing import List, Dict, Optional, Any
+from typing import Callable, List, Dict, Optional, Any
 
 logger = logging.getLogger(__name__)
 
@@ -613,6 +613,210 @@ class SearchStore:
 
         rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
+
+    # ── Optional dense / hybrid retrieval ────────────────────────────────────
+    # All methods below are fully guarded: they no-op or return [] when the
+    # optional dependency (sqlite-vec) is absent.  The FTS5 `search()` path
+    # above is NEVER modified and remains the default.
+
+    @staticmethod
+    def is_dense_available() -> bool:
+        """Return True only if sqlite-vec is importable.
+
+        Deliberately avoids caching at class level so tests can monkey-patch
+        the import without needing module reloads.
+        """
+        try:
+            import sqlite_vec  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
+    def build_dense_index(self, embed_fn: Callable) -> int:
+        """Create (or replace) a sqlite-vec vec0 virtual table and populate it.
+
+        Args:
+            embed_fn: callable that accepts a list of strings and returns a
+                      numpy array or list-of-lists of float32 vectors.
+
+        Returns the number of concepts indexed, or 0 if sqlite-vec is absent.
+        """
+        if not self.is_dense_available():
+            logger.info("build_dense_index: sqlite-vec absent, skipping.")
+            return 0
+
+        try:
+            import sqlite_vec
+            import struct
+
+            conn = self._get_db()
+            # Load the sqlite-vec extension into this connection.
+            conn.enable_load_extension(True)
+            sqlite_vec.load(conn)
+            conn.enable_load_extension(False)
+
+            # Probe embedding dimension with a trivial call.
+            probe = embed_fn(["probe"])
+            import numpy as np
+            probe_arr = np.array(probe, dtype="float32")
+            dim = int(probe_arr.shape[-1])
+
+            # Drop and recreate the vec0 table so index is always fresh.
+            conn.execute("DROP TABLE IF EXISTS concept_vec")
+            conn.execute(
+                f"CREATE VIRTUAL TABLE concept_vec USING vec0("
+                f"concept_uid TEXT PRIMARY KEY, course_uid TEXT, embedding FLOAT[{dim}])"
+            )
+
+            count = 0
+            for course in self.courses.list_courses():
+                course_uid = course.get("uid")
+                if not course_uid:
+                    continue
+                flat = self.courses.get_flat_concepts(course_uid)
+                if not flat:
+                    continue
+                texts = []
+                for c in flat:
+                    body = self.courses.get_concept_content(course_uid, c["uid"]) or ""
+                    texts.append(f"{c.get('title', '')} {body[:512]}")
+
+                vecs = np.array(embed_fn(texts), dtype="float32")
+                for concept, vec in zip(flat, vecs):
+                    blob = struct.pack(f"{dim}f", *vec.tolist())
+                    conn.execute(
+                        "INSERT OR REPLACE INTO concept_vec(concept_uid, course_uid, embedding) "
+                        "VALUES (?, ?, ?)",
+                        (concept["uid"], course_uid, blob),
+                    )
+                    count += 1
+
+            conn.commit()
+            logger.info(f"Built dense index with {count} concept(s), dim={dim}")
+            return count
+
+        except Exception as e:
+            logger.warning(f"build_dense_index failed (dense unavailable): {e}")
+            return 0
+
+    def dense_search(
+        self,
+        query_vec,
+        course_uid: str = None,
+        limit: int = 10,
+    ) -> List[dict]:
+        """Top-k cosine/L2 search via sqlite-vec.
+
+        Returns [] if sqlite-vec is absent or the index doesn't exist.
+        Each result dict has keys: concept_uid, course_uid, title, content.
+        """
+        if not self.is_dense_available():
+            return []
+
+        try:
+            import sqlite_vec
+            import struct
+            import numpy as np
+
+            conn = self._get_db()
+            conn.enable_load_extension(True)
+            sqlite_vec.load(conn)
+            conn.enable_load_extension(False)
+
+            # Check that the vec table exists.
+            row = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='concept_vec'"
+            ).fetchone()
+            if not row:
+                return []
+
+            vec = np.array(query_vec, dtype="float32").flatten()
+            dim = len(vec)
+            blob = struct.pack(f"{dim}f", *vec.tolist())
+
+            if course_uid:
+                sql = (
+                    "SELECT cv.concept_uid, cv.course_uid, "
+                    "cf.title, cf.content "
+                    "FROM concept_vec cv "
+                    "LEFT JOIN concept_fts cf ON cf.concept_uid = cv.concept_uid "
+                    "WHERE cv.course_uid = ? "
+                    "ORDER BY vec_distance_cosine(cv.embedding, ?) "
+                    "LIMIT ?"
+                )
+                rows = conn.execute(sql, (course_uid, blob, int(limit))).fetchall()
+            else:
+                sql = (
+                    "SELECT cv.concept_uid, cv.course_uid, "
+                    "cf.title, cf.content "
+                    "FROM concept_vec cv "
+                    "LEFT JOIN concept_fts cf ON cf.concept_uid = cv.concept_uid "
+                    "ORDER BY vec_distance_cosine(cv.embedding, ?) "
+                    "LIMIT ?"
+                )
+                rows = conn.execute(sql, (blob, int(limit))).fetchall()
+
+            return [dict(r) for r in rows]
+
+        except Exception as e:
+            logger.warning(f"dense_search failed, returning []: {e}")
+            return []
+
+    def hybrid_search(
+        self,
+        query: str,
+        embed_fn: Callable = None,
+        course_uid: str = None,
+        limit: int = 10,
+        k: int = 60,
+    ) -> List[dict]:
+        """Fuse FTS5 + dense results via Reciprocal Rank Fusion.
+
+        Always falls back to pure FTS5 when:
+        - dense deps (sqlite-vec) are absent, OR
+        - embed_fn is not provided, OR
+        - any exception occurs in the dense path.
+
+        The FTS5 default is NEVER skipped.  Response shape is identical to
+        ``search()``: list of {concept_uid, course_uid, title, content}.
+        """
+        # Step 1: always run FTS5 — this is the guaranteed base result.
+        try:
+            fts_results = self.search(query, course_uid=course_uid, limit=limit)
+        except Exception as e:
+            logger.warning(f"hybrid_search: FTS5 failed: {e}")
+            fts_results = []
+
+        # Step 2: attempt dense search only when deps + embed_fn are available.
+        dense_results = []
+        if embed_fn is not None and self.is_dense_available():
+            try:
+                query_vec = embed_fn([query])
+                import numpy as np
+                arr = np.array(query_vec, dtype="float32")
+                # embed_fn([text]) → shape (1, dim) or (dim,); normalise to 1-D.
+                vec = arr[0] if arr.ndim == 2 else arr.flatten()
+                dense_results = self.dense_search(vec, course_uid=course_uid, limit=limit)
+            except Exception as e:
+                logger.warning(f"hybrid_search: dense path failed, using FTS5 only: {e}")
+                dense_results = []
+
+        # Step 3: if no dense results, return FTS5 order unchanged.
+        if not dense_results:
+            return fts_results
+
+        # Step 4: RRF fusion.
+        try:
+            from services.common.retrieval import reciprocal_rank_fusion
+            fused = reciprocal_rank_fusion(
+                [fts_results, dense_results],
+                k=k,
+                key=lambda r: r.get("concept_uid", ""),
+            )
+            return [item for item, _score in fused[:limit]]
+        except Exception as e:
+            logger.warning(f"hybrid_search: RRF fusion failed, falling back to FTS5: {e}")
+            return fts_results
 
 
 class ProgressStore:

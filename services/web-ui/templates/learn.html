@@ -3,7 +3,10 @@
 {% block title %}Helga - Learn{% endblock %}
 
 {% block head_scripts %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/learn-chat.css') }}?v=3">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/learn-chat.css') }}?v=4">
+<!-- KaTeX (offline, vendored) — math rendering in chat. Falls back to raw TeX if absent. See static/vendor/katex/README.md -->
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/katex/katex.min.css') }}">
+<script defer src="{{ url_for('static', filename='vendor/katex/katex.min.js') }}"></script>
 <script src="{{ url_for('static', filename='js/session.js') }}?v=8"></script>
 {% endblock %}
 

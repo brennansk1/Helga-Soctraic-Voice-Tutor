@@ -419,3 +419,26 @@ coverage / non-redundancy / Bloom-appropriateness / Learn-readiness on the real 
 
 All disjoint, all additive; 432 tests pass; JS + all Jinja balanced. Queued **#13** (offline
 KaTeX math rendering in the chat).
+
+---
+
+## Sprint 2 — 4 more parallel workstreams
+
+- **#13 — LaTeX math in chat (mine):** `renderMarkdown` extracts math FIRST (before HTML-escape/
+  markdown transforms mangle `<_^*\`) into placeholders, renders with KaTeX (`throwOnError:false`,
+  `trust:false`), restores at the end. Supports `$$…$$`, `\[…\]`, `\(…\)`, and `$…$` (only when it
+  looks like LaTeX, so `$5` currency is left alone — verified in node). Offline KaTeX vendored under
+  `static/vendor/katex/` with a README install one-liner; **graceful raw-TeX fallback** when KaTeX
+  absent (guarded on `window.katex`). learn.html loads it; learn-chat.css styles it (dark-mode safe).
+- **#7 — global search UI (agent):** header search (`/` focuses) → debounced `/api/search` →
+  results dropdown → navigate. New `search.js`; I added the missing `/api/search` proxy in `app.py`
+  → RAG FTS5 `/search`.
+- **#7 — onboarding + dashboard (agent):** first-run 3-step "how Helga works" guide + a
+  "Continue learning" recent-courses strip on home; friendlier course-grid empty state.
+- **#8 / B2.1 — guarded hybrid retrieval (agent):** `SearchStore.hybrid_search()` (FTS5 +
+  optional sqlite-vec dense, fused by RRF) behind `?mode=hybrid`; **FTS5 stays the default and
+  never breaks when deps are absent**. +RRF/guard tests (deps-free).
+
+471 tests pass; JS (session/search/courses) + Python (app/storage/librarian) + all Jinja balanced.
+Live-validate on the M4: vision responses, the visual look, and (with sqlite-vec installed) hybrid
+search quality. Add the KaTeX vendor files for rendered (vs raw) math.

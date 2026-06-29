@@ -239,6 +239,21 @@
     cursor: pointer;
 }
 
+/* LaTeX math (KaTeX) — B13/#13. KaTeX inherits text color so dark mode works. */
+.chat-msg-text .katex { font-size: 1.05em; }
+.chat-msg-text .katex-display {
+    margin: var(--space-3) 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: var(--space-1);
+}
+/* Fallback when KaTeX isn't loaded: show the raw TeX, clearly but unobtrusively. */
+.chat-msg-text .math-raw {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--text-secondary);
+}
+pre.math-raw { display: block; margin: var(--space-2) 0; }
+
 /* Grade badge (on the graded user message) */
 .chat-msg-grade-badge {
     display: inline-block;
