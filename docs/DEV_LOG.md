@@ -489,6 +489,14 @@ sympy/scipy/matplotlib/networkx tool logic, guarded missing libs, run_python off
 + `tests/core/test_chat_with_tools.py` (loop executes→answers, no-tool early return,
 bounded by max_rounds, bad args don't crash). Full suite green.
 
-**Deferred (B14.8, needs M4/Ollama):** wire `chat_with_tools` into the FSM at the grading
-and hint moments; live-validate qwen3.5:9b's tool-call reliability; for production code-exec,
-replace the `-I` subprocess with a real sandbox before enabling the flag.
+**B14.8 wiring (done, flag-gated).** The FSM lazily builds a registry bound to its storage
+(`_tool_search_concepts`/`_tool_concept_content`/`_tool_get_mastery`); `_verify_answer_objectively()`
+runs an objective tool-check before grading and injects a `[TOOL CHECK: …]` note into the grading
+context. Gated by `HELGA_ENABLE_TUTOR_TOOLS` (**OFF by default**) — when off, `_get_tutor_tools()`
+returns None and the grade path is unchanged. Never raises, never blocks grading.
++`tests/core/test_fsm_tools.py` (9 tests: disabled no-op, tool-note injection, NO_TOOL/empty,
+model-error swallowed, registry caching, callback shaping + callbacks-never-raise). 580 pass.
+
+**Still deferred (needs M4/Ollama):** flip the flag and live-validate qwen3.5:9b's tool-call
+reliability + grading-quality lift; for production code-exec, replace the `-I` subprocess with a
+real sandbox before ever enabling that tool.

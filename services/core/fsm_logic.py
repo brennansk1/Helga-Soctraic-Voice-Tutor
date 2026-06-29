@@ -336,6 +336,12 @@ class MnemosyneFSM:
         self.storage = StorageManager(self.data_root)
         self.conn = None  # Legacy compat
 
+        # B14: MCP-style tutor tool layer. OFF by default — flip
+        # HELGA_ENABLE_TUTOR_TOOLS=true once tool-call reliability is validated
+        # on the M4/Ollama. When off, grading/hint paths are entirely unchanged.
+        self._tutor_tools_enabled = os.getenv("HELGA_ENABLE_TUTOR_TOOLS", "false").lower() == "true"
+        self._tutor_tools_registry = None
+
         self.timer_thread = threading.Thread(target=self.check_timers, daemon=True)
         self.timer_thread.start()
 
@@ -467,6 +473,100 @@ class MnemosyneFSM:
             # Signal stream error so browser can clean up
             self._send_stream_token("", done=True)
             return None
+
+    # ------------------------------------------------------------------ #
+    # B14 — MCP-style tutor tools (tier-gated, failsafed). All paths here  #
+    # are no-ops when self._tutor_tools_enabled is False (the default), so #
+    # the live grading/hint behavior is unchanged until validated on M4.   #
+    # ------------------------------------------------------------------ #
+    def _tool_search_concepts(self, query, course_uid=None):
+        """Data-pull tool: search the course knowledge base (FTS5)."""
+        try:
+            rows = self.storage.search.search(
+                query, course_uid=course_uid or self.active_course_uid, limit=5
+            )
+            return [{"title": r.get("title", ""),
+                     "concept_uid": r.get("concept_uid", ""),
+                     "snippet": (r.get("content", "") or "")[:240]} for r in rows]
+        except Exception as e:
+            logging.warning(f"tool search_concepts failed: {e}")
+            return []
+
+    def _tool_concept_content(self, concept_uid, course_uid=None):
+        """Data-pull tool: fetch a concept's markdown content."""
+        try:
+            cu = course_uid or self.active_course_uid
+            if cu:
+                return self.storage.courses.get_concept_content(cu, concept_uid) or ""
+            found = self.storage.courses.find_concept_across_courses(concept_uid)
+            if found:
+                return self.storage.courses.get_concept_content(
+                    found.get("course_uid", ""), concept_uid) or ""
+            return ""
+        except Exception as e:
+            logging.warning(f"tool get_concept_content failed: {e}")
+            return ""
+
+    def _tool_get_mastery(self, concept_uid):
+        """Data-pull tool: student's mastery/progress for a concept."""
+        try:
+            return self.storage.progress.get_progress(concept_uid) or {}
+        except Exception as e:
+            logging.warning(f"tool get_mastery failed: {e}")
+            return {}
+
+    def _get_tutor_tools(self):
+        """Lazily build the tier-gated tool registry bound to this FSM's data.
+        Returns None when disabled so callers stay on the unchanged default path."""
+        if not getattr(self, "_tutor_tools_enabled", False):
+            return None
+        if getattr(self, "_tutor_tools_registry", None) is not None:
+            return self._tutor_tools_registry
+        try:
+            from services.common.tutor_tools import build_default_registry
+            self._tutor_tools_registry = build_default_registry(
+                search_fn=self._tool_search_concepts,
+                content_fn=self._tool_concept_content,
+                mastery_fn=self._tool_get_mastery,
+                wiki_fn=None,          # online lookups stay in the hydration pipeline
+                enable_code=False,     # code-exec never enabled in the live tutor
+            )
+        except Exception as e:
+            logging.warning(f"Tutor tool registry unavailable: {e}")
+            self._tutor_tools_registry = None
+        return self._tutor_tools_registry
+
+    def _verify_answer_objectively(self, question, answer):
+        """Optional objective-verification pass (B14.8). For math/factual answers,
+        let the model use compute/data tools to ground the upcoming grade. Returns
+        a short '[TOOL CHECK: ...]' note to inject into the grading prompt, or ''
+        when tools are disabled, no tool was used, or anything goes wrong. NEVER
+        raises and never blocks grading — grading proceeds regardless."""
+        registry = self._get_tutor_tools()
+        if registry is None:
+            return ""
+        try:
+            sys_prompt = (
+                "You verify a student's answer using tools when (and only when) a "
+                "tool can objectively check it (math, units, statistics, a fact in "
+                "the course/knowledge base). Call at most one or two tools. Then "
+                "reply in ONE sentence stating what the tool confirmed or "
+                "contradicted. If no tool applies, reply exactly: NO_TOOL."
+            )
+            user = f"Question: {question}\nStudent answer: {answer}"
+            out = self.llm_client.chat_with_tools(
+                sys_prompt, user, registry,
+                max_rounds=2, max_tool_calls=2, timeout=30,
+            )
+            if not out.get("tool_calls"):
+                return ""
+            text = (out.get("text") or "").strip()
+            if not text or text.upper().startswith("NO_TOOL"):
+                return ""
+            return f"[TOOL CHECK (objective): {text[:300]}]"
+        except Exception as e:
+            logging.warning(f"objective verification skipped: {e}")
+            return ""
 
     def _send_stream_token(self, token, done=False):
         """Send a single stream token to the web-ui for real-time display."""
@@ -1998,12 +2098,20 @@ class MnemosyneFSM:
         else:
             # Socratic Grading
             self.send_status_update("Grading...")
+            # B14.8: optional objective tool-check (math/units/stats/facts). No-op
+            # unless HELGA_ENABLE_TUTOR_TOOLS=true; grounds the grade with a
+            # deterministic computation rather than the model's arithmetic alone.
+            tool_note = self._verify_answer_objectively(self.last_question, text)
+            grading_context = self.current_context
+            if tool_note:
+                grading_context = f"{self.current_context}\n\n{tool_note}"
+                logging.info(f"Objective tool-check appended to grading context: {tool_note[:120]}")
             # GAP 5: Pass Bloom level, objectives, and mastery criteria to grading
             prompt = get_socratic_grading_prompt(
                 self.current_lesson_node["title"],
                 self.last_question,
                 text,
-                context_text=self.current_context,
+                context_text=grading_context,
                 bloom_level=self.current_bloom_level,
                 learning_objectives=self.current_lesson_node.get("learning_objectives", []),
                 mastery_criteria=getattr(self, 'current_mastery_criteria', ''),

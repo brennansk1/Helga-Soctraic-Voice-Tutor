@@ -309,11 +309,17 @@ B14  Tutor tools & data ............................................ 🔨
 ├─ B14.5  25 tools (math/stats/science/viz/cs/lang + data) ...... ✅ guarded lazy deps
 ├─ B14.6  Sandboxed run_python — tier-3/safety-3, OFF default ... ✅ (env opt-in; needs real sandbox in prod)
 ├─ B14.7  Data pulls (search/content/mastery/wikipedia) ......... ✅ injected callbacks
-└─ B14.8  Wire chat_with_tools into the FSM Socratic loop ....... ⬜ (live-validate on M4)
+└─ B14.8  Wire chat_with_tools into the FSM Socratic loop ....... ✅ flag-gated (live-validate on M4)
 ```
 qwen3.5:9b (tier 2) gets 24/25 tools (all but the code-exec tool): ≤3 tool calls/turn, ≤3
 rounds, 4000-char outputs, 8s/tool. Pedagogy: tool results feed the tutor's hint/verification,
-never handed to the student as the answer. 25 unit tests (tiers/gating/failsafes/tool logic/loop).
+never handed to the student as the answer. 40 unit tests (tiers/gating/failsafes/tool logic/loop/FSM wiring).
+
+B14.8 wiring: the FSM owns a lazily-built registry bound to its storage (search/content/mastery
+callbacks); before grading, `_verify_answer_objectively()` optionally runs an objective tool-check
+(math/units/stats/facts) and injects a `[TOOL CHECK: …]` note into the grading context. Gated by
+`HELGA_ENABLE_TUTOR_TOOLS` (OFF by default), never raises, never blocks grading — default runtime
+behavior is unchanged until validated on the M4. Code-exec stays disabled in the live tutor.
 
 ---
 
