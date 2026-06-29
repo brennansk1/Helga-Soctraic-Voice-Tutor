@@ -481,13 +481,22 @@ class MnemosyneFSM:
             # Non-critical: if a single token fails to deliver, streaming continues
             pass
 
-    def send_status_update(self, message, log=None, progress=None):
-        """Sends real-time status update to the Web UI for progress feedback."""
+    def send_status_update(self, message, log=None, progress=None, event=None):
+        """Sends real-time status update to the Web UI for progress feedback.
+
+        `event` (B6.4) is an optional structured envelope, e.g.
+        {"type": "PIPELINE_STAGE", "stage": "HYDRATE", "pct": 40}. The web-ui
+        forwards the whole payload, so the browser can drive progress UI from
+        structured fields instead of parsing the free-text `message`. The message
+        is kept for human display and legacy string-matching handlers.
+        """
         data = {"message": message}
         if log:
             data["log"] = log
         if progress is not None:
             data["progress"] = progress
+        if event is not None:
+            data["event"] = event
         for attempt in range(2):  # AUTO-15: 1 retry
             try:
                 requests.post(
@@ -501,6 +510,21 @@ class MnemosyneFSM:
                     logging.warning(f"Status update failed (retrying): {e}")
                 else:
                     logging.warning(f"Status update failed after retry: {e}")
+
+    # Canonical pipeline stages for the course-creation progress UI (B6.4).
+    PIPELINE_STAGES = ("PREFLIGHT", "SKELETON", "AUDIT", "HYDRATE", "FINALIZE", "DONE", "ERROR")
+
+    def send_pipeline_stage(self, stage, pct=None, message=None, **fields):
+        """Emit a structured course-creation progress event (B6.4) plus a human
+        message. The browser drives the progress bar from {stage, pct} instead of
+        substring-matching free text. `fields` carries extras (e.g. title, uid,
+        completed, total). Falls back to `message` for legacy handlers."""
+        event = {"type": "PIPELINE_STAGE", "stage": stage}
+        if pct is not None:
+            event["pct"] = max(0, min(100, int(pct)))
+        event.update(fields)
+        self.send_status_update(message or stage.replace("_", " ").title(),
+                                progress=event.get("pct"), event=event)
 
     def speak(self, text, record=True):
         """Add a tutor message to the transcript (text-only, no TTS)."""

@@ -386,6 +386,20 @@ function setupCreationSocket(topic) {
         var statusEl = document.getElementById('qc-progress-status');
         if (!statusEl) return;  // modal not open — nothing to do
 
+        // --- B6.4: structured pipeline-stage events (preferred over free-text) ---
+        // Additive + safe: only runs when the backend sends data.event; otherwise
+        // we fall through to the legacy string parsing below. Migrating backend
+        // call sites to send_pipeline_stage() lets us retire the brittle parsing.
+        if (data.event && data.event.type === 'PIPELINE_STAGE') {
+            var ev = data.event;
+            var bar = document.getElementById('qc-progress-bar');
+            statusEl.textContent = data.message || ev.stage;
+            if (ev.stage === 'ERROR') statusEl.classList.add('qc-status-error');
+            var pct = ev.stage === 'DONE' ? 100 : ev.pct;
+            if (bar && typeof pct === 'number') bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+            return;  // handled structurally — skip legacy string parsing
+        }
+
         // --- STRUCT events: build the tree ---
         if (msg.startsWith('STRUCT:')) {
             var parts = msg.split(':');

@@ -107,7 +107,7 @@ T   Helga Trunk ...................................................... ✅
 │  ├─ B6.1  Chat render + streaming tokens ......................... ✅ (monkey-patched reconcile)
 │  ├─ B6.2  Path/journey view ...................................... ✅
 │  ├─ B6.3  Per-session state scoping .............................. 🚫 global broadcast → no multi-tab/user
-│  ├─ B6.4  Structured status events ............................... 🚫 fragile free-text string parsing
+│  ├─ B6.4  Structured status events ............................... 🔨 contract+helper+consumer (call-site migration remains)
 │  ├─ B6.5  Voice selection wiring — key unified; dead emit removed  ✅
 │  ├─ B6.6  Markdown renderer ...................................... 🧩 hand-rolled, lookbehind breaks old Safari
 │  ├─ B6.7  Dashboard / analytics .................................. ⬜
