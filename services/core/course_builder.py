@@ -1832,6 +1832,10 @@ class ContentHydrator:
                         "title": title,
                         "module_title": h_ctx.get("module", ""),
                         "course_title": course_title,
+                        # B12: pass mastery so deeper courses get deeper/academic
+                        # search queries (this was defaulting to 1, so the
+                        # mastery>=3/>=4 queries never fired during creation).
+                        "mastery": self.mastery_level,
                     },
                     timeout=15,
                 )

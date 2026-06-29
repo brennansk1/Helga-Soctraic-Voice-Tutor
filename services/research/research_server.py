@@ -34,31 +34,8 @@ cache = Cache(CACHE_DIR)
 
 wiki = wikipediaapi.Wikipedia(user_agent="Helga/1.0 (Socratic Tutor)", language="en")
 
-# --- Domain quality tiers ---
-TIER_1 = {
-    "en.wikipedia.org", "plato.stanford.edu", "ocw.mit.edu",
-    "arxiv.org", "www.khanacademy.org", "mathworld.wolfram.com",
-    "www.nature.com", "www.britannica.com", "www.ncbi.nlm.nih.gov",
-}
-TIER_2 = {
-    "developer.mozilla.org", "docs.python.org", "realpython.com",
-    "www.investopedia.com", "www.sciencedirect.com", "stackoverflow.com",
-}
-BLOCKED = {
-    "chegg.com", "coursehero.com", "brainly.com", "quizlet.com",
-    "studocu.com", "bartleby.com", "www.chegg.com", "www.coursehero.com",
-}
-
-
-def domain_tier(url):
-    domain = urlparse(url).netloc.lower()
-    if domain in BLOCKED:
-        return -1
-    if domain in TIER_1 or domain.endswith(".edu") or domain.endswith(".gov"):
-        return 1
-    if domain in TIER_2 or domain.startswith("docs."):
-        return 2
-    return 3
+# Pure ranking/query/scoring helpers live in ranking.py (dep-free + unit-tested).
+from ranking import domain_tier, build_search_queries, compute_confidence, dedup_by_url
 
 
 def cache_key(prefix, text):
@@ -186,15 +163,8 @@ async def _research_concept_async(title, module_title, course_title, mastery=1):
             "type": "wikipedia",
         })
 
-    # 2. Generate search queries
-    queries = [
-        f"{title} {module_title} explained",
-        f"{title} definition examples",
-    ]
-    if mastery >= 3:
-        queries.append(f"{title} in-depth analysis")
-    if mastery >= 4:
-        queries.append(f"{title} academic overview research")
+    # 2. Generate search queries (mastery-aware)
+    queries = build_search_queries(title, module_title, mastery)
 
     # 3. Search via SearXNG
     async with aiohttp.ClientSession() as session:
@@ -203,15 +173,8 @@ async def _research_concept_async(title, module_title, course_title, mastery=1):
             results = await searxng_search(session, q)
             all_search_results.extend(results)
 
-        # De-duplicate by URL
-        seen_urls = set()
-        unique_results = []
-        for r in all_search_results:
-            if r["url"] not in seen_urls:
-                seen_urls.add(r["url"])
-                unique_results.append(r)
-
-        # Sort by tier, take top 5
+        # De-duplicate by URL, then sort by tier, take top 5
+        unique_results = dedup_by_url(all_search_results)
         unique_results.sort(key=lambda x: x["tier"])
         top_results = unique_results[:5]
 
@@ -236,18 +199,14 @@ async def _research_concept_async(title, module_title, course_title, mastery=1):
         combined_text = " ".join(words[:3000])
 
     # Confidence: based on source count and quality
-    confidence = 0.0
-    if wikipedia_data:
-        confidence += 0.4
     web_sources = [s for s in sources if s["type"] == "web"]
-    confidence += min(len(web_sources) * 0.2, 0.6)
-    confidence = min(confidence, 1.0)
+    confidence = compute_confidence(bool(wikipedia_data), len(web_sources))
 
     return {
         "sources": sources,
         "wikipedia": wikipedia_data,
         "combined_text": combined_text,
-        "confidence": round(confidence, 2),
+        "confidence": confidence,
     }
 
 

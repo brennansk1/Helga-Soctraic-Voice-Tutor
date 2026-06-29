@@ -135,13 +135,23 @@ T   Helga Trunk ...................................................... ✅
 │  ├─ B10.2 Real E2E (event path) .................................. 🚫 mocked / no server fixture
 │  ├─ B10.3 research_server + tts_server tests ..................... ⬜ zero
 │  └─ B10.4 CI runs Docker/compose/e2e ............................. ⬜
-└─ B11 Dead Code & Stale Docs ......................................🧩
+├─ B11 Dead Code & Stale Docs ......................................🧩
    ├─ B11.1 night_audit.py + scripts/*.py import kuzu (crash) ...... 🧩
    ├─ B11.2 service_manager.py no-op stub .......................... 🧩
    ├─ B11.3 mock_safety.py type-mismatched (dangerous) ............. 🧩
    ├─ B11.4 rag/prompts.py imports non-existent get_architect_prompt 🚫 ImportError
    ├─ B11.5 audio no-ops still called throughout FSM ............... 🧩
    └─ B11.6 CLAUDE.md — 16 contradictions vs reality ............... 🚫
+└─ B12 Online Search / Content Augmentation (course-creation) ...... ✅
+   ├─ B12.1 SearXNG self-hosted search (port 8080) ................. ✅
+   ├─ B12.2 research_server pipeline (wiki + searxng + trafilatura)  ✅
+   ├─ B12.3 Domain quality tiers + blocked-site filtering .......... ✅
+   ├─ B12.4 Pure ranking/query/confidence helpers (ranking.py) ..... ✅ extracted + tested
+   ├─ B12.5 Mastery-aware query depth ............................. ✅ wired from hydrator (was dormant)
+   ├─ B12.6 diskcache (24h search / 7d pages) ..................... ✅
+   ├─ B12.7 Hydrator integration (per-concept, ThreadPool≤3) ...... ✅
+   ├─ B12.8 Citations/provenance into generated content .......... ⬜ (sources returned, not cited → Task #8/#9)
+   └─ B12.9 Unused course_title param threaded through ............ 🧩 (noted; harmless)
 ```
 
 ---

@@ -217,3 +217,46 @@ overhaul stays task-scoped. Confirmed-dead code, however, is safe to remove now.
 
 **Deferred → Tasks #6 / #7:** structured status events, SSE streaming, per-session scoping,
 dashboard/analytics, dark mode, onboarding, global search, accessibility, mobile, PWA.
+
+---
+
+## B12 — Online Search / Content Augmentation (`services/research/`, SearXNG)
+
+*(New tree section — this course-creation path was previously scattered under B1.3 / B9.)*
+
+### 1. Understanding
+During course creation only (never live tutoring), `ContentHydrator` calls the research
+service per concept (`POST /api/research_concept`, 15s, inside its ThreadPool≤3). The service
+(`research_server.py`, port 5006): Wikipedia summary → 2-4 **SearXNG** queries → domain-tier
+filter + dedup → top-3 page extractions (`trafilatura`) → ~3000-word combined reference +
+confidence, fed into the LLM "condense & structure" prompt. `diskcache` (24h search / 7d
+pages). Domain tiers prefer .edu/.gov/wiki and **block** cheating sites (chegg/quizlet/…).
+
+### 2. Best tools / optimized?
+- Solid design (self-hosted SearXNG = offline-friendly; tiered sourcing; caching).
+- **Untestable here:** `trafilatura`/`wikipediaapi`/`diskcache` aren't installed on the dev
+  host, so `research_server` can't be imported in CI — its pure logic was trapped behind
+  network deps.
+- **Dormant feature:** the mastery-based deeper queries (`mastery>=3/>=4`) never fired —
+  the hydrator didn't pass `mastery`, so it defaulted to 1.
+- `course_title` is threaded through the whole call chain but **never used** in queries.
+- Citations: the service returns `sources` (URLs + tiers) but they aren't threaded into the
+  generated content as inline citations (grounding gap — overlaps Tasks #8/#9).
+
+### 3. Features weighed
+- Extract pure helpers into a dep-free module → makes the ranking/query/scoring logic
+  unit-testable now. Done.
+- Activate mastery-aware query depth (pass it from the hydrator). Done — small, safe.
+- Inline citations / provenance into the markdown — valuable but couples to the grounding
+  work in Tasks #8/#9; left there.
+- Async-loop reuse / batch endpoint — micro-opt, untestable here; skipped.
+
+### 4. Refactored (this commit), tests green
+- New `services/research/ranking.py` (no heavy deps): `domain_tier`, `build_search_queries`
+  (mastery-aware), `compute_confidence`, `dedup_by_url`. `research_server` imports them;
+  behavior unchanged. **+7 unit tests** (tiers, edu/gov, mastery query growth, confidence
+  caps, stable dedup).
+- Hydrator now passes `mastery` → activates the deeper-search queries (B12.5).
+- 38 builder/research tests pass.
+
+**Deferred:** inline citations (B12.8 → Tasks #8/#9); `course_title` unused (B12.9, harmless).
