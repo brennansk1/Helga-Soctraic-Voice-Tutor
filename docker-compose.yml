@@ -17,6 +17,9 @@ services:
       - CORE_LOGIC_URL=http://helga-core-logic:5003
       - RAG_URL=http://helga-rag-engine:5002
       - TTS_URL=http://helga-tts:5005
+      # STT runs natively on the host (Nemotron-MLX/ANE) by default, like Ollama;
+      # set STT_URL=http://helga-stt:5001 to use the containerized faster-whisper fallback.
+      - STT_URL=${STT_URL:-http://host.docker.internal:5001}
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
@@ -180,6 +183,35 @@ services:
           memory: 384M
     networks:
       - internal
+
+  # Offline STT — Learn voice input.
+  # PRIMARY deployment is NATIVE on the host (Nemotron-3.5-ASR via MLX/ANE),
+  # reached at host.docker.internal:5001 like Ollama — see services/stt/README.md.
+  # The block below is the CONTAINERIZED FALLBACK (faster-whisper, CPU). To use it,
+  # uncomment and set STT_URL=http://helga-stt:5001 for the web-ui service.
+  # stt:
+  #   build: services/stt
+  #   container_name: helga-stt
+  #   ports:
+  #     - "5001:5001"
+  #   environment:
+  #     - STT_BACKEND=faster-whisper
+  #     - STT_MODEL=distil-large-v3
+  #   volumes:
+  #     - ./data/hf_cache:/root/.cache/huggingface
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+  #     interval: 30s
+  #     timeout: 5s
+  #     retries: 3
+  #     start_period: 30s
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 2048M
+  #   networks:
+  #     - internal
 
 networks:
   internal:

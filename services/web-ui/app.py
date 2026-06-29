@@ -127,9 +127,10 @@ SERVICES = {
     'rag': os.environ.get('RAG_URL', 'http://helga-rag-engine:5002'),
     'tts': os.environ.get('TTS_URL', 'http://helga-tts:5005'),
     'research': os.environ.get('RESEARCH_URL', 'http://helga-research:5006'),
+    # STT runs natively on the host (MLX/ANE) by default, reached like Ollama;
+    # override with STT_URL=http://helga-stt:5001 for the containerized fallback.
+    'stt': os.environ.get('STT_URL', 'http://host.docker.internal:5001'),
 }
-
-# STT and Audio service clients removed — text-only mode
 
 # --- Background Pollers ---
 
@@ -690,6 +691,28 @@ def proxy_tts():
         return jsonify(resp.json()), resp.status_code
     except Exception as e:
         return jsonify({'error': str(e)}), 502
+
+@app.route('/api/stt', methods=['POST'])
+def proxy_stt():
+    """Proxy recorded audio to the STT service and return the transcript.
+
+    The browser POSTs the raw audio blob as the request body (Content-Type e.g.
+    audio/webm); we forward body + content-type to the STT service unchanged.
+    """
+    try:
+        audio = request.get_data()
+        if not audio:
+            return jsonify({'error': 'No audio provided'}), 400
+        resp = requests.post(
+            f'{SERVICES["stt"]}/api/stt',
+            data=audio,
+            headers={'Content-Type': request.headers.get('Content-Type', 'application/octet-stream')},
+            timeout=30,
+        )
+        return jsonify(resp.json()), resp.status_code
+    except requests.exceptions.RequestException as e:
+        logger.warning(f"STT service unreachable: {e}")
+        return jsonify({'error': 'Speech recognition is unavailable'}), 502
 
 @app.route('/api/upload_epub', methods=['POST'])
 @csrf_protect

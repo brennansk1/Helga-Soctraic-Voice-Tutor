@@ -11,10 +11,11 @@
 Helga is an autonomous, fully-offline AI tutor that runs on a **Mac Mini M4 Pro (24GB)** with three learning modes: Socratic Learning, Spaced Repetition (FSRS), and Memory Palace (Memory Palace UI is currently dead/disabled). Microservices orchestrated via Docker Compose; Flask + Socket.IO web UI at port 5050. Inference is **Ollama (native on the host)**, not a container.
 
 ## Architecture
-- **Microservices (6):** web-ui (Flask dashboard, port 5050→5000), core-logic (FSM + course creation, port 5003), rag-engine (course CRUD/search/flashcards, port 5002), tts (Kokoro, port 5005), searxng (self-hosted web search, port 8080), research (build-time content augmentation, port 5006). There is **no** input-node/audio-engine/inference-llm service; STT was removed (text-only).
+- **Microservices:** web-ui (Flask dashboard, port 5050→5000), core-logic (FSM + course creation, port 5003), rag-engine (course CRUD/search/flashcards, port 5002), tts (Kokoro, port 5005), searxng (self-hosted web search, port 8080), research (build-time content augmentation, port 5006). There is **no** inference-llm container — inference is Ollama on the host.
+- **STT (voice input):** `services/stt` exposes `POST /api/stt` (audio→transcript). Primary engine = `nvidia/nemotron-3.5-asr-streaming-0.6b` via the MLX/ANE port, run **natively on the host** (port 5001) and reached at `host.docker.internal:5001` like Ollama; faster-whisper is a containerizable fallback (`STT_BACKEND`). See `services/stt/README.md`.
 - **LLM:** **Ollama + Qwen3-14B** (`qwen3:14b`) on the host at `host.docker.internal:11434`, OpenAI-compatible chat API. Model name is set via `${OLLAMA_MODEL}` (default `qwen3:14b`) in `docker-compose.yml`.
 - **Storage:** SQLite (`helga.db`, WAL) + JSON course structures + Markdown concept files. KuzuDB and ZIM/`libzim` have been fully removed.
-- **AI Stack:** Qwen3-14B (Ollama), Kokoro TTS (`kokoro`), sentence-transformers `all-MiniLM-L6-v2` (currently loaded but **not used** for retrieval — `/search` is substring match; see `docs/HELGA_BUILD_TREE.md` B2). No STT, no Piper, no Faster-Whisper, no CUDA.
+- **AI Stack:** Qwen3-14B (Ollama), Kokoro TTS (`kokoro`), sentence-transformers `all-MiniLM-L6-v2` (loaded but not yet used for dense retrieval — `/search` now uses SQLite **FTS5**; see `docs/HELGA_BUILD_TREE.md` B2). STT via Nemotron-3.5-ASR (MLX, host-native) — see above. No Piper, no CUDA.
 
 ## Key File Locations
 | File | Purpose |

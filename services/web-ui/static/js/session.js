@@ -819,6 +819,106 @@ function sendEvent(eventType, payload) {
         });
 }
 
+// --- Voice input (speech-to-text) ---------------------------------------
+// Push-to-talk: click the mic to start, click again to stop -> POST audio to
+// /api/stt -> drop the transcript into the input and send via the normal
+// TEXT_INPUT path. Engine-agnostic (server picks Nemotron-MLX / faster-whisper).
+let _mediaRecorder = null;
+let _recordedChunks = [];
+let _recording = false;
+
+function _pickAudioMime() {
+    if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return '';
+    const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'];
+    return candidates.find(t => MediaRecorder.isTypeSupported(t)) || '';
+}
+
+function setupVoiceInput() {
+    const micBtn = document.getElementById('mic-btn');
+    if (!micBtn) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
+        micBtn.style.display = 'none';  // browser can't record — hide the affordance
+        return;
+    }
+    micBtn.addEventListener('click', () => {
+        if (_recording) stopVoiceRecording(); else startVoiceRecording();
+    });
+}
+
+async function startVoiceRecording() {
+    const micBtn = document.getElementById('mic-btn');
+    try {
+        // Barge-in: stop any in-flight TTS playback the moment the user speaks.
+        if (window._activeAudio) { try { window._activeAudio.pause(); } catch (e) {} }
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mime = _pickAudioMime();
+        _mediaRecorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+        _recordedChunks = [];
+        _mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) _recordedChunks.push(e.data); };
+        _mediaRecorder.onstop = () => {
+            stream.getTracks().forEach(t => t.stop());
+            const blob = new Blob(_recordedChunks, { type: (_mediaRecorder && _mediaRecorder.mimeType) || 'audio/webm' });
+            transcribeAndSend(blob);
+        };
+        _mediaRecorder.start();
+        _recording = true;
+        if (micBtn) {
+            micBtn.dataset.recording = 'true';
+            micBtn.classList.add('recording');
+            micBtn.setAttribute('aria-label', 'Stop recording');
+            micBtn.title = 'Stop recording';
+        }
+    } catch (err) {
+        console.error('[voice] mic access failed:', err);
+        _recording = false;
+        if (micBtn) micBtn.classList.remove('recording');
+    }
+}
+
+function stopVoiceRecording() {
+    const micBtn = document.getElementById('mic-btn');
+    _recording = false;
+    if (micBtn) {
+        micBtn.dataset.recording = 'false';
+        micBtn.classList.remove('recording');
+        micBtn.classList.add('transcribing');
+        micBtn.setAttribute('aria-label', 'Transcribing');
+        micBtn.title = 'Transcribing…';
+    }
+    try { if (_mediaRecorder && _mediaRecorder.state !== 'inactive') _mediaRecorder.stop(); } catch (e) {}
+}
+
+async function transcribeAndSend(blob) {
+    const micBtn = document.getElementById('mic-btn');
+    const textInput = document.getElementById('text-input');
+    try {
+        const resp = await fetch('/api/stt', {
+            method: 'POST',
+            headers: { 'Content-Type': blob.type || 'audio/webm' },
+            body: blob,
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (resp.ok && data.text && data.text.trim()) {
+            if (textInput) {
+                textInput.value = data.text.trim();
+                textInput.dispatchEvent(new Event('input'));
+            }
+            sendTextMessage();
+        } else {
+            console.warn('[voice] no transcript:', (data && data.error) || resp.status);
+            if (textInput) textInput.placeholder = (data && data.error) || 'Didn’t catch that — try again';
+        }
+    } catch (err) {
+        console.error('[voice] transcription request failed:', err);
+    } finally {
+        if (micBtn) {
+            micBtn.classList.remove('transcribing');
+            micBtn.setAttribute('aria-label', 'Record voice answer');
+            micBtn.title = 'Speak your answer';
+        }
+    }
+}
+
 function sendTextMessage() {
     const textInput = document.getElementById('text-input');
     const sendBtn = document.getElementById('send-btn');
@@ -1107,6 +1207,9 @@ document.addEventListener('DOMContentLoaded', function () {
     if (sendBtn) {
         sendBtn.addEventListener('click', sendTextMessage);
     }
+
+    // Voice input (push-to-talk mic -> /api/stt -> TEXT_INPUT)
+    setupVoiceInput();
 
     // Course creation modal
     if (courseForm) {

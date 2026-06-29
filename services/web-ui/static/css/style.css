@@ -3475,6 +3475,12 @@ select:focus {
     margin-left: 0.25rem;
 }
 
+/* Voice input (STT) mic button states */
+#mic-btn.recording { color: #e5484d; animation: mic-pulse 1.2s ease-in-out infinite; }
+#mic-btn.transcribing { opacity: 0.6; animation: mic-blink 1s ease-in-out infinite; }
+@keyframes mic-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.14); } }
+@keyframes mic-blink { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.85; } }
+
 .path-node.low-confidence .path-node-inner {
     border-color: var(--status-warning, #d4a843);
     box-shadow: 0 0 0 2px rgba(212, 168, 67, 0.25);

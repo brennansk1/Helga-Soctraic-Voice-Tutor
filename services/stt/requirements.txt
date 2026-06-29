@@ -1,0 +1,5 @@
+# Containerized fallback path (STT_BACKEND=faster-whisper, CPU).
+# The primary nemotron-mlx backend runs NATIVELY on the Apple-Silicon host and
+# installs its deps there (see README.md) — MLX/ANE cannot run in a Linux container.
+flask==3.0.0
+faster-whisper==1.0.3
