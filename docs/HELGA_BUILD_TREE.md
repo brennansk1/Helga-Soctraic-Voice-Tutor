@@ -233,6 +233,19 @@ All landed with tests green (381 passing; 1 pre-existing live-Ollama test desele
 
 **Still NOT_STARTED (need design/review):** B2.1 dense RAG + reranker, B6.3 per-session FSM scoping, B6.4 structured status events, SSE streaming, Tier C pedagogy (LearnLM prompt, pyBKT, answer-key verifier, FSRS↔Socratic).
 
+### New roadmap items — Tier E: Voice & UX overhaul (tasks #5–#7)
+
+Tracked in the session task list; queued for design/build.
+
+- **B7.3 / Task #5 — Offline STT + voice input in Learn** ⬜
+  Re-introduce offline speech-to-text (removed in the Mac migration; system is currently text-only). Recommended (research §5): **WhisperKit large-v3-turbo** (CoreML/ANE, streaming, lowest-latency native on Apple Silicon) or **faster-whisper / distil-whisper** (CTranslate2, containerizable to match the microservice arch) as the portable default; Moonshine/Parakeet as lightweight alternatives (Parakeet English-only). Add an `stt` service exposing `POST /api/stt` (audio→transcript) mirroring the `tts` service; frontend mic capture (MediaRecorder) + push-to-talk in `learn.html`/`session.js` → web-ui proxy → `/api/stt` → feed transcript into the existing `TEXT_INPUT` event path. Add **Silero VAD + endpointing** for turn-taking, interim-transcript display, and barge-in (cancel in-flight TTS). Target the <800ms voice-loop budget. Update `docker-compose.yml`, health polling, README, CLAUDE.md. Benchmark WER+latency on the real M4 before finalizing.
+
+- **B6.A / Task #6 — Learn-section UX overhaul** ⬜
+  Structured status-event envelope (B6.4) replacing free-text parsing; clean chat/streaming reconciliation (retire the monkey-patch, back with a small state store); integrate the new STT voice loop + TTS streaming; live progress/mastery without 2s-poll races; accessibility (modal focus traps, sane `aria-live`, keyboard path nav); responsive path-view SVG; remove dead UI (EDIT_MESSAGE, ZIM/sudo modal, Memory Palace rail, dead socket emits). Benefits from SSE streaming + per-session scoping (B6.3).
+
+- **B6.B / Task #7 — App-wide UX / design system** ⬜
+  Learner dashboard/analytics (mastery over time, Bloom progression, FSRS retention forecast, streaks; pairs with pyBKT + an xAPI event log); shared design system/components so the three creation wizards stop diverging; consolidate the multiple socket connections + `escapeHtml` impls; finish dark mode; first-run onboarding; **global search UI** (now that FTS5 exists); transcript export / session history; mobile pass; offline/connection indicator; optional lightweight reactive layer (Alpine.js / web components) on high-churn surfaces only; consider PWA (manifest + service worker).
+
 ### Honest caveats from research
 - Several research sources carried forward-dated (2026) datelines — re-verify specific model leaderboard claims against live model cards before adopting.
 - **Memory Palace** has a weak evidence base (small effect, high bias) — keep as opt-in for concrete material, not a core retention engine.

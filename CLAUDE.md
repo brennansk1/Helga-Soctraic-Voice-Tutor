@@ -3,7 +3,7 @@
 > ⚠️ **Stack reality (verified 2026-06-29).** This file's older sections drifted from the
 > actual system. The current stack — Mac Mini, Qwen3-14B/Ollama, Kokoro TTS, text-only,
 > SQLite, SearXNG/research — is documented below. A full reverse-engineered audit, feature
-> tree, and prioritized upgrade roadmap live in `HELGA_BUILD_TREE.md` (the source of truth
+> tree, and prioritized upgrade roadmap live in `docs/HELGA_BUILD_TREE.md` (the source of truth
 > for current state and known bugs). The "MASTER IMPLEMENTATION PLAN" lower in this file is
 > historical and references the old Jetson/Qwen2.5/ZIM/KuzuDB stack — treat it as archive.
 
@@ -14,7 +14,7 @@ Helga is an autonomous, fully-offline AI tutor that runs on a **Mac Mini M4 Pro 
 - **Microservices (6):** web-ui (Flask dashboard, port 5050→5000), core-logic (FSM + course creation, port 5003), rag-engine (course CRUD/search/flashcards, port 5002), tts (Kokoro, port 5005), searxng (self-hosted web search, port 8080), research (build-time content augmentation, port 5006). There is **no** input-node/audio-engine/inference-llm service; STT was removed (text-only).
 - **LLM:** **Ollama + Qwen3-14B** (`qwen3:14b`) on the host at `host.docker.internal:11434`, OpenAI-compatible chat API. Model name is set via `${OLLAMA_MODEL}` (default `qwen3:14b`) in `docker-compose.yml`.
 - **Storage:** SQLite (`helga.db`, WAL) + JSON course structures + Markdown concept files. KuzuDB and ZIM/`libzim` have been fully removed.
-- **AI Stack:** Qwen3-14B (Ollama), Kokoro TTS (`kokoro`), sentence-transformers `all-MiniLM-L6-v2` (currently loaded but **not used** for retrieval — `/search` is substring match; see `HELGA_BUILD_TREE.md` B2). No STT, no Piper, no Faster-Whisper, no CUDA.
+- **AI Stack:** Qwen3-14B (Ollama), Kokoro TTS (`kokoro`), sentence-transformers `all-MiniLM-L6-v2` (currently loaded but **not used** for retrieval — `/search` is substring match; see `docs/HELGA_BUILD_TREE.md` B2). No STT, no Piper, no Faster-Whisper, no CUDA.
 
 ## Key File Locations
 | File | Purpose |
@@ -49,9 +49,9 @@ Helga is an autonomous, fully-offline AI tutor that runs on a **Mac Mini M4 Pro 
 
 ## Known Constraints
 - **Mac Mini M4 Pro 24GB:** Ollama (Qwen3-14B Q4_K_M, ~9-10GB) runs natively on the host; containers share the remaining RAM. Sequential hydration; avoid speculative `gc.collect()`.
-- **Ollama is a hard external dependency:** all LLM calls go to `host.docker.internal:11434`; there is no fallback/circuit-breaker (see `HELGA_BUILD_TREE.md` B9.5).
+- **Ollama is a hard external dependency:** all LLM calls go to `host.docker.internal:11434`; there is no fallback/circuit-breaker (see `docs/HELGA_BUILD_TREE.md` B9.5).
 - **LLM output:** Qwen3-14B is far more reliable than the old 1.5B model, but JSON can still fail — always use `llm_generate_json()` with retry, and prefer Ollama's `format` (JSON-schema) constrained output where possible.
-- **Single global FSM session:** state is not per-user/per-tab; multiple browsers share one session (see `HELGA_BUILD_TREE.md` B6.3).
+- **Single global FSM session:** state is not per-user/per-tab; multiple browsers share one session (see `docs/HELGA_BUILD_TREE.md` B6.3).
 - **Socket.IO events are receive-only in browser** — all commands go Browser → HTTP POST `/api/event` → Web-UI → HTTP POST core `/event` → FSM
 
 ## Event System (FSM ↔ Web UI)
