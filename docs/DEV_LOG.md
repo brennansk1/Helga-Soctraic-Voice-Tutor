@@ -181,3 +181,39 @@ with WAL; column-whitelist upserts. Earlier fixes: B5.5 (course_uid preservation
 - Full suite 407 passing.
 
 **Deferred (noted):** cross-store transaction (B5.3); CourseStore pooling (no real benefit).
+
+---
+
+## B6 — Web UI / Frontend (`app.py`, templates, `static/js/*`)
+
+### 1. Understanding
+Flask + Socket.IO proxy; vanilla-JS frontend with hand-rolled chat diffing/streaming. Event
+flow Browser → `/api/event` → core → FSM; status/state pushed back over Socket.IO + a 2s
+state poller. Already improved this session: B6.5 (voice-key unified) and the STT voice loop
+(push-to-talk mic → `/api/stt` → `TEXT_INPUT`, barge-in).
+
+### 2. Best tools / optimized?
+The audit's structural items — free-text status-string parsing, multiple `io()` sockets,
+stacked listeners, monkey-patched `updateChatStream`, polling instead of push, global FSM
+state — are a **coherent overhaul**, not isolated bugs. They're scoped as **Tasks #6
+(Learn UX) and #7 (app-wide)**, which also pull in dark mode, dashboards, onboarding, global
+search, accessibility, mobile, and (optionally) a lightweight reactive layer / PWA.
+Doing them piecemeal here would churn code I can't run-test (no browser in CI), so the
+overhaul stays task-scoped. Confirmed-dead code, however, is safe to remove now.
+
+### 3. Features weighed
+- Full overhaul (structured events, SSE streaming, per-session scoping, dashboard) — high
+  value, large, browser-validated → Tasks #6/#7. Not slammed in blind.
+- Dead `update_settings` socket emit — no server handler; voice persists via localStorage
+  since B6.5. Safe to remove now.
+- `EDIT_MESSAGE` — has an FSM handler but the frontend `contentEditable` trigger never
+  fires (rendered messages use `.chat-msg`, never set editable). Left wired + noted rather
+  than ripping out both ends (it's a latent feature, not harmful).
+
+### 4. Refactored (this commit)
+- Removed the dead `socket.emit('update_settings')` from `handleVoiceChange` (no handler).
+  `node --check` clean.
+- The substantive Learn + app-wide UX work remains **Tasks #6 / #7** (browser-validated).
+
+**Deferred → Tasks #6 / #7:** structured status events, SSE streaming, per-session scoping,
+dashboard/analytics, dark mode, onboarding, global search, accessibility, mobile, PWA.

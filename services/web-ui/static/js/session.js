@@ -1327,14 +1327,10 @@ function handleVoiceChange() {
     if (!voiceSelector) return;
 
     const selectedVoice = voiceSelector.value;
-    localStorage.setItem('helga-voice', selectedVoice);  // B6.5: key playMessageTTS reads
-    console.log('[handleVoiceChange] Voice changed to:', selectedVoice);
-
-    // Emit Socket.IO event to update FSM
-    if (socket) {
-        socket.emit('update_settings', { voice_id: selectedVoice });
-        console.log('[handleVoiceChange] Emitted update_settings event');
-    }
+    // Voice is client-side only (read by playMessageTTS via this key). The old
+    // socket.emit('update_settings') here was dead — there is no server handler
+    // for it — so it was removed (B6.5).
+    localStorage.setItem('helga-voice', selectedVoice);
 }
 
 // --- Typing Indicator ---
