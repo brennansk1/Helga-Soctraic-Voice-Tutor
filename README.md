@@ -36,8 +36,8 @@ Mac Mini M4 Pro 24GB
 ### Setup
 
 ```bash
-# 1. Pull the LLM model
-ollama pull qwen3:14b
+# 1. Pull the LLM model (multimodal — text + vision)
+ollama pull qwen3.5:9b      # or qwen3.5:9b-mlx on Apple Silicon for faster decode
 
 # 2. Clone and start
 git clone <repo-url> && cd helga
@@ -114,7 +114,7 @@ make backup    # Backup SQLite database
 Copy `.env.example` to `.env` and adjust:
 
 ```bash
-OLLAMA_MODEL=qwen3:14b           # LLM model
+OLLAMA_MODEL=qwen3.5:9b          # LLM model (multimodal: text + vision)
 OLLAMA_URL=http://host.docker.internal:11434
 FLASK_ENV=production
 DEFAULT_VOICE=af_heart            # Kokoro TTS voice
@@ -130,15 +130,17 @@ the grading/tutoring model is a config change, not a code change.
 ### Swapping the model
 
 Set `OLLAMA_MODEL` in your `.env` (or the environment). `docker-compose.yml`
-already reads it with a default of `qwen3:14b`:
+already reads it with a default of `qwen3.5:9b` (multimodal — text + vision):
 
 ```yaml
-OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:14b}
+OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3.5:9b}
 ```
 
 ```bash
-# .env
-OLLAMA_MODEL=qwen3.5:9b
+# .env — alternatives
+OLLAMA_MODEL=qwen3.5:9b-mlx      # Apple-Silicon MLX build, faster decode
+# OLLAMA_MODEL=qwen3:14b         # heavier, text-only (previous default)
+# OLLAMA_MODEL=qwen3.5:35b-a3b   # MoE reach model (~20GB), stronger reasoning
 ```
 
 Pull the model first (`ollama pull qwen3.5:9b`), then restart:

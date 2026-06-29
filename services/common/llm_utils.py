@@ -155,7 +155,10 @@ def llm_generate(
             )  # Standard temperature, slight increase on retry
 
             data = {
-                "model": os.getenv("LLM_MODEL", "qwen2.5:14b"),
+                # Unify on OLLAMA_MODEL (the canonical var the rest of the stack
+                # uses); LLM_MODEL still overrides if explicitly set. Default is
+                # the multimodal Qwen3.5-9B (was a stale qwen2.5:14b).
+                "model": os.getenv("LLM_MODEL") or os.getenv("OLLAMA_MODEL", "qwen3.5:9b"),
                 "messages": [
                     {"role": "system", "content": sys_prompt},
                     {"role": "user", "content": prompt},

@@ -44,7 +44,7 @@ SERVICES = {
 }
 
 OLLAMA_URL = "http://localhost:11434"
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:14b")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3.5:9b")
 
 logging.basicConfig(
     level=logging.INFO,

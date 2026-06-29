@@ -19,7 +19,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 OLLAMA_URL = os.environ.get('OLLAMA_URL', 'http://host.docker.internal:11434')
-OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'qwen3:14b')
+OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'qwen3.5:9b')
 
 
 class LLMClient:
@@ -30,8 +30,23 @@ class LLMClient:
         self.model = model or OLLAMA_MODEL
         self.api_url = f"{self.base_url}/v1/chat/completions"
 
+    @staticmethod
+    def _user_content(user_message, images):
+        """Build the user message content. Plain string when no images; otherwise
+        the OpenAI-compat multimodal array (text + image_url parts) that Ollama's
+        vision models (e.g. qwen3.5:9b) accept. `images` items may be data URIs or
+        bare base64 (assumed PNG)."""
+        if not images:
+            return user_message
+        parts = [{"type": "text", "text": user_message}]
+        for img in images:
+            url = img if str(img).startswith("data:") else f"data:image/png;base64,{img}"
+            parts.append({"type": "image_url", "image_url": {"url": url}})
+        return parts
+
     def chat(self, system_prompt, user_message, max_tokens=512,
-             temperature=0.6, json_mode=False, json_schema=None, timeout=60, retries=3):
+             temperature=0.6, json_mode=False, json_schema=None, images=None,
+             timeout=60, retries=3):
         """Send a chat completion request to Ollama.
 
         Args:
@@ -43,6 +58,8 @@ class LLMClient:
             json_schema: Optional JSON Schema dict. When provided, Ollama (>=0.5)
                 grammar-constrains the output to the schema — far more reliable
                 than plain json_mode. Takes precedence over json_mode.
+            images: Optional list of images (data URIs or base64) for a multimodal
+                model (qwen3.5:9b). Enables vision — diagrams/figures in tutoring.
             timeout: Request timeout in seconds
             retries: Number of retry attempts
 
@@ -53,7 +70,7 @@ class LLMClient:
             "model": self.model,
             "messages": [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message}
+                {"role": "user", "content": self._user_content(user_message, images)}
             ],
             "max_tokens": max_tokens,
             "temperature": temperature,

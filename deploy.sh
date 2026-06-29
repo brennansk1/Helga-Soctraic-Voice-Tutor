@@ -12,7 +12,7 @@ command -v ollama >/dev/null 2>&1 || { echo "Ollama required. Install from ollam
 
 # 2. Pull LLM model
 echo "[2/5] Pulling Qwen 3 14B model..."
-ollama pull qwen3:14b
+ollama pull qwen3.5:9b
 
 # 3. Create data directories
 echo "[3/5] Setting up data directories..."

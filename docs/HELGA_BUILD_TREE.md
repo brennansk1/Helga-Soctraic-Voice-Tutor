@@ -270,6 +270,31 @@ Each item ties a research recommendation to the audit node it fixes.
 
 ---
 
+## B13 — Multimodal model & visuals in Socratic teaching (Tasks #1 + visuals)
+
+Default model is now **Qwen3.5-9B** (`qwen3.5:9b`, native text+vision; `qwen3.5:9b-mlx`
+on Apple Silicon). Smaller/faster than Qwen3-14B, frees RAM, and — the reason for the
+swap — multimodal, so visuals can become objects of Socratic inquiry.
+
+```
+B13  Multimodal & Visuals .......................................... 🔨
+├─ B13.1  Model swap → Qwen3.5-9B (multimodal) ................... ✅ config unified (compose/.env/
+│                                                                    deploy/main/llm_client/llm_utils)
+├─ B13.2  Vision-capable LLM client (images param) .............. ✅ chat(images=…) + tests
+├─ B13.3  Chat renders images + Mermaid (learn-chat.css + md) ... ⬜ (img styling, mermaid.js)
+├─ B13.4  Hydration: diagram-as-code step (Mermaid + Socratic Q)  ⬜ (constrained output, B1)
+├─ B13.5  Online image extraction + license filter + cache ...... ⬜ (research_server, B12/#10)
+├─ B13.6  VLM relevance/caption/alt-text pass ................... ⬜ (now native via qwen3.5:9b)
+├─ B13.7  Socratic visual-as-inquiry prompts (present/critique) . ⬜ (B3)
+├─ B13.8  Local diffusion for illustrations (pre-gen, cached) ... ⬜ (optional; not for technical diagrams)
+└─ B13.9  Accessibility: alt text feeds TTS/text-only path ...... ⬜
+```
+Principle: visuals are objects of inquiry, not decoration. Prefer verifiable diagram-as-code
+for technical content; reserve diffusion for non-factual illustration; pre-generate at
+course-creation time (never in the live dialogue turn). Runtime-validated on the M4/Ollama.
+
+---
+
 ## IMPLEMENTATION PROGRESS (branch `claude/hopeful-jackson-bc8db4`)
 
 All landed with tests green (381 passing; 1 pre-existing live-Ollama test deselected).
