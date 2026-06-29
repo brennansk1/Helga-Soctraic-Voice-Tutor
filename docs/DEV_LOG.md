@@ -56,3 +56,48 @@ Three sequential stages on a ~2,950-line module:
 - Tests: 31 course-builder tests pass; added a parity/property test for `progressive_bloom`.
 
 **Deferred (tracked):** schema-constrained generation for the builder (next B1 pass).
+
+---
+
+## B2 — Knowledge / RAG Layer (`services/rag/librarian.py`)
+
+### 1. Understanding
+The RAG service does course CRUD, search, flashcards, quiz. Search was substring-only;
+**B2.2 already replaced it with SQLite FTS5** (title + content, bm25) via `SearchStore`
+(prior commit), with a reindex hook on course build. The embedding model
+(`all-MiniLM-L6-v2`) was imported and **eagerly loaded at module import** (line 59) but
+**never called** — search didn't use it.
+
+### 2. Best tools / optimized?
+- **Dead eager load:** the embedding model + `sentence_transformers`/`numpy` imports were
+  pure startup cost (verified: `model` referenced only at its own definition; `np.` never
+  used). On the host, the hard `sentence_transformers` import even prevents importing
+  `librarian` without the heavy dep.
+- **No semantic retrieval:** lexical FTS5 is good but misses paraphrase matches
+  ("photosynthesis" vs "how plants make food"). Research (§2) says the highest-leverage
+  RAG win is **hybrid** (FTS5 + dense) fused by **RRF**, then a **reranker** — bigger than
+  the vector-store choice itself.
+- **Deps not installable here:** `sentence-transformers` and `sqlite-vec` are absent on the
+  Python-3.9 dev host, so dense retrieval can't be unit-tested locally — only in the
+  rag-engine container (3.11).
+
+### 3. Features weighed
+- **Full hybrid retrieval** (sqlite-vec + bge-m3/nomic embeddings + bge-reranker-v2-m3 +
+  header-aware chunking) — HIGHEST capability value, but model/runtime-dependent and
+  untestable here. **Queued as Task #8 (runtime-validated)** rather than shipped unverified.
+- **RRF fusion core** — pure, deterministic, testable *now*. Built it so the dense work has
+  a tested foundation to plug into.
+- Removing the embedding model entirely — rejected; it's the seam for the hybrid feature.
+  Made it lazy instead.
+
+### 4. Refactored (this commit), tests green
+- `librarian.py`: removed the eager unused model load + dead `sentence_transformers`/`numpy`
+  imports; added lazy `get_embed_model()` (loads only when dense retrieval calls it;
+  `EMBED_MODEL` env-overridable). Cuts container startup cost; makes the module importable
+  without the heavy dep.
+- New `services/common/retrieval.py`: `reciprocal_rank_fusion(ranked_lists, k=60, key=…)` —
+  score-normalization-free hybrid fusion, the reusable core for Task #8. +6 unit tests
+  (formula, dedup-by-identity, k-sensitivity, ties, validation).
+
+**Deferred → Task #8 (runtime-validated):** dense vectors (sqlite-vec) + reranker + chunking,
+benchmarked in-container / on the M4.

@@ -1,6 +1,4 @@
 from flask import Flask, request, jsonify
-from sentence_transformers import SentenceTransformer
-import numpy as np
 import logging
 import sys
 import os
@@ -55,11 +53,21 @@ except Exception as e:
 
 app = Flask(__name__)
 
-try:
-    model = SentenceTransformer("all-MiniLM-L6-v2")
-except Exception as e:
-    logger.warning(f"Failed to load SentenceTransformer: {e}")
-    model = None
+# Embedding model for (planned) dense/hybrid retrieval. Loaded LAZILY: the old
+# eager load was pure startup cost because search currently uses SQLite FTS5 and
+# nothing called the model (B2). get_embed_model() is the seam the sqlite-vec
+# hybrid pipeline will use once it lands (runtime-validated task).
+_embed_model = None
+
+
+def get_embed_model():
+    global _embed_model
+    if _embed_model is None:
+        from sentence_transformers import SentenceTransformer  # heavy import, lazy
+        name = os.getenv("EMBED_MODEL", "all-MiniLM-L6-v2")
+        logger.info(f"Loading embedding model: {name}")
+        _embed_model = SentenceTransformer(name)
+    return _embed_model
 
 # ZIM/KuzuDB removed — all content is LLM-generated and stored in SQLite + JSON
 

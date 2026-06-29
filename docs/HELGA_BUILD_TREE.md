@@ -72,11 +72,11 @@ T   Helga Trunk ...................................................... ✅
 │  │   └─ B1.3.2  speculative gc.collect() removed ................. ✅
 │  ├─ B1.4  Custom Course Wizard ................................... ✅ (3 overlapping endpoints)
 │  └─ B1.5  EPUB ingestion ......................................... 🚫 returns 202, no real impl
-├─ B2  Knowledge / RAG Layer ....................................... 🚫
-│  ├─ B2.1  Semantic retrieval (embeddings) ....................... 🚫 model loaded, NEVER called
-│  ├─ B2.2  Keyword search ......................................... 🧩 substring match only
-│  ├─ B2.3  Chunking / passages .................................... ⬜
-│  ├─ B2.4  Reranking .............................................. ⬜
+├─ B2  Knowledge / RAG Layer ....................................... 🔨
+│  ├─ B2.1  Semantic retrieval — lazy model + RRF core (Task #8) ... 🔨
+│  ├─ B2.2  Keyword search — SQLite FTS5 (title+content, bm25) ..... ✅
+│  ├─ B2.3  Chunking / passages .................................... ⬜ (Task #8)
+│  ├─ B2.4  Reranking .............................................. ⬜ (Task #8)
 │  ├─ B2.5  Citations / grounding .................................. ⬜ (prompts tell model to "fill gaps")
 │  └─ B2.6  Knowledge graph (prereq edges) ......................... ⬜ (KuzuDB removed)
 ├─ B3  Tutoring Engine (Socratic) .................................. ✅
