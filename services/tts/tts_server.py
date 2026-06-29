@@ -2,6 +2,7 @@ import hashlib
 import logging
 import os
 import io
+import tempfile
 
 import numpy as np
 import soundfile as sf
@@ -12,8 +13,14 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-CACHE_DIR = "/app/data/tts_cache"
-os.makedirs(CACHE_DIR, exist_ok=True)
+# Env-overridable; fall back to a temp dir so the module imports/runs outside the
+# container (and is testable) rather than crashing on a read-only /app at import.
+CACHE_DIR = os.environ.get("TTS_CACHE_DIR", "/app/data/tts_cache")
+try:
+    os.makedirs(CACHE_DIR, exist_ok=True)
+except (PermissionError, OSError):
+    CACHE_DIR = os.path.join(tempfile.gettempdir(), "helga_tts_cache")
+    os.makedirs(CACHE_DIR, exist_ok=True)
 
 pipeline = None
 

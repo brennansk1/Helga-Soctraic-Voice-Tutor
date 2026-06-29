@@ -120,7 +120,7 @@ T   Helga Trunk ...................................................... ✅
 │  └─ B7.3  STT / barge-in / turn-taking ........................... ⬜ (STT removed)
 ├─ B8  Safety .......................................................🧩
 │  ├─ B8.1  Keyword + TF-IDF filter ................................ 🧩 TF-IDF redundant; context override weak
-│  └─ B8.2  Prompt-injection defense ............................... 🚫 raw user/source text into prompts
+│  └─ B8.2  Prompt-injection defense — grading + examiner fenced ... ✅
 ├─ B9  Infra / Ops ................................................. ✅
 │  ├─ B9.1  docker-compose (6 svc, healthchecks) ................... ✅
 │  ├─ B9.2  OLLAMA_MODEL mismatch (qwen2.5 vs qwen3) ............... 🚫 BUG
@@ -133,7 +133,7 @@ T   Helga Trunk ...................................................... ✅
 ├─ B10 Testing .....................................................✅
 │  ├─ B10.1 Unit (storage/llm_utils/fsrs strong; 412 tests) ........ ✔️
 │  ├─ B10.2 Real E2E (event path) .................................. 🚫 mocked / no server fixture
-│  ├─ B10.3 research_server + tts_server tests ..................... ⬜ zero
+│  ├─ B10.3 tts_server tests ✅ + research ranking.py tested ....... 🔨 (research live path: integration)
 │  └─ B10.4 CI runs Docker/compose/e2e ............................. ⬜
 ├─ B11 Dead Code & Stale Docs ......................................🧩
    ├─ B11.1 night_audit.py + scripts/*.py import kuzu (crash) ...... 🧩

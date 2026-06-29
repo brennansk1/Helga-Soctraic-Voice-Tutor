@@ -260,3 +260,52 @@ pages). Domain tiers prefer .edu/.gov/wiki and **block** cheating sites (chegg/q
 - 38 builder/research tests pass.
 
 **Deferred:** inline citations (B12.8 → Tasks #8/#9); `course_title` unused (B12.9, harmless).
+
+---
+
+## B8 — Safety (`services/core/safety.py`, prompts)
+
+**1-2. Understanding / eval.** `check_safety_detailed()` (keyword + TF-IDF, fitted at import)
+gates user input in the FSM. The grading prompt was hardened earlier (B8.2); the **examiner
+grade prompt** (used by the spaced-repetition path) still interpolated `user_answer` raw —
+same injection exposure. The TF-IDF step is largely redundant (keyword substring already
+triggers) but changing the safety classifier is behavior-risky with no offline way to
+validate — left as noted.
+**3-4. Refactor.** Applied the same `sanitize_untrusted` + fenced-spotlight pattern to
+`get_examiner_grade_prompt`. Tests green.
+
+## B9 — Infra / Ops (`docker-compose.yml`, Dockerfiles)
+
+**1-2.** Earlier passes fixed the model-name mismatch, `.env`/secret wiring, and the STT
+deployment. Remaining: `core-logic` declared `TTS_URL`/`RESEARCH_URL` but had **no
+`depends_on`** for them, so it could call unready services at startup; `restart:
+unless-stopped` everywhere (no crash-loop cap); `searxng:latest` unpinned; torch shares a
+layer with requirements (cache churn).
+**3-4.** Added `depends_on: tts (healthy), research (healthy)` to core-logic (correct startup
+ordering). Kept `unless-stopped` (a valid production default for a single-box deploy — the
+crash-loop concern is minor and `on-failure:N` risks leaving services down). Image pinning /
+torch-layer split are build-time only and can't be validated in CI — noted for an infra PR.
+Compose validates.
+
+## B10 — Testing
+
+**1-2.** `tts_server` and `research_server` had **zero** tests. `research_server` is
+import-blocked off-container (heavy deps) — addressed in B12 by extracting `ranking.py`
+(now tested). `tts_server` was import-blocked too: it did `os.makedirs("/app/data/...")`
+**at import**, crashing off-container.
+**3-4.** Made `tts_server` CACHE_DIR env-overridable with a temp-dir fallback (importable +
+testable + more robust). Added **5 `tts_server` route tests** (health, voices, missing-text
+400, WAV synthesis via a faked pipeline, unknown-voice fallback). `research_server` live
+network/extraction still needs in-container/integration tests (noted).
+
+## B11 — Dead Code & Stale Docs
+
+Mostly resolved across earlier passes: deleted `rag/prompts.py`, `mock_safety.py`,
+`scripts/initialize_db.py`, `scripts/validate_rag.py`, `services/rag/migrate.py`; corrected
+CLAUDE.md; `night_audit.py` spun off as its own task (has reusable FSRS logic). Remaining
+items are low-value and intentional: `service_manager.py` is a deliberate no-op compat stub;
+the `play_sound`/`stop_audio` no-ops are harmless. Left as-is (noted) rather than churn.
+
+**Section pass complete: B1-B12 all reviewed.** Remaining work is the runtime/browser-
+validated tasks (#1, #6-#9) that can't be exercised in this Py-3.9 / no-Ollama / no-browser
+environment.
