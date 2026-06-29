@@ -309,3 +309,40 @@ the `play_sound`/`stop_audio` no-ops are harmless. Left as-is (noted) rather tha
 **Section pass complete: B1-B12 all reviewed.** Remaining work is the runtime/browser-
 validated tasks (#1, #6-#9) that can't be exercised in this Py-3.9 / no-Ollama / no-browser
 environment.
+
+---
+
+## FE — Frontend sweep (page by page + design system)
+
+### Foundation (committed 28118d6)
+The design *language* was already good (Alpine theme, dark/light, status/Bloom tokens). The
+problems were (a) missing scales and (b) inconsistent application. Added spacing /
+typography / motion / focus-ring tokens + `--shadow-lg` + semantic color aliases; global
+`:focus-visible` ring + reduced-motion guard. Expanded the build tree with a full FE
+decomposition (design system / components / pages / cross-cutting).
+
+### Color tokenization sweep (committed b5b03ce)
+4 parallel agents (disjoint templates) + status.html SVG icons migrated ~25 hardcoded /
+off-palette color literals (generic Tailwind green/amber/blue) onto theme tokens. Finding:
+templates were MORE token-consistent than the raw inline-style count implied (many inline
+styles already used `var()`); the real offenders were a handful of off-palette colors in
+`course_structure.html` (node states) and stray `#fff`. Dark mode now consistent.
+
+### Learn chatbox overhaul — the headline fix
+**Root cause found:** `learn.html` links `static/css/learn-chat.css?v=2`, but **that file
+never existed** (not in git history). So the entire chat shell, message bubbles, topbar,
+composer, badges, and thinking indicator rendered essentially unstyled — *the* reason the
+chatbox looked unprofessional.
+**Fix:** authored `learn-chat.css` (372 lines, 100% design-token-based, dark-mode automatic)
+covering every class the markup + `session.js` produce: full-height flex shell, sticky
+topbar (back / breadcrumb+title / progress·mode·bloom badges), centered reading column,
+distinct Helga (white card) vs user (tinted, right-aligned) bubbles with avatars, markdown
+typography (p/ul/code/pre), grade badges (g1-g4 → danger…success), hover-reveal TTS/copy
+actions, animated 3-dot thinking, hero, and a modern rounded composer (focus-ring,
+send/mic/pause) + disclaimer. Neutralized the conflicting legacy `.chat-msg` padding/max-
+width in style.css (load order verified: style.css → learn-chat.css). Bumped cache-buster
+`?v=2 → ?v=3`. Validated: braces balanced, all 37 referenced tokens defined.
+
+**Still page-by-page (FE3):** home, courses+wizard, review, schedule, quiz, settings,
+course_view/structure layout polish (colors done; spacing/component consistency next) — and
+the larger Tasks #6/#7 (structured status events, SSE streaming, dashboard, onboarding).

@@ -179,14 +179,14 @@ FE  Frontend ....................................................... 🔨
 │  ├─ FE2.3  Forms / inputs / selects ............................. 🧩 inline-styled in wizard
 │  ├─ FE2.4  Modals / dialogs ..................................... 🧩 multiple impls
 │  ├─ FE2.5  Nav / header / sidebar / hamburger ................... ✅
-│  ├─ FE2.6  Chat (messages, streaming, composer, mic) ............ ✅
+│  ├─ FE2.6  Chat (messages, streaming, composer, mic) ............ ✅ authored learn-chat.css (was MISSING/404)
 │  ├─ FE2.7  Badges / pills / progress bars ....................... ✅
 │  ├─ FE2.8  Toasts / banners / empty states ...................... 🧩 inconsistent
 │  └─ FE2.9  Loading / skeletons / spinners ....................... 🧩 partial
 ├─ FE3  Pages (per-template polish) ............................... 🔨
 │  ├─ FE3.1  home .................................................. ⬜
 │  ├─ FE3.2  courses + creation wizards ........................... ⬜ (25 + 34 inline styles)
-│  ├─ FE3.3  learn (path + session) ............................... ✅ (clean, 0 inline)
+│  ├─ FE3.3  learn (path + session) ............................... ✅ chatbox restyled (learn-chat.css)
 │  ├─ FE3.4  review ............................................... ⬜ (10 inline; off-palette)
 │  ├─ FE3.5  schedule ............................................. ⬜
 │  ├─ FE3.6  quiz ................................................. ⬜ (8 inline)
