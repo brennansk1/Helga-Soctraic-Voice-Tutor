@@ -397,3 +397,25 @@ space:
 Remaining (runtime/eval): prompt-quality review for skeleton/audit/hydration + move generation to
 schema-constrained output; generate sample courses across the param space and score for coherence /
 coverage / non-redundancy / Bloom-appropriateness / Learn-readiness on the real Ollama.
+
+---
+
+## Sprint — 4 parallel workstreams (1 mine + 3 agents, disjoint files)
+
+- **#12 / B13.7 — student image input in Learn (mine):** composer attach button + hidden file
+  input + pending preview (`learn.html`, `learn-chat.css`); `session.js` reads file→base64 data
+  URI, renders it in the user bubble, sends as `TEXT_INPUT.image`; `fsm_logic` threads the image
+  through `handle_socratic_answer(image=)` → `_call_llm(images=[…])` → the multimodal grader.
+  Markdown image rendering (B13.3) already landed. +2 FSM tests (image reaches grader / None when
+  absent). Live-validate the vision *response* on the M4.
+- **#9 / Tier C — LearnLM pedagogy (agent):** `SOCRATIC_SYSTEM_RULES` (never give the answer, one
+  question at a time, 4-step hint ladder, affirm-then-redirect, cognitive-load, metacognition)
+  prepended to the tutor + typed prompts; `get_hint_prompt` now a graduated ladder. +20 tests.
+- **#11 — course live-preview (agent):** the Quick Create sliders now show "~N modules · ~M
+  concepts · Bloom X→Y · est. build ~k min" live (client-side mirror of `compute_course_params`,
+  incl. the floor≤ceiling fix) — so settings show the course you'll actually get.
+- **#7 — dark-mode header toggle (agent):** a header sun/moon toggle using the existing
+  `helga-theme` mechanism (`setTheme()` in settings.js), synced with the settings modal.
+
+All disjoint, all additive; 432 tests pass; JS + all Jinja balanced. Queued **#13** (offline
+KaTeX math rendering in the chat).

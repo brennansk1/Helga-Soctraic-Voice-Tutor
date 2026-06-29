@@ -195,6 +195,23 @@ class TestGradingLogic(unittest.TestCase):
     def test_parse_grade_garbage_is_partial(self):
         self.assertEqual(self.fsm._parse_grade_response("no grade here at all")["grade"], 2)
 
+    def test_attached_image_is_passed_to_grader(self):
+        """B13/#12: an attached image reaches the multimodal grader via _call_llm."""
+        self.fsm.current_lesson_node = {'uid': 'node1', 'title': 'Test Node', 'text': 'Context'}
+        self.fsm.last_question = "What is X?"
+        self.fsm._call_llm = MagicMock(return_value='{"grade": 3, "feedback": "ok"}')
+        self.fsm.handle_socratic_answer("here is my diagram", image="data:image/png;base64,AAAA")
+        _, kwargs = self.fsm._call_llm.call_args
+        self.assertEqual(kwargs.get('images'), ["data:image/png;base64,AAAA"])
+
+    def test_no_image_passes_none(self):
+        self.fsm.current_lesson_node = {'uid': 'node1', 'title': 'Test Node', 'text': 'Context'}
+        self.fsm.last_question = "What is X?"
+        self.fsm._call_llm = MagicMock(return_value='{"grade": 3, "feedback": "ok"}')
+        self.fsm.handle_socratic_answer("text only")
+        _, kwargs = self.fsm._call_llm.call_args
+        self.assertIsNone(kwargs.get('images'))
+
     def test_ignorance_detection_bypasses_grading(self):
         """If user says 'I don't know', should bypass LLM grading and get grade 1."""
         self.fsm.current_lesson_node = {'uid': 'node1', 'title': 'Test Node', 'text': 'Context'}

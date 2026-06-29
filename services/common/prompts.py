@@ -29,6 +29,25 @@ def generate_security_token():
 UNTRUSTED_FENCE = "═══"
 
 
+# --- EVIDENCE-BASED SOCRATIC PEDAGOGY RULES ---
+# Grounded in LearnLM / Khanmigo research (§3) and Bloom's Taxonomy.
+# Prepended to every Socratic tutor system message so the model internalises
+# these constraints before reading any concept-specific content.
+SOCRATIC_SYSTEM_RULES = """SOCRATIC PEDAGOGY RULES (non-negotiable):
+1. Never give away the final answer. Guide the student to discover it through reasoning.
+2. Ask exactly ONE focused question per response — never multiple questions at once.
+3. Adapt to the learner's demonstrated level: simplify language for beginners, raise precision for advanced students.
+4. Follow the hint ladder strictly:
+   a. Start with a probing question that redirects thinking without revealing information.
+   b. If the student is still stuck after one attempt, offer a small conceptual hint (one sentence).
+   c. If still stuck, provide a larger hint that narrows the answer space significantly.
+   d. Only as a last resort, give a worked example — then immediately ask a parallel question to confirm transfer.
+5. Affirm what is correct in the student's answer before redirecting any misconceptions.
+6. Manage cognitive load: introduce one new idea at a time; do not front-load multiple concepts.
+7. Stimulate curiosity by framing questions around surprising, counterintuitive, or personally relevant scenarios.
+8. Promote metacognition: periodically ask the student to reflect on their reasoning process (e.g., "How did you arrive at that?", "What assumption are you making?")."""
+
+
 def sanitize_untrusted(text, max_len: int = 2000) -> str:
     """Prepare untrusted text for safe interpolation into a prompt (B8.2).
 
@@ -316,7 +335,9 @@ def get_socratic_tutor_prompt(context_text, conversation_history, system_note=No
         prior_str = f"\nPREVIOUS CONCEPTS COVERED: {', '.join(summaries)}. You may reference these to build connections."
 
     # Build system prompt
-    system_content = f"""{persona_str}
+    system_content = f"""{SOCRATIC_SYSTEM_RULES}
+
+{persona_str}
 
 YOUR ROLE: You are a Socratic Tutor. Your goal is to help the student build mental models by reasoning from simple premises.
 CRITICAL: The student has NOT read the text. You must TEACH them by guiding them through reasoning, not quizzing them on facts they haven't learned yet.
@@ -561,15 +582,50 @@ Task: Create a natural bridge sentence (under 20 words) connecting these topics.
 
 def get_hint_prompt(card_title, card_text, attempts):
     """
-    Generates a hint for a struggling student.
+    Generates a graduated hint for a struggling student following the Socratic hint ladder.
+
+    Hint ladder (matches SOCRATIC_SYSTEM_RULES §4):
+      attempts == 1 → probing question only — redirect thinking without revealing anything.
+      attempts == 2 → small conceptual hint (one sentence) that narrows the answer space slightly.
+      attempts >= 3 → large hint that narrows the answer space significantly; if attempts >= 4
+                      also append a worked example and a parallel transfer question.
 
     Returns:
         list: Messages array for chat completions API
     """
-    hint_type = "subtle" if attempts == 1 else "direct"
-    return [{"role": "system", "content": f"""context: {card_text}
+    if attempts == 1:
+        ladder_instruction = (
+            "HINT LADDER — Step 1 (probing question): "
+            "Do NOT reveal any part of the answer. "
+            "Ask one redirecting question that nudges the student's thinking toward the concept "
+            "without giving information away. Under 20 words."
+        )
+    elif attempts == 2:
+        ladder_instruction = (
+            "HINT LADDER — Step 2 (small hint): "
+            "Provide one sentence that narrows the answer space slightly — reveal a single "
+            "relevant fact or frame the problem differently. Do NOT state the answer. Under 25 words."
+        )
+    elif attempts == 3:
+        ladder_instruction = (
+            "HINT LADDER — Step 3 (large hint): "
+            "Provide a more direct hint that significantly narrows the answer space. "
+            "You may name the key principle involved but do NOT state the full answer. Under 30 words."
+        )
+    else:
+        ladder_instruction = (
+            "HINT LADDER — Step 4 (worked example, last resort): "
+            "Give a brief worked example that illustrates the concept, then immediately ask a "
+            "parallel question on a different scenario to confirm the student can transfer the insight. "
+            "Under 50 words total."
+        )
+
+    return [{"role": "system", "content": f"""Context: {card_text}
 Concept: {card_title}
-Task: Provide a {hint_type} hint (under 15 words) without revealing the answer."""}]
+
+{ladder_instruction}
+
+Rules: Never give away the final answer directly. Affirm any correct elements the student has shown before hinting."""}]
 
 
 # --- ENRICHMENT PROMPTS (Ingestion) ---

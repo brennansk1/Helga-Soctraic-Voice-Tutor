@@ -15,6 +15,7 @@ from prompts import (
     get_hint_prompt,
     sanitize_untrusted,
     UNTRUSTED_FENCE,
+    SOCRATIC_SYSTEM_RULES,
 )
 
 
@@ -108,6 +109,152 @@ def test_get_hint_prompt():
     assert isinstance(result, list)
     contents = " ".join(m.get("content", "") for m in result)
     assert "gravity" in contents.lower()
+
+
+# --- Pedagogy / SOCRATIC_SYSTEM_RULES tests ---
+
+def test_socratic_system_rules_is_string():
+    assert isinstance(SOCRATIC_SYSTEM_RULES, str)
+    assert len(SOCRATIC_SYSTEM_RULES) > 50
+
+
+def test_socratic_system_rules_never_give_answer():
+    """SOCRATIC_SYSTEM_RULES must encode the never-give-the-answer rule."""
+    rules_lower = SOCRATIC_SYSTEM_RULES.lower()
+    assert "never give away the final answer" in rules_lower or "never give" in rules_lower
+
+
+def test_socratic_system_rules_hint_ladder():
+    """SOCRATIC_SYSTEM_RULES must encode the hint ladder concept."""
+    rules_lower = SOCRATIC_SYSTEM_RULES.lower()
+    assert "hint ladder" in rules_lower or "ladder" in rules_lower
+
+
+def test_socratic_system_rules_one_question():
+    """SOCRATIC_SYSTEM_RULES must encode the one-question-at-a-time rule."""
+    rules_lower = SOCRATIC_SYSTEM_RULES.lower()
+    assert "one" in rules_lower and "question" in rules_lower
+
+
+def test_socratic_system_rules_metacognition():
+    """SOCRATIC_SYSTEM_RULES must encode metacognition promotion."""
+    assert "metacognition" in SOCRATIC_SYSTEM_RULES.lower() or "metacognit" in SOCRATIC_SYSTEM_RULES.lower()
+
+
+def test_socratic_tutor_prompt_contains_rules():
+    """get_socratic_tutor_prompt() system content must include SOCRATIC_SYSTEM_RULES."""
+    result = get_socratic_tutor_prompt("Test concept context", [])
+    system_messages = [m for m in result if m.get("role") == "system"]
+    assert system_messages, "No system message found"
+    # Rules must appear in the first system message (prepended)
+    first_system = system_messages[0]["content"]
+    assert SOCRATIC_SYSTEM_RULES in first_system
+
+
+def test_socratic_tutor_prompt_interpolates_context():
+    """get_socratic_tutor_prompt() must interpolate the concept/context text."""
+    ctx = "Unique context string about photosynthesis XYZ987"
+    result = get_socratic_tutor_prompt(ctx, [])
+    all_content = " ".join(m.get("content", "") for m in result)
+    assert ctx in all_content
+
+
+def test_socratic_tutor_prompt_returns_nonempty_list():
+    """get_socratic_tutor_prompt() must return a non-empty messages list."""
+    result = get_socratic_tutor_prompt("some context", [("q", "a")])
+    assert isinstance(result, list)
+    assert len(result) > 0
+    for m in result:
+        assert "role" in m and "content" in m
+
+
+def test_typed_socratic_prompt_contains_rules():
+    """get_typed_socratic_prompt() must include SOCRATIC_SYSTEM_RULES (delegates to tutor)."""
+    result = get_typed_socratic_prompt("SCENARIO", "Context about gravity", [])
+    system_messages = [m for m in result if m.get("role") == "system"]
+    assert system_messages, "No system message found"
+    first_system = system_messages[0]["content"]
+    assert SOCRATIC_SYSTEM_RULES in first_system
+
+
+def test_typed_socratic_prompt_interpolates_context():
+    """get_typed_socratic_prompt() must interpolate the concept/context text."""
+    ctx = "Unique typed context about entropy ABC123"
+    result = get_typed_socratic_prompt("MECHANISM", ctx, [])
+    all_content = " ".join(m.get("content", "") for m in result)
+    assert ctx in all_content
+
+
+def test_typed_socratic_prompt_returns_nonempty_list():
+    """get_typed_socratic_prompt() must return a non-empty messages list."""
+    result = get_typed_socratic_prompt("CONTRAST", "ctx", [("u", "a")])
+    assert isinstance(result, list)
+    assert len(result) > 0
+
+
+def test_hint_ladder_step1_probing():
+    """Hint at attempts=1 should mention probing/redirecting, not revealing."""
+    result = get_hint_prompt("Newton's Laws", "Physics context", 1)
+    content = result[0]["content"].lower()
+    assert "probing" in content or "redirect" in content or "step 1" in content
+
+
+def test_hint_ladder_step2_small_hint():
+    """Hint at attempts=2 should use small/narrow language."""
+    result = get_hint_prompt("Newton's Laws", "Physics context", 2)
+    content = result[0]["content"].lower()
+    assert "step 2" in content or "small" in content or "narrows" in content
+
+
+def test_hint_ladder_step3_large_hint():
+    """Hint at attempts=3 should use large/direct language."""
+    result = get_hint_prompt("Newton's Laws", "Physics context", 3)
+    content = result[0]["content"].lower()
+    assert "step 3" in content or "large" in content or "direct" in content
+
+
+def test_hint_ladder_step4_worked_example():
+    """Hint at attempts=4+ should mention worked example."""
+    result = get_hint_prompt("Newton's Laws", "Physics context", 4)
+    content = result[0]["content"].lower()
+    assert "worked example" in content or "step 4" in content
+
+
+def test_hint_ladder_never_give_answer():
+    """All hint levels must instruct not to give away the final answer."""
+    for attempts in [1, 2, 3, 4]:
+        result = get_hint_prompt("Concept", "Context", attempts)
+        content = result[0]["content"].lower()
+        assert "never" in content or "not" in content or "do not" in content, (
+            f"attempts={attempts}: hint should instruct against revealing the answer"
+        )
+
+
+def test_hint_prompt_interpolates_concept_and_context():
+    """get_hint_prompt() must include the card_title and card_text."""
+    title = "Special Relativity XYZ"
+    text = "Context about time dilation ABC"
+    for attempts in [1, 2, 3]:
+        result = get_hint_prompt(title, text, attempts)
+        content = result[0]["content"]
+        assert title in content
+        assert text in content
+
+
+def test_grading_and_examiner_prompts_unmodified():
+    """Grading/examiner prompts must NOT contain SOCRATIC_SYSTEM_RULES."""
+    grading = get_socratic_grading_prompt("Topic", "Q", "A")
+    examiner_q = get_examiner_question_prompt("ctx")
+    examiner_g = get_examiner_grade_prompt("Q", "A", "ctx")
+    for msgs, name in [
+        (grading, "grading"),
+        (examiner_q, "examiner_q"),
+        (examiner_g, "examiner_g"),
+    ]:
+        all_content = " ".join(m.get("content", "") for m in msgs)
+        assert SOCRATIC_SYSTEM_RULES not in all_content, (
+            f"{name} prompt should not contain SOCRATIC_SYSTEM_RULES"
+        )
 
 
 def test_no_llama_tokens():

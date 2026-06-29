@@ -285,7 +285,7 @@ B13  Multimodal & Visuals .......................................... 🔨
 ├─ B13.4  Hydration: diagram-as-code step (Mermaid + Socratic Q)  ⬜ (constrained output, B1)
 ├─ B13.5  Online image extraction + license filter + cache ...... ⬜ (research_server, B12/#10)
 ├─ B13.6  VLM relevance/caption/alt-text pass ................... ⬜ (now native via qwen3.5:9b)
-├─ B13.7  Socratic visual-as-inquiry prompts (present/critique) . ⬜ (B3)
+├─ B13.7  Student image input in Learn (attach→FSM→grader) ...... ✅ wired end-to-end (live-validate vision)
 ├─ B13.8  Local diffusion for illustrations (pre-gen, cached) ... ⬜ (optional; not for technical diagrams)
 └─ B13.9  Accessibility: alt text feeds TTS/text-only path ...... ⬜
 ```

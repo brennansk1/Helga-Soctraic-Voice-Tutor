@@ -214,6 +214,31 @@
     border-radius: var(--border-radius-sm);
 }
 
+/* Pending attached-image preview above the composer (B13 / Task #12) */
+.learn-chat-image-preview {
+    max-width: 760px;
+    margin: 0 auto var(--space-2);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+.learn-chat-image-preview.hidden { display: none; }
+.learn-chat-image-preview img {
+    max-height: 56px;
+    border-radius: var(--border-radius-sm);
+    border: 1px solid var(--border-color);
+}
+.learn-chat-image-preview .remove-image {
+    border: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    line-height: 1;
+    cursor: pointer;
+}
+
 /* Grade badge (on the graded user message) */
 .chat-msg-grade-badge {
     display: inline-block;

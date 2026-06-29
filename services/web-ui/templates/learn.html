@@ -74,7 +74,12 @@
 
         <!-- Input area (typing form) -->
         <div class="learn-chat-input-area">
+            <div id="image-preview" class="learn-chat-image-preview hidden" aria-live="polite"></div>
             <form class="learn-chat-input-form" id="chat-input-form" onsubmit="return false;">
+                <input type="file" id="image-input" accept="image/*" hidden>
+                <button type="button" id="attach-btn" class="learn-chat-action-btn" title="Attach an image" aria-label="Attach an image">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+                </button>
                 <div class="learn-chat-input-wrapper">
                     <textarea id="text-input" class="learn-chat-input" placeholder="Type your answer…" autocomplete="off" rows="1" required></textarea>
                     <button type="submit" id="send-btn" class="learn-chat-send-btn" title="Send" aria-label="Send message">

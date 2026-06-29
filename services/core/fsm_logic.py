@@ -755,7 +755,11 @@ class MnemosyneFSM:
             if event_type == "TEXT_INPUT":
                 if self.handle_nav_commands(text):
                     return
-                self.handle_socratic_answer(text)
+                # B13/#12: an attached image (base64 data URI) is passed to the
+                # multimodal grader so the tutor can see a diagram or the
+                # student's worked answer.
+                image = event.get("payload", {}).get("image")
+                self.handle_socratic_answer(text, image=image)
 
         elif self.state == "SPACED_REPETITION":
             if event_type == "TEXT_INPUT":
@@ -1973,7 +1977,7 @@ class MnemosyneFSM:
             logging.warning(f"Grading parse error: {e}")
             return fail
 
-    def handle_socratic_answer(self, text):
+    def handle_socratic_answer(self, text, image=None):
         latency = time.time() - self.question_start_time
         self.question_start_time = 0
 
@@ -2009,7 +2013,8 @@ class MnemosyneFSM:
             # tolerant parser below is the fallback for older Ollama. A grading
             # failure resolves to grade 2 (partial), never a passing grade (B3.3).
             content = self._call_llm(prompt, max_tokens=500, timeout=45,
-                                     json_schema=GRADE_JSON_SCHEMA)
+                                     json_schema=GRADE_JSON_SCHEMA,
+                                     images=[image] if image else None)
             result = self._parse_grade_response(content)
             grade = result["grade"]
             missing_concepts = result["missing_concepts"]

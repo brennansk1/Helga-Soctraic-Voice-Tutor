@@ -101,6 +101,7 @@
                 </div>
             </div>
             <div class="depth-estimate" id="qc-depth-estimate">~8 concepts · ~1.5 hours</div>
+            <div id="qc-preview" style="font-size: var(--font-size-sm, 0.82rem); color: var(--text-secondary); margin-top: var(--space-2, 0.5rem); padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem); background: var(--bg-subtle, rgba(0,0,0,0.08)); border-radius: 6px; line-height: 1.5;"></div>
             <div class="form-group-alpine">
                 <label for="qc-style">Teaching Style</label>
                 <select id="qc-style">
@@ -173,5 +174,56 @@
 <script src="{{ url_for('static', filename='js/socket.io.min.js') }}"></script>
 <script src="{{ url_for('static', filename='js/progress-tree.js') }}?v=1"></script>
 <script src="{{ url_for('static', filename='js/courses.js') }}?v=6"></script>
+<script>
+(function () {
+    var SCOPE_MODULE_BASE       = [0, 3, 4, 6, 8, 11];   // index 1-5
+    var MASTERY_CONCEPTS        = [0, 3, 4, 5, 7, 10];
+    var MASTERY_BLOOM_CEIL      = [0, 2, 3, 4, 5, 6];
+    var START_SKIP_FACTOR       = [0, 0, 0, 1, 2, 3];
+    var START_BLOOM_FLOOR       = [0, 1, 1, 2, 3, 4];
+    var BLOOM_LABELS            = ['', 'Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create'];
+    var SECS_PER_CONCEPT        = 6;
+
+    function updateQcPreview() {
+        var scope   = parseInt(document.getElementById('qc-scope').value,   10);
+        var mastery = parseInt(document.getElementById('qc-mastery').value, 10);
+        var start   = parseInt(document.getElementById('qc-start').value,   10);
+
+        var moduleBase      = SCOPE_MODULE_BASE[scope];
+        var skipFactor      = START_SKIP_FACTOR[start];
+        var bloomFloor      = START_BLOOM_FLOOR[start];
+        var bloomCeil       = Math.max(MASTERY_BLOOM_CEIL[mastery], bloomFloor);
+        var modules         = Math.max(2, moduleBase - skipFactor);
+        var conceptsPer     = MASTERY_CONCEPTS[mastery];
+        var approxConcepts  = modules * conceptsPer;
+
+        var totalSecs       = approxConcepts * SECS_PER_CONCEPT;
+        var minutesLow      = Math.round(totalSecs / 60);
+        var minutesHigh     = Math.round(totalSecs * 1.4 / 60);
+
+        var el = document.getElementById('qc-preview');
+        if (!el) return;
+        el.textContent =
+            '~' + Math.round(modules) + ' modules · ' +
+            '~' + Math.round(approxConcepts) + ' concepts · ' +
+            'Bloom ' + BLOOM_LABELS[bloomFloor] + ' → ' + BLOOM_LABELS[bloomCeil] + ' · ' +
+            'est. build ~' + minutesLow + '–' + minutesHigh + ' min';
+    }
+
+    function wireQcPreview() {
+        ['qc-scope', 'qc-mastery', 'qc-start'].forEach(function (id) {
+            var el = document.getElementById(id);
+            if (el) el.addEventListener('input', updateQcPreview);
+        });
+        updateQcPreview();
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', wireQcPreview);
+    } else {
+        wireQcPreview();
+    }
+})();
+</script>
 {% endblock %}
 {% endblock %}

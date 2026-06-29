@@ -928,14 +928,61 @@ async function transcribeAndSend(blob) {
     }
 }
 
+// --- Image input (vision) -----------------------------------------------
+// Attach an image (a diagram, or a photo of the student's work); it's sent with
+// the next message as a base64 data URI for the multimodal model (qwen3.5:9b) to
+// see and discuss Socratically (B13 / Task #12).
+function setupImageAttach() {
+    const attachBtn = document.getElementById('attach-btn');
+    const fileInput = document.getElementById('image-input');
+    if (!attachBtn || !fileInput) return;
+    if (typeof FileReader === 'undefined') { attachBtn.style.display = 'none'; return; }
+    attachBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => {
+        const file = fileInput.files && fileInput.files[0];
+        if (!file || !file.type.startsWith('image/')) return;
+        if (file.size > 8 * 1024 * 1024) {           // 8 MB cap
+            const el = document.getElementById('image-preview');
+            if (el) { el.textContent = 'Image too large (max 8 MB).'; el.classList.remove('hidden'); }
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => { window._pendingImage = reader.result; showImagePreview(reader.result); };
+        reader.readAsDataURL(file);
+        fileInput.value = '';                         // allow re-selecting the same file
+    });
+}
+
+function showImagePreview(dataUri) {
+    const el = document.getElementById('image-preview');
+    if (!el) return;
+    el.innerHTML = '';
+    const img = document.createElement('img');
+    img.src = dataUri; img.alt = 'Attached image preview';
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'remove-image';
+    btn.setAttribute('aria-label', 'Remove image'); btn.title = 'Remove'; btn.textContent = '×';
+    btn.addEventListener('click', clearImagePreview);
+    el.appendChild(img); el.appendChild(btn);
+    el.classList.remove('hidden');
+}
+
+function clearImagePreview() {
+    window._pendingImage = null;
+    const el = document.getElementById('image-preview');
+    if (el) { el.innerHTML = ''; el.classList.add('hidden'); }
+}
+
 function sendTextMessage() {
     const textInput = document.getElementById('text-input');
     const sendBtn = document.getElementById('send-btn');
     const inputWrapper = textInput ? textInput.closest('.learn-chat-input-wrapper') : null;
     const text = textInput ? textInput.value.trim() : '';
+    const pendingImage = window._pendingImage || null;
 
-    // Input Guard: prevent empty sends or rapid double-submissions
-    if (!text || (sendBtn && sendBtn.disabled) || (textInput && textInput.disabled)) {
+    // Input Guard: prevent empty sends or rapid double-submissions. An attached
+    // image alone (no text) is a valid send (B13 / Task #12).
+    if ((!text && !pendingImage) || (sendBtn && sendBtn.disabled) || (textInput && textInput.disabled)) {
         if (textInput) textInput.focus();
         return;
     }
@@ -966,6 +1013,7 @@ function sendTextMessage() {
                 <img class="chat-msg-avatar" src="${userAvatar}" alt="You"
                      onerror="this.src='/static/img/user-avatar.svg'">
                 <div class="chat-msg-body">
+                    ${pendingImage ? `<img class="chat-msg-image" src="${pendingImage}" alt="Attached image">` : ''}
                     <div class="chat-msg-text">${safeText}</div>
                 </div>
             </div>
@@ -980,7 +1028,10 @@ function sendTextMessage() {
         // it against the optimistic bubble.
     }
 
-    sendEvent('TEXT_INPUT', { text: text });
+    const _payload = { text: text };
+    if (pendingImage) _payload.image = pendingImage;   // base64 data URI for the vision model
+    sendEvent('TEXT_INPUT', _payload);
+    clearImagePreview();
     if (textInput) {
         textInput.value = '';
         // Reset textarea height
@@ -1219,6 +1270,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Voice input (push-to-talk mic -> /api/stt -> TEXT_INPUT)
     setupVoiceInput();
+    // Image input (attach -> base64 -> TEXT_INPUT.image -> vision model)
+    setupImageAttach();
 
     // Course creation modal
     if (courseForm) {
