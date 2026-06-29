@@ -1202,12 +1202,14 @@ function fetchAndPopulateVoices() {
                 voiceSelector.appendChild(option);
             });
 
-            // Restore previous selection from localStorage
-            const savedVoice = localStorage.getItem('helga_voice_id');
+            // Restore previous selection from localStorage. B6.5: use the SAME
+            // key that playMessageTTS reads ('helga-voice'), and default to a real
+            // Kokoro voice id ('af_heart') so the dropdown actually drives playback.
+            const savedVoice = localStorage.getItem('helga-voice');
             if (savedVoice && voices.includes(savedVoice)) {
                 voiceSelector.value = savedVoice;
             } else {
-                voiceSelector.value = 'Vivian'; // Default
+                voiceSelector.value = voices.includes('af_heart') ? 'af_heart' : voices[0];
             }
 
             console.log('[fetchAndPopulateVoices] Voices populated:', voices);
@@ -1222,7 +1224,7 @@ function handleVoiceChange() {
     if (!voiceSelector) return;
 
     const selectedVoice = voiceSelector.value;
-    localStorage.setItem('helga_voice_id', selectedVoice);
+    localStorage.setItem('helga-voice', selectedVoice);  // B6.5: key playMessageTTS reads
     console.log('[handleVoiceChange] Voice changed to:', selectedVoice);
 
     // Emit Socket.IO event to update FSM

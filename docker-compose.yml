@@ -13,6 +13,7 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       - FLASK_ENV=production
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-}
       - CORE_LOGIC_URL=http://helga-core-logic:5003
       - RAG_URL=http://helga-rag-engine:5002
       - TTS_URL=http://helga-tts:5005
@@ -48,7 +49,7 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       - OLLAMA_URL=http://host.docker.internal:11434
-      - OLLAMA_MODEL=qwen2.5:14b
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3:14b}
       - RAG_URL=http://helga-rag-engine:5002
       - TTS_URL=http://helga-tts:5005
       - WEB_UI_URL=http://helga-web-ui:5000
@@ -85,7 +86,7 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       - OLLAMA_URL=http://host.docker.internal:11434
-      - OLLAMA_MODEL=qwen2.5:14b
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3:14b}
       - HF_HOME=/app/data/hf_cache
       - TRANSFORMERS_CACHE=/app/data/hf_cache
       - FLASK_ENV=production

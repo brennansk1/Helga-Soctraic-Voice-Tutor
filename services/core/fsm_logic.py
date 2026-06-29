@@ -30,6 +30,7 @@ from services.common.prompts import (
     get_micro_lecture_prompt,
     get_typed_socratic_prompt,
     SOCRATIC_QUESTION_TYPES,
+    GRADE_JSON_SCHEMA,
 )
 from fsrs_engine import FSRSEngine
 
@@ -379,13 +380,15 @@ class MnemosyneFSM:
         except Exception as e:
             logging.warning(f"Failed to broadcast state: {e}")
 
-    def _call_llm(self, messages, max_tokens=1000, timeout=60):
+    def _call_llm(self, messages, max_tokens=1000, timeout=60, json_schema=None):
         """Call the LLM via Ollama client.
 
         Args:
             messages: List of message dicts [{"role": "system", "content": "..."}]
             max_tokens: Maximum tokens to generate
             timeout: Request timeout in seconds
+            json_schema: Optional JSON Schema dict to grammar-constrain the output
+                (Ollama >= 0.5). Use for structured responses like grading.
 
         Returns:
             str: The LLM response text, or None on failure
@@ -407,6 +410,7 @@ class MnemosyneFSM:
             user_message.strip() or "Continue the conversation.",
             max_tokens=max_tokens,
             timeout=timeout,
+            json_schema=json_schema,
         )
         return result if result else None
 
@@ -1933,7 +1937,10 @@ class MnemosyneFSM:
             )
             try:
                 logging.info(f"LLM Grading Request for: {self.current_lesson_node['title']}")
-                content = self._call_llm(prompt, max_tokens=500, timeout=45)
+                # Grammar-constrain the grade to valid JSON (Ollama >= 0.5). The
+                # regex/repair path below stays as a fallback for older Ollama.
+                content = self._call_llm(prompt, max_tokens=500, timeout=45,
+                                         json_schema=GRADE_JSON_SCHEMA)
                 if content:
                     logging.info(f"LLM Grading Content: {content[:200]}...")
                     # Robust JSON extraction
@@ -1975,10 +1982,15 @@ class MnemosyneFSM:
                         )
                 else:
                     logging.error("LLM Grading returned None")
-                    grade = 3
+                    # Do NOT default a grading failure to a passing grade (>=3):
+                    # that silently credits a wrong/ungraded answer toward mastery.
+                    # Grade 2 = partial → resets streak, holds Bloom, re-asks the
+                    # same question type without false progress. (B3.3)
+                    grade = 2
             except Exception as e:
                 logging.warning(f"Grading parse error: {e}")
-                grade = 3
+                # Parse failure must not pass the student. See note above. (B3.3)
+                grade = 2
 
         # Store grade for rule-based mode selection (replaces LLM classifier)
         self._last_socratic_grade = grade

@@ -8,6 +8,7 @@ Replaces KuzuDB with three storage mechanisms:
 """
 
 import os
+import re
 import json
 import sqlite3
 import logging
@@ -66,6 +67,7 @@ class StorageManager:
         self.schedule = ScheduleStore(self.db_path)
         self.settings = SettingsStore(self.db_path)
         self.flashcards = FlashcardStore(self.db_path)
+        self.search = SearchStore(self.db_path, self.courses)
 
     def _init_db(self):
         """Create SQLite tables if they don't exist."""
@@ -486,6 +488,133 @@ class CourseStore:
         return {"modules": m, "units": u, "lessons": l, "concepts": c}
 
 
+class SearchStore:
+    """SQLite FTS5 full-text search over concept titles and content.
+
+    Builds and queries a virtual table `concept_fts(concept_uid, course_uid,
+    title, content)`. Ranking uses bm25(). The index is rebuilt lazily from the
+    course JSON/Markdown sources whenever it is empty so callers don't have to
+    manage it explicitly.
+    """
+
+    def __init__(self, db_path: str, course_store: "CourseStore"):
+        self.db_path = db_path
+        self.courses = course_store
+        self._db = _ThreadLocalDB(db_path)
+        self._available = None  # tri-state: None=unknown, True/False once probed
+        self._ensure_table()
+
+    def _get_db(self) -> sqlite3.Connection:
+        return self._db.get()
+
+    def is_available(self) -> bool:
+        """Whether FTS5 is compiled into the runtime SQLite build."""
+        if self._available is None:
+            self._ensure_table()
+        return bool(self._available)
+
+    def _ensure_table(self):
+        """Create the FTS5 virtual table if FTS5 is available."""
+        if self._available is False:
+            return
+        conn = self._get_db()
+        try:
+            conn.execute(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS concept_fts USING fts5("
+                "concept_uid, course_uid, title, content)"
+            )
+            conn.commit()
+            self._available = True
+        except sqlite3.OperationalError as e:
+            # FTS5 not compiled in — callers must fall back to substring search.
+            logger.warning(f"FTS5 unavailable, full-text search disabled: {e}")
+            self._available = False
+
+    @staticmethod
+    def _sanitize_query(query: str) -> str:
+        """Turn arbitrary user text into a safe FTS5 MATCH expression.
+
+        Each whitespace-separated token is wrapped in double quotes (escaping
+        embedded quotes) so punctuation can't be interpreted as FTS5 operators
+        or cause syntax errors. A trailing ``*`` on each term enables prefix
+        matching for a friendlier search-as-you-type feel.
+        """
+        tokens = [t for t in re.split(r"\s+", query.strip()) if t]
+        safe_terms = []
+        for tok in tokens:
+            escaped = tok.replace('"', '""')
+            safe_terms.append(f'"{escaped}"*')
+        return " ".join(safe_terms)
+
+    def _row_count(self) -> int:
+        conn = self._get_db()
+        try:
+            row = conn.execute("SELECT COUNT(*) AS c FROM concept_fts").fetchone()
+            return row["c"] if row else 0
+        except sqlite3.OperationalError:
+            return 0
+
+    def rebuild_search_index(self) -> int:
+        """Walk every course and repopulate the FTS index. Returns row count."""
+        if not self.is_available():
+            return 0
+        conn = self._get_db()
+        conn.execute("DELETE FROM concept_fts")
+        count = 0
+        for course in self.courses.list_courses():
+            course_uid = course.get("uid")
+            if not course_uid:
+                continue
+            for concept in self.courses.get_flat_concepts(course_uid):
+                concept_uid = concept.get("uid")
+                if not concept_uid:
+                    continue
+                content = self.courses.get_concept_content(course_uid, concept_uid)
+                conn.execute(
+                    "INSERT INTO concept_fts (concept_uid, course_uid, title, content) "
+                    "VALUES (?, ?, ?, ?)",
+                    (concept_uid, course_uid, concept.get("title", ""), content or ""),
+                )
+                count += 1
+        conn.commit()
+        logger.info(f"Rebuilt concept FTS index with {count} concept(s)")
+        return count
+
+    def search(self, query: str, course_uid: str = None, limit: int = 10) -> List[dict]:
+        """Full-text search concepts ranked by bm25.
+
+        Returns a list of dicts: {concept_uid, course_uid, title, content}.
+        Lazily rebuilds the index if it is currently empty.
+        """
+        if not self.is_available():
+            return []
+        if not query or not query.strip():
+            return []
+
+        # Lazy population: only walk the corpus when the index is empty.
+        if self._row_count() == 0:
+            self.rebuild_search_index()
+
+        match_expr = self._sanitize_query(query)
+        if not match_expr:
+            return []
+
+        conn = self._get_db()
+        sql = (
+            "SELECT concept_uid, course_uid, title, content "
+            "FROM concept_fts WHERE concept_fts MATCH ?"
+        )
+        params: List[Any] = [match_expr]
+        if course_uid:
+            sql += " AND course_uid = ?"
+            params.append(course_uid)
+        sql += " ORDER BY bm25(concept_fts) LIMIT ?"
+        params.append(int(limit))
+
+        rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
+
 class ProgressStore:
     """SQLite user progress per concept."""
 
@@ -517,6 +646,16 @@ class ProgressStore:
             kwargs = {k: v for k, v in kwargs.items() if k in self._VALID_COLUMNS}
         
         conn = self._get_db()
+        # B5.5: INSERT OR REPLACE rewrites the whole row, so an empty course_uid
+        # would orphan existing progress from its course. If the caller didn't
+        # supply one (e.g. review-only updates), preserve the existing link.
+        if not course_uid:
+            existing = conn.execute(
+                "SELECT course_uid FROM user_progress WHERE concept_uid = ?",
+                (concept_uid,),
+            ).fetchone()
+            if existing and existing["course_uid"]:
+                course_uid = existing["course_uid"]
         kwargs["updated_at"] = datetime.utcnow().isoformat()
         # PERF-1: Use INSERT OR REPLACE upsert pattern
         kwargs["concept_uid"] = concept_uid

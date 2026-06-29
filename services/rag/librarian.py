@@ -64,6 +64,40 @@ except Exception as e:
 # ZIM/KuzuDB removed — all content is LLM-generated and stored in SQLite + JSON
 
 
+def _substring_concept_search(query, course_uid):
+    """Legacy fallback: substring scan over concept titles. Kept as a safety net
+    when FTS5 is unavailable or errors. Returns concept results in the standard
+    response shape."""
+    results = []
+    if course_uid:
+        concepts = storage.courses.get_flat_concepts(course_uid)
+        for c in concepts:
+            c.setdefault("course_uid", course_uid)
+    else:
+        concepts = []
+        for course in storage.courses.list_courses():
+            for c in storage.courses.get_flat_concepts(course["uid"]):
+                c["course_uid"] = course["uid"]
+                concepts.append(c)
+
+    q = query.lower()
+    for concept in concepts:
+        if q in concept.get("title", "").lower():
+            c_course = concept.get("course_uid", course_uid or "")
+            content = storage.courses.get_concept_content(c_course, concept["uid"])
+            results.append(
+                {
+                    "uid": concept["uid"],
+                    "title": concept["title"],
+                    "text": content[:500] if content else "",
+                    "type": "Concept",
+                }
+            )
+            if len(results) >= 10:
+                break
+    return results
+
+
 @app.route("/search", methods=["GET"])
 def search():
     query = request.args.get("q", "")
@@ -73,7 +107,7 @@ def search():
 
     results = []
 
-    # Search courses by title
+    # Search courses by title (cheap metadata scan, unchanged behavior)
     for course in storage.courses.list_courses():
         if query.lower() in course.get("title", "").lower():
             results.append(
@@ -89,33 +123,23 @@ def search():
     if results:
         return jsonify({"results": results})
 
-    # Search concepts via content files (limit results to 10 for performance)
-    if course_uid:
-        concepts = storage.courses.get_flat_concepts(course_uid)
-    else:
-        # Avoid loading every concept in every course if possible, but for small scale it's okay
-        # Better: Search course metadata first
-        concepts = []
-        for course in storage.courses.list_courses():
-            concepts.extend(storage.courses.get_flat_concepts(course["uid"]))
-
-    # Simple text search in concept titles and content
-    for concept in concepts:
-        if query.lower() in concept.get("title", "").lower():
-            # Only fetch content if it's a match
-            content = storage.courses.get_concept_content(
-                concept.get("course_uid", course_uid or ""), concept["uid"]
-            )
+    # Concept search via SQLite FTS5 (ranked, searches title AND body content).
+    # Falls back to the legacy substring scan if FTS5 is unavailable or errors.
+    try:
+        fts_rows = storage.search.search(query, course_uid=course_uid, limit=10)
+        for row in fts_rows:
+            content = row.get("content") or ""
             results.append(
                 {
-                    "uid": concept["uid"],
-                    "title": concept["title"],
+                    "uid": row["concept_uid"],
+                    "title": row.get("title", ""),
                     "text": content[:500] if content else "",
                     "type": "Concept",
                 }
             )
-            if len(results) >= 10:
-                break
+    except Exception as e:
+        logger.warning(f"FTS search failed, falling back to substring: {e}")
+        results = _substring_concept_search(query, course_uid)
 
     return jsonify({"results": results})
 
@@ -217,6 +241,12 @@ def structure():
         if not course:
             return jsonify({"error": "Course not found"}), 404
 
+        # B5.6: load all progress for this course in ONE query, then look up
+        # per concept in-memory (was an N+1: one SELECT per concept).
+        progress_by_concept = {
+            p["concept_uid"]: p for p in storage.progress.get_course_progress(uid)
+        }
+
         # Build structure response matching old format
         structure = {"modules": []}
         for module in course.get("modules", []):
@@ -230,8 +260,8 @@ def structure():
                         "concepts": [],
                     }
                     for concept in lesson.get("concepts", []):
-                        # Check completion from progress store
-                        progress = storage.progress.get_progress(concept["uid"])
+                        # Check completion from the pre-loaded progress map (B5.6)
+                        progress = progress_by_concept.get(concept["uid"])
                         completed = (
                             progress["status"] == "completed" if progress else False
                         )

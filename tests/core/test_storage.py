@@ -128,6 +128,16 @@ class TestProgressStore:
         progress = storage.progress.get_course_progress('cx')
         assert len(progress) == 2
 
+    def test_empty_course_uid_preserves_existing_link(self, storage):
+        # B5.5: a review-only update that omits course_uid must NOT orphan the
+        # concept from its course (INSERT OR REPLACE rewrites the whole row).
+        storage.progress.update_progress('c9', 'real_course', grade=3, status='in_progress')
+        storage.progress.update_progress('c9', '', grade=5, status='reviewed')
+        p = storage.progress.get_progress('c9')
+        assert p['course_uid'] == 'real_course'
+        assert p['grade'] == 5
+        assert len(storage.progress.get_course_progress('real_course')) == 1
+
 
 class TestScheduleStore:
     def test_schedule_unit_reviews(self, storage):

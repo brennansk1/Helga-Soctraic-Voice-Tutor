@@ -78,7 +78,15 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE + 1024  # Slightly above per-file limit for overhead
-app.secret_key = os.environ.get('FLASK_SECRET_KEY', secrets.token_hex(32))
+# B9.3: prefer a stable secret from the environment so sessions survive restarts.
+# Treat an empty value as unset. If none is provided, fall back to a random key
+# (sessions won't persist across restarts) and warn.
+app.secret_key = os.environ.get('FLASK_SECRET_KEY') or secrets.token_hex(32)
+if not os.environ.get('FLASK_SECRET_KEY'):
+    logging.getLogger(__name__).warning(
+        "FLASK_SECRET_KEY not set — using an ephemeral key; sessions reset on restart. "
+        "Set FLASK_SECRET_KEY in .env for a stable secret."
+    )
 CORS_ORIGINS = os.environ.get('CORS_ORIGINS', 'http://localhost:5050,http://127.0.0.1:5050').split(',')
 socketio = SocketIO(app, async_mode='gevent', cors_allowed_origins=CORS_ORIGINS, max_http_buffer_size=10000000)
 

@@ -178,6 +178,34 @@ class TestFSRSEngineSubsequentReview(unittest.TestCase):
         self.assertIsNotNone(d)
 
 
+class TestFSRSStabilityOrdering(unittest.TestCase):
+    """FSRS-5 stability-update properties (B4.1)."""
+
+    def setUp(self):
+        self.engine = FSRSEngine()
+
+    def test_lapse_does_not_increase_stability(self):
+        # Forgetting (Again) must not grow stability beyond its prior value.
+        new_s, _ = self.engine.calculate_memory(20.0, 5.0, 1, 20)
+        self.assertLessEqual(new_s, 20.0)
+
+    def test_recall_grows_stability(self):
+        new_s, _ = self.engine.calculate_memory(10.0, 5.0, 3, 10)
+        self.assertGreater(new_s, 10.0)
+
+    def test_hard_good_easy_stability_ordering(self):
+        s_hard, _ = self.engine.calculate_memory(10.0, 5.0, 2, 10)
+        s_good, _ = self.engine.calculate_memory(10.0, 5.0, 3, 10)
+        s_easy, _ = self.engine.calculate_memory(10.0, 5.0, 4, 10)
+        self.assertLess(s_hard, s_good)
+        self.assertLess(s_good, s_easy)
+
+    def test_initial_difficulty_easy_lower_than_again(self):
+        _, d_again = self.engine.calculate_memory(None, None, 1, 0)
+        _, d_easy = self.engine.calculate_memory(None, None, 4, 0)
+        self.assertGreater(d_again, d_easy)
+
+
 class TestFSRSNextInterval(unittest.TestCase):
     """Tests for next_interval calculation."""
 

@@ -134,6 +134,47 @@ class TestGradingLogic(unittest.TestCase):
         # Grade 4 -> SUCCESS_CHORD
         self.fsm.play_sound.assert_called_with("SUCCESS_CHORD")
 
+    def test_grading_none_does_not_pass_student(self):
+        """B3.3: if the grader returns None, the answer must NOT be credited as
+        correct (grade >= 3). It should fall back to partial (grade 2)."""
+        self.fsm.current_lesson_node = {'uid': 'node1', 'title': 'Test Node', 'text': 'Context'}
+        self.fsm.last_question = "What is X?"
+        self.fsm.socratic_type_index = 5  # would complete the concept IF graded >= 3
+        self.fsm.concept_correct_streak = 2
+        self.fsm.concept_question_count = 3
+        self.fsm._call_llm = MagicMock(return_value=None)
+
+        self.fsm.handle_socratic_answer("Some answer")
+
+        # Partial → streak reset, concept NOT marked complete, no success chord.
+        self.assertEqual(self.fsm.concept_correct_streak, 0)
+        self.assertNotIn('node1', self.fsm.completed_topics)
+        self.fsm.play_sound.assert_called_with("FRICTION_GRIND")
+
+    def test_grading_unparseable_does_not_pass_student(self):
+        """B3.3: unparseable grader output must not silently pass the student."""
+        self.fsm.current_lesson_node = {'uid': 'node1', 'title': 'Test Node', 'text': 'Context'}
+        self.fsm.last_question = "What is X?"
+        self.fsm.socratic_type_index = 5
+        self.fsm.concept_correct_streak = 2
+        self.fsm.concept_question_count = 3
+        self.fsm._call_llm = MagicMock(return_value="the model rambled with no grade here")
+
+        self.fsm.handle_socratic_answer("Some answer")
+
+        self.assertEqual(self.fsm.concept_correct_streak, 0)
+        self.assertNotIn('node1', self.fsm.completed_topics)
+
+    def test_grading_requests_constrained_json_schema(self):
+        """Task #2: grading must ask Ollama for schema-constrained JSON output."""
+        from services.common.prompts import GRADE_JSON_SCHEMA
+        self.fsm.current_lesson_node = {'uid': 'node1', 'title': 'Test Node', 'text': 'Context'}
+        self.fsm.last_question = "What is X?"
+        self.fsm._call_llm = MagicMock(return_value='{"grade": 3, "feedback": "ok"}')
+        self.fsm.handle_socratic_answer("an answer")
+        _, kwargs = self.fsm._call_llm.call_args
+        self.assertEqual(kwargs.get('json_schema'), GRADE_JSON_SCHEMA)
+
     def test_ignorance_detection_bypasses_grading(self):
         """If user says 'I don't know', should bypass LLM grading and get grade 1."""
         self.fsm.current_lesson_node = {'uid': 'node1', 'title': 'Test Node', 'text': 'Context'}

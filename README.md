@@ -122,6 +122,84 @@ DEFAULT_VOICE=af_heart            # Kokoro TTS voice
 
 ---
 
+## Model evaluation & swapping
+
+Helga is model-agnostic: it talks to Ollama's OpenAI-compatible API, so swapping
+the grading/tutoring model is a config change, not a code change.
+
+### Swapping the model
+
+Set `OLLAMA_MODEL` in your `.env` (or the environment). `docker-compose.yml`
+already reads it with a default of `qwen3:14b`:
+
+```yaml
+OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:14b}
+```
+
+```bash
+# .env
+OLLAMA_MODEL=qwen3.5:9b
+```
+
+Pull the model first (`ollama pull qwen3.5:9b`), then restart:
+`docker compose up -d`.
+
+### Faster decode on Apple Silicon (MLX)
+
+On Mac (the Mac Mini M4 Pro deployment), update Ollama to **0.19+** to enable the
+MLX backend, which roughly doubles decode throughput on Apple Silicon vs. the
+default backend. After upgrading Ollama, re-run the benchmark below to confirm
+the tok/s improvement on your hardware.
+
+### Candidate models to benchmark
+
+Before swapping, benchmark candidates against the current `qwen3:14b`:
+
+- **Qwen3.5-9B** — smaller, multimodal; a possible lower-latency replacement.
+- **Qwen3.5-35B-A3B** — MoE model (~3B active params, ~20GB on disk); higher
+  ceiling on grading quality if it fits in RAM.
+
+> Verify exact parameter counts, context length, modality, and disk/RAM
+> footprint on the official **Qwen / Hugging Face model card** before adopting —
+> the figures above are approximate and intended only to scope the benchmark.
+
+### Running the comparison harness
+
+`tools/grading_eval.py` is a standalone CLI that drives each model through
+Helga's real Socratic grading prompt over a curated dataset
+(`tools/grading_eval_cases.json`, ~20 cases spanning correct, partial, wrong,
+"I don't know", and prompt-injection answers). It reports grade accuracy, JSON
+reliability, and latency/throughput.
+
+```bash
+# Compare two models (comma-separated Ollama tags)
+python3 tools/grading_eval.py --models qwen3:14b,qwen3.5:9b
+
+# Repeat each case 3x for stable latency stats, custom Ollama URL, custom output
+python3 tools/grading_eval.py \
+  --models qwen3:14b,qwen3.5:35b-a3b \
+  --runs 3 \
+  --ollama-url http://localhost:11434 \
+  --out results.json
+```
+
+Output is a comparison table plus a JSON results file:
+
+```
+model                   exact-acc   within1   json-rate   mean-lat    tok/s
+-----------------------------------------------------------------------------
+qwen3:14b                    75.0%     95.0%      100.0%      1.83s     62.4
+qwen3.5:9b                   70.0%     90.0%       95.0%      1.12s     98.1
+```
+
+Columns: **exact-acc** = exact grade match, **within1** = within ±1 grade
+(grades are ordinal 1-4), **json-rate** = share of calls returning parseable
+JSON with a valid `grade`, **mean-lat** = mean per-call latency, **tok/s** =
+approximate decode throughput. Run `--help` for all flags (works with no Ollama
+running; the connection is lazy).
+
+---
+
 ## Development
 
 ```bash

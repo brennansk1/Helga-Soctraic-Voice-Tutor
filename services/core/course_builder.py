@@ -1969,6 +1969,15 @@ class ContentHydrator:
             course["fallback_count"] = existing_fallbacks + hydration_fallback_count
         self.storage.courses.update_course(course_uid, course)
 
+        # Refresh the FTS5 search index now that this course's content exists, so
+        # a newly built course is immediately searchable (the index otherwise only
+        # builds lazily when empty). Best-effort — never fail creation on reindex.
+        try:
+            if hasattr(self.storage, "search"):
+                self.storage.search.rebuild_search_index()
+        except Exception as e:
+            logger.warning(f"Search reindex after hydration failed: {e}")
+
         content_dir = os.path.join(
             self.storage.courses.courses_dir, course_uid, "content"
         )

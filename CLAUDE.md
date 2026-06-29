@@ -1,28 +1,36 @@
 # CLAUDE.md — Project Helga: Socratic Voice Tutor
 
+> ⚠️ **Stack reality (verified 2026-06-29).** This file's older sections drifted from the
+> actual system. The current stack — Mac Mini, Qwen3-14B/Ollama, Kokoro TTS, text-only,
+> SQLite, SearXNG/research — is documented below. A full reverse-engineered audit, feature
+> tree, and prioritized upgrade roadmap live in `HELGA_BUILD_TREE.md` (the source of truth
+> for current state and known bugs). The "MASTER IMPLEMENTATION PLAN" lower in this file is
+> historical and references the old Jetson/Qwen2.5/ZIM/KuzuDB stack — treat it as archive.
+
 ## Project Overview
-Helga is an autonomous, offline AI tutor for headless NVIDIA Jetson devices with three learning modes: Socratic Learning, Spaced Repetition (FSRS), and Memory Palace. It uses a microservices architecture orchestrated via Docker Compose, with a Flask + Socket.IO web UI at port 5050.
+Helga is an autonomous, fully-offline AI tutor that runs on a **Mac Mini M4 Pro (24GB)** with three learning modes: Socratic Learning, Spaced Repetition (FSRS), and Memory Palace (Memory Palace UI is currently dead/disabled). Microservices orchestrated via Docker Compose; Flask + Socket.IO web UI at port 5050. Inference is **Ollama (native on the host)**, not a container.
 
 ## Architecture
-- **Microservices:** core-logic (FSM, port 5003), rag-engine (knowledge retrieval, port 5002), web-ui (Flask dashboard, port 5050), input-node (STT, port 5000), audio-engine (TTS, port 5005), inference-llm (Qwen2.5-1.5B, port 8080)
-- **Storage:** SQLite (`helga.db`) + JSON course structures + Markdown concept files. KuzuDB has been fully removed.
-- **AI Stack:** Qwen2.5-1.5B (GGUF), Faster-Whisper (CUDA STT), Piper (ONNX TTS), sentence-transformers (all-MiniLM-L6-v2)
+- **Microservices (6):** web-ui (Flask dashboard, port 5050→5000), core-logic (FSM + course creation, port 5003), rag-engine (course CRUD/search/flashcards, port 5002), tts (Kokoro, port 5005), searxng (self-hosted web search, port 8080), research (build-time content augmentation, port 5006). There is **no** input-node/audio-engine/inference-llm service; STT was removed (text-only).
+- **LLM:** **Ollama + Qwen3-14B** (`qwen3:14b`) on the host at `host.docker.internal:11434`, OpenAI-compatible chat API. Model name is set via `${OLLAMA_MODEL}` (default `qwen3:14b`) in `docker-compose.yml`.
+- **Storage:** SQLite (`helga.db`, WAL) + JSON course structures + Markdown concept files. KuzuDB and ZIM/`libzim` have been fully removed.
+- **AI Stack:** Qwen3-14B (Ollama), Kokoro TTS (`kokoro`), sentence-transformers `all-MiniLM-L6-v2` (currently loaded but **not used** for retrieval — `/search` is substring match; see `HELGA_BUILD_TREE.md` B2). No STT, no Piper, no Faster-Whisper, no CUDA.
 
 ## Key File Locations
 | File | Purpose |
 |------|---------|
-| `services/core/fsm_logic.py` | FSM state machine — all learning interaction logic (2236 lines) |
-| `services/core/course_builder.py` | SkeletonBuilder + ContentHydrator — course generation pipeline |
-| `services/core/fsrs_engine.py` | FSRS spaced repetition engine (py-fsrs wrapper) |
-| `services/core/content_provider.py` | ZIM/Kolibri/LocalFile content providers |
-| `services/rag/librarian.py` | RAG Flask service — course CRUD, search, flashcards |
+| `services/core/fsm_logic.py` | FSM state machine — all learning interaction logic (~3700 lines) |
+| `services/core/course_builder.py` | SkeletonBuilder + SyllabusAuditor + ContentHydrator — course generation pipeline |
+| `services/core/fsrs_engine.py` | FSRS-5 spaced-repetition engine (direct pure-Python implementation; not a py-fsrs wrapper) |
+| `services/research/research_server.py` | Build-time content augmentation (Wikipedia + SearXNG); `content_provider.py` was removed |
+| `services/rag/librarian.py` | RAG Flask service — course CRUD, (substring) search, flashcards, quiz |
 | `services/common/storage.py` | StorageManager — SQLite + JSON + Markdown facade |
 | `services/common/llm_utils.py` | LLM call wrappers with JSON repair + retry logic |
 | `services/common/spaced_repetition.py` | Legacy SM-2 engine (deprecated, kept for schedule generation) |
 | `services/common/prompts.py` | Centralized prompt templates |
 | `services/web-ui/app.py` | Web UI Flask app — proxies to microservices |
 | `services/web-ui/static/js/session.js` | Socket.IO client, sendEvent(), audio, chat rendering |
-| `services/web-ui/templates/courses.html` | Course listing + all three creation wizards |
+| `services/web-ui/templates/courses.html` | Course listing (logic moved to `static/js/courses.js` + `wizard.js`) |
 | `services/web-ui/templates/learn.html` | Learn tab — path visualization + session view |
 | `services/web-ui/templates/review.html` | Spaced repetition review UI |
 | `services/web-ui/templates/schedule.html` | Review calendar/schedule UI |
@@ -40,9 +48,10 @@ Helga is an autonomous, offline AI tutor for headless NVIDIA Jetson devices with
 - **Paths:** Always `os.path.join()`, never string concat
 
 ## Known Constraints
-- **Jetson 8GB RAM:** Sequential hydration only, manual `gc.collect()` only when root leak confirmed
-- **LLM output:** Qwen2.5-1.5B has ~30% JSON failure rate — always use `llm_generate_json()` with retry
-- **ZIM archives:** ~190GB, read-only via `libzim` — content provider abstracts this
+- **Mac Mini M4 Pro 24GB:** Ollama (Qwen3-14B Q4_K_M, ~9-10GB) runs natively on the host; containers share the remaining RAM. Sequential hydration; avoid speculative `gc.collect()`.
+- **Ollama is a hard external dependency:** all LLM calls go to `host.docker.internal:11434`; there is no fallback/circuit-breaker (see `HELGA_BUILD_TREE.md` B9.5).
+- **LLM output:** Qwen3-14B is far more reliable than the old 1.5B model, but JSON can still fail — always use `llm_generate_json()` with retry, and prefer Ollama's `format` (JSON-schema) constrained output where possible.
+- **Single global FSM session:** state is not per-user/per-tab; multiple browsers share one session (see `HELGA_BUILD_TREE.md` B6.3).
 - **Socket.IO events are receive-only in browser** — all commands go Browser → HTTP POST `/api/event` → Web-UI → HTTP POST core `/event` → FSM
 
 ## Event System (FSM ↔ Web UI)

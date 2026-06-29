@@ -31,7 +31,7 @@ class LLMClient:
         self.api_url = f"{self.base_url}/v1/chat/completions"
 
     def chat(self, system_prompt, user_message, max_tokens=512,
-             temperature=0.6, json_mode=False, timeout=60, retries=3):
+             temperature=0.6, json_mode=False, json_schema=None, timeout=60, retries=3):
         """Send a chat completion request to Ollama.
 
         Args:
@@ -39,7 +39,10 @@ class LLMClient:
             user_message: User role message
             max_tokens: Maximum tokens to generate
             temperature: Sampling temperature
-            json_mode: If True, request JSON format output
+            json_mode: If True, request plain JSON output (format="json")
+            json_schema: Optional JSON Schema dict. When provided, Ollama (>=0.5)
+                grammar-constrains the output to the schema — far more reliable
+                than plain json_mode. Takes precedence over json_mode.
             timeout: Request timeout in seconds
             retries: Number of retry attempts
 
@@ -56,7 +59,11 @@ class LLMClient:
             "temperature": temperature,
             "stream": False
         }
-        if json_mode:
+        # Constrained decoding: a JSON schema forces schema-valid output; plain
+        # json_mode only nudges toward JSON. Prefer the schema when given.
+        if json_schema is not None:
+            payload["format"] = json_schema
+        elif json_mode:
             payload["format"] = "json"
 
         for attempt in range(retries):
@@ -105,12 +112,13 @@ class LLMClient:
         return ""
 
     def chat_json(self, system_prompt, user_message, max_tokens=512,
-                  temperature=0.6, timeout=60, retries=3):
-        """Chat with JSON mode enabled. Returns parsed dict/list or None."""
+                  temperature=0.6, json_schema=None, timeout=60, retries=3):
+        """Chat with JSON output. If json_schema is given, output is schema-
+        constrained (Ollama >=0.5). Returns parsed dict/list or None."""
         raw = self.chat(
             system_prompt, user_message,
             max_tokens=max_tokens, temperature=temperature,
-            json_mode=True, timeout=timeout, retries=retries
+            json_mode=True, json_schema=json_schema, timeout=timeout, retries=retries
         )
         if not raw:
             return None
