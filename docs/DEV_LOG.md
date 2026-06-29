@@ -366,3 +366,34 @@ tightened from 12px → 8px back to the 12px card convention.
 **Frontend sweep complete** (design system + all pages + the chatbox/voice overhaul). Remaining
 frontend work is the larger feature Tasks #6/#7 (structured status events, SSE token streaming,
 per-session scoping, learner dashboard, onboarding, global search, PWA) — runtime/browser-built.
+
+---
+
+## Task #6 (in progress) — B6.4 structured status events
+Replaced the most fragile frontend pattern (free-text status-string parsing). `send_status_update`
+gained an `event` param (web-ui already forwards the whole payload); `send_pipeline_stage(stage,
+pct, **fields)` emits `{type:PIPELINE_STAGE, stage, pct, …}` + a human message (pct clamped).
+`courses.js` prefers `data.event`, falls back to legacy parsing (additive, zero-risk). +4 backend
+tests. Remaining (browser-validated): migrate creation call sites to `send_pipeline_stage`, then
+delete the legacy parser; SSE token streaming; per-session FSM scoping.
+
+## Task #11 (in progress) — course-creation parameter fidelity (static analysis done)
+Audited `compute_course_params` + the SCOPE/MASTERY/STARTING_FROM profiles across the full 5×5×5
+space:
+- **BUG FIXED:** 15/125 combos produced `bloom_floor > bloom_ceiling` (e.g. mastery=Awareness
+  ceiling 2 + starting=Advanced floor 4 → degenerate Bloom ramp). A starting level is a hard floor,
+  so we now raise `bloom_ceiling = max(ceiling, floor)` — the course never ends below where it
+  starts. +7 invariant/monotonicity tests (scope↑→modules↑, mastery↑→concepts+ceiling↑,
+  start↑→floor↑, floor≤ceiling everywhere).
+- **FLAG — hydration-time risk:** total concepts reaches ~110 (estimate) and ~132 actual at
+  scope=5/mastery=5 (substructure bucketing rounds *up* at high mastery: targets 10/module, yields
+  2×3×2=12). At ThreadPool≤3 with a research+LLM call per concept this is many minutes. Recommend a
+  soft concept cap and/or a build-time estimate surfaced in the wizard (product decision).
+- **FLAG — concepts_per_module drift:** the unit/lesson bucketing approximates the target (±~20%),
+  not exact. Acceptable but documented.
+- **FLAG — slider semantics:** starting_from 1 vs 2 produce identical *shape* (only content register
+  differs); `skip_factor` reduces module *count*, conflating "breadth" with "starting level" (an
+  advanced learner gets fewer modules, not just a higher floor) — a design question for the owner.
+Remaining (runtime/eval): prompt-quality review for skeleton/audit/hydration + move generation to
+schema-constrained output; generate sample courses across the param space and score for coherence /
+coverage / non-redundancy / Bloom-appropriateness / Learn-readiness on the real Ollama.

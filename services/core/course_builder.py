@@ -220,6 +220,12 @@ def compute_course_params(scope=2, mastery=2, starting_from=1):
     concepts_per_module = m["concepts_per_module"]
     bloom_floor = sf["bloom_floor"]
     bloom_ceiling = m["bloom_ceiling"]
+    # Fidelity guard (Task #11): the starting level is a hard floor (the learner
+    # already knows the basics), so a contradictory pick — e.g. mastery=Awareness
+    # (ceiling 2) with starting=Advanced (floor 4) — must not yield floor>ceiling
+    # (which produced a degenerate Bloom ramp). Raise the ceiling to at least the
+    # floor so the course never "ends below where it starts".
+    bloom_ceiling = max(bloom_ceiling, bloom_floor)
     return {
         "modules": modules,
         "concepts_per_module": concepts_per_module,
