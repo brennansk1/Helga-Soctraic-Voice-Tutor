@@ -97,12 +97,12 @@ T   Helga Trunk ...................................................... ✅
 ├─ B5  Persistence / Data Integrity ................................ ✅
 │  ├─ B5.1  Thread-local SQLite + WAL .............................. ✅ (CourseStore bypasses it)
 │  ├─ B5.2  Column-whitelist upsert ................................ ✅
-│  ├─ B5.3  JSON↔SQLite consistency ............................... 🚫 no cross-store txn; 2 status sources
-│  ├─ B5.4  Migrations ............................................. 🚫 two inconsistent systems
-│  ├─ B5.5  update_mastery course_uid="" .......................... 🚫 BUG orphans progress
-│  ├─ B5.6  N+1 queries (structure/courses/stats/quiz) ............. 🧩 PERF
-│  ├─ B5.7  Backup / restore ....................................... ⬜
-│  └─ B5.8  gamification table referenced, never created ........... 🚫 silent no-op
+│  ├─ B5.3  JSON↔SQLite consistency ............................... ⬜ cross-store txn (deferred, noted)
+│  ├─ B5.4  Migrations — deleted dead/inconsistent migrate.py ...... ✅
+│  ├─ B5.5  update_mastery preserves course_uid ................... ✅
+│  ├─ B5.6  N+1 queries — single progress query .................... ✅
+│  ├─ B5.7  Backup — hardened (sqlite .backup + courses tar) ....... ✅
+│  └─ B5.8  gamification SQL parameterized (table is lazy-created) . ✅
 ├─ B6  Web UI / Frontend ........................................... ✅
 │  ├─ B6.1  Chat render + streaming tokens ......................... ✅ (monkey-patched reconcile)
 │  ├─ B6.2  Path/journey view ...................................... ✅

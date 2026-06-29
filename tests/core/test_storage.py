@@ -139,6 +139,46 @@ class TestProgressStore:
         assert len(storage.progress.get_course_progress('real_course')) == 1
 
 
+class TestActivityStreak:
+    @staticmethod
+    def _add_activity_on(storage, day):
+        conn = storage.activity._get_db()
+        conn.execute(
+            "INSERT INTO activity_log (course_uid, concept_uid, activity_type, details, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("c", "n", "review", "{}", f"{day.isoformat()}T12:00:00"),
+        )
+        conn.commit()
+
+    def test_no_activity_zero(self, storage):
+        assert storage.activity.get_streak() == 0
+
+    def test_today_only(self, storage):
+        self._add_activity_on(storage, date.today())
+        assert storage.activity.get_streak() == 1
+
+    def test_consecutive_days(self, storage):
+        for d in range(3):
+            self._add_activity_on(storage, date.today() - timedelta(days=d))
+        assert storage.activity.get_streak() == 3
+
+    def test_yesterday_only_today_not_logged(self, storage):
+        self._add_activity_on(storage, date.today() - timedelta(days=1))
+        assert storage.activity.get_streak() == 1
+
+    def test_gap_breaks_streak(self, storage):
+        # Today + 2-days-ago, but NOT yesterday -> streak is 1, not 2.
+        # (The old logic over-counted across the gap and returned 2.)
+        self._add_activity_on(storage, date.today())
+        self._add_activity_on(storage, date.today() - timedelta(days=2))
+        assert storage.activity.get_streak() == 1
+
+    def test_stale_activity_zero(self, storage):
+        # Most recent activity is older than yesterday -> streak broken.
+        self._add_activity_on(storage, date.today() - timedelta(days=3))
+        assert storage.activity.get_streak() == 0
+
+
 class TestScheduleStore:
     def test_schedule_unit_reviews(self, storage):
         today = date.today().isoformat()

@@ -14,7 +14,7 @@ logs:
 
 clean:
 	docker compose down -v
-	docker system prune -f
+	docker image prune -f   # dangling images only — keep build cache (was: system prune -f)
 
 deploy:
 	./deploy.sh
@@ -27,7 +27,12 @@ health:
 
 backup:
 	@mkdir -p backups
-	@cp data/helga.db backups/helga_$$(date +%Y%m%d_%H%M%S).db 2>/dev/null && echo "Backup saved to backups/" || echo "No database found to backup"
+	@ts=$$(date +%Y%m%d_%H%M%S); \
+	if [ -f data/helga.db ]; then \
+		sqlite3 data/helga.db ".backup 'backups/helga_$$ts.db'" 2>/dev/null || cp data/helga.db backups/helga_$$ts.db; \
+		[ -d data/courses ] && tar -czf backups/courses_$$ts.tgz -C data courses 2>/dev/null || true; \
+		echo "Backup saved to backups/ (helga_$$ts.db + courses_$$ts.tgz)"; \
+	else echo "No database found to backup"; fi
 
 test: test-unit test-integration
 

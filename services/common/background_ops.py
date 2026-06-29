@@ -170,7 +170,7 @@ class BackgroundOperations:
                 today = date.today().isoformat()
                 if stored_date and stored_date != today:
                     conn.execute("UPDATE gamification SET value='0' WHERE key='daily_xp'")
-                    conn.execute(f"UPDATE gamification SET value='{today}' WHERE key='daily_date'")
+                    conn.execute("UPDATE gamification SET value=? WHERE key='daily_date'", (today,))
                     conn.commit()
                     logger.debug(f"Daily XP reset for new day: {today}")
             conn.close()

@@ -137,3 +137,47 @@ Grading already hardened earlier: B3.3 (no false-pass → grade 2) + schema-cons
   "Grade N" string, None→2, garbage→2). 12 grading tests pass.
 
 **Deferred → Task #9 (runtime-validated):** the pedagogy features above; `chat_messages()`.
+
+---
+
+## B5 — Persistence / Data Integrity (`services/common/storage.py`, `background_ops.py`)
+
+### 1. Understanding
+Three-tier store (SQLite + JSON course trees + Markdown). Thread-local pooled connections
+with WAL; column-whitelist upserts. Earlier fixes: B5.5 (course_uid preservation) and B5.6
+(N+1 removal).
+
+### 2. Best tools / optimized?
+- **Dual migrations** (B5.4): `services/rag/migrate.py` (file-based `schema.sql` +
+  `migrations/*.sql`, inserts a `description` column the inline schema lacks) is **imported
+  nowhere** — the live path is the inline migrations in `storage._init_db`. It's dead +
+  inconsistent. → delete.
+- **`gamification` table** (B5.8): re-examined — it *is* created, lazily, by
+  `librarian._get_profile_db()` (not `storage._init_db`). So it's not "never created", but
+  the creation is split across modules and `background_ops._reset_daily_streak` only works
+  after the gamification API is first hit. That reset also used **f-string SQL** for the
+  date (not user-controlled, but violates the parameterized-query convention).
+- **`get_streak()` over-count** (real bug): the "allow today to not have activity yet"
+  tolerance ran on *every* row, so a gap (e.g. activity today + 2 days ago, none yesterday)
+  was counted as a 2-day streak instead of 1.
+- **`CourseStore`** opens a fresh `sqlite3.connect()` per metadata op rather than the
+  thread-local pool. Assessed as low-impact: WAL is a persistent DB-file property so fresh
+  connections still use it, and at single-user offline scale connection overhead is
+  negligible. Left as-is (noted) to avoid commit/threading risk for no real gain.
+- **`make clean`** ran `docker system prune -f` — nukes the whole build cache.
+
+### 3. Features weighed
+- DB backup (B5.7) — already had a `cp`-based target; hardened it (live-DB-safe + courses).
+- Cross-store JSON↔SQLite transaction (B5.3) — larger; the AUTO-10 ordering already reduces
+  the window. Deferred (noted) — not worth a risky change without a failure repro.
+
+### 4. Refactored (this commit), tests green
+- Fixed `get_streak()` with a correct anchor-walk; **+6 tests** (incl. the gap case that
+  exposed the bug, yesterday-only, stale-activity).
+- Deleted dead/inconsistent `services/rag/migrate.py` (B5.4).
+- Parameterized the `_reset_daily_streak` date SQL (B5.8 convention).
+- Hardened `make backup` (`sqlite3 .backup` + `data/courses` tarball); `make clean` now
+  `docker image prune -f` (keeps build cache).
+- Full suite 407 passing.
+
+**Deferred (noted):** cross-store transaction (B5.3); CourseStore pooling (no real benefit).

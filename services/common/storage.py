@@ -954,23 +954,30 @@ class ActivityStore:
         return summary
 
     def get_streak(self) -> int:
-        """Calculate consecutive days with activity."""
+        """Consecutive days with activity, ending today (or yesterday if today
+        isn't logged yet). Walks distinct activity days newest-first against a
+        decreasing anchor so a gap correctly ends the streak (the old version
+        applied the 'today missing' tolerance on every row and over-counted
+        across gaps)."""
         conn = self._get_db()
         rows = conn.execute(
             "SELECT DISTINCT DATE(created_at) as day FROM activity_log ORDER BY day DESC"
         ).fetchall()
-        if not rows:
+        days = [date.fromisoformat(r["day"]) for r in rows if r["day"]]
+        if not days:
             return 0
-        streak = 0
         today = date.today()
-        for row in rows:
-            day = date.fromisoformat(row["day"])
-            expected = today - timedelta(days=streak)
-            if day == expected:
+        if days[0] == today:
+            anchor = today
+        elif days[0] == today - timedelta(days=1):
+            anchor = today - timedelta(days=1)  # today not logged yet
+        else:
+            return 0  # most recent activity is older than yesterday — streak broken
+        streak = 0
+        for day in days:
+            if day == anchor:
                 streak += 1
-            elif day == expected - timedelta(days=1):
-                # Allow today to not have activity yet
-                streak += 1
+                anchor -= timedelta(days=1)
             else:
                 break
         return streak
