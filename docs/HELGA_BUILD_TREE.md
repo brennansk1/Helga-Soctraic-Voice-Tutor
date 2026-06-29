@@ -156,6 +156,55 @@ T   Helga Trunk ...................................................... ✅
 
 ---
 
+## FRONTEND BUILD TREE (FE) — expanded decomposition
+
+Stack: Jinja templates + vanilla JS + `style.css` (~3.5k lines, token-based "Alpine" theme,
+dark/light) + `courses.css`. The design *language* is good; the problem is **inconsistent
+application** (hardcoded/off-palette colors, heavy inline styles, no spacing/type scale).
+Status: ✅ done · 🔨 in progress · ⬜ not started · 🧩 cleanup.
+
+```
+FE  Frontend ....................................................... 🔨
+├─ FE1  Design System ............................................. 🔨
+│  ├─ FE1.1  Color tokens (palette + dark/light parity) ........... ✅ + semantic aliases added
+│  ├─ FE1.2  Typography scale ..................................... ✅ added (was missing)
+│  ├─ FE1.3  Spacing scale ........................................ ✅ added (was missing)
+│  ├─ FE1.4  Radius / shadow / elevation .......................... ✅ (+ --shadow-lg)
+│  ├─ FE1.5  Motion / transitions ................................. ✅ tokens + global transitions
+│  ├─ FE1.6  Focus / a11y tokens .................................. ✅ global :focus-visible ring
+│  └─ FE1.7  Utility/helper classes ............................... ⬜
+├─ FE2  Components ................................................. 🔨
+│  ├─ FE2.1  Buttons (primary/secondary/ghost/icon) ............... 🧩 consolidate variants
+│  ├─ FE2.2  Cards (course card, stat card) ....................... ✅ exist; tokenize
+│  ├─ FE2.3  Forms / inputs / selects ............................. 🧩 inline-styled in wizard
+│  ├─ FE2.4  Modals / dialogs ..................................... 🧩 multiple impls
+│  ├─ FE2.5  Nav / header / sidebar / hamburger ................... ✅
+│  ├─ FE2.6  Chat (messages, streaming, composer, mic) ............ ✅
+│  ├─ FE2.7  Badges / pills / progress bars ....................... ✅
+│  ├─ FE2.8  Toasts / banners / empty states ...................... 🧩 inconsistent
+│  └─ FE2.9  Loading / skeletons / spinners ....................... 🧩 partial
+├─ FE3  Pages (per-template polish) ............................... 🔨
+│  ├─ FE3.1  home .................................................. ⬜
+│  ├─ FE3.2  courses + creation wizards ........................... ⬜ (25 + 34 inline styles)
+│  ├─ FE3.3  learn (path + session) ............................... ✅ (clean, 0 inline)
+│  ├─ FE3.4  review ............................................... ⬜ (10 inline; off-palette)
+│  ├─ FE3.5  schedule ............................................. ⬜
+│  ├─ FE3.6  quiz ................................................. ⬜ (8 inline)
+│  ├─ FE3.7  settings ............................................. ⬜
+│  ├─ FE3.8  status ............................................... ✅ (clean)
+│  └─ FE3.9  course_view / course_structure ...................... ⬜ (5-6 inline)
+├─ FE4  Cross-cutting ............................................. 🔨
+│  ├─ FE4.1  Dark-mode parity (no hardcoded colors) ............... 🔨 (migration in progress)
+│  ├─ FE4.2  Responsive / mobile .................................. 🧩
+│  ├─ FE4.3  Accessibility (focus, aria, contrast, keyboard) ...... 🔨 focus ring done
+│  ├─ FE4.4  Loading / empty / error states ....................... 🧩
+│  ├─ FE4.5  Consistency — tokens only, no inline styles .......... 🔨 (primary sweep)
+│  ├─ FE4.6  Performance (CSS size / no layout thrash) ............ ⬜
+│  └─ FE4.7  Icon / asset system .................................. 🧩 (emoji + inline SVG mixed)
+```
+
+---
+
 ## PHASE 3 — BUILD MANIFEST (priority rows)
 
 P0 = correctness bug shipping wrong behavior; P1 = high-value capability/security; P2 = perf/quality; P3 = polish/cleanup.
