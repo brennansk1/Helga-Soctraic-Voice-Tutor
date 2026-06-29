@@ -350,6 +350,19 @@ proper play → loading (dim+spinner) → active (accent-filled stop icon) state
 visible while audio plays; pause/resume icon swaps via `data-paused` (JS-confirmed). No
 `stt-preview`/`pause-overlay`/rails exist in the current markup (that legacy CSS is dead).
 
-**Still page-by-page (FE3):** home, courses+wizard, review, schedule, quiz, settings,
-course_view/structure layout polish (colors done; spacing/component consistency next) — and
-the larger Tasks #6/#7 (structured status events, SSE streaming, dashboard, onboarding).
+### FE3 page-by-page polish (done)
+Completed the per-page consistency pass across all templates (home by hand as the exemplar;
+courses/review/quiz/schedule/settings/course_view/structure/wizard via 4 parallel agents on
+disjoint files). Each applied: off-scale font weights → `--font-weight-*`; matching
+font-sizes → `--font-size-*`; spacing → `--space-*`; ad-hoc transitions → `--transition-*`;
+card radii/shadows → tokens; and — the real consistency win — **status banners/badges now use
+the `--bg-{success,warning,danger,info}` tint + `--color-*` border/text pattern** everywhere
+(home stats error, settings toast/load-error, schedule review-status, course_structure
+node-state badges). Stale `var(--token, #hex)` fallbacks stripped; undefined-token refs fixed.
+Verified: all Jinja delimiters balanced, all CSS braces balanced, no undefined `var()` remain
+(learn.html's `--path-*` vars are locally defined). Restored 2 settings cards the agent had
+tightened from 12px → 8px back to the 12px card convention.
+
+**Frontend sweep complete** (design system + all pages + the chatbox/voice overhaul). Remaining
+frontend work is the larger feature Tasks #6/#7 (structured status events, SSE token streaming,
+per-session scoping, learner dashboard, onboarding, global search, PWA) — runtime/browser-built.

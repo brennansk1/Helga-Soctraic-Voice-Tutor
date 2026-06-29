@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="page-section" style="max-width: 800px;">
-    <a href="/courses" style="color: var(--text-secondary); text-decoration: none; font-size: 0.9rem; display: inline-block; margin-bottom: 1rem;">&larr; Back to Courses</a>
+    <a href="/courses" style="color: var(--text-secondary); text-decoration: none; font-size: var(--font-size-sm); display: inline-block; margin-bottom: var(--space-4);">&larr; Back to Courses</a>
 
     <!-- Wizard Progress Bar -->
     <div class="wizard-progress-bar" id="wizard-progress">
@@ -33,7 +33,7 @@
     <!-- Step 1: Course Setup -->
     <div id="wiz-step-1" class="wiz-step">
         <h2>Course Setup</h2>
-        <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">Name your course and tell Helga about your learning goals.</p>
+        <p style="color: var(--text-secondary); margin-bottom: var(--space-5);">Name your course and tell Helga about your learning goals.</p>
 
         <div class="form-group-alpine">
             <label for="wiz-title">Course Title *</label>
@@ -48,7 +48,7 @@
 
         <div class="form-group-alpine">
             <label>Your background with this topic</label>
-            <div style="display: flex; gap: 0.75rem; margin-top: 0.5rem;">
+            <div style="display: flex; gap: var(--space-3); margin-top: var(--space-2);">
                 <label class="pill-option selected" data-value="new">
                     <input type="radio" name="wiz-background" value="new" checked style="display:none;">
                     <span>🌱 New to this</span>
@@ -75,7 +75,7 @@
             </select>
         </div>
 
-        <div style="display: flex; justify-content: flex-end; margin-top: 2rem;">
+        <div style="display: flex; justify-content: flex-end; margin-top: var(--space-6);">
             <button class="btn-alpine btn-alpine-primary" onclick="wizardNext()">Next: Define Modules &rarr;</button>
         </div>
     </div>
@@ -83,18 +83,18 @@
     <!-- Step 2: Module Outline -->
     <div id="wiz-step-2" class="wiz-step" style="display: none;">
         <h2>Module Outline</h2>
-        <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">Define the main sections of your course. Add modules manually, or let Helga suggest a structure.</p>
+        <p style="color: var(--text-secondary); margin-bottom: var(--space-5);">Define the main sections of your course. Add modules manually, or let Helga suggest a structure.</p>
 
-        <div id="wiz-modules-list" style="display: flex; flex-direction: column; gap: 1rem;">
+        <div id="wiz-modules-list" style="display: flex; flex-direction: column; gap: var(--space-4);">
             <!-- Module cards rendered by JS -->
         </div>
 
-        <div style="display: flex; gap: 0.75rem; margin-top: 1rem;">
+        <div style="display: flex; gap: var(--space-3); margin-top: var(--space-4);">
             <button class="btn-alpine btn-alpine-secondary" onclick="addModuleCard()">+ Add Module</button>
             <button class="btn-alpine btn-alpine-accent" onclick="suggestModules()" id="suggest-modules-btn">Suggest Modules</button>
         </div>
 
-        <div style="display: flex; justify-content: space-between; margin-top: 2rem;">
+        <div style="display: flex; justify-content: space-between; margin-top: var(--space-6);">
             <button class="btn-alpine btn-alpine-secondary" onclick="wizardBack()">&larr; Back</button>
             <button class="btn-alpine btn-alpine-primary" onclick="wizardNext()">Next: Add Details &rarr;</button>
         </div>
@@ -103,13 +103,13 @@
     <!-- Step 3: Drill Down (Optional Detail) -->
     <div id="wiz-step-3" class="wiz-step" style="display: none;">
         <h2>Add Details <span style="color: var(--text-secondary); font-weight: 400; font-size: 0.8em;">(Optional)</span></h2>
-        <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">Expand any module to add specific concepts. Anything you leave empty, Helga will generate for you.</p>
+        <p style="color: var(--text-secondary); margin-bottom: var(--space-5);">Expand any module to add specific concepts. Anything you leave empty, Helga will generate for you.</p>
 
-        <div id="wiz-details-list" style="display: flex; flex-direction: column; gap: 1rem;">
+        <div id="wiz-details-list" style="display: flex; flex-direction: column; gap: var(--space-4);">
             <!-- Module expandable cards rendered by JS -->
         </div>
 
-        <div style="display: flex; justify-content: space-between; margin-top: 2rem;">
+        <div style="display: flex; justify-content: space-between; margin-top: var(--space-6);">
             <button class="btn-alpine btn-alpine-secondary" onclick="wizardBack()">&larr; Back</button>
             <button class="btn-alpine btn-alpine-primary" onclick="wizardNext()">Next: Helga's Questions &rarr;</button>
         </div>
@@ -118,22 +118,22 @@
     <!-- Step 4: Clarifying Q&A -->
     <div id="wiz-step-4" class="wiz-step" style="display: none;">
         <h2>Helga's Questions</h2>
-        <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">Before building your course, Helga has a few questions to make sure the content matches your needs.</p>
+        <p style="color: var(--text-secondary); margin-bottom: var(--space-5);">Before building your course, Helga has a few questions to make sure the content matches your needs.</p>
 
-        <div id="wiz-questions-loading" style="text-align: center; padding: 2rem; color: var(--text-secondary);">
-            <div class="chat-msg tutor typing" style="display: inline-flex; margin-bottom: 1rem;">
+        <div id="wiz-questions-loading" style="text-align: center; padding: var(--space-6); color: var(--text-secondary);">
+            <div class="chat-msg tutor typing" style="display: inline-flex; margin-bottom: var(--space-4);">
                 <span class="dot"></span><span class="dot"></span><span class="dot"></span>
             </div>
             <p>Generating clarifying questions...</p>
         </div>
 
-        <div id="wiz-questions-list" style="display: none; flex-direction: column; gap: 1.25rem;">
+        <div id="wiz-questions-list" style="display: none; flex-direction: column; gap: var(--space-5);">
             <!-- Question cards rendered by JS -->
         </div>
 
         <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 1rem;">All questions are optional — skip any you don't care about.</p>
 
-        <div style="display: flex; justify-content: space-between; margin-top: 2rem;">
+        <div style="display: flex; justify-content: space-between; margin-top: var(--space-6);">
             <button class="btn-alpine btn-alpine-secondary" onclick="wizardBack()">&larr; Back</button>
             <button class="btn-alpine btn-alpine-primary" onclick="wizardNext()">Generate My Course &rarr;</button>
         </div>
@@ -143,18 +143,18 @@
     <div id="wiz-step-5" class="wiz-step" style="display: none;">
         <h2>Building Your Course</h2>
 
-        <div class="alpine-progress" style="margin: 1rem 0;">
+        <div class="alpine-progress" style="margin: var(--space-4) 0;">
             <div class="alpine-progress-fill" id="wiz-gen-progress" style="width: 0%"></div>
         </div>
-        <p id="wiz-gen-status" style="color: var(--text-secondary); font-size: 0.9rem;">Initializing...</p>
+        <p id="wiz-gen-status" style="color: var(--text-secondary); font-size: var(--font-size-sm);">Initializing...</p>
 
-        <div id="wiz-gen-tree" class="creation-tree" style="margin: 1.5rem 0; max-height: 400px; overflow-y: auto;">
+        <div id="wiz-gen-tree" class="creation-tree" style="margin: var(--space-5) 0; max-height: 400px; overflow-y: auto;">
         </div>
 
-        <div id="wiz-gen-complete" style="display: none; text-align: center; padding: 2rem 0;">
-            <h3 style="color: var(--status-success); margin-bottom: 0.5rem;">Course Created Successfully!</h3>
-            <p id="wiz-gen-summary" style="color: var(--text-secondary); margin-bottom: 1.5rem;"></p>
-            <div style="display: flex; gap: 0.75rem; justify-content: center;">
+        <div id="wiz-gen-complete" style="display: none; text-align: center; padding: var(--space-6) 0;">
+            <h3 style="color: var(--status-success); margin-bottom: var(--space-2);">Course Created Successfully!</h3>
+            <p id="wiz-gen-summary" style="color: var(--text-secondary); margin-bottom: var(--space-5);"></p>
+            <div style="display: flex; gap: var(--space-3); justify-content: center;">
                 <button class="btn-alpine btn-alpine-primary" id="wiz-start-learning-btn">Start Learning</button>
                 <a href="/courses" class="btn-alpine btn-alpine-secondary">View Courses</a>
             </div>
@@ -163,21 +163,21 @@
 </div>
 
 <style>
-    .wiz-step { animation: fadeIn 0.2s ease; }
+    .wiz-step { animation: fadeIn var(--transition-base) ease; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
     .pill-option {
         display: inline-flex;
         align-items: center;
-        padding: 0.6rem 1rem;
+        padding: 0.6rem var(--space-4);
         border-radius: 100px;
         border: 1px solid var(--border-color);
         background: var(--bg-secondary);
         cursor: pointer;
-        font-size: 0.9rem;
-        font-weight: 600;
+        font-size: var(--font-size-sm);
+        font-weight: var(--font-weight-semibold);
         color: var(--text-secondary);
-        transition: all 0.15s;
+        transition: all var(--transition-fast);
     }
     .pill-option:hover { border-color: var(--accent-primary); color: var(--text-primary); }
     .pill-option.selected { background: var(--accent-primary); color: var(--text-inverted); border-color: var(--accent-primary); }
@@ -186,53 +186,53 @@
         background: var(--bg-secondary);
         border: 1px solid var(--border-color);
         border-radius: var(--border-radius);
-        padding: 1rem 1.25rem;
+        padding: var(--space-4) var(--space-4);
         position: relative;
     }
     .module-card .module-remove {
         position: absolute;
-        top: 0.75rem;
-        right: 0.75rem;
+        top: var(--space-3);
+        right: var(--space-3);
         background: none;
         border: none;
         color: var(--text-secondary);
         cursor: pointer;
-        font-size: 1.1rem;
+        font-size: var(--font-size-lg);
         opacity: 0.5;
     }
     .module-card .module-remove:hover { opacity: 1; color: var(--status-error); }
 
     .module-card input, .module-card textarea {
         width: 100%;
-        padding: 0.5rem 0.75rem;
+        padding: var(--space-2) var(--space-3);
         border: 1px solid var(--border-color);
         border-radius: var(--border-radius-sm);
         background: var(--bg-primary);
         color: var(--text-primary);
         font-family: inherit;
-        font-size: 0.9rem;
+        font-size: var(--font-size-sm);
         box-sizing: border-box;
     }
     .module-card input:focus, .module-card textarea:focus { border-color: var(--accent-primary); outline: none; }
-    .module-card label { font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 0.3rem; }
+    .module-card label { font-size: 0.82rem; font-weight: var(--font-weight-semibold); color: var(--text-secondary); display: block; margin-bottom: var(--space-1); }
 
     .question-card {
         background: var(--bg-secondary);
         border: 1px solid var(--border-color);
         border-radius: var(--border-radius);
-        padding: 1.25rem;
+        padding: var(--space-4);
     }
-    .question-card .q-text { font-weight: 600; color: var(--text-primary); margin-bottom: 0.5rem; line-height: 1.5; }
-    .question-card .q-context { font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.75rem; font-style: italic; }
+    .question-card .q-text { font-weight: var(--font-weight-semibold); color: var(--text-primary); margin-bottom: var(--space-2); line-height: 1.5; }
+    .question-card .q-context { font-size: var(--font-size-xs); color: var(--text-secondary); margin-bottom: var(--space-3); font-style: italic; }
     .question-card textarea {
         width: 100%;
-        padding: 0.5rem 0.75rem;
+        padding: var(--space-2) var(--space-3);
         border: 1px solid var(--border-color);
         border-radius: var(--border-radius-sm);
         background: var(--bg-primary);
         color: var(--text-primary);
         font-family: inherit;
-        font-size: 0.9rem;
+        font-size: var(--font-size-sm);
         resize: vertical;
         min-height: 60px;
         box-sizing: border-box;
@@ -242,10 +242,10 @@
     .concept-chip {
         display: inline-flex;
         align-items: center;
-        gap: 0.3rem;
-        padding: 0.3rem 0.7rem;
+        gap: var(--space-1);
+        padding: var(--space-1) 0.7rem;
         border-radius: 100px;
-        font-size: 0.8rem;
+        font-size: var(--font-size-xs);
         background: var(--bg-tertiary);
         color: var(--text-secondary);
         border: 1px solid var(--border-color);
@@ -253,7 +253,7 @@
     .concept-chip .remove-concept {
         cursor: pointer;
         opacity: 0.5;
-        font-size: 0.9rem;
+        font-size: var(--font-size-sm);
     }
     .concept-chip .remove-concept:hover { opacity: 1; color: var(--status-error); }
 
@@ -261,14 +261,14 @@
         background: var(--bg-tertiary);
         border: 1px dashed var(--accent-primary);
         border-radius: var(--border-radius-sm);
-        padding: 0.75rem 1rem;
+        padding: var(--space-3) var(--space-4);
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 0.5rem;
+        margin-bottom: var(--space-2);
     }
-    .suggestion-card .suggestion-actions { display: flex; gap: 0.5rem; }
-    .suggestion-card button { padding: 0.3rem 0.6rem; font-size: 0.8rem; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; }
+    .suggestion-card .suggestion-actions { display: flex; gap: var(--space-2); }
+    .suggestion-card button { padding: var(--space-1) 0.6rem; font-size: var(--font-size-xs); border-radius: 6px; border: none; cursor: pointer; font-weight: var(--font-weight-semibold); }
     .suggestion-card .accept-btn { background: var(--status-success); color: white; }
     .suggestion-card .dismiss-btn { background: var(--bg-secondary); color: var(--text-secondary); border: 1px solid var(--border-color); }
 </style>

@@ -74,43 +74,43 @@
 .cv-container {
     max-width: 900px;
     margin: 0 auto;
-    padding: 1.5rem 1rem 3rem;
+    padding: var(--space-5) var(--space-4) var(--space-8);
 }
 .cv-topbar {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-5);
 }
 .cv-back {
     background: none;
     border: 1px solid var(--border-color);
-    padding: 0.5rem 1rem;
-    border-radius: 8px;
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--border-radius-sm);
     cursor: pointer;
-    font-size: 0.9rem;
+    font-size: var(--font-size-sm);
     color: var(--text-primary);
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    transition: background 0.2s;
+    transition: background var(--transition-base);
 }
 .cv-back:hover { background: var(--bg-tertiary); }
-.cv-back-arrow { font-size: 1.1rem; }
+.cv-back-arrow { font-size: var(--font-size-lg); }
 .cv-header {
     text-align: center;
-    margin-bottom: 2rem;
+    margin-bottom: var(--space-6);
 }
 .cv-header h1 {
     font-size: 1.6rem;
-    font-weight: 800;
-    margin: 0 0 0.5rem 0;
+    font-weight: var(--font-weight-bold);
+    margin: 0 0 var(--space-2) 0;
     color: var(--text-primary);
 }
 .cv-overview {
     color: var(--text-secondary);
     font-size: 0.95rem;
-    margin: 0 0 0.75rem 0;
+    margin: 0 0 var(--space-3) 0;
     max-width: 600px;
     margin-left: auto;
     margin-right: auto;
@@ -118,8 +118,8 @@
 .cv-meta {
     display: flex;
     justify-content: center;
-    gap: 1.5rem;
-    font-size: 0.8rem;
+    gap: var(--space-5);
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
 }
 .cv-meta span {
@@ -130,7 +130,7 @@
 /* --- Legend (collapsible) --- */
 .cv-legend {
     max-width: 900px;
-    margin: 0 auto 1.25rem;
+    margin: 0 auto var(--space-4);
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
     border-radius: 12px;
@@ -144,32 +144,32 @@
     padding: 0.85rem 1.15rem;
     cursor: pointer;
     user-select: none;
-    font-weight: 700;
+    font-weight: var(--font-weight-bold);
     color: var(--text-primary);
     font-size: 0.92rem;
-    transition: background 0.15s;
+    transition: background var(--transition-fast);
 }
 .cv-legend-summary:hover { background: var(--bg-tertiary); }
 .cv-legend-summary::-webkit-details-marker { display: none; }
 .cv-legend-chevron {
     display: inline-block;
-    font-size: 1.1rem;
+    font-size: var(--font-size-lg);
     color: var(--text-secondary);
     transform: rotate(0);
-    transition: transform 0.2s;
+    transition: transform var(--transition-base);
 }
 .cv-legend[open] .cv-legend-chevron { transform: rotate(90deg); }
 .cv-legend-hint {
-    font-weight: 400;
+    font-weight: var(--font-weight-normal);
     color: var(--text-secondary);
-    font-size: 0.8rem;
+    font-size: var(--font-size-xs);
     margin-left: auto;
 }
 .cv-legend-body {
-    padding: 0.25rem 1.15rem 1.1rem;
+    padding: var(--space-1) 1.15rem 1.1rem;
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 1.25rem;
+    gap: var(--space-4);
     border-top: 1px solid var(--border-color);
 }
 .cv-legend-body .cv-legend-group:nth-child(1) { grid-column: 1; }
@@ -177,7 +177,7 @@
 .cv-legend-body .cv-legend-group:nth-child(3) { grid-column: 1; }
 .cv-legend-group h4 {
     font-size: 0.72rem;
-    font-weight: 700;
+    font-weight: var(--font-weight-bold);
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--text-secondary);
@@ -186,7 +186,7 @@
 .cv-legend-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.85rem;
+    font-size: var(--font-size-sm);
 }
 .cv-legend-table td {
     padding: 0.35rem 0.25rem;
@@ -201,7 +201,7 @@
     line-height: 1;
 }
 .cv-legend-name {
-    font-weight: 700;
+    font-weight: var(--font-weight-bold);
     color: var(--text-primary);
     white-space: nowrap;
     padding-right: 0.65rem !important;
@@ -239,7 +239,7 @@
 .cv-loading {
     text-align: center;
     color: var(--text-secondary);
-    padding: 2rem;
+    padding: var(--space-6);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -260,17 +260,17 @@
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
     border-radius: 12px;
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
     overflow: hidden;
 }
 .cv-module-header {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 1rem 1.25rem;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-4);
     cursor: pointer;
     user-select: none;
-    transition: background 0.2s;
+    transition: background var(--transition-base);
 }
 .cv-module-header:hover { background: var(--bg-tertiary); }
 .cv-module-num {
@@ -281,25 +281,25 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-weight: 700;
-    font-size: 0.85rem;
+    font-weight: var(--font-weight-bold);
+    font-size: var(--font-size-sm);
     flex-shrink: 0;
 }
 .cv-module-info { flex: 1; }
 .cv-module-title {
-    font-weight: 700;
+    font-weight: var(--font-weight-bold);
     font-size: 1.05rem;
     color: var(--text-primary);
 }
 .cv-module-count {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     margin-top: 0.15rem;
 }
 .cv-module-chevron {
     font-size: 1.2rem;
     color: var(--text-secondary);
-    transition: transform 0.2s;
+    transition: transform var(--transition-base);
 }
 .cv-module.open .cv-module-chevron { transform: rotate(90deg); }
 
@@ -315,12 +315,12 @@
 
 /* Unit */
 .cv-unit {
-    padding: 0.5rem 1.25rem 0.5rem 3.25rem;
+    padding: var(--space-2) var(--space-4) var(--space-2) 3.25rem;
     border-top: 1px solid var(--border-color);
 }
 .cv-unit-title {
-    font-weight: 600;
-    font-size: 0.9rem;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-sm);
     color: var(--text-primary);
     margin-bottom: 0.4rem;
     display: flex;
@@ -330,23 +330,23 @@
 
 /* Lesson */
 .cv-lesson {
-    padding: 0.25rem 0 0.25rem 1.25rem;
+    padding: var(--space-1) 0 var(--space-1) var(--space-4);
 }
 .cv-lesson-title {
-    font-weight: 500;
-    font-size: 0.85rem;
+    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
-    margin-bottom: 0.3rem;
+    margin-bottom: var(--space-1);
 }
 
 /* Concept */
 .cv-concept {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.3rem 0 0.3rem 1rem;
+    gap: var(--space-2);
+    padding: 0.3rem 0 0.3rem var(--space-4);
     border-radius: 6px;
-    transition: background 0.15s;
+    transition: background var(--transition-fast);
     cursor: pointer;
 }
 .cv-concept:hover { background: var(--bg-tertiary); }
@@ -358,12 +358,12 @@
 }
 .cv-concept-dot.completed { background: var(--status-success); }
 .cv-concept-name {
-    font-size: 0.85rem;
+    font-size: var(--font-size-sm);
     color: var(--text-primary);
     flex: 1;
 }
 .cv-concept-badge {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
 }
 
 /* Progress bar on module header */
@@ -396,7 +396,7 @@
     border-top-color: var(--text-inverted);
     border-radius: 50%;
     animation: cv-spin 0.7s linear infinite;
-    margin-left: 0.5rem;
+    margin-left: var(--space-2);
     vertical-align: middle;
 }
 
@@ -411,9 +411,9 @@
 }
 
 @media (max-width: 600px) {
-    .cv-container { padding: 1rem 0.5rem; }
-    .cv-unit { padding-left: 2rem; }
-    .cv-module-header { padding: 0.75rem 1rem; }
+    .cv-container { padding: var(--space-4) var(--space-2); }
+    .cv-unit { padding-left: var(--space-6); }
+    .cv-module-header { padding: var(--space-3) var(--space-4); }
 }
 </style>
 

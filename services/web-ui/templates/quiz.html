@@ -49,7 +49,7 @@
     .ai-avatar-container {
         background: var(--bg-tertiary);
         /* Light blue top header */
-        padding: 1.5rem;
+        padding: var(--space-5);
         border-bottom: 2px solid var(--border-color);
         display: flex;
         flex-direction: column;
@@ -71,7 +71,7 @@
     }
 
     .status-indicator {
-        font-weight: 800;
+        font-weight: var(--font-weight-bold);
         color: var(--accent-tertiary);
         text-transform: uppercase;
         letter-spacing: 1px;
@@ -80,7 +80,7 @@
 
     .conversation-log {
         flex: 1;
-        padding: 2rem;
+        padding: var(--space-6);
         overflow-y: auto;
         display: flex;
         flex-direction: column;
@@ -89,8 +89,8 @@
     }
 
     .message {
-        padding: 1.5rem;
-        border-radius: 20px;
+        padding: var(--space-5);
+        border-radius: var(--border-radius-lg);
         font-size: 1.1rem;
         max-width: 85%;
         line-height: 1.6;
@@ -115,15 +115,15 @@
 
     /* Result styling inside messages */
     .message strong {
-        font-weight: 800;
+        font-weight: var(--font-weight-bold);
     }
 
     .theme-test .controls {
-        padding: 1.5rem;
+        padding: var(--space-5);
         background: var(--bg-secondary);
         border-top: 2px solid var(--border-color);
         display: flex;
-        gap: 1rem;
+        gap: var(--space-4);
         align-items: center;
     }
 
@@ -304,7 +304,7 @@
             // "All Courses" option
             const allBtn = document.createElement('button');
             allBtn.className = 'select-btn';
-            allBtn.style.cssText = 'padding:1rem; border-radius:12px; border:2px solid var(--border-color); background:var(--bg-primary); cursor:pointer; text-align:left; transition:all 0.2s;';
+            allBtn.style.cssText = 'padding:1rem; border-radius:12px; border:2px solid var(--border-color); background:var(--bg-primary); cursor:pointer; text-align:left; transition:var(--transition-base);';
             const allStrong = document.createElement('strong');
             allStrong.textContent = '🎲 All Courses';
             allStrong.style.display = 'block';
@@ -320,7 +320,7 @@
             data.courses.forEach(c => {
                 const btn = document.createElement('button');
                 btn.className = 'select-btn';
-                btn.style.cssText = 'padding:1rem; border-radius:12px; border:2px solid var(--border-color); background:var(--bg-primary); cursor:pointer; text-align:left; transition:all 0.2s;';
+                btn.style.cssText = 'padding:1rem; border-radius:12px; border:2px solid var(--border-color); background:var(--bg-primary); cursor:pointer; text-align:left; transition:var(--transition-base);';
 
                 const strong = document.createElement('strong');
                 strong.textContent = c.title;
@@ -499,7 +499,7 @@
             removeLoadingMessage(loadingMsg);
 
             const isPass = data.grade === 'PASS';
-            const gradeColor = isPass ? 'var(--status-success, #2ecc71)' : 'var(--status-error, #e74c3c)';
+            const gradeColor = isPass ? 'var(--status-success)' : 'var(--status-error)';
             const emoji = isPass ? '✅' : '❌';
 
             // Track score
@@ -515,7 +515,7 @@
 
             // Flashcard creation notification (Anki integration)
             const flashcardNote = data.cards_created && data.cards_created > 0
-                ? `<div style="margin-top:0.75rem; padding:0.5rem 0.75rem; background:rgba(99,102,241,0.1); border-radius:8px; font-size:0.85rem; color:var(--accent-tertiary, #6366f1);">🃏 ${data.cards_created} flashcard(s) added for review</div>`
+                ? `<div style="margin-top:0.75rem; padding:0.5rem 0.75rem; background:rgba(99,102,241,0.1); border-radius:8px; font-size:0.85rem; color:var(--accent-tertiary);">🃏 ${data.cards_created} flashcard(s) added for review</div>`
                 : '';
 
             const resultHtml = `

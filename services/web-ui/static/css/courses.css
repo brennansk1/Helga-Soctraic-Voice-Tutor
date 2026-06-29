@@ -61,8 +61,8 @@
 }
 
 .build-phase-labels span {
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-secondary);
     opacity: 0.5;
     transition: all 0.3s;
@@ -139,7 +139,7 @@
 }
 
 .tree-node.module {
-    font-weight: 700;
+    font-weight: var(--font-weight-bold);
     color: var(--accent-primary);
     margin-top: 0.5rem;
     animation-duration: 0.4s;
@@ -152,7 +152,7 @@
 .tree-node.unit {
     margin-left: 1.25rem;
     color: var(--text-primary);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     animation-delay: 0.05s;
 }
 
@@ -190,7 +190,7 @@
     font-size: 0.72rem;
     padding: 0.1rem 0.4rem;
     border-radius: 100px;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     vertical-align: middle;
     animation: badge-appear 0.2s ease;
 }
@@ -265,7 +265,7 @@
     background: var(--status-success);
     color: white;
     font-size: 1.5rem;
-    font-weight: 700;
+    font-weight: var(--font-weight-bold);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -288,5 +288,5 @@
 /* --- Log Terminal Override --- */
 .build-logs-toggle .log-terminal {
     max-height: 150px;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
 }

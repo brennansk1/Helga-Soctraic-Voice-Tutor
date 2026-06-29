@@ -43,17 +43,17 @@
     .selection-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 1rem;
-        margin-top: 1rem;
+        gap: var(--space-4);
+        margin-top: var(--space-4);
     }
     .select-btn {
         background: var(--bg-secondary);
         border: 1px solid var(--border-color);
-        padding: 1rem;
-        border-radius: 8px;
+        padding: var(--space-4);
+        border-radius: var(--border-radius-sm);
         color: var(--text-primary);
         cursor: pointer;
-        transition: all 0.2s;
+        transition: var(--transition-base);
         text-align: left;
     }
     .select-btn:hover {
@@ -68,8 +68,8 @@
     .learn-container {
         height: calc(100vh - 80px);
         display: flex;
-        gap: 1rem;
-        padding: 1rem;
+        gap: var(--space-4);
+        padding: var(--space-4);
         max-width: 1200px;
         margin: 0 auto;
     }
@@ -77,21 +77,21 @@
         flex: 1;
         background: var(--bg-secondary);
         border: 1px solid var(--border-color);
-        border-radius: 20px;
+        border-radius: var(--border-radius-lg);
         display: flex;
         flex-direction: column;
         overflow: hidden;
     }
     .theme-review .conversation-log {
         flex: 1;
-        padding: 2rem;
+        padding: var(--space-6);
         overflow-y: auto;
         display: flex;
         flex-direction: column;
-        gap: 1rem;
+        gap: var(--space-4);
     }
     .theme-review .message {
-        padding: 1rem;
+        padding: var(--space-4);
         border-radius: 12px;
         max-width: 80%;
     }
@@ -106,9 +106,9 @@
         align-self: flex-end;
     }
     .theme-review .controls {
-        padding: 1rem;
+        padding: var(--space-4);
         display: flex;
-        gap: 1rem;
+        gap: var(--space-4);
         background: var(--bg-secondary);
         border-top: 1px solid var(--border-color);
     }
@@ -118,10 +118,10 @@
         background: var(--bg-primary);
         border: 1px solid var(--border-color);
         color: var(--text-primary);
-        border-radius: 8px;
+        border-radius: var(--border-radius-sm);
     }
     .theme-review .ai-avatar-container {
-        padding: 1rem;
+        padding: var(--space-4);
         background: linear-gradient(to bottom, var(--bg-primary), var(--bg-secondary));
         border-bottom: 1px solid var(--border-color);
         text-align: center;
@@ -137,21 +137,21 @@
     }
     .grade-btns {
         display: flex;
-        gap: 0.5rem;
-        margin-top: 1rem;
+        gap: var(--space-2);
+        margin-top: var(--space-4);
     }
     .grade-btn {
         flex: 1;
         padding: 0.6rem 0.4rem;
         border: none;
-        border-radius: 8px;
+        border-radius: var(--border-radius-sm);
         color: white;
         cursor: pointer;
         opacity: 0.9;
-        font-weight: 600;
+        font-weight: var(--font-weight-semibold);
         font-size: 0.85rem;
         text-align: center;
-        transition: all 0.2s;
+        transition: var(--transition-base);
     }
     .grade-btn:hover {
         opacity: 1;
@@ -160,14 +160,14 @@
     .grade-btn .interval-hint {
         display: block;
         font-size: 0.7rem;
-        font-weight: 400;
+        font-weight: var(--font-weight-normal);
         opacity: 0.8;
         margin-top: 2px;
     }
     .card-meta {
-        font-size: 0.75rem;
-        color: var(--text-secondary, #888);
-        margin-top: 0.5rem;
+        font-size: var(--font-size-xs);
+        color: var(--text-secondary);
+        margin-top: var(--space-2);
         opacity: 0.7;
     }
 
@@ -549,11 +549,11 @@
             ${safeAnswer}<br><br>
             <div style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:0.5rem;">How well did you know this?</div>
             <div class="grade-btns">
-                <button class="grade-btn" data-grade="1" style="background:var(--status-error, #e74c3c)">
+                <button class="grade-btn" data-grade="1" style="background:var(--status-error)">
                     Again
                     <span class="interval-hint">1d</span>
                 </button>
-                <button class="grade-btn" data-grade="2" style="background:var(--status-warning, #e67e22)">
+                <button class="grade-btn" data-grade="2" style="background:var(--status-warning)">
                     Hard
                     <span class="interval-hint">~</span>
                 </button>
@@ -561,7 +561,7 @@
                     Good
                     <span class="interval-hint">~</span>
                 </button>
-                <button class="grade-btn" data-grade="4" style="background:var(--status-success, #2ecc71)">
+                <button class="grade-btn" data-grade="4" style="background:var(--status-success)">
                     Easy
                     <span class="interval-hint">~</span>
                 </button>

@@ -184,15 +184,15 @@ FE  Frontend ....................................................... 🔨
 │  ├─ FE2.8  Toasts / banners / empty states ...................... 🧩 inconsistent
 │  └─ FE2.9  Loading / skeletons / spinners ....................... 🧩 partial
 ├─ FE3  Pages (per-template polish) ............................... 🔨
-│  ├─ FE3.1  home .................................................. ⬜
-│  ├─ FE3.2  courses + creation wizards ........................... ⬜ (25 + 34 inline styles)
+│  ├─ FE3.1  home .................................................. ✅ tokenized (status banner, weights)
+│  ├─ FE3.2  courses + creation wizards ........................... ✅ tokenized
 │  ├─ FE3.3  learn (path + session) ............................... ✅ chatbox restyled (learn-chat.css)
-│  ├─ FE3.4  review ............................................... ⬜ (10 inline; off-palette)
-│  ├─ FE3.5  schedule ............................................. ⬜
-│  ├─ FE3.6  quiz ................................................. ⬜ (8 inline)
-│  ├─ FE3.7  settings ............................................. ⬜
+│  ├─ FE3.4  review ............................................... ✅ tokenized (spacing/radius/status)
+│  ├─ FE3.5  schedule ............................................. ✅ tokenized (status badges → tint bg)
+│  ├─ FE3.6  quiz ................................................. ✅ tokenized
+│  ├─ FE3.7  settings ............................................. ✅ tokenized (toast/dialog; cards 12px)
 │  ├─ FE3.8  status ............................................... ✅ (clean)
-│  └─ FE3.9  course_view / course_structure ...................... ⬜ (5-6 inline)
+│  └─ FE3.9  course_view / course_structure ...................... ✅ tokenized (node-state badges)
 ├─ FE4  Cross-cutting ............................................. 🔨
 │  ├─ FE4.1  Dark-mode parity (no hardcoded colors) ............... 🔨 (migration in progress)
 │  ├─ FE4.2  Responsive / mobile .................................. 🧩

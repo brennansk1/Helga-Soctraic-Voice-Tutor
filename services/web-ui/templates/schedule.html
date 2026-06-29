@@ -90,7 +90,7 @@
         gap: 1rem;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08);
         border: 1px solid var(--border-color);
-        transition: transform 0.2s, box-shadow 0.2s;
+        transition: transform var(--transition-base), box-shadow var(--transition-base);
     }
 
     .stat-card:hover {
@@ -156,9 +156,9 @@
     @keyframes schedule-spin { to { transform: rotate(360deg); } }
 
     .stat-label {
-        font-size: 0.75rem;
+        font-size: var(--font-size-xs);
         color: var(--text-secondary);
-        font-weight: 600;
+        font-weight: var(--font-weight-semibold);
         text-transform: uppercase;
         letter-spacing: 0.05em;
     }
@@ -200,7 +200,7 @@
 
     .cal-month-title {
         font-size: 1.4rem;
-        font-weight: 700;
+        font-weight: var(--font-weight-bold);
         color: var(--text-primary);
         min-width: 200px;
         text-align: center;
@@ -215,7 +215,7 @@
         font-size: 1.2rem;
         cursor: pointer;
         color: var(--text-secondary);
-        transition: all 0.2s;
+        transition: all var(--transition-base);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -235,8 +235,8 @@
 
     .cal-weekdays span {
         text-align: center;
-        font-size: 0.75rem;
-        font-weight: 700;
+        font-size: var(--font-size-xs);
+        font-weight: var(--font-weight-bold);
         color: var(--text-secondary);
         text-transform: uppercase;
         padding: 0.5rem 0;
@@ -256,12 +256,12 @@
         align-items: center;
         justify-content: center;
         cursor: pointer;
-        transition: all 0.2s;
+        transition: all var(--transition-base);
         position: relative;
         background: var(--bg-secondary);
         border: 1px solid var(--border-color);
         font-size: 0.9rem;
-        font-weight: 600;
+        font-weight: var(--font-weight-semibold);
         color: var(--text-primary);
     }
 
@@ -273,7 +273,7 @@
     .cal-day.today {
         border: 2px solid var(--accent-primary);
         background: var(--bg-tertiary);
-        font-weight: 800;
+        font-weight: var(--font-weight-bold);
     }
 
     .cal-day.empty {
@@ -334,7 +334,7 @@
 
     .detail-header h3 {
         font-size: 1.1rem;
-        font-weight: 700;
+        font-weight: var(--font-weight-bold);
         color: var(--text-primary);
     }
 
@@ -347,7 +347,7 @@
         cursor: pointer;
         font-size: 0.9rem;
         color: var(--text-secondary);
-        transition: all 0.2s;
+        transition: all var(--transition-base);
     }
 
     .close-btn:hover {
@@ -368,7 +368,7 @@
         background: var(--bg-primary);
         border-radius: 12px;
         border: 1px solid var(--border-color);
-        transition: all 0.2s;
+        transition: all var(--transition-base);
     }
 
     .review-item:hover {
@@ -377,13 +377,13 @@
 
     .review-item .review-title {
         flex: 1;
-        font-weight: 600;
+        font-weight: var(--font-weight-semibold);
         font-size: 0.9rem;
         color: var(--text-primary);
     }
 
     .review-item .review-number {
-        font-size: 0.75rem;
+        font-size: var(--font-size-xs);
         color: var(--text-secondary);
         background: var(--border-color);
         padding: 0.2rem 0.5rem;
@@ -391,25 +391,28 @@
     }
 
     .review-status {
-        font-size: 0.75rem;
-        font-weight: 600;
+        font-size: var(--font-size-xs);
+        font-weight: var(--font-weight-semibold);
         padding: 0.25rem 0.6rem;
         border-radius: 8px;
     }
 
     .review-status.pending {
-        background: rgba(245, 158, 11, 0.2);
-        color: var(--status-warning);
+        background: var(--bg-warning);
+        color: var(--color-warning);
+        border: 1px solid var(--color-warning);
     }
 
     .review-status.overdue {
-        background: rgba(239, 68, 68, 0.2);
-        color: var(--status-error);
+        background: var(--bg-danger);
+        color: var(--color-danger);
+        border: 1px solid var(--color-danger);
     }
 
     .review-status.completed {
-        background: rgba(34, 197, 94, 0.2);
-        color: var(--status-success);
+        background: var(--bg-success);
+        color: var(--color-success);
+        border: 1px solid var(--color-success);
     }
 
     .complete-btn {
@@ -419,9 +422,9 @@
         padding: 0.4rem 0.8rem;
         border-radius: 8px;
         font-size: 0.8rem;
-        font-weight: 600;
+        font-weight: var(--font-weight-semibold);
         cursor: pointer;
-        transition: all 0.2s;
+        transition: all var(--transition-base);
     }
 
     .complete-btn:hover {
