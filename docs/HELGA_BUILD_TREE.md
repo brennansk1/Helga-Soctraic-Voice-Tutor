@@ -281,7 +281,7 @@ B13  Multimodal & Visuals .......................................... 🔨
 ├─ B13.1  Model swap → Qwen3.5-9B (multimodal) ................... ✅ config unified (compose/.env/
 │                                                                    deploy/main/llm_client/llm_utils)
 ├─ B13.2  Vision-capable LLM client (images param) .............. ✅ chat(images=…) + tests
-├─ B13.3  Chat renders images + Mermaid (learn-chat.css + md) ... ⬜ (img styling, mermaid.js)
+├─ B13.3  Chat renders images (safe-scheme md ![]()) ........... ✅ images; ⬜ Mermaid (needs vendored lib, offline)
 ├─ B13.4  Hydration: diagram-as-code step (Mermaid + Socratic Q)  ⬜ (constrained output, B1)
 ├─ B13.5  Online image extraction + license filter + cache ...... ⬜ (research_server, B12/#10)
 ├─ B13.6  VLM relevance/caption/alt-text pass ................... ⬜ (now native via qwen3.5:9b)

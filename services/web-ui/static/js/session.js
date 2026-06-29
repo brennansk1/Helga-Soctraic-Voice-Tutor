@@ -167,6 +167,15 @@ function renderMarkdown(text) {
         return `\x00CB${idx}\x00`;
     });
 
+    // 2b. Images ![alt](url) — only safe schemes (data:image, http(s),
+    //     site-relative). Unsafe/foreign schemes are dropped to alt text.
+    s = s.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, function (m, alt, url) {
+        var safe = /^(data:image\/|https?:\/\/|\/static\/|\/|\.\/|assets\/)/i.test(url);
+        if (!safe) return alt;
+        var safeAlt = alt.replace(/"/g, '&quot;');
+        return '<img class="chat-md-img" loading="lazy" alt="' + safeAlt + '" src="' + url + '">';
+    });
+
     // 3. Headers — render as bold paragraphs (no h1/h2 visual weight
     //    inside chat bubbles — keeps spacing tight).
     s = s.replace(/^#{1,6}\s+(.+)$/gm, '<strong>$1</strong>');
