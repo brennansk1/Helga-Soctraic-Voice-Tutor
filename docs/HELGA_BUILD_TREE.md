@@ -1,7 +1,51 @@
-# Helga — Build Tree Framework Audit & Upgrade Plan
+# Helga — Build Tree: K-12 Socratic Curriculum Platform
 
-> REFACTOR/UPGRADE mode. Generated from a 4-agent code discovery sweep + a 6-stream deep-research effort.
-> Source HEAD: `b1aa72e` (== origin/main). Generated 2026-06-29.
+> **TWO LAYERS.** This document now tracks both (1) the **Baseline** — the reverse-engineered
+> single-user appliance (Phases 0–3, B1–B14, FE1–FE4 below; generated 2026-06-29 from a 4-agent
+> sweep + 6-stream research, source HEAD `b1aa72e`) — and (2) the **Target Design** — the
+> transformation into a multi-tenant, grade-adaptive, Utah-standards-aligned tutoring product for
+> Utah K-12 homeschool/school students funded by the Utah Fits All Scholarship. The Target Design
+> adds branches **B15–B27** and **FE5–FE8**, the **Tier F–J** roadmap, and the **expansion manifest**
+> (see `docs/BUILD_MANIFEST.md`). Curriculum source-of-truth: `docs/UTAH_K12_CURRICULUM_REFERENCE.md`.
+> Everything labeled "(as-is)" / "Baseline" describes the appliance we are building *from*.
+
+---
+
+## TARGET ARCHITECTURE (K-12 platform) — what we are building toward
+
+The product *is* the grade-level-adapted Socratic bot that **teaches the official Utah Core
+curriculum** (plus custom electives), sold to families and funded by the homeschool grant.
+Four transformations the baseline cannot do, plus supporting workstreams:
+
+| Field | Baseline (as-is) | Target |
+|---|---|---|
+| **Product** | personal offline tutor | Utah K-12 multi-tenant tutoring (grant-funded, sellable) |
+| **Tenancy** | single global FSM, no accounts | Parent (billing owner) → one+ Student profiles, fully isolated |
+| **Runtime target** | Mac Mini M4 Pro, offline | Linux GPU server, multi-tenant, self-hosted Qwen/Ollama (GPU fair-queue) |
+| **Curriculum** | LLM-generated on demand | curated, standards-tagged, **versioned, human-reviewed** catalog |
+| **Teaching** | persona "styles" only | grade-band (K-2/3-5/6-8/9-12) vocabulary, Bloom, scaffolding adaptation |
+| **Audience UI** | one learner, 8 tabs | kid-first student app + role-gated **parent dashboard** + admin CMS |
+| **Assessment** | quiz + Socratic grade | formal exams, per-standard checkpoints, **interest-themed** items |
+| **Commerce/legal** | none | Stripe billing + seats; COPPA/FERPA/Utah data law; consent gating |
+
+```
+Target topology (single GPU server first; scale-out deferred):
+Internet ─TLS→ Caddy → gunicorn(gevent) → web-ui  (Flask-Login, room-scoped Socket.IO)
+                                            │ student_id on every event
+                                            ▼
+                                core-logic  FSM REGISTRY (per-student instances) ─┐
+                                            │                                     │ GPU fair-queue
+                                            ▼                                     ▼  (semaphore + round-robin)
+                              rag/catalog (read-only standards catalog)      Ollama/Qwen (host GPU)
+                                            │
+                       helga.db (student_id-scoped; SQLite→Postgres when contended)
+                       data/catalog/ (curated courses) + data/courses/ (electives)
+                       Stripe webhook → subscriptions ; object storage (deferred)
+```
+
+Detailed staged design lives in the approved engineering plan; the feature-tree branches
+**B15–B27** (below, after the baseline tree) decompose it at this document's usual depth, and
+`docs/BUILD_MANIFEST.md` is the actionable checklist with acceptance criteria + releases.
 
 ---
 
@@ -366,3 +410,150 @@ Tracked in the session task list; queued for design/build.
 - **Memory Palace** has a weak evidence base (small effect, high bias) — keep as opt-in for concrete material, not a core retention engine.
 - Vector-store *choice* matters far less than chunking/embeddings/reranking/prompting — prioritize Tier B items 5–9 over any store migration.
 - Reranker latencies in sources are GPU/unspecified — **benchmark on the actual M4 Pro** before committing.
+
+---
+
+# TARGET DESIGN — K-12 PLATFORM EXPANSION (B15–B27, FE5–FE8)
+
+Same status legend: ✅ done · ✔️ tested · 🧩 stub/cleanup · ⬜ not-started · 🚫 broken · 🔨 in-progress.
+These branches extend the baseline tree above. Actionable checklist with acceptance criteria,
+target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
+`docs/UTAH_K12_CURRICULUM_REFERENCE.md`.
+
+## PHASE 4 — PLATFORM FEATURE TREE (target)
+
+```
+├─ B15 Accounts, Identity & Multi-Tenancy .......................... ⬜  (Workstream A; the #1 blocker)
+│  ├─ B15.1  Tenancy schema (parents/students/enrollments/consent/subs) ⬜  storage.py v3→v4 migration
+│  ├─ B15.2  student_id on all per-user tables + backfill legacy ... ⬜  composite PK rebuild on user_progress
+│  ├─ B15.3  StorageManager sub-store student_id scoping ........... ⬜  +_VALID_COLUMNS whitelist
+│  ├─ B15.4  Flask-Login auth (parent pw / student PIN, roles) ..... ⬜  app.py
+│  ├─ B15.5  Socket.IO room scoping (fixes B6.3 broadcast) ......... ⬜  app.py:172,245,582
+│  ├─ B15.6  Per-student FSM registry (kills global singleton) ..... ⬜  new fsm_registry.py; fsm_logic.py:3498
+│  ├─ B15.7  Per-student FSM persistence (fsm_sessions row) ........ ⬜  replaces user_state.json
+│  └─ B15.8  Isolation test suite (A can't read/write B) ........... ⬜
+├─ B16 Curriculum Catalog & Standards .............................. ⬜  (Workstream B)
+│  ├─ B16.1  standards + concept_standards tables (Utah codes) ..... ⬜
+│  ├─ B16.2  Read-only catalog store (data/catalog/, catalog flag) . ⬜  separate from user courses
+│  ├─ B16.3  Standards-driven batch build pipeline ................. ⬜  reuses Skeleton/Auditor/Hydrator
+│  ├─ B16.4  Phase-1 subjects published (K-8 Math, K-12 ELA, GFL, USG) ⬜
+│  ├─ B16.5  Phase-2 subjects (SEEd, Social Studies, CS) ........... ⬜
+│  ├─ B16.6  Phase-3 subjects (World Lang, Health, Lib/Digital) .... ⬜
+│  └─ B16.7  ★ baseline/enrichment toggle ......................... ⬜
+├─ B17 Grade-Level (K-12) Adaptation & Kid-First Tutoring .......... ⬜  (Workstreams C+D)
+│  ├─ B17.1  grade_band on students + catalog courses .............. ⬜
+│  ├─ B17.2  Grade-aware prompts (vocab/length/register) ........... ⬜  prompts.py:289-329 insertion point
+│  ├─ B17.3  Grade-bounded Bloom/mastery defaults .................. ⬜  reuses progressive_bloom/_check_mastery_gate
+│  ├─ B17.4  Grade-banded hint ladder + micro-lectures ............. ⬜  get_hint_prompt/get_micro_lecture_prompt
+│  ├─ B17.5  Manipulatives/visual answer modes (early math) ........ ⬜
+│  ├─ B17.6  Voice-first early-literacy/WL loop .................... ⬜  reuses STT/TTS (B7.3)
+│  └─ B17.7  Affect/frustration handling for young learners ........ ⬜  extends _detect_ignorance
+├─ B18 Assessment, Exams & Interest-Themed Engagement .............. ⬜  (Workstream G)
+│  ├─ B18.1  Formal exam/assessment generator ..................... ⬜  (baseline has quiz+grading, no exams)
+│  ├─ B18.2  Per-standard mastery checkpoints (gate progression) ... ⬜
+│  ├─ B18.3  Interests-into-exams themer (standard fixed, theme varies) ⬜  uses students.interests
+│  ├─ B18.4  Item validity check (still tests target standard) ..... ⬜
+│  └─ B18.5  GFL (74% cut) + Basic Civics (35/50) practice modes ... ⬜
+├─ B19 Parent / Guardian Dashboard ................................. ⬜  (Workstream E)
+│  ├─ B19.1  Children overview ..................................... ⬜
+│  ├─ B19.2  Per-child progress + standards coverage .............. ⬜  from concept_standards/activity_log
+│  ├─ B19.3  Elective approval workflow (pending_approval) ......... ⬜  gates custom wizard
+│  ├─ B19.4  Add/manage students (seat-capped) ..................... ⬜
+│  ├─ B19.5  Exportable progress/standards PDF report ............. ⬜  homeschool records
+│  └─ B19.6  Account/consent/data export+delete ................... ⬜  ties B21
+├─ B20 Billing & Subscriptions (Stripe) ........................... ⬜  (Workstream E5)
+│  ├─ B20.1  Stripe Checkout + customer portal .................... ⬜
+│  ├─ B20.2  Webhook → subscriptions mirror ....................... ⬜
+│  ├─ B20.3  Seat enforcement (seats vs student count) ............ ⬜
+│  └─ B20.4  Grant/invoice-friendly receipts ...................... ⬜  Utah Fits All expense docs
+├─ B21 Compliance, Privacy & Safety ............................... ⬜  (Workstream F)
+│  ├─ B21.1  COPPA verifiable parental consent + data minimization  ⬜  consent_records
+│  ├─ B21.2  FERPA / Utah Student Data Protection Act handling ..... ⬜  access/export/delete, retention
+│  ├─ B21.3  Self-hosted inference (no minor data to 3rd-party LLM)  ⬜  compliance advantage (locks AI-engine choice)
+│  ├─ B21.4  Health Strand 6 consent gating (abstinence framing) ... ⬜  Utah Code
+│  ├─ B21.5  Minor-safe tutoring guardrails (profanity/safety) ..... ⬜  extends B8
+│  └─ B21.6  ToS/Privacy Policy + Utah Fits All eligibility posture  ⬜
+├─ B22 Gamification 2.0 ............................................ ⬜  (Workstream H; baseline XP/streak skeletal)
+│  ├─ B22.1  Wire existing XP everywhere, per-student .............. ⬜  librarian.py gamification
+│  ├─ B22.2  Skill-tree map (strands=branches, standards=nodes) .... ⬜  FE8
+│  ├─ B22.3  Badges per standard/strand; quests/daily challenges ... ⬜
+│  ├─ B22.4  Interest-themed cosmetic rewards (avatars) ............ ⬜
+│  ├─ B22.5  Grade-appropriate framing + on/off toggle ............ ⬜
+│  └─ B22.6  Safe (within-family/anonymized, no open leaderboards) . ⬜  COPPA
+├─ B23 Production Scaling & Deployment ............................. ⬜  (Workstream J)
+│  ├─ B23.1  GPU semaphore + per-student fair queue ............... ⬜  llm_client.py chat()/get_llm_client()
+│  ├─ B23.2  Interactive vs background priority classes ........... ⬜
+│  ├─ B23.3  Ollama tuning (KEEP_ALIVE=-1, MAX_LOADED_MODELS=1) .... ⬜
+│  ├─ B23.4  SQLite→Postgres (psycopg pool behind sub-stores) ..... ⬜  deferred trigger: write contention
+│  ├─ B23.5  Multi-worker (Redis sessions + Socket.IO MQ + stateless FSM) ⬜  deferred
+│  ├─ B23.6  Caddy/TLS + gunicorn-gevent topology ................. ⬜
+│  └─ B23.7  Backups/restore drill + secrets management ........... ⬜  extends B5.7/B9.3
+├─ B24 Notifications & Communications .............................. ⬜  (Workstream L)
+│  ├─ B24.1  Transactional email + queue .......................... ⬜
+│  ├─ B24.2  Weekly parent progress digest ....................... ⬜
+│  ├─ B24.3  In-app notifications ................................ ⬜
+│  └─ B24.4  Struggle/inactivity alerts .......................... ⬜
+├─ B25 Accessibility & Differentiation ............................. 🔨  (Workstream K; extends FE4.3/B13.9)
+│  ├─ B25.1  WCAG 2.1 AA pass (keyboard/aria-live/contrast) ....... 🔨  (focus ring already done)
+│  ├─ B25.2  Reading/dyslexia supports (read-aloud, fonts) ........ ⬜
+│  ├─ B25.3  ELL simplified-language + glossing .................. ⬜
+│  ├─ B25.4  IEP/504 accommodation flags honored by FSM/exams ..... ⬜
+│  └─ B25.5  Alt-text/captions → TTS/text-only ................... ⬜
+├─ B26 Content Authoring & Review CMS .............................. ⬜  (Workstream M; legal+quality gate)
+│  ├─ B26.1  Offline authoring job runner ......................... ⬜
+│  ├─ B26.2  Admin review console (draft→reviewed→published) ...... ⬜
+│  ├─ B26.3  Catalog versioning + changelog ...................... ⬜
+│  ├─ B26.4  Standards-coverage audit report ..................... ⬜
+│  └─ B26.5  Hydration provenance log ............................ ⬜
+└─ B27 Observability, Analytics & Unit Economics ................... ⬜  (Workstream N; expands B9.7)
+   ├─ B27.1  Structured JSON logging + correlation ............... ⬜
+   ├─ B27.2  Prometheus metrics (GPU/latency/sessions) ........... ⬜
+   ├─ B27.3  xAPI learning-analytics event log .................. ⬜
+   ├─ B27.4  Cost / tokens-per-student tracking ................. ⬜
+   └─ B27.5  Ollama circuit-breaker + alerting (closes B9.5) ..... ⬜
+```
+
+## FRONTEND BUILD TREE (target) — FE5–FE8
+
+```
+├─ FE5  Student app shell (kid-first tab restructure) ............. ⬜  (replaces 8-tab single-user nav)
+│  ├─ FE5.1  Today (next lesson + due + daily quest) ............. ⬜  merges Home + Schedule-due
+│  ├─ FE5.2  Learn (skill-tree + Socratic session) .............. ⬜  keeps learn.html, adds tree
+│  ├─ FE5.3  Practice (merge Quiz + Review) ..................... ⬜
+│  ├─ FE5.4  My Stuff (interests, gamification, avatar) ......... ⬜
+│  └─ FE5.5  Remove Status/heavy Settings from student view ..... ⬜  (Status → admin/ops only)
+├─ FE6  Parent dashboard surface .................................. ⬜  (B19, role-gated)
+├─ FE7  Auth & onboarding flows ................................... ⬜  parent signup, student PIN, consent capture
+└─ FE8  Skill-tree map view (gamified catalog) ................... ⬜  (B22.2)
+```
+
+## RESEARCH/PRODUCT ROADMAP — Tiers F–J (continues baseline Tiers A–E)
+
+Mapped to releases R0 Foundation · R1 Multi-student MVP · R2 Curriculum+Parents · R3 Engagement+Billing · R4 Scale-out.
+
+### Tier F — Multi-tenant foundation (R0–R1)
+B15 (schema → auth → FSM registry), B17.1-3 grade adaptation, B23.1-3 GPU fair queue, and the
+baseline **P0 engine bug fixes** (B4.1 FSRS, B3.3 grading JSON-mode, B5.5 update_mastery, B9.2/B9.3).
+*Outcome: isolated, grade-appropriate, GPU-fair multi-student tutoring on one server.*
+
+### Tier G — Curriculum & pedagogy (R2)
+B16 catalog + standards, B26 authoring/review CMS, B17.4-7 + B18 kid tooling + exams + interests,
+B25 accessibility. *Outcome: kids learn published Utah-standards courses.*
+
+### Tier H — Parents, commerce & compliance (R2–R3)
+B19 parent dashboard, B20 Stripe billing, B21 compliance, B24 notifications.
+*Outcome: paying families, legal posture, parent control.*
+
+### Tier I — Engagement & UX (R3)
+B22 gamification, FE5–FE8 tab restructure + skill tree, B17.5/D2-D4 multimodal/voice tools.
+*Outcome: retention.*
+
+### Tier J — Scale-out (R4)
+B16.5-6 remaining subjects, B23.4-7 Postgres / multi-worker / Caddy-gunicorn topology / backups,
+B27 observability + unit economics. *Outcome: many concurrent families across all subjects.*
+
+### Sequencing note
+R0/R1 (Tier F) is load-bearing — **B15 multi-tenancy is the prerequisite for every other target
+branch** (parent dashboard, billing, per-student catalog progress, scaling all assume it). Build the
+storage abstraction (B15.1-3) and registry boundary (B15.6) deliberately so later Postgres (B23.4)
+and multi-worker (B23.5) are connection-string/locality swaps, not rewrites.
