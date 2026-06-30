@@ -47,6 +47,11 @@ Detailed staged design lives in the approved engineering plan; the feature-tree 
 **B15–B27** (below, after the baseline tree) decompose it at this document's usual depth, and
 `docs/BUILD_MANIFEST.md` is the actionable checklist with acceptance criteria + releases.
 
+> **Implementation-ready design specs are complete** in `docs/design/` (index:
+> `docs/design/00_INDEX.md`) — exact schemas, API contracts, state machines, and parameter tables for
+> every target branch. Schema source-of-truth: `docs/design/01_DATA_MODEL.md`. Spec map: B15→03 ·
+> B16/B26→04 · B17→02 · B18→05 · B19→06 · B20→09 · B21→08 · B22→07 · B23/B27→10 · I/FE5-8/B24→11.
+
 ---
 
 ## PHASE 0 — CALIBRATION

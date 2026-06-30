@@ -28,6 +28,7 @@ idiom. Ship them as separate versions so each is independently revertible/testab
 | v6 | Assessment/exam tables | §5 |
 | v7 | Per-student gamification tables (migrate out of librarian global K-V) | §6 |
 | v8 | Accommodations, notifications, compliance audit log | §7 |
+| v9 | Catalog version pinning + hydration provenance + billing idempotency (cross-spec additive) | §7b |
 
 ### Backfill rule (v4) — never lose the existing single user's data
 1. Insert a synthetic parent `par_legacy0` and student `stu_legacy0` (grade_band `'9-12'`, display "Legacy Learner").
@@ -296,6 +297,34 @@ CREATE TABLE IF NOT EXISTS audit_log (          -- FERPA/Utah data-access audit 
     created_at  TEXT DEFAULT (datetime('now'))
 );
 ```
+
+## 7b. Catalog versioning, provenance & billing idempotency (v9 — cross-spec additive)
+These columns/tables are referenced by specs 04 (catalog) and 09 (billing) and are split into v9 so v5–v8
+stay self-contained. All additive.
+```sql
+-- Spec 04 §5: pin an enrollment to the catalog version the student started on
+ALTER TABLE enrollments ADD COLUMN course_version INTEGER DEFAULT 1;
+
+-- Spec 04 §7: per-concept hydration provenance (legal/licensing posture, ties spec 08 F1)
+CREATE TABLE IF NOT EXISTS hydration_provenance (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    course_uid  TEXT NOT NULL,
+    concept_uid TEXT NOT NULL,
+    sources     TEXT,                            -- JSON: urls/titles/confidence from research_server
+    model       TEXT, generated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_provenance_course ON hydration_provenance(course_uid);
+
+-- Spec 09 §3/§8: Stripe webhook idempotency ledger (process each event once)
+CREATE TABLE IF NOT EXISTS billing_events (
+    provider_event_id TEXT PRIMARY KEY,          -- Stripe evt_…
+    type        TEXT, parent_id TEXT,
+    processed_at TEXT DEFAULT (datetime('now')),
+    payload_hash TEXT
+);
+```
+Catalog course content versions themselves are stored as immutable file snapshots under
+`data/catalog/courses/{uid}/versions/v{n}.json` (spec 04 §5), not in SQLite.
 
 ## 8. Storage layer changes (sub-store API)
 Every `StorageManager` per-user sub-store method gains a **leading `student_id`** parameter and an

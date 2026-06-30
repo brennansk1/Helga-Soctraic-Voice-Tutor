@@ -9,6 +9,11 @@
 **Priority:** P0 = foundation-blocking (nothing ships without it) · P1 = MVP feature · P2 = monetization/quality · P3 = scale/polish
 **Release:** R0 Foundation · R1 Multi-student MVP · R2 Curriculum + Parents · R3 Engagement + Billing · R4 Scale-out
 
+> **Detailed design specs are complete** under `docs/design/` (index: `docs/design/00_INDEX.md`). Every
+> B-code branch below has an implementation-ready spec — exact schemas, API contracts, state machines,
+> algorithms, parameter tables. The schema source-of-truth is `docs/design/01_DATA_MODEL.md`. Spec map:
+> B15→03 · B16/B26→04 · B17→02 · B18→05 · B19→06 · B20→09 · B21→08 · B22→07 · B23/B27→10 · I/FE5-8/B24→11.
+
 ---
 
 ## Phase 0 — Documentation & foundation (this session + immediate next)
@@ -19,7 +24,9 @@
 | 0.2 | Rewrite build tree for new target design | `docs/HELGA_BUILD_TREE.md` | done |
 | 0.3 | Write this build manifest | `docs/BUILD_MANIFEST.md` | done |
 | 0.4 | Work on branch `claude/edu-platform-scaling-design-syuzr3` | git | done |
-| 0.5 | Fix P0 engine bugs (FSRS sign, grading JSON-mode, mastery gate low-Bloom, `update_mastery` course_uid, `.env`/secret) | `fsrs_engine.py`, `fsm_logic.py`, `storage.py`, `docker-compose.yml` | todo |
+| 0.5 | Write detailed design specs (all branches, implementation-ready) | `docs/design/00–11` | done |
+| 0.6 | Save curriculum + gamification research reports | `docs/UTAH_K12_CURRICULUM_REFERENCE.md`, `docs/GAMIFICATION_RESEARCH.md` | done |
+| 0.7 | Fix P0 engine bugs (FSRS sign, grading JSON-mode, mastery gate low-Bloom, `update_mastery` course_uid, `.env`/secret) | `fsrs_engine.py`, `fsm_logic.py`, `storage.py`, `docker-compose.yml` | todo — first build step |
 
 ---
 
