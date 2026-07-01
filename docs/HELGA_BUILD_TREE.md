@@ -428,10 +428,10 @@ target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
 ## PHASE 4 — PLATFORM FEATURE TREE (target)
 
 ```
-├─ B15 Accounts, Identity & Multi-Tenancy .......................... ⬜  (Workstream A; the #1 blocker)
-│  ├─ B15.1  Tenancy schema (parents/students/enrollments/consent/subs) ⬜  storage.py v3→v4 migration
-│  ├─ B15.2  student_id on all per-user tables + backfill legacy ... ⬜  composite PK rebuild on user_progress
-│  ├─ B15.3  StorageManager sub-store student_id scoping ........... ⬜  +_VALID_COLUMNS whitelist
+├─ B15 Accounts, Identity & Multi-Tenancy .......................... 🔨  (Workstream A; the #1 blocker)
+│  ├─ B15.1  Tenancy schema (parents/students/enrollments/consent/subs) ✔️  storage.py v4 + 4 new stores
+│  ├─ B15.2  student_id on all per-user tables + backfill legacy ... ✔️  PK rebuild; zero-loss migration test
+│  ├─ B15.3  StorageManager sub-store student_id scoping ........... ✔️  kwarg default stu_legacy0 (R1 cutover)
 │  ├─ B15.4  Flask-Login auth (parent pw / student PIN, roles) ..... ⬜  app.py
 │  ├─ B15.5  Socket.IO room scoping (fixes B6.3 broadcast) ......... ⬜  app.py:172,245,582
 │  ├─ B15.6  Per-student FSM registry (kills global singleton) ..... ⬜  new fsm_registry.py; fsm_logic.py:3498

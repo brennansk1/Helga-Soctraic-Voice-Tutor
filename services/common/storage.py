@@ -20,6 +20,17 @@ from typing import Callable, List, Dict, Optional, Any
 
 logger = logging.getLogger(__name__)
 
+# B15 multi-tenancy: the isolation key for all per-user data. Until real auth
+# lands (B15.4), every per-user store call defaults to the legacy student so
+# the app keeps running single-user (spec 01 §1 backfill, spec 03 §1.2).
+DEFAULT_STUDENT_ID = "stu_legacy0"
+LEGACY_PARENT_ID = "par_legacy0"
+
+
+def _sid(student_id: Optional[str]) -> str:
+    """Resolve the effective student_id (R0 fallback = legacy student)."""
+    return student_id or DEFAULT_STUDENT_ID
+
 
 class _ThreadLocalDB:
     """Thread-local SQLite connection manager. One connection per thread, reused
@@ -68,6 +79,11 @@ class StorageManager:
         self.settings = SettingsStore(self.db_path)
         self.flashcards = FlashcardStore(self.db_path)
         self.search = SearchStore(self.db_path, self.courses)
+        # B15 tenancy stores
+        self.accounts = AccountStore(self.db_path)
+        self.enrollments = EnrollmentStore(self.db_path)
+        self.consent = ConsentStore(self.db_path)
+        self.fsm = FsmSessionStore(self.db_path)
 
     def _init_db(self):
         """Create SQLite tables if they don't exist."""
@@ -202,6 +218,156 @@ class StorageManager:
                     pass  # Column already exists
                 cursor.execute("UPDATE schema_version SET version = 3")
                 logger.info("Schema migrated to v3: bloom_level added to user_progress")
+
+            # Schema migration v3 → v4: multi-tenancy core (design spec 01 §2).
+            # Tenancy tables, student_id on per-user tables, legacy backfill,
+            # user_progress composite-PK rebuild, fsm_sessions.
+            if current_version < 4:
+                cursor.executescript("""
+                    CREATE TABLE IF NOT EXISTS parents (
+                        id            TEXT PRIMARY KEY,
+                        email         TEXT UNIQUE NOT NULL,
+                        password_hash TEXT NOT NULL,
+                        display_name  TEXT,
+                        status        TEXT DEFAULT 'active',
+                        email_verified_at TEXT,
+                        created_at    TEXT DEFAULT (datetime('now')),
+                        updated_at    TEXT DEFAULT (datetime('now'))
+                    );
+
+                    CREATE TABLE IF NOT EXISTS students (
+                        id            TEXT PRIMARY KEY,
+                        parent_id     TEXT NOT NULL REFERENCES parents(id) ON DELETE CASCADE,
+                        display_name  TEXT NOT NULL,
+                        pin_hash      TEXT,
+                        grade_band    TEXT NOT NULL DEFAULT '6-8',
+                        grade_numeric INTEGER,
+                        avatar_url    TEXT,
+                        interests     TEXT DEFAULT '[]',
+                        settings      TEXT DEFAULT '{}',
+                        status        TEXT DEFAULT 'active',
+                        created_at    TEXT DEFAULT (datetime('now')),
+                        updated_at    TEXT DEFAULT (datetime('now'))
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_students_parent ON students(parent_id);
+
+                    CREATE TABLE IF NOT EXISTS enrollments (
+                        id                  TEXT PRIMARY KEY,
+                        student_id          TEXT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+                        course_uid          TEXT NOT NULL,
+                        course_kind         TEXT NOT NULL DEFAULT 'catalog',
+                        current_concept_uid TEXT,
+                        status              TEXT NOT NULL DEFAULT 'active',
+                        approved_by         TEXT,
+                        approved_at         TEXT,
+                        enrolled_at         TEXT DEFAULT (datetime('now')),
+                        UNIQUE(student_id, course_uid)
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_enroll_student ON enrollments(student_id);
+                    CREATE INDEX IF NOT EXISTS idx_enroll_status  ON enrollments(student_id, status);
+
+                    CREATE TABLE IF NOT EXISTS consent_records (
+                        id            TEXT PRIMARY KEY,
+                        parent_id     TEXT NOT NULL REFERENCES parents(id) ON DELETE CASCADE,
+                        student_id    TEXT REFERENCES students(id) ON DELETE CASCADE,
+                        consent_type  TEXT NOT NULL,
+                        granted       INTEGER NOT NULL,
+                        policy_version TEXT NOT NULL,
+                        method        TEXT,
+                        ip_address    TEXT,
+                        created_at    TEXT DEFAULT (datetime('now'))
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_consent_parent ON consent_records(parent_id);
+
+                    CREATE TABLE IF NOT EXISTS subscriptions (
+                        parent_id            TEXT PRIMARY KEY REFERENCES parents(id) ON DELETE CASCADE,
+                        provider             TEXT DEFAULT 'stripe',
+                        provider_customer_id TEXT,
+                        provider_sub_id      TEXT,
+                        plan                 TEXT,
+                        seats                INTEGER DEFAULT 1,
+                        status               TEXT DEFAULT 'inactive',
+                        current_period_end   TEXT,
+                        updated_at           TEXT DEFAULT (datetime('now'))
+                    );
+
+                    CREATE TABLE IF NOT EXISTS fsm_sessions (
+                        student_id  TEXT PRIMARY KEY REFERENCES students(id) ON DELETE CASCADE,
+                        blob        TEXT NOT NULL,
+                        updated_at  TEXT DEFAULT (datetime('now'))
+                    );
+                """)
+
+                # Synthetic legacy tenant — the app keeps running single-user
+                # under this pair until real auth lands (spec 01 §1).
+                cursor.execute(
+                    "INSERT OR IGNORE INTO parents (id, email, password_hash, display_name, status) "
+                    "VALUES (?, 'legacy@localhost', '', 'Legacy Parent', 'active')",
+                    (LEGACY_PARENT_ID,))
+                cursor.execute(
+                    "INSERT OR IGNORE INTO students (id, parent_id, display_name, grade_band) "
+                    "VALUES (?, ?, 'Legacy Learner', '9-12')",
+                    (DEFAULT_STUDENT_ID, LEGACY_PARENT_ID))
+
+                # student_id on per-user tables + backfill
+                for table in ("activity_log", "scheduled_reviews", "flashcards"):
+                    try:
+                        cursor.execute(f"ALTER TABLE {table} ADD COLUMN student_id TEXT")
+                    except sqlite3.OperationalError:
+                        pass  # Column already exists
+                    cursor.execute(
+                        f"UPDATE {table} SET student_id = ? WHERE student_id IS NULL",
+                        (DEFAULT_STUDENT_ID,))
+
+                # user_progress composite-PK rebuild: PK was concept_uid alone,
+                # which allows exactly one student per concept. SQLite can't
+                # alter a PK in place → rebuild with pinned column order.
+                cursor.executescript("""
+                    CREATE TABLE IF NOT EXISTS user_progress_new (
+                        student_id TEXT NOT NULL,
+                        concept_uid TEXT NOT NULL,
+                        course_uid TEXT NOT NULL,
+                        status TEXT DEFAULT 'locked',
+                        grade INTEGER DEFAULT 0,
+                        easiness_factor REAL DEFAULT 2.5,
+                        interval_days INTEGER DEFAULT 0,
+                        repetitions INTEGER DEFAULT 0,
+                        next_review_date TEXT,
+                        last_review_date TEXT,
+                        times_reviewed INTEGER DEFAULT 0,
+                        times_correct INTEGER DEFAULT 0,
+                        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                        bloom_level INTEGER DEFAULT 1,
+                        PRIMARY KEY (student_id, concept_uid)
+                    );
+                """)
+                cursor.execute(f"""
+                    INSERT OR IGNORE INTO user_progress_new (
+                        student_id, concept_uid, course_uid, status, grade,
+                        easiness_factor, interval_days, repetitions,
+                        next_review_date, last_review_date, times_reviewed,
+                        times_correct, created_at, updated_at, bloom_level)
+                    SELECT '{DEFAULT_STUDENT_ID}', concept_uid, course_uid, status, grade,
+                        easiness_factor, interval_days, repetitions,
+                        next_review_date, last_review_date, times_reviewed,
+                        times_correct, created_at, updated_at, bloom_level
+                    FROM user_progress
+                """)
+                cursor.executescript("""
+                    DROP TABLE user_progress;
+                    ALTER TABLE user_progress_new RENAME TO user_progress;
+                    CREATE INDEX IF NOT EXISTS idx_progress_course ON user_progress(course_uid);
+                    CREATE INDEX IF NOT EXISTS idx_progress_review ON user_progress(next_review_date);
+                    CREATE INDEX IF NOT EXISTS idx_progress_status ON user_progress(status);
+                    CREATE INDEX IF NOT EXISTS idx_progress_student   ON user_progress(student_id, course_uid);
+                    CREATE INDEX IF NOT EXISTS idx_activity_student   ON activity_log(student_id, created_at);
+                    CREATE INDEX IF NOT EXISTS idx_flashcards_student ON flashcards(student_id, next_review_date);
+                    CREATE INDEX IF NOT EXISTS idx_schedule_student   ON scheduled_reviews(student_id, scheduled_date);
+                """)
+                cursor.execute("UPDATE schema_version SET version = 4")
+                logger.info("Schema migrated to v4: multi-tenancy core (tenancy tables, "
+                            "student_id scoping, legacy backfill, user_progress PK rebuild)")
 
             conn.commit()
         finally:
@@ -820,7 +986,11 @@ class SearchStore:
 
 
 class ProgressStore:
-    """SQLite user progress per concept."""
+    """SQLite user progress per concept, scoped by student_id (B15.3).
+
+    student_id defaults to the legacy student until real auth lands (B15.4);
+    passing it explicitly is the multi-tenant path. Every query filters on it.
+    """
 
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -830,33 +1000,36 @@ class ProgressStore:
     _VALID_COLUMNS = {
         'status', 'grade', 'easiness_factor', 'interval_days', 'repetitions',
         'next_review_date', 'last_review_date', 'times_reviewed', 'times_correct',
-        'updated_at', 'concept_uid', 'course_uid', 'bloom_level'
+        'updated_at', 'concept_uid', 'course_uid', 'bloom_level', 'student_id'
     }
 
     def _get_db(self) -> sqlite3.Connection:
         return self._db.get()
 
-    def get_progress(self, concept_uid: str) -> Optional[dict]:
+    def get_progress(self, concept_uid: str, student_id: str = None) -> Optional[dict]:
         conn = self._get_db()
-        row = conn.execute("SELECT * FROM user_progress WHERE concept_uid = ?", (concept_uid,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM user_progress WHERE concept_uid = ? AND student_id = ?",
+            (concept_uid, _sid(student_id))).fetchone()
         return dict(row) if row else None
 
-    def update_progress(self, concept_uid: str, course_uid: str, **kwargs):
-        """Upsert progress for a concept."""
+    def update_progress(self, concept_uid: str, course_uid: str, student_id: str = None, **kwargs):
+        """Upsert progress for a concept (keyed on (student_id, concept_uid))."""
         # BUG-7: Validate column names against whitelist
         invalid_keys = set(kwargs.keys()) - self._VALID_COLUMNS
         if invalid_keys:
             logger.warning(f"Rejected invalid column names in update_progress: {invalid_keys}")
             kwargs = {k: v for k, v in kwargs.items() if k in self._VALID_COLUMNS}
-        
+
+        sid = _sid(student_id)
         conn = self._get_db()
         # B5.5: INSERT OR REPLACE rewrites the whole row, so an empty course_uid
         # would orphan existing progress from its course. If the caller didn't
         # supply one (e.g. review-only updates), preserve the existing link.
         if not course_uid:
             existing = conn.execute(
-                "SELECT course_uid FROM user_progress WHERE concept_uid = ?",
-                (concept_uid,),
+                "SELECT course_uid FROM user_progress WHERE concept_uid = ? AND student_id = ?",
+                (concept_uid, sid),
             ).fetchone()
             if existing and existing["course_uid"]:
                 course_uid = existing["course_uid"]
@@ -864,43 +1037,46 @@ class ProgressStore:
         # PERF-1: Use INSERT OR REPLACE upsert pattern
         kwargs["concept_uid"] = concept_uid
         kwargs["course_uid"] = course_uid
+        kwargs["student_id"] = sid
         cols = ", ".join(kwargs.keys())
         placeholders = ", ".join("?" for _ in kwargs)
         conn.execute(f"INSERT OR REPLACE INTO user_progress ({cols}) VALUES ({placeholders})", list(kwargs.values()))
         conn.commit()
 
-    def mark_completed(self, concept_uid: str, course_uid: str):
-        self.update_progress(concept_uid, course_uid, status="completed")
+    def mark_completed(self, concept_uid: str, course_uid: str, student_id: str = None):
+        self.update_progress(concept_uid, course_uid, student_id=student_id, status="completed")
 
-    def get_course_progress(self, course_uid: str) -> List[dict]:
+    def get_course_progress(self, course_uid: str, student_id: str = None) -> List[dict]:
         conn = self._get_db()
-        rows = conn.execute("SELECT * FROM user_progress WHERE course_uid = ?", (course_uid,)).fetchall()
+        rows = conn.execute(
+            "SELECT * FROM user_progress WHERE course_uid = ? AND student_id = ?",
+            (course_uid, _sid(student_id))).fetchall()
         return [dict(r) for r in rows]
 
-    def get_due_reviews(self, target_date: str = None) -> List[dict]:
+    def get_due_reviews(self, target_date: str = None, student_id: str = None) -> List[dict]:
         """Get concepts due for review on or before target_date."""
         if not target_date:
             target_date = date.today().isoformat()
         conn = self._get_db()
         rows = conn.execute(
-            "SELECT * FROM user_progress WHERE next_review_date <= ? AND status != 'locked'",
-            (target_date,)
+            "SELECT * FROM user_progress WHERE next_review_date <= ? AND status != 'locked' AND student_id = ?",
+            (target_date, _sid(student_id))
         ).fetchall()
         return [dict(r) for r in rows]
 
-    def get_completion_percentage(self, course_uid: str, total_concepts: int) -> float:
+    def get_completion_percentage(self, course_uid: str, total_concepts: int, student_id: str = None) -> float:
         """Calculate completion percentage for a course."""
         conn = self._get_db()
         row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM user_progress WHERE course_uid = ? AND status = 'completed'",
-            (course_uid,)
+            "SELECT COUNT(*) as cnt FROM user_progress WHERE course_uid = ? AND status = 'completed' AND student_id = ?",
+            (course_uid, _sid(student_id))
         ).fetchone()
         completed = row["cnt"] if row else 0
         return (completed / total_concepts * 100) if total_concepts > 0 else 0
 
 
 class FlashcardStore:
-    """SQLite user flashcards tracking."""
+    """SQLite user flashcards tracking, scoped by student_id (B15.3)."""
 
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -910,49 +1086,53 @@ class FlashcardStore:
     _VALID_COLUMNS = {
         'status', 'next_review_date', 'easiness_factor', 'interval_days',
         'repetitions', 'updated_at', 'front', 'back',
-        'stability', 'difficulty', 'last_review_date', 'lapses', 'source'
+        'stability', 'difficulty', 'last_review_date', 'lapses', 'source',
+        'student_id'
     }
 
     def _get_db(self) -> sqlite3.Connection:
         return self._db.get()
 
-    def add_card(self, course_uid: str, concept_uid: str, front: str, back: str) -> str:
+    def add_card(self, course_uid: str, concept_uid: str, front: str, back: str,
+                 student_id: str = None) -> str:
         conn = self._get_db()
         uid = f"card_{uuid.uuid4().hex[:8]}"
         conn.execute(
-            "INSERT INTO flashcards (uid, course_uid, concept_uid, front, back) VALUES (?, ?, ?, ?, ?)",
-            (uid, course_uid, concept_uid, front, back)
+            "INSERT INTO flashcards (uid, course_uid, concept_uid, front, back, student_id) VALUES (?, ?, ?, ?, ?, ?)",
+            (uid, course_uid, concept_uid, front, back, _sid(student_id))
         )
         conn.commit()
         return uid
 
-    def get_due_cards(self, course_uid: str = None, target_date: str = None) -> List[dict]:
+    def get_due_cards(self, course_uid: str = None, target_date: str = None,
+                      student_id: str = None) -> List[dict]:
         if not target_date:
             target_date = date.today().isoformat()
         conn = self._get_db()
-        query = "SELECT * FROM flashcards WHERE (next_review_date <= ? OR next_review_date IS NULL) AND status != 'suspended'"
-        params = [target_date]
+        query = ("SELECT * FROM flashcards WHERE (next_review_date <= ? OR next_review_date IS NULL) "
+                 "AND status != 'suspended' AND student_id = ?")
+        params = [target_date, _sid(student_id)]
         if course_uid:
             query += " AND course_uid = ?"
             params.append(course_uid)
         rows = conn.execute(query, params).fetchall()
         return [dict(r) for r in rows]
 
-    def update_card(self, uid: str, **kwargs):
+    def update_card(self, uid: str, student_id: str = None, **kwargs):
         # BUG-7: Validate column names against whitelist
         invalid_keys = set(kwargs.keys()) - self._VALID_COLUMNS
         if invalid_keys:
             logger.warning(f"Rejected invalid column names in update_card: {invalid_keys}")
             kwargs = {k: v for k, v in kwargs.items() if k in self._VALID_COLUMNS}
-        
+
         conn = self._get_db()
         kwargs["updated_at"] = datetime.utcnow().isoformat()
         sets = ", ".join(f"{k} = ?" for k in kwargs)
-        vals = list(kwargs.values()) + [uid]
-        conn.execute(f"UPDATE flashcards SET {sets} WHERE uid = ?", vals)
+        vals = list(kwargs.values()) + [uid, _sid(student_id)]
+        conn.execute(f"UPDATE flashcards SET {sets} WHERE uid = ? AND student_id = ?", vals)
         conn.commit()
 
-    def grade_card_fsrs(self, uid: str, rating: int, fsrs_engine) -> dict:
+    def grade_card_fsrs(self, uid: str, rating: int, fsrs_engine, student_id: str = None) -> dict:
         """Grade a card using FSRS algorithm and update all scheduling fields.
 
         Args:
@@ -964,7 +1144,8 @@ class FlashcardStore:
             Dict with new scheduling info (interval, next_review_date, stability, etc.)
         """
         conn = self._get_db()
-        row = conn.execute("SELECT * FROM flashcards WHERE uid = ?", (uid,)).fetchone()
+        row = conn.execute("SELECT * FROM flashcards WHERE uid = ? AND student_id = ?",
+                           (uid, _sid(student_id))).fetchone()
         if not row:
             raise ValueError(f"Card {uid} not found")
 
@@ -1005,10 +1186,10 @@ class FlashcardStore:
                 next_review_date = ?, last_review_date = ?,
                 repetitions = ?, lapses = ?, status = 'review',
                 updated_at = ?
-            WHERE uid = ?
+            WHERE uid = ? AND student_id = ?
         """, (new_stability, new_difficulty, new_interval,
               next_review, date.today().isoformat(),
-              reps, lapses, now, uid))
+              reps, lapses, now, uid, _sid(student_id)))
         conn.commit()
 
         retention = fsrs_engine.get_retention(new_stability, 0)
@@ -1025,12 +1206,12 @@ class FlashcardStore:
             "retention": round(retention, 4),
         }
 
-    def get_review_stats(self, course_uid: str = None) -> dict:
+    def get_review_stats(self, course_uid: str = None, student_id: str = None) -> dict:
         """Get aggregated review statistics for the schedule view."""
         conn = self._get_db()
         today = date.today().isoformat()
-        base_where = "WHERE status != 'suspended'"
-        params = []
+        base_where = "WHERE status != 'suspended' AND student_id = ?"
+        params = [_sid(student_id)]
         if course_uid:
             base_where += " AND course_uid = ?"
             params.append(course_uid)
@@ -1088,14 +1269,16 @@ class FlashcardStore:
             "total_cards": due_count + upcoming_count,
         }
 
-    def get_cards_for_concept(self, concept_uid: str) -> List[dict]:
+    def get_cards_for_concept(self, concept_uid: str, student_id: str = None) -> List[dict]:
         conn = self._get_db()
-        rows = conn.execute("SELECT * FROM flashcards WHERE concept_uid = ?", (concept_uid,)).fetchall()
+        rows = conn.execute("SELECT * FROM flashcards WHERE concept_uid = ? AND student_id = ?",
+                            (concept_uid, _sid(student_id))).fetchall()
         return [dict(r) for r in rows]
 
-    def get_cards_for_course(self, course_uid: str) -> List[dict]:
+    def get_cards_for_course(self, course_uid: str, student_id: str = None) -> List[dict]:
         conn = self._get_db()
-        rows = conn.execute("SELECT * FROM flashcards WHERE course_uid = ?", (course_uid,)).fetchall()
+        rows = conn.execute("SELECT * FROM flashcards WHERE course_uid = ? AND student_id = ?",
+                            (course_uid, _sid(student_id))).fetchall()
         return [dict(r) for r in rows]
 
 
@@ -1112,21 +1295,22 @@ class ActivityStore:
     def log_activity(self, course_uid: str, activity_type: str,
                      concept_uid: str = None, unit_uid: str = None,
                      duration_seconds: int = 0, grade: int = None,
-                     details: dict = None):
+                     details: dict = None, student_id: str = None):
         conn = self._get_db()
         conn.execute(
-            "INSERT INTO activity_log (course_uid, concept_uid, unit_uid, activity_type, duration_seconds, grade, details) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO activity_log (course_uid, concept_uid, unit_uid, activity_type, duration_seconds, grade, details, student_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (course_uid, concept_uid, unit_uid, activity_type, duration_seconds, grade,
-             json.dumps(details) if details else None)
+             json.dumps(details) if details else None, _sid(student_id))
         )
         conn.commit()
 
     def get_activities(self, start_date: str = None, end_date: str = None,
-                       course_uid: str = None, activity_type: str = None) -> List[dict]:
+                       course_uid: str = None, activity_type: str = None,
+                       student_id: str = None) -> List[dict]:
         conn = self._get_db()
-        query = "SELECT * FROM activity_log WHERE 1=1"
-        params = []
+        query = "SELECT * FROM activity_log WHERE student_id = ?"
+        params = [_sid(student_id)]
         if start_date:
             query += " AND created_at >= ?"
             params.append(start_date)
@@ -1143,21 +1327,21 @@ class ActivityStore:
         rows = conn.execute(query, params).fetchall()
         return [dict(r) for r in rows]
 
-    def get_daily_summary(self, target_date: str = None) -> dict:
+    def get_daily_summary(self, target_date: str = None, student_id: str = None) -> dict:
         if not target_date:
             target_date = date.today().isoformat()
         conn = self._get_db()
         rows = conn.execute(
             "SELECT activity_type, COUNT(*) as cnt, SUM(duration_seconds) as total_time "
-            "FROM activity_log WHERE DATE(created_at) = ? GROUP BY activity_type",
-            (target_date,)
+            "FROM activity_log WHERE DATE(created_at) = ? AND student_id = ? GROUP BY activity_type",
+            (target_date, _sid(student_id))
         ).fetchall()
         summary = {}
         for r in rows:
             summary[r["activity_type"]] = {"count": r["cnt"], "total_seconds": r["total_time"] or 0}
         return summary
 
-    def get_streak(self) -> int:
+    def get_streak(self, student_id: str = None) -> int:
         """Consecutive days with activity, ending today (or yesterday if today
         isn't logged yet). Walks distinct activity days newest-first against a
         decreasing anchor so a gap correctly ends the streak (the old version
@@ -1165,7 +1349,8 @@ class ActivityStore:
         across gaps)."""
         conn = self._get_db()
         rows = conn.execute(
-            "SELECT DISTINCT DATE(created_at) as day FROM activity_log ORDER BY day DESC"
+            "SELECT DISTINCT DATE(created_at) as day FROM activity_log WHERE student_id = ? ORDER BY day DESC",
+            (_sid(student_id),)
         ).fetchall()
         days = [date.fromisoformat(r["day"]) for r in rows if r["day"]]
         if not days:
@@ -1199,7 +1384,7 @@ class ScheduleStore:
 
     def schedule_unit_reviews(self, course_uid: str, unit_uid: str,
                                unit_title: str, start_date: str,
-                               intervals: List[int] = None):
+                               intervals: List[int] = None, student_id: str = None):
         """DEPRECATED: Use FSRS-based flashcard scheduling instead.
         Create scheduled review entries for a unit."""
         if intervals is None:
@@ -1209,15 +1394,16 @@ class ScheduleStore:
         for i, days in enumerate(intervals, 1):
             review_date = (base + timedelta(days=days)).isoformat()
             conn.execute(
-                "INSERT INTO scheduled_reviews (course_uid, unit_uid, unit_title, scheduled_date, review_number) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (course_uid, unit_uid, unit_title, review_date, i)
+                "INSERT INTO scheduled_reviews (course_uid, unit_uid, unit_title, scheduled_date, review_number, student_id) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (course_uid, unit_uid, unit_title, review_date, i, _sid(student_id))
             )
         conn.commit()
         logger.info(f"Scheduled {len(intervals)} reviews for unit {unit_title}")
 
     def schedule_concept_review(self, course_uid: str, concept_uid: str,
-                                 concept_title: str, rating: int = 3):
+                                 concept_title: str, rating: int = 3,
+                                 student_id: str = None):
         """Schedule a review for a single concept based on Socratic grade.
         Uses simple grade-based intervals until FSRS engine is upgraded."""
         # Grade-to-interval mapping (days): lower grade = sooner review
@@ -1229,9 +1415,9 @@ class ScheduleStore:
             for i, days in enumerate(intervals, 1):
                 review_date = (base + timedelta(days=days)).isoformat()
                 conn.execute(
-                    "INSERT INTO scheduled_reviews (course_uid, unit_uid, unit_title, scheduled_date, review_number) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (course_uid, concept_uid, concept_title, review_date, i)
+                    "INSERT INTO scheduled_reviews (course_uid, unit_uid, unit_title, scheduled_date, review_number, student_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (course_uid, concept_uid, concept_title, review_date, i, _sid(student_id))
                 )
             conn.commit()
             logger.info(f"Scheduled concept review for '{concept_title}' (grade {rating}): intervals {intervals}")
@@ -1239,10 +1425,10 @@ class ScheduleStore:
             logger.warning(f"Failed to schedule concept review: {e}")
 
     def get_scheduled_reviews(self, start_date: str = None, end_date: str = None,
-                               course_uid: str = None) -> List[dict]:
+                               course_uid: str = None, student_id: str = None) -> List[dict]:
         conn = self._get_db()
-        query = "SELECT * FROM scheduled_reviews WHERE 1=1"
-        params = []
+        query = "SELECT * FROM scheduled_reviews WHERE student_id = ?"
+        params = [_sid(student_id)]
         if start_date:
             query += " AND scheduled_date >= ?"
             params.append(start_date)
@@ -1256,40 +1442,41 @@ class ScheduleStore:
         rows = conn.execute(query, params).fetchall()
         return [dict(r) for r in rows]
 
-    def complete_review(self, review_id: int):
+    def complete_review(self, review_id: int, student_id: str = None):
         conn = self._get_db()
         conn.execute(
-            "UPDATE scheduled_reviews SET status = 'completed', completed_at = ? WHERE id = ?",
-            (datetime.utcnow().isoformat(), review_id)
+            "UPDATE scheduled_reviews SET status = 'completed', completed_at = ? WHERE id = ? AND student_id = ?",
+            (datetime.utcnow().isoformat(), review_id, _sid(student_id))
         )
         conn.commit()
 
-    def reschedule_review(self, review_id: int, new_date: str):
+    def reschedule_review(self, review_id: int, new_date: str, student_id: str = None):
         conn = self._get_db()
         conn.execute(
-            "UPDATE scheduled_reviews SET scheduled_date = ?, status = 'pending' WHERE id = ?",
-            (new_date, review_id)
+            "UPDATE scheduled_reviews SET scheduled_date = ?, status = 'pending' WHERE id = ? AND student_id = ?",
+            (new_date, review_id, _sid(student_id))
         )
         conn.commit()
 
-    def mark_overdue(self):
+    def mark_overdue(self, student_id: str = None):
         """Mark past pending reviews as overdue."""
         today = date.today().isoformat()
         conn = self._get_db()
         conn.execute(
-            "UPDATE scheduled_reviews SET status = 'overdue' WHERE scheduled_date < ? AND status = 'pending'",
-            (today,)
+            "UPDATE scheduled_reviews SET status = 'overdue' WHERE scheduled_date < ? AND status = 'pending' AND student_id = ?",
+            (today, _sid(student_id))
         )
         conn.commit()
 
-    def get_upcoming_count(self, days: int = 7) -> int:
+    def get_upcoming_count(self, days: int = 7, student_id: str = None) -> int:
         """Count reviews scheduled in the next N days."""
         today = date.today()
         end = (today + timedelta(days=days)).isoformat()
         conn = self._get_db()
         row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM scheduled_reviews WHERE scheduled_date BETWEEN ? AND ? AND status IN ('pending', 'overdue')",
-            (today.isoformat(), end)
+            "SELECT COUNT(*) as cnt FROM scheduled_reviews WHERE scheduled_date BETWEEN ? AND ? "
+            "AND status IN ('pending', 'overdue') AND student_id = ?",
+            (today.isoformat(), end, _sid(student_id))
         ).fetchone()
         return row["cnt"] if row else 0
 
@@ -1321,3 +1508,222 @@ class SettingsStore:
         conn = self._get_db()
         rows = conn.execute("SELECT key, value FROM user_settings").fetchall()
         return {r["key"]: r["value"] for r in rows}
+
+
+class AccountStore:
+    """Parents + students CRUD (B15.1). parents.id / students.id are the
+    principals — there is no separate users table (spec 03 §1)."""
+
+    _PARENT_COLUMNS = {'email', 'password_hash', 'display_name', 'status',
+                       'email_verified_at', 'updated_at'}
+    _STUDENT_COLUMNS = {'display_name', 'pin_hash', 'grade_band', 'grade_numeric',
+                        'avatar_url', 'interests', 'settings', 'status', 'updated_at'}
+
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self._db = _ThreadLocalDB(db_path)
+
+    def _get_db(self) -> sqlite3.Connection:
+        return self._db.get()
+
+    # -- parents ------------------------------------------------------------
+    def create_parent(self, email: str, password_hash: str,
+                      display_name: str = None, status: str = 'pending_verify') -> str:
+        pid = f"par_{uuid.uuid4().hex[:8]}"
+        conn = self._get_db()
+        conn.execute(
+            "INSERT INTO parents (id, email, password_hash, display_name, status) VALUES (?, ?, ?, ?, ?)",
+            (pid, email.strip().lower(), password_hash, display_name, status))
+        conn.commit()
+        return pid
+
+    def get_parent(self, parent_id: str) -> Optional[dict]:
+        row = self._get_db().execute("SELECT * FROM parents WHERE id = ?", (parent_id,)).fetchone()
+        return dict(row) if row else None
+
+    def get_parent_by_email(self, email: str) -> Optional[dict]:
+        row = self._get_db().execute(
+            "SELECT * FROM parents WHERE email = ?", (email.strip().lower(),)).fetchone()
+        return dict(row) if row else None
+
+    def update_parent(self, parent_id: str, **kwargs):
+        kwargs = {k: v for k, v in kwargs.items() if k in self._PARENT_COLUMNS}
+        if not kwargs:
+            return
+        kwargs['updated_at'] = datetime.utcnow().isoformat()
+        sets = ", ".join(f"{k} = ?" for k in kwargs)
+        conn = self._get_db()
+        conn.execute(f"UPDATE parents SET {sets} WHERE id = ?", list(kwargs.values()) + [parent_id])
+        conn.commit()
+
+    # -- students -----------------------------------------------------------
+    def create_student(self, parent_id: str, display_name: str,
+                       grade_band: str = '6-8', grade_numeric: int = None,
+                       pin_hash: str = None, interests: list = None,
+                       settings: dict = None) -> str:
+        sid = f"stu_{uuid.uuid4().hex[:8]}"
+        conn = self._get_db()
+        conn.execute(
+            "INSERT INTO students (id, parent_id, display_name, grade_band, grade_numeric, pin_hash, interests, settings) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (sid, parent_id, display_name, grade_band, grade_numeric, pin_hash,
+             json.dumps(interests or []), json.dumps(settings or {})))
+        conn.commit()
+        return sid
+
+    def get_student(self, student_id: str) -> Optional[dict]:
+        row = self._get_db().execute("SELECT * FROM students WHERE id = ?", (student_id,)).fetchone()
+        return dict(row) if row else None
+
+    def list_students(self, parent_id: str, include_archived: bool = False) -> List[dict]:
+        q = "SELECT * FROM students WHERE parent_id = ?"
+        if not include_archived:
+            q += " AND status = 'active'"
+        rows = self._get_db().execute(q + " ORDER BY created_at", (parent_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def count_active_students(self, parent_id: str) -> int:
+        row = self._get_db().execute(
+            "SELECT COUNT(*) AS cnt FROM students WHERE parent_id = ? AND status = 'active'",
+            (parent_id,)).fetchone()
+        return row["cnt"] if row else 0
+
+    def update_student(self, student_id: str, **kwargs):
+        kwargs = {k: v for k, v in kwargs.items() if k in self._STUDENT_COLUMNS}
+        if not kwargs:
+            return
+        for jkey in ('interests', 'settings'):
+            if jkey in kwargs and not isinstance(kwargs[jkey], str):
+                kwargs[jkey] = json.dumps(kwargs[jkey])
+        kwargs['updated_at'] = datetime.utcnow().isoformat()
+        sets = ", ".join(f"{k} = ?" for k in kwargs)
+        conn = self._get_db()
+        conn.execute(f"UPDATE students SET {sets} WHERE id = ?", list(kwargs.values()) + [student_id])
+        conn.commit()
+
+    def owns_student(self, parent_id: str, student_id: str) -> bool:
+        """Cross-tenant guard (spec 03 §8.1)."""
+        row = self._get_db().execute(
+            "SELECT 1 FROM students WHERE id = ? AND parent_id = ?",
+            (student_id, parent_id)).fetchone()
+        return row is not None
+
+
+class EnrollmentStore:
+    """Student↔course enrollments (B15.1; elective approval lands with B19.3)."""
+
+    _VALID_COLUMNS = {'current_concept_uid', 'status', 'approved_by', 'approved_at',
+                      'course_kind'}
+
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self._db = _ThreadLocalDB(db_path)
+
+    def _get_db(self) -> sqlite3.Connection:
+        return self._db.get()
+
+    def enroll(self, student_id: str, course_uid: str,
+               course_kind: str = 'catalog', status: str = 'active') -> str:
+        eid = f"enr_{uuid.uuid4().hex[:8]}"
+        conn = self._get_db()
+        conn.execute(
+            "INSERT OR IGNORE INTO enrollments (id, student_id, course_uid, course_kind, status) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (eid, _sid(student_id), course_uid, course_kind, status))
+        conn.commit()
+        return eid
+
+    def get(self, student_id: str, course_uid: str) -> Optional[dict]:
+        row = self._get_db().execute(
+            "SELECT * FROM enrollments WHERE student_id = ? AND course_uid = ?",
+            (_sid(student_id), course_uid)).fetchone()
+        return dict(row) if row else None
+
+    def list_for_student(self, student_id: str, status: str = None) -> List[dict]:
+        q = "SELECT * FROM enrollments WHERE student_id = ?"
+        params = [_sid(student_id)]
+        if status:
+            q += " AND status = ?"
+            params.append(status)
+        rows = self._get_db().execute(q + " ORDER BY enrolled_at", params).fetchall()
+        return [dict(r) for r in rows]
+
+    def update(self, student_id: str, course_uid: str, **kwargs):
+        kwargs = {k: v for k, v in kwargs.items() if k in self._VALID_COLUMNS}
+        if not kwargs:
+            return
+        sets = ", ".join(f"{k} = ?" for k in kwargs)
+        conn = self._get_db()
+        conn.execute(
+            f"UPDATE enrollments SET {sets} WHERE student_id = ? AND course_uid = ?",
+            list(kwargs.values()) + [_sid(student_id), course_uid])
+        conn.commit()
+
+
+class ConsentStore:
+    """COPPA/TOS/privacy consent audit trail (B15.1; consumed by B21)."""
+
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self._db = _ThreadLocalDB(db_path)
+
+    def _get_db(self) -> sqlite3.Connection:
+        return self._db.get()
+
+    def record(self, parent_id: str, consent_type: str, granted: bool,
+               policy_version: str, student_id: str = None,
+               method: str = None, ip_address: str = None) -> str:
+        cid = f"cns_{uuid.uuid4().hex[:8]}"
+        conn = self._get_db()
+        conn.execute(
+            "INSERT INTO consent_records (id, parent_id, student_id, consent_type, granted, policy_version, method, ip_address) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (cid, parent_id, student_id, consent_type, 1 if granted else 0,
+             policy_version, method, ip_address))
+        conn.commit()
+        return cid
+
+    def has_consent(self, parent_id: str, consent_type: str, student_id: str = None) -> bool:
+        """Latest record for this (parent, type[, student]) wins."""
+        q = ("SELECT granted FROM consent_records WHERE parent_id = ? AND consent_type = ?"
+             + (" AND student_id = ?" if student_id else " AND student_id IS NULL")
+             + " ORDER BY created_at DESC, rowid DESC LIMIT 1")
+        params = [parent_id, consent_type] + ([student_id] if student_id else [])
+        row = self._get_db().execute(q, params).fetchone()
+        return bool(row and row["granted"])
+
+    def list_for_parent(self, parent_id: str) -> List[dict]:
+        rows = self._get_db().execute(
+            "SELECT * FROM consent_records WHERE parent_id = ? ORDER BY created_at DESC",
+            (parent_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+
+class FsmSessionStore:
+    """Per-student FSM session blob (B15.7). Single-row upsert in WAL — atomic
+    by construction, replacing the global data/user_state.json file."""
+
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self._db = _ThreadLocalDB(db_path)
+
+    def _get_db(self) -> sqlite3.Connection:
+        return self._db.get()
+
+    def upsert(self, student_id: str, blob: str):
+        conn = self._get_db()
+        conn.execute(
+            "INSERT OR REPLACE INTO fsm_sessions (student_id, blob, updated_at) "
+            "VALUES (?, ?, datetime('now'))",
+            (_sid(student_id), blob))
+        conn.commit()
+
+    def get(self, student_id: str) -> Optional[dict]:
+        row = self._get_db().execute(
+            "SELECT * FROM fsm_sessions WHERE student_id = ?", (_sid(student_id),)).fetchone()
+        return dict(row) if row else None
+
+    def delete(self, student_id: str):
+        conn = self._get_db()
+        conn.execute("DELETE FROM fsm_sessions WHERE student_id = ?", (_sid(student_id),))
+        conn.commit()

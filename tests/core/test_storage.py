@@ -10,7 +10,7 @@ from datetime import date, timedelta
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 
-from services.common.storage import StorageManager
+from services.common.storage import StorageManager, DEFAULT_STUDENT_ID
 
 
 @pytest.fixture
@@ -144,9 +144,9 @@ class TestActivityStreak:
     def _add_activity_on(storage, day):
         conn = storage.activity._get_db()
         conn.execute(
-            "INSERT INTO activity_log (course_uid, concept_uid, activity_type, details, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            ("c", "n", "review", "{}", f"{day.isoformat()}T12:00:00"),
+            "INSERT INTO activity_log (course_uid, concept_uid, activity_type, details, created_at, student_id) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("c", "n", "review", "{}", f"{day.isoformat()}T12:00:00", DEFAULT_STUDENT_ID),
         )
         conn.commit()
 

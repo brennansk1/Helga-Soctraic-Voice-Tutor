@@ -26,7 +26,7 @@
 | 0.4 | Work on branch `claude/edu-platform-scaling-design-syuzr3` | git | done |
 | 0.5 | Write detailed design specs (all branches, implementation-ready) | `docs/design/00–11` | done |
 | 0.6 | Save curriculum + gamification research reports | `docs/UTAH_K12_CURRICULUM_REFERENCE.md`, `docs/GAMIFICATION_RESEARCH.md` | done |
-| 0.7 | Fix P0 engine bugs (FSRS sign, grading JSON-mode, mastery gate low-Bloom, `update_mastery` course_uid, `.env`/secret) | `fsrs_engine.py`, `fsm_logic.py`, `storage.py`, `docker-compose.yml` | todo — first build step |
+| 0.7 | Fix P0 engine bugs (FSRS sign, grading JSON-mode, mastery gate low-Bloom, `update_mastery` course_uid, `.env`/secret) | `fsrs_engine.py`, `fsm_logic.py`, `storage.py`, `docker-compose.yml` | done — landed pre-session via Tier A (branch `hopeful-jackson`, in main since `a8bba62`); verified 2026-07-01: FSRS-5 direct impl, `GRADE_JSON_SCHEMA` constrained grading, `course_uid` preserved, `${OLLAMA_MODEL}`/`FLASK_SECRET_KEY` wired; suite green |
 
 ---
 
@@ -34,9 +34,9 @@
 
 | ID | Item | Target files | Acceptance | Pri | Rel | Status |
 |---|------|------|------|---|---|---|
-| B15.1 | Tenancy tables (parents, students, enrollments, consent_records, subscriptions) | `services/common/storage.py` (v3→v4 migration) | v4 migration creates tables; idempotent | P0 | R0 | todo |
-| B15.2 | `student_id` on all per-user tables + legacy backfill; composite PK rebuild on `user_progress` | `storage.py` | existing rows backfilled to `legacy-default`; no data loss; composite indexes added | P0 | R0 | todo |
-| B15.3 | StorageManager sub-store `student_id` scoping + `_VALID_COLUMNS` whitelist update | `storage.py` | every per-user query filters `student_id`; unit-tested | P0 | R0 | todo |
+| B15.1 | Tenancy tables (parents, students, enrollments, consent_records, subscriptions) | `services/common/storage.py` (v3→v4 migration) | v4 migration creates tables; idempotent | P0 | R0 | done — v4 migration + `fsm_sessions`; new AccountStore/EnrollmentStore/ConsentStore/FsmSessionStore; `pytest tests/core/test_multitenancy_storage.py → 23 passed` |
+| B15.2 | `student_id` on all per-user tables + legacy backfill; composite PK rebuild on `user_progress` | `storage.py` | existing rows backfilled to `legacy-default`; no data loss; composite indexes added | P0 | R0 | done — backfill to `stu_legacy0`, PK `(student_id, concept_uid)`, v3-fixture migration test proves zero row loss |
+| B15.3 | StorageManager sub-store `student_id` scoping + `_VALID_COLUMNS` whitelist update | `storage.py` | every per-user query filters `student_id`; unit-tested | P0 | R0 | done — Progress/Flashcard/Activity/Schedule stores scoped; **note:** `student_id` is a trailing kwarg defaulting to `stu_legacy0` (not leading positional) — same isolation guarantee, zero R0 call-site breakage; removing the default is the R0→R1 cutover (spec 03 §1.2); full suite 603 passed |
 | B15.4 | Flask-Login auth: parent email/pw (argon2), student profile/PIN, role gating | `services/web-ui/app.py` | parent & student login; role gates routes | P0 | R1 | todo |
 | B15.5 | Socket.IO room scoping (fix B6.3 broadcast) | `app.py:172,245,582`; `fsm_logic.py` send_status_update | two-session test shows no cross-student leakage | P0 | R1 | todo |
 | B15.6 | Per-student FSM registry (kill singleton) | new `services/core/fsm_registry.py`; `fsm_logic.py:3498` | N concurrent students hold isolated FSM state | P0 | R1 | todo |
