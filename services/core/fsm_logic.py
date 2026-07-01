@@ -185,7 +185,8 @@ def clean_llm_response(text):
     return text.strip()
 
 
-from safety import check_safety, check_safety_detailed, get_safety_redirect_message
+from safety import (check_safety, check_safety_detailed, get_safety_redirect_message,
+                    check_output_safety)
 from service_manager import ServiceManager
 from services.core.course_builder import SkeletonBuilder, ContentHydrator, SyllabusAuditor, CourseCreationError
 from services.core.llm_client import get_llm_client
@@ -675,7 +676,22 @@ class MnemosyneFSM:
         self.add_message(text, record=record)
 
     def add_message(self, text, record=True, grade=None):
-        """Add a tutor message to the transcript."""
+        """Add a tutor message to the transcript. B21.5: every tutor-visible
+        message passes output moderation first — a flagged model response is
+        suppressed and replaced with a safe fallback, never delivered raw."""
+        if record and text:
+            node_title = (self.current_lesson_node.get("title")
+                          if self.current_lesson_node else None)
+            try:
+                out = check_output_safety(text, node_title, self.grade_band)
+                if not out.is_safe:
+                    logging.warning(
+                        f"OUTPUT suppressed [{out.category}] on '{node_title}' "
+                        f"(confidence={out.confidence:.2f}, len={len(text)})")
+                    self._log_safety_incident("output_" + out.category, node_title)
+                    text = out.message
+            except Exception as e:
+                logging.error(f"Output safety check failed open: {e}")
         if record:
             entry = {"sender": "helga", "text": text}
             if grade is not None:
@@ -857,12 +873,18 @@ class MnemosyneFSM:
                 if self.current_lesson_node
                 else None
             )
-            safety_result = check_safety_detailed(text, node_title)
+            safety_result = check_safety_detailed(text, node_title,
+                                                  grade_band=self.grade_band)
             if not safety_result.is_safe:
                 redirect_msg = get_safety_redirect_message(safety_result)
                 logging.warning(
                     f"Safety block [{safety_result.category}]: '{text[:60]}...' confidence={safety_result.confidence:.2f}"
                 )
+                # B21.5: self-harm / abuse signals pause the lesson, surface
+                # crisis resources, and alert the parent immediately — never a
+                # silent redirect back into the material.
+                if safety_result.category in ("self_harm", "abuse_disclosure"):
+                    self._escalate_safety(safety_result.category)
                 self.speak(redirect_msg)
                 return
 
@@ -1143,9 +1165,75 @@ class MnemosyneFSM:
         self.play_sound("RETENTION_HISS")
         self.speak(f"All systems nominal. Battery at {self.battery_level} percent.")
 
+    def _current_concept_is_hd(self):
+        """HD framing flag for the live tutor prompt (B21.4 §4.3)."""
+        try:
+            uid = (self.current_lesson_node or {}).get("uid")
+            return bool(uid) and self.storage.standards.concept_is_health_strand6(uid)
+        except Exception:
+            return False
+
+    def _log_safety_incident(self, category, node_title=None):
+        """Audit trail for suppressed outputs / crisis signals — never the raw
+        text, only category + context (B21.5)."""
+        try:
+            self.storage.audit.record(
+                "safety_incident", actor_id=self.student_id, actor_role="student",
+                subject_student_id=self.student_id,
+                detail={"category": category, "concept": node_title})
+        except Exception as e:
+            logging.warning(f"safety incident log failed: {e}")
+
+    def _escalate_safety(self, category):
+        """B21.5 §5.4: immediate parent alert on self-harm/abuse signals. The
+        alert never transcribes the child's words — it says a safety concern
+        was detected and to check in. Never raises."""
+        try:
+            student = self.storage.accounts.get_student(self.student_id) or {}
+            parent_id = student.get("parent_id")
+            if parent_id:
+                self.storage.notifications.create(
+                    parent_id, "parent", "struggle_alert",
+                    title="Please check in with your learner",
+                    body=(f"Helga detected a possible safety concern during "
+                          f"{student.get('display_name', 'your learner')}'s "
+                          "session and paused the lesson. No details are stored. "
+                          "Please check in with them soon."),
+                    ref_uid=self.student_id)
+            self._log_safety_incident(category)
+        except Exception as e:
+            logging.error(f"safety escalation failed: {e}")
+
+    def _hd_consent_blocked(self, concept_uid):
+        """B21.4 render backstop: True when the concept is Health Strand 6
+        gated and this student's parent has no current consent. Fails closed
+        for gated concepts, open for lookup errors on non-gated paths."""
+        try:
+            if not self.storage.standards.concept_is_health_strand6(concept_uid):
+                return False
+            student = self.storage.accounts.get_student(self.student_id) or {}
+            parent_id = student.get("parent_id")
+            if not parent_id:
+                return True   # gated content with no resolvable guardian: block
+            return not self.storage.consent.has_consent(
+                parent_id, "health_strand6", student_id=self.student_id)
+        except Exception as e:
+            logging.error(f"HD gate check failed (blocking): {e}")
+            return True
+
     def get_concept_details(self, uid):
         """Helper to fetch concept details from local storage.
         GAP 3: Now returns bloom metadata alongside content."""
+        # B21.4: no HD content is delivered the moment consent lapses
+        if self._hd_consent_blocked(uid):
+            self.send_status_update(
+                "This lesson needs a parent's OK first.",
+                event={"type": "CONSENT_REQUIRED", "consent": "health_strand6",
+                       "concept_uid": uid})
+            self.speak("This lesson needs a parent's permission before we can "
+                       "start it. Ask your parent to approve it from their "
+                       "dashboard!")
+            return None
         try:
             if self.active_course_uid:
                 concept = self.storage.courses.get_concept_by_uid(
@@ -1987,6 +2075,7 @@ class MnemosyneFSM:
                 bloom_level=self.current_bloom_level,
                 prior_concepts=self.prior_concepts_summary,
                 grade_band=self.grade_band,
+                health_strand6=self._current_concept_is_hd(),
             )
         # Tune max_tokens: lectures need more room for explanations, questions are shorter
         token_limit = 500 if teaching_mode == "LECTURE" else 400

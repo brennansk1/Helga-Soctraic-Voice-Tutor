@@ -2079,6 +2079,16 @@ class StandardsStore:
             "WHERE cs.concept_uid = ?", (concept_uid,)).fetchall()
         return [dict(r) for r in rows]
 
+    def concept_is_health_strand6(self, concept_uid: str) -> bool:
+        """B21.4: a concept is HD-gated iff any linked standard is Health /
+        Human Development. Single source of truth for the consent gate."""
+        row = self._get_db().execute(
+            "SELECT 1 FROM concept_standards cs JOIN standards s ON s.code = cs.standard_code "
+            "WHERE cs.concept_uid = ? AND s.subject = 'health' "
+            "AND s.strand = 'Human Development' LIMIT 1",
+            (concept_uid,)).fetchone()
+        return row is not None
+
     def concepts_for_standard(self, standard_code: str) -> List[dict]:
         rows = self._get_db().execute(
             "SELECT concept_uid, coverage FROM concept_standards WHERE standard_code = ?",

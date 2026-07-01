@@ -244,6 +244,19 @@ GRADE_BAND_PROFILES = {
 
 DEFAULT_GRADE_BAND = "6-8"
 
+# B21.4: Utah Health Strand 6 (Human Development) framing — appended to the
+# tutor system prompt ONLY for HD-gated concepts (Utah Code: abstinence
+# stressed; parental consent enforced upstream before the concept renders).
+HEALTH_STRAND6_FRAMING = (
+    "\nHEALTH STRAND 6 DIRECTIVE: This is Utah Health Strand 6 (Human "
+    "Development) content. Teach age-appropriately and clinically. Per Utah "
+    "Core Standards, instruction stresses abstinence before marriage and "
+    "fidelity after marriage as the expected standard. Keep an objective, "
+    "respectful, factual tone; defer value-laden personal questions to the "
+    "student's parent or guardian. Do not introduce sexually explicit detail "
+    "beyond the stated educational standard."
+)
+
 
 def get_band_profile(grade_band):
     """Resolve a band profile; unknown/missing bands fall back to 6-8."""
@@ -254,7 +267,7 @@ def get_band_profile(grade_band):
 def get_typed_socratic_prompt(question_type_key, context_text, conversation_history,
                                system_note=None, misconceptions=None, analogies=None,
                                style_modifier=None, user_profile=None, bloom_level=1,
-                               prior_concepts=None, grade_band=None):
+                               prior_concepts=None, grade_band=None, health_strand6=False):
     """
     Generates a Socratic prompt with a specific question TYPE instruction injected.
 
@@ -283,10 +296,11 @@ def get_typed_socratic_prompt(question_type_key, context_text, conversation_hist
         bloom_level=bloom_level,
         prior_concepts=prior_concepts,
         grade_band=grade_band,
+        health_strand6=health_strand6,
     )
 
 
-def get_socratic_tutor_prompt(context_text, conversation_history, system_note=None, misconceptions=None, analogies=None, style_modifier=None, user_profile=None, bloom_level=1, prior_concepts=None, grade_band=None):
+def get_socratic_tutor_prompt(context_text, conversation_history, system_note=None, misconceptions=None, analogies=None, style_modifier=None, user_profile=None, bloom_level=1, prior_concepts=None, grade_band=None, health_strand6=False):
     """
     Generates a Socratic question or response as a messages array.
 
@@ -333,6 +347,8 @@ def get_socratic_tutor_prompt(context_text, conversation_history, system_note=No
     profile = get_band_profile(grade_band)
     persona_str = f"You are {profile['persona']}, teaching by the Socratic method."
     band_register = f"\nGRADE REGISTER: {profile['register']}"
+    if health_strand6:
+        band_register += HEALTH_STRAND6_FRAMING
     style_constraint = ""
     if style_modifier:
         style_lower = style_modifier.lower().strip()

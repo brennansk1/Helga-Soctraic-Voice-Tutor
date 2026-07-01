@@ -58,6 +58,23 @@ HATE_SPEECH_KEYWORDS = [
     "genocide", "inferior race", "exterminate", "dehumanize"
 ]
 
+# B21.5: profanity (band-aware strictness — K-5 gets the stricter set) and
+# abuse disclosure (a child disclosing harm — supportive response + parent
+# escalation, never a plain block). Substring-matched, not vectorized.
+PROFANITY_KEYWORDS = [
+    "fuck", "shit", "bitch", "asshole", "bastard", "dickhead", "cunt",
+    "motherfucker", "goddamn",
+]
+PROFANITY_KEYWORDS_STRICT = PROFANITY_KEYWORDS + [
+    "damn", "hell no", "crap", "piss", "sucks ass",
+]
+ABUSE_DISCLOSURE_KEYWORDS = [
+    "hits me", "hurts me", "touches me", "touched me", "abuses me",
+    "beats me", "afraid to go home", "scared of my dad", "scared of my mom",
+    "scared to go home", "someone hurt me", "he hurt me", "she hurt me",
+    "makes me keep secrets", "told me not to tell",
+]
+
 # Prompt injection patterns
 PROMPT_INJECTION_PATTERNS = [
     r"ignore\s+(all\s+)?previous\s+instructions",
@@ -140,7 +157,7 @@ def check_safety(user_input: str, current_node_title: str = None) -> bool:
     return result.is_safe
 
 
-def check_safety_detailed(user_input: str, current_node_title: str = None) -> SafetyResult:
+def check_safety_detailed(user_input: str, current_node_title: str = None, grade_band: str = None) -> SafetyResult:
     """
     Comprehensive safety check returning detailed results.
     
@@ -180,6 +197,23 @@ def check_safety_detailed(user_input: str, current_node_title: str = None) -> Sa
                 details={"matched_pattern": pattern}
             )
     
+    # 2b. Abuse disclosure (B21.5) — supportive, non-investigative response;
+    # the FSM escalates to the parent. Checked before everything topical.
+    if any(kw in input_lower for kw in ABUSE_DISCLOSURE_KEYWORDS):
+        logger.warning("Safety: abuse-disclosure signal detected")
+        return SafetyResult(
+            is_safe=False,
+            category="abuse_disclosure",
+            confidence=0.9,
+            message=(
+                "Thank you for telling me — that took courage, and it is not "
+                "your fault. Please talk to a trusted adult about this, like a "
+                "parent, teacher, or school counselor. If you are in danger "
+                "right now, call 911. You can also call or text the Childhelp "
+                "hotline at 1-800-422-4453 any time."
+            ),
+        )
+
     # 3. Self-harm check (highest priority — provide supportive response)
     self_harm_result = _check_category(user_input, _self_harm_vectors, "self_harm", title)
     if not self_harm_result.is_safe:
@@ -208,7 +242,83 @@ def check_safety_detailed(user_input: str, current_node_title: str = None) -> Sa
         hate_result.message = "Let's maintain a respectful learning environment. Can we return to the lesson material?"
         return hate_result
     
+    # 7. Profanity (B21.5) — gentle redirect, never a hard error
+    prof = check_profanity(user_input, grade_band)
+    if not prof.is_safe:
+        return prof
+
     return SafetyResult(is_safe=True, category="safe", confidence=1.0)
+
+
+def check_profanity(text: str, grade_band: str = None) -> SafetyResult:
+    """Band-aware profanity check: K-2/3-5 use the stricter list."""
+    lowered = (text or "").lower()
+    keywords = (PROFANITY_KEYWORDS_STRICT if grade_band in ("K-2", "3-5")
+                else PROFANITY_KEYWORDS)
+    for kw in keywords:
+        if kw in lowered:
+            return SafetyResult(
+                is_safe=False, category="profanity", confidence=0.8,
+                message=get_refusal_message("profanity", grade_band),
+                details={"matched": kw})
+    return SafetyResult(is_safe=True, category="safe", confidence=1.0)
+
+
+def check_output_safety(model_text: str, node_title: str = None,
+                        grade_band: str = None) -> SafetyResult:
+    """B21.5 output moderation: run the MODEL's text through the same
+    category checks (with the SAFE_CONTEXTS educational overrides) before it
+    is ever shown to a child. Local model, our filter — a flagged output is
+    suppressed and replaced, never delivered raw."""
+    if not model_text:
+        return SafetyResult(is_safe=True, category="safe", confidence=1.0)
+    title = (node_title or "").lower().strip()
+    lowered = model_text.lower()
+    for vectors, name in ((_self_harm_vectors, "self_harm"),
+                          (_nsfw_vectors, "nsfw"),
+                          (_violence_vectors, "violence"),
+                          (_hate_vectors, "hate_speech")):
+        # Long model responses dilute TF-IDF cosine, so output moderation
+        # also flags on keyword DENSITY: >=2 distinct category keywords in one
+        # response is a flag on its own (SAFE_CONTEXTS still override).
+        hits = [kw for kw in _CATEGORY_KEYWORDS[name] if kw in lowered]
+        density_flag = len(hits) >= 2
+        result = _check_category(model_text, vectors, name, title)
+        if density_flag and result.is_safe:
+            if not any(ctx in title for ctx in SAFE_CONTEXTS.get(name, [])):
+                result = SafetyResult(is_safe=False, category=name,
+                                      confidence=0.7,
+                                      details={"keyword_hits": hits[:5]})
+        if not result.is_safe:
+            result.message = get_refusal_message("output_flagged", grade_band)
+            return result
+    prof = check_profanity(model_text, grade_band)
+    if not prof.is_safe:
+        prof.message = get_refusal_message("output_flagged", grade_band)
+        return prof
+    return SafetyResult(is_safe=True, category="safe", confidence=1.0)
+
+
+# B21.5: age-appropriate refusal copy — warm and simple for little kids,
+# more direct for teens. Refusal never lectures or shames.
+_REFUSALS = {
+    "profanity": {
+        "young": "Oops — let's use kind words while we learn. Ready for the next question?",
+        "older": "Let's keep the language classroom-friendly. Back to it?",
+    },
+    "output_flagged": {
+        "young": "Let's keep going with our lesson — here's what we were working on!",
+        "older": "Let's keep going with the lesson — here's the next step.",
+    },
+}
+
+
+def get_refusal_message(category: str, grade_band: str = None) -> str:
+    tier = "young" if grade_band in ("K-2", "3-5") else "older"
+    entry = _REFUSALS.get(category)
+    if entry:
+        return entry[tier]
+    return "Let's stay focused on learning."
 
 
 # ============================================================================
