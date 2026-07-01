@@ -449,7 +449,7 @@ target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
 │  ├─ B17.1  grade_band on students + catalog courses .............. ✔️  FSM resolves from students row
 │  ├─ B17.2  Grade-aware prompts (vocab/length/register) ........... ✔️  GRADE_BAND_PROFILES; 18 tests
 │  ├─ B17.3  Grade-bounded Bloom/mastery defaults .................. ✔️  band clamps + banded gate
-│  ├─ B17.4  Grade-banded hint ladder + micro-lectures ............. ⬜  get_hint_prompt/get_micro_lecture_prompt
+│  ├─ B17.4  Grade-banded hint ladder + micro-lectures ............. ✔️  band ladder skip + caps
 │  ├─ B17.5  Manipulatives/visual answer modes (early math) ........ ⬜
 │  ├─ B17.6  Voice-first early-literacy/WL loop .................... ⬜  reuses STT/TTS (B7.3)
 │  └─ B17.7  Affect/frustration handling for young learners ........ ⬜  extends _detect_ignorance
@@ -478,8 +478,8 @@ target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
 │  ├─ B21.4  Health Strand 6 consent gating (abstinence framing) ... ✔️  render backstop + framing
 │  ├─ B21.5  Minor-safe tutoring guardrails (profanity/safety) ..... ✔️  output moderation + escalation
 │  └─ B21.6  ToS/Privacy Policy + Utah Fits All posture ............ ✔️  v1 drafts (*counsel sign-off)
-├─ B22 Gamification 2.0 ............................................ ⬜  (Workstream H; baseline XP/streak skeletal)
-│  ├─ B22.1  Wire existing XP everywhere, per-student .............. ⬜  librarian.py gamification
+├─ B22 Gamification 2.0 ............................................ 🔨  (Workstream H)
+│  ├─ B22.1  Wire existing XP everywhere, per-student .............. ✔️  GamificationStore + ledger
 │  ├─ B22.2  Skill-tree map (strands=branches, standards=nodes) .... ⬜  FE8
 │  ├─ B22.3  Badges per standard/strand; quests/daily challenges ... ⬜
 │  ├─ B22.4  Interest-themed cosmetic rewards (avatars) ............ ⬜
@@ -493,10 +493,10 @@ target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
 │  ├─ B23.5  Multi-worker (Redis sessions + Socket.IO MQ + stateless FSM) ⬜  deferred
 │  ├─ B23.6  Caddy/TLS + gunicorn-gevent topology ................. ⬜
 │  └─ B23.7  Backups/restore drill + secrets management ........... ⬜  extends B5.7/B9.3
-├─ B24 Notifications & Communications .............................. ⬜  (Workstream L)
+├─ B24 Notifications & Communications .............................. 🔨  (Workstream L)
 │  ├─ B24.1  Transactional email + queue .......................... ⬜
 │  ├─ B24.2  Weekly parent progress digest ....................... ⬜
-│  ├─ B24.3  In-app notifications ................................ ⬜
+│  ├─ B24.3  In-app notifications ................................ ✔️  store + endpoints + badge
 │  └─ B24.4  Struggle/inactivity alerts .......................... ⬜
 ├─ B25 Accessibility & Differentiation ............................. 🔨  (Workstream K; extends FE4.3/B13.9)
 │  ├─ B25.1  WCAG 2.1 AA pass (keyboard/aria-live/contrast) ....... 🔨  (focus ring already done)

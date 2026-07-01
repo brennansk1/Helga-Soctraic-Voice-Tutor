@@ -542,7 +542,8 @@ def update_profile():
 def get_gamification():
     """Get gamification state (XP, level, streak, achievements)."""
     try:
-        resp = requests.get(f'{SERVICES["rag"]}/api/gamification', timeout=5)
+        resp = requests.get(f'{SERVICES["rag"]}/api/gamification',
+                            params={'student_id': current_student_id()}, timeout=5)
         return jsonify(resp.json()), resp.status_code
     except Exception as e:
         return jsonify({
@@ -553,11 +554,12 @@ def get_gamification():
 
 @app.route('/api/gamification/award_xp', methods=['POST'])
 def award_xp():
-    """Award XP after a graded interaction."""
+    """Award XP after a graded interaction (student from session, never body)."""
     try:
+        body = {**request.get_json(force=True), 'student_id': current_student_id()}
         resp = requests.post(
             f'{SERVICES["rag"]}/api/gamification/award_xp',
-            json=request.get_json(force=True),
+            json=body,
             timeout=5
         )
         return jsonify(resp.json()), resp.status_code
@@ -570,9 +572,11 @@ def award_xp():
 def check_streak():
     """Check and update daily streak."""
     try:
+        body = request.get_json(force=True) if request.data else {}
+        body['student_id'] = current_student_id()
         resp = requests.post(
             f'{SERVICES["rag"]}/api/gamification/check_streak',
-            json=request.get_json(force=True) if request.data else {},
+            json=body,
             timeout=5
         )
         return jsonify(resp.json()), resp.status_code
@@ -1370,6 +1374,33 @@ def _monitored_spawn(fn, name):
                 _g.sleep(5)
     return gevent.spawn(_wrapper)
 
+
+
+# --- B24.3: in-app notifications (bell) --------------------------------------
+
+@app.route('/api/notifications', methods=['GET'])
+def api_notifications():
+    """Notifications for the current principal — the launched student, or the
+    parent on a bare parent session."""
+    recipient = session.get('student_id') or current_parent_id() or current_student_id()
+    if not recipient:
+        return jsonify({'notifications': [], 'unread': 0})
+    st = _get_storage()
+    unread_only = request.args.get('unread') == '1'
+    return jsonify({
+        'notifications': st.notifications.list_for(recipient, unread_only=unread_only)[:50],
+        'unread': st.notifications.unread_count(recipient),
+    })
+
+
+@app.route('/api/notifications/<notification_id>/read', methods=['POST'])
+@csrf_protect
+def api_notification_read(notification_id):
+    recipient = session.get('student_id') or current_parent_id() or current_student_id()
+    if not recipient:
+        return jsonify({'error': 'no session'}), 401
+    _get_storage().notifications.mark_read(notification_id, recipient)
+    return jsonify({'status': 'ok'})
 
 
 # --- B15.4: Auth routes (design spec 03 §2) ----------------------------------

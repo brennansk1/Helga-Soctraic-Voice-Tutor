@@ -1840,163 +1840,68 @@ def reset_profile():
 
 @app.route("/api/gamification", methods=["GET"])
 def get_gamification():
-    conn = _get_profile_db()
+    """B22.1: per-student gamification (v7 tables; legacy K-V adopted on the
+    legacy student's first read). student_id injected by the web-ui proxy."""
+    sid = request.args.get("student_id")
     try:
-        total_xp = int(_gam_get(conn, 'total_xp', '0'))
-        level = _level_from_xp(total_xp)
-        streak_days = int(_gam_get(conn, 'streak_days', '0'))
-        daily_xp = int(_gam_get(conn, 'daily_xp', '0'))
-        daily_date = _gam_get(conn, 'daily_date', '')
-
-        # Reset daily XP if it's a new day
-        from datetime import date as dt_date
-        today = dt_date.today().isoformat()
-        if daily_date != today:
-            daily_xp = 0
-
-        # Get daily goal
-        goal_row = conn.execute("SELECT value FROM user_profile WHERE key='daily_goal'").fetchone()
-        daily_goal = int(goal_row['value']) if goal_row else 5
-
-        # Get unlocked achievements
-        achievements = conn.execute(
-            "SELECT id, name, description, xp_reward, unlocked, unlocked_at FROM achievements"
-        ).fetchall()
-        unlocked = [dict(a) for a in achievements if a['unlocked']]
-        locked = [dict(a) for a in achievements if not a['unlocked']]
-
-        # Next level threshold
-        next_threshold = _LEVEL_THRESHOLDS[level] if level < len(_LEVEL_THRESHOLDS) else _LEVEL_THRESHOLDS[-1] + 2000
-        prev_threshold = _LEVEL_THRESHOLDS[level - 1] if level > 1 else 0
-
+        row = storage.gamification.get(student_id=sid)
+        daily_goal = 5
+        try:
+            conn = _get_profile_db()
+            goal_row = conn.execute(
+                "SELECT value FROM user_profile WHERE key='daily_goal'").fetchone()
+            conn.close()
+            if goal_row:
+                daily_goal = int(goal_row["value"])
+        except Exception:
+            pass
         return jsonify({
-            "total_xp": total_xp,
-            "level": level,
-            "streak_days": streak_days,
-            "daily_xp": daily_xp,
+            "total_xp": row["total_xp"],
+            "level": row["level"],
+            "streak_days": row["streak_days"],
+            "daily_xp": row["daily_xp"],
             "daily_goal": daily_goal,
-            "daily_goal_met": daily_xp >= daily_goal,
-            "next_level_xp": next_threshold,
-            "prev_level_xp": prev_threshold,
-            "achievements_unlocked": unlocked,
-            "achievements_locked": locked,
+            "daily_goal_met": row["daily_xp"] >= daily_goal,
+            "next_level_xp": row["next_level_xp"],
+            "prev_level_xp": row["prev_level_xp"],
+            "achievements_unlocked": [],
+            "achievements_locked": [],
         })
-    finally:
-        conn.close()
+    except Exception as e:
+        logger.error(f"gamification read failed: {e}")
+        return jsonify({"total_xp": 0, "level": 1, "streak_days": 0,
+                        "daily_xp": 0, "achievements_unlocked": []}), 200
 
 
 @app.route("/api/gamification/award_xp", methods=["POST"])
 def award_xp():
-    """Award XP after a graded interaction.
-    Body: {grade: 1-4, bloom_level: 1-6, action: 'answer'|'complete_concept'|'complete_module'|'review'}
-    """
+    """B22.1: award per-student XP after a graded interaction (ledgered).
+    Body: {grade, bloom_level, action, first_try, ref_uid, student_id}"""
     data = request.get_json(force=True)
-    grade = data.get('grade', 3)
-    bloom_level = data.get('bloom_level', 1)
-    action = data.get('action', 'answer')
-    first_try = data.get('first_try', False)
-
-    # Base XP by action
-    base_xp = {'answer': 10, 'complete_concept': 25, 'complete_module': 100, 'review': 15}.get(action, 10)
-
-    # Only award XP for correct answers (grade >= 3)
-    if action == 'answer' and grade < 3:
-        return jsonify({"xp_earned": 0, "total_xp": 0, "level_up": False})
-
-    # Multipliers
-    multiplier = 1.0
-    if first_try:
-        multiplier *= 1.5
-    if bloom_level >= 4:
-        multiplier *= 2.0
-
-    xp_earned = int(base_xp * multiplier)
-
-    conn = _get_profile_db()
     try:
-        from datetime import date as dt_date
-        today = dt_date.today().isoformat()
-
-        old_xp = int(_gam_get(conn, 'total_xp', '0'))
-        new_xp = old_xp + xp_earned
-        old_level = _level_from_xp(old_xp)
-        new_level = _level_from_xp(new_xp)
-
-        _gam_set(conn, 'total_xp', new_xp)
-        _gam_set(conn, 'level', new_level)
-
-        # Daily XP tracking
-        daily_date = _gam_get(conn, 'daily_date', '')
-        if daily_date != today:
-            _gam_set(conn, 'daily_xp', xp_earned)
-            _gam_set(conn, 'daily_date', today)
-        else:
-            old_daily = int(_gam_get(conn, 'daily_xp', '0'))
-            _gam_set(conn, 'daily_xp', old_daily + xp_earned)
-
-        conn.commit()
-
-        return jsonify({
-            "xp_earned": xp_earned,
-            "total_xp": new_xp,
-            "level": new_level,
-            "level_up": new_level > old_level,
-            "new_level": new_level if new_level > old_level else None,
-        })
-    finally:
-        conn.close()
+        result = storage.gamification.award_xp(
+            action=data.get("action", "answer"),
+            grade=int(data.get("grade", 3)),
+            bloom_level=int(data.get("bloom_level", 1)),
+            first_try=bool(data.get("first_try", False)),
+            ref_uid=data.get("ref_uid"),
+            student_id=data.get("student_id"))
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"award_xp failed: {e}")
+        return jsonify({"xp_earned": 0, "error": str(e)}), 500
 
 
 @app.route("/api/gamification/check_streak", methods=["POST"])
 def check_streak():
-    """Check and update streak. Call on each daily session start."""
-    conn = _get_profile_db()
+    """B22.1: check/update the per-student daily streak."""
+    data = request.get_json(force=True) if request.data else {}
     try:
-        from datetime import date as dt_date, timedelta
-        today = dt_date.today().isoformat()
-        yesterday = (dt_date.today() - timedelta(days=1)).isoformat()
-
-        last_date = _gam_get(conn, 'streak_last_date', '')
-        streak = int(_gam_get(conn, 'streak_days', '0'))
-
-        if last_date == today:
-            # Already checked today
-            return jsonify({"streak_days": streak, "incremented": False})
-        elif last_date == yesterday:
-            streak += 1
-        elif last_date == '':
-            streak = 1
-        else:
-            streak = 1  # Reset — missed a day
-
-        _gam_set(conn, 'streak_days', streak)
-        _gam_set(conn, 'streak_last_date', today)
-
-        # Check streak achievements
-        newly_unlocked = []
-        for threshold, ach_id in [(3, 'streak_3'), (7, 'streak_7'), (30, 'streak_30')]:
-            if streak >= threshold:
-                row = conn.execute("SELECT unlocked FROM achievements WHERE id=?", (ach_id,)).fetchone()
-                if row and not row['unlocked']:
-                    conn.execute(
-                        "UPDATE achievements SET unlocked=1, unlocked_at=strftime('%s','now') WHERE id=?",
-                        (ach_id,)
-                    )
-                    ach = conn.execute("SELECT * FROM achievements WHERE id=?", (ach_id,)).fetchone()
-                    newly_unlocked.append(dict(ach))
-                    # Award achievement XP
-                    old_xp = int(_gam_get(conn, 'total_xp', '0'))
-                    _gam_set(conn, 'total_xp', old_xp + ach['xp_reward'])
-
-        conn.commit()
-
-        return jsonify({
-            "streak_days": streak,
-            "incremented": True,
-            "newly_unlocked": newly_unlocked,
-        })
-    finally:
-        conn.close()
+        return jsonify(storage.gamification.check_streak(
+            student_id=(data or {}).get("student_id")))
+    except Exception as e:
+        logger.error(f"check_streak failed: {e}")
+        return jsonify({"streak_days": 0, "incremented": False}), 500
 
 
 if __name__ == "__main__":

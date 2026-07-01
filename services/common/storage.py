@@ -92,6 +92,7 @@ class StorageManager:
         self.accommodations = AccommodationStore(self.db_path)
         self.audit = AuditStore(self.db_path)
         self.subscriptions = SubscriptionStore(self.db_path)
+        self.gamification = GamificationStore(self.db_path)
         self.catalog_dir = os.path.join(data_dir, "catalog", "courses")
         os.makedirs(self.catalog_dir, exist_ok=True)
         self.catalog_courses = CourseStore(self.catalog_dir, self.data_dir)
@@ -2434,3 +2435,138 @@ class SubscriptionStore:
         if sub and sub.get('status') in ('active', 'trialing'):
             return int(sub.get('seats') or 1)
         return default_seats
+
+
+class GamificationStore:
+    """Per-student XP / level / streak over the v7 tables (B22.1), with an
+    audit ledger (xp_ledger) for anti-cheat and analytics. Replaces the
+    librarian's global gamification K-V; the legacy totals are adopted into
+    the legacy student's row on first read."""
+
+    LEVEL_THRESHOLDS = [0, 100, 300, 600, 1000, 1500, 2200, 3000, 4000, 5500, 7500, 10000]
+    BASE_XP = {'answer': 10, 'complete_concept': 25, 'complete_module': 100,
+               'review': 15, 'exam_pass': 50, 'quest': 20}
+
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self._db = _ThreadLocalDB(db_path)
+
+    def _get_db(self) -> sqlite3.Connection:
+        return self._db.get()
+
+    def level_from_xp(self, xp: int) -> int:
+        level = 1
+        for i, threshold in enumerate(self.LEVEL_THRESHOLDS):
+            if xp >= threshold:
+                level = i + 1
+        return level
+
+    def _row(self, student_id: str) -> dict:
+        conn = self._get_db()
+        row = conn.execute("SELECT * FROM student_gamification WHERE student_id = ?",
+                           (student_id,)).fetchone()
+        if row:
+            return dict(row)
+        # first touch: adopt the legacy global K-V for the legacy student
+        # (spec 01 §1 backfill step 3), fresh zeros for everyone else
+        seed = {"total_xp": 0, "level": 1, "streak_days": 0,
+                "streak_last_date": None, "daily_xp": 0, "daily_date": None}
+        if student_id == DEFAULT_STUDENT_ID:
+            try:
+                legacy = {r["key"]: r["value"] for r in conn.execute(
+                    "SELECT key, value FROM gamification").fetchall()}
+                for k in ("total_xp", "streak_days", "daily_xp"):
+                    if legacy.get(k) is not None:
+                        seed[k] = int(legacy[k])
+                seed["streak_last_date"] = legacy.get("streak_last_date")
+                seed["daily_date"] = legacy.get("daily_date")
+                seed["level"] = self.level_from_xp(seed["total_xp"])
+            except sqlite3.OperationalError:
+                pass  # no legacy table — fresh install
+        conn.execute(
+            "INSERT OR IGNORE INTO student_gamification "
+            "(student_id, total_xp, level, streak_days, streak_last_date, daily_xp, daily_date) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (student_id, seed["total_xp"], seed["level"], seed["streak_days"],
+             seed["streak_last_date"], seed["daily_xp"], seed["daily_date"]))
+        conn.commit()
+        return dict(conn.execute(
+            "SELECT * FROM student_gamification WHERE student_id = ?",
+            (student_id,)).fetchone())
+
+    def get(self, student_id: str = None) -> dict:
+        sid = _sid(student_id)
+        row = self._row(sid)
+        today = date.today().isoformat()
+        if row.get("daily_date") != today:
+            row["daily_xp"] = 0
+        row["level"] = self.level_from_xp(row["total_xp"])
+        nxt = (self.LEVEL_THRESHOLDS[row["level"]]
+               if row["level"] < len(self.LEVEL_THRESHOLDS)
+               else self.LEVEL_THRESHOLDS[-1] + 2000)
+        prev = self.LEVEL_THRESHOLDS[row["level"] - 1] if row["level"] > 1 else 0
+        row["next_level_xp"] = nxt
+        row["prev_level_xp"] = prev
+        return row
+
+    def award_xp(self, action: str, grade: int = 3, bloom_level: int = 1,
+                 first_try: bool = False, ref_uid: str = None,
+                 student_id: str = None) -> dict:
+        """XP for a graded interaction. Correctness-gated for answers; every
+        award appends an xp_ledger row."""
+        sid = _sid(student_id)
+        if action == 'answer' and grade < 3:
+            current = self.get(sid)
+            return {"xp_earned": 0, "total_xp": current["total_xp"],
+                    "level": current["level"], "level_up": False}
+        base = self.BASE_XP.get(action, 10)
+        multiplier = 1.0
+        if first_try:
+            multiplier *= 1.5
+        if bloom_level >= 4:
+            multiplier *= 2.0
+        earned = int(base * multiplier)
+
+        row = self._row(sid)
+        today = date.today().isoformat()
+        old_level = self.level_from_xp(row["total_xp"])
+        new_total = row["total_xp"] + earned
+        new_level = self.level_from_xp(new_total)
+        daily = earned if row.get("daily_date") != today else row["daily_xp"] + earned
+
+        conn = self._get_db()
+        conn.execute(
+            "UPDATE student_gamification SET total_xp = ?, level = ?, daily_xp = ?, "
+            "daily_date = ? WHERE student_id = ?",
+            (new_total, new_level, daily, today, sid))
+        conn.execute(
+            "INSERT INTO xp_ledger (student_id, amount, reason, ref_uid) VALUES (?,?,?,?)",
+            (sid, earned, action, ref_uid))
+        conn.commit()
+        return {"xp_earned": earned, "total_xp": new_total, "level": new_level,
+                "level_up": new_level > old_level,
+                "new_level": new_level if new_level > old_level else None,
+                "daily_xp": daily}
+
+    def check_streak(self, student_id: str = None) -> dict:
+        """Daily streak: +1 on consecutive days, reset after a gap."""
+        sid = _sid(student_id)
+        row = self._row(sid)
+        today = date.today().isoformat()
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        last = row.get("streak_last_date")
+        if last == today:
+            return {"streak_days": row["streak_days"], "incremented": False}
+        streak = row["streak_days"] + 1 if last == yesterday else 1
+        conn = self._get_db()
+        conn.execute(
+            "UPDATE student_gamification SET streak_days = ?, streak_last_date = ? "
+            "WHERE student_id = ?", (streak, today, sid))
+        conn.commit()
+        return {"streak_days": streak, "incremented": True}
+
+    def ledger(self, student_id: str = None, limit: int = 100) -> List[dict]:
+        rows = self._get_db().execute(
+            "SELECT * FROM xp_ledger WHERE student_id = ? ORDER BY created_at DESC LIMIT ?",
+            (_sid(student_id), limit)).fetchall()
+        return [dict(r) for r in rows]

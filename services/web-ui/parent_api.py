@@ -365,6 +365,11 @@ def create_parent_blueprint(get_storage):
                                   **data["accommodations"])
         return jsonify({"status": "ok"})
 
+    @bp.route("/api/notifications/unread_count", methods=["GET"])
+    @parent_required
+    def api_unread_count():
+        return jsonify({"unread": _st().notifications.unread_count(current_parent_id())})
+
     # ------------------------------------------ B19.6 account / consent / data
 
     @bp.route("/api/consents", methods=["GET"])

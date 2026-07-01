@@ -2061,6 +2061,7 @@ class MnemosyneFSM:
                 next_question_type=current_q_type["key"],
                 bloom_level=self.current_bloom_level,
                 prior_concepts=self.prior_concepts_summary,
+                grade_band=self.grade_band,
             )
         else:
             prompt = get_typed_socratic_prompt(
@@ -2644,6 +2645,7 @@ class MnemosyneFSM:
                     self.current_card["title"],
                     self.current_card.get("text", ""),
                     self.card_attempts,
+                    grade_band=self.grade_band,
                 )
                 try:
                     raw = self._call_llm(messages, max_tokens=200, timeout=45)

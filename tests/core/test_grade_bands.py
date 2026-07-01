@@ -164,3 +164,45 @@ class TestBloomBounds(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestBandedHintLadder(unittest.TestCase):
+    """B17.4: younger learners reach the worked example sooner; olders walk
+    the full ladder. Micro-lectures cap length by band."""
+
+    def test_k2_short_circuits_to_worked_example(self):
+        from services.common.prompts import get_hint_prompt
+        msg = get_hint_prompt("Counting", "ctx", attempts=2, grade_band="K-2")[0]["content"]
+        assert "worked example" in msg.lower()
+
+    def test_912_full_ladder_before_example(self):
+        from services.common.prompts import get_hint_prompt
+        step2 = get_hint_prompt("Entropy", "ctx", attempts=2, grade_band="9-12")[0]["content"]
+        step3 = get_hint_prompt("Entropy", "ctx", attempts=3, grade_band="9-12")[0]["content"]
+        step4 = get_hint_prompt("Entropy", "ctx", attempts=4, grade_band="9-12")[0]["content"]
+        assert "small hint" in step2.lower()
+        assert "large hint" in step3.lower()
+        assert "worked example" in step4.lower()
+
+    def test_35_skips_one_step(self):
+        from services.common.prompts import get_hint_prompt
+        msg = get_hint_prompt("Fractions", "ctx", attempts=3, grade_band="3-5")[0]["content"]
+        assert "worked example" in msg.lower()
+
+    def test_step1_never_skipped(self):
+        from services.common.prompts import get_hint_prompt
+        msg = get_hint_prompt("Counting", "ctx", attempts=1, grade_band="K-2")[0]["content"]
+        assert "probing question" in msg.lower()
+
+    def test_register_present_in_hints(self):
+        from services.common.prompts import get_hint_prompt
+        msg = get_hint_prompt("Counting", "ctx", attempts=1, grade_band="K-2")[0]["content"]
+        assert "GRADE REGISTER" in msg
+
+    def test_micro_lecture_word_cap_by_band(self):
+        from services.common.prompts import get_micro_lecture_prompt
+        k2 = get_micro_lecture_prompt("Counting", "ctx", grade_band="K-2")[0]["content"]
+        hs = get_micro_lecture_prompt("Entropy", "ctx", grade_band="9-12")[0]["content"]
+        assert "under 50 words" in k2
+        assert "under 100 words" in hs
+        assert "GRADE REGISTER" in k2

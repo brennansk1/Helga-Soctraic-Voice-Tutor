@@ -557,7 +557,7 @@ Return ONLY the single word: LECTURE or QUESTION."""}]
 
 def get_micro_lecture_prompt(topic, context_text, history=[], style_modifier="standard",
                              missing_concepts=None, next_question_type=None, bloom_level=1,
-                             prior_concepts=None):
+                             prior_concepts=None, grade_band=None):
     """
     Generates a short explanation (Micro-Lecture) for introducing a topic or after failed attempts.
     The lecture always ends with a follow-up question whose type matches the current
@@ -612,17 +612,24 @@ def get_micro_lecture_prompt(topic, context_text, history=[], style_modifier="st
     bloom_name, bloom_directive = bloom_labels.get(bloom_level, bloom_labels[1])
     bloom_str = f"\nCognitive Level (Bloom's): Level {bloom_level} — {bloom_name}. {bloom_directive}"
 
+    # B17.4: band caps the lecture too — a K-2 micro-lecture is 1-2 tiny
+    # sentences with a concrete example; 9-12 gets the full 100 words.
+    profile = get_band_profile(grade_band)
+    lecture_words = min(100, profile["max_words"] * 2)
+    lecture_sentences = f"1-{profile['max_sentences']}"
+
     return [{"role": "system", "content": f"""You are the LECTURER. The student is learning about '{topic}'.
 Teaching Style: {style_modifier}
+GRADE REGISTER: {profile['register']}
 
 Context:
 "{context_safe}"
 {history_str}{missing_str}
 
 Task:
-1. Explain the concept clearly and simply in 2-4 sentences.
+1. Explain the concept clearly and simply in {lecture_sentences} sentences.
 2. Use an analogy if helpful.
-3. Keep the explanation under 100 words.
+3. Keep the explanation under {lecture_words} words.
 4. Fill in the gaps: Use your broad knowledge base to supplement the reference Context.
 5. NEVER use markdown formatting (no #, ##, -, *, **, numbered lists, bold, italic). Write plain conversational text only.
 6. NEVER prefix your response with a role label like "Lecturer:" or "Tutor:".
@@ -652,19 +659,30 @@ Task: Create a natural bridge sentence (under 20 words) connecting these topics.
 
 # --- HINT PROMPTS ---
 
-def get_hint_prompt(card_title, card_text, attempts):
+def get_hint_prompt(card_title, card_text, attempts, grade_band=None):
     """
     Generates a graduated hint for a struggling student following the Socratic hint ladder.
 
-    Hint ladder (matches SOCRATIC_SYSTEM_RULES §4):
+    Hint ladder (matches SOCRATIC_SYSTEM_RULES §4), band-adapted (B17.4):
       attempts == 1 → probing question only — redirect thinking without revealing anything.
       attempts == 2 → small conceptual hint (one sentence) that narrows the answer space slightly.
       attempts >= 3 → large hint that narrows the answer space significantly; if attempts >= 4
                       also append a worked example and a parallel transfer question.
+    Younger bands short-circuit the ladder: a K-2 learner gets a simple worked
+    example after ONE failed hint (step 2 == step 4 behavior); 3-5 after two.
+    9-12 walks the full 4-step ladder before any example appears.
 
     Returns:
         list: Messages array for chat completions API
     """
+    # B17.4: effective ladder step — younger learners fall through to the
+    # worked example sooner instead of being pressed with more probing.
+    ladder_skip = {"K-2": 2, "3-5": 1}.get(grade_band or "", 0)
+    attempts = attempts + ladder_skip if attempts >= 2 else attempts
+
+    profile = get_band_profile(grade_band)
+    register_note = f"\nGRADE REGISTER: {profile['register']}"
+
     if attempts == 1:
         ladder_instruction = (
             "HINT LADDER — Step 1 (probing question): "
@@ -695,7 +713,7 @@ def get_hint_prompt(card_title, card_text, attempts):
     return [{"role": "system", "content": f"""Context: {card_text}
 Concept: {card_title}
 
-{ladder_instruction}
+{ladder_instruction}{register_note}
 
 Rules: Never give away the final answer directly. Affirm any correct elements the student has shown before hinting."""}]
 

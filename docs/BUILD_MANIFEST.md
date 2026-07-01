@@ -62,7 +62,7 @@
 | B17.1 | `grade_band` on students + catalog courses | `storage.py` | value flows into FSM + prompts | P1 | R1 | done — `students.grade_band` (v4) resolved in `MnemosyneFSM.__init__`, persisted in session blob, flows into prompts + Bloom bounds |
 | B17.2 | Grade-aware prompts (vocab/length/register/ideas-per-turn) | `services/common/prompts.py:289-329` | distinct output K-2 vs 9-12 (snapshot test) | P1 | R1 | done — `GRADE_BAND_PROFILES` (spec 02 §3 verbatim); persona/register/word-caps/markdown-emoji gating in tutor prompt; K-2/9-12 grading calibration; `pytest tests/core/test_grade_bands.py → 18 passed` |
 | B17.3 | Grade-bounded Bloom/mastery defaults | `fsm_logic.py`, `course_builder.py` | reuses `progressive_bloom`/`_check_mastery_gate` with grade bounds | P1 | R1 | done — band clamps course Bloom floor/ceiling; mastery gate thresholds (streak/questions/types) band-parameterized; low-ceiling completion regression test (B3.5) |
-| B17.4 | Grade-banded hint ladder + micro-lectures | `prompts.py` (`get_hint_prompt`, `get_micro_lecture_prompt`) | more scaffolding for younger; faster fade older | P1 | R2 | todo |
+| B17.4 | Grade-banded hint ladder + micro-lectures | `prompts.py` (`get_hint_prompt`, `get_micro_lecture_prompt`) | more scaffolding for younger; faster fade older | P1 | R2 | done — K-2 short-circuits to a worked example after one failed hint (3-5 after two, 9-12 walks the full 4-step ladder); micro-lecture word/sentence caps + register per band; 6 tests |
 | B17.5 | Manipulatives / visual answer modes (early math) | learn UI + FSM | K-2 can answer without typing abstractions; grades feed mastery | P2 | R3 | todo |
 | B17.6 | Voice-first early-literacy / World-Lang loop | STT/TTS (B7.3) | read-aloud + pronunciation works | P2 | R3 | todo |
 | B17.7 | Affect/frustration handling for young learners | `fsm_logic.py` (`_detect_ignorance`) | repeated-miss → encouragement+scaffold, not pressing | P2 | R3 | todo |
@@ -112,7 +112,7 @@
 
 | ID | Item | Acceptance | Pri | Rel | Status |
 |---|------|------|---|---|---|
-| B22.1 | Wire existing XP everywhere, per-student | XP fires on review+session per student | P2 | R3 | todo |
+| B22.1 | Wire existing XP everywhere, per-student | XP fires on review+session per student | P2 | R3 | done — GamificationStore over v7 tables (award/level/streak + xp_ledger audit trail); librarian endpoints per-student; web-ui proxies inject the session student (client can't award XP to someone else); legacy K-V totals adopted on legacy student's first read |
 | B22.2 | Skill-tree map (strands=branches, standards=nodes) | catalog renders as visual tree (FE8) | P2 | R3 | todo |
 | B22.3 | Badges per standard/strand; quests/daily challenges | unlocks beyond streaks | P2 | R3 | todo |
 | B22.4 | Interest-themed cosmetic rewards (avatars) | unlockable cosmetics | P2 | R3 | todo |
@@ -137,7 +137,7 @@
 |---|------|------|---|---|---|
 | B24.1 | Transactional email + queue | verification/reset/receipt emails send | P2 | R3 | todo |
 | B24.2 | Weekly parent progress digest | per-child mastery/time/struggles email | P2 | R3 | todo |
-| B24.3 | In-app notifications | elective requests / due / streak | P2 | R3 | todo |
+| B24.3 | In-app notifications | elective requests / due / streak | P2 | R3 | done — NotificationStore (v8) + `/api/notifications` (+ read) for the current principal + parent unread-count badge; elective approvals and safety escalations already emit |
 | B24.4 | Struggle/inactivity alerts | parent alerted on struggle/inactivity | P2 | R3 | todo |
 
 ## B25 — Accessibility & Differentiation (Workstream K) · P2 · R3 (B25.1 in_progress per baseline FE4.3)
