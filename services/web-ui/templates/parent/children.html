@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}My Learners — Helga{% endblock %}
+{% block content %}
+<div style="max-width: 960px; margin: 0 auto; padding: var(--space-5, 1.5rem);">
+    <h1>My Learners</h1>
+    <nav style="margin-bottom: var(--space-5, 1.5rem);">
+        <a href="/parent/children">Overview</a> ·
+        <a href="/parent/approvals">Approvals</a> ·
+        <a href="/parent/students">Manage learners</a> ·
+        <a href="/parent/account">Account &amp; privacy</a> ·
+        <a href="/students">Switch to learner mode</a>
+    </nav>
+    <div id="children-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--space-4, 1rem);">
+        <p class="text-muted">Loading…</p>
+    </div>
+</div>
+<script>
+(async () => {
+    const res = await fetch('/parent/api/children');
+    const grid = document.getElementById('children-grid');
+    if (!res.ok) { grid.innerHTML = '<p role="alert">Could not load learners.</p>'; return; }
+    const {children} = await res.json();
+    if (!children.length) {
+        grid.innerHTML = '<p class="text-muted">No learners yet. <a href="/parent/students">Add one</a>.</p>';
+        return;
+    }
+    grid.innerHTML = children.map(c => `
+      <a class="stat-card" href="/parent/children/${c.student_id}"
+         style="display:block; padding: var(--space-4, 1rem); border-radius: var(--radius-lg, 12px); border:1px solid var(--border, #e5e7eb); text-decoration:none; color:inherit;">
+        <h2 style="margin:0 0 .25rem;">${c.display_name}
+          ${c.pending_approvals ? `<span class="badge" style="background: var(--warning, #f59e0b); color:#fff; border-radius:999px; padding:.1em .6em; font-size:.7em;">${c.pending_approvals} to approve</span>` : ''}
+        </h2>
+        <p class="text-muted" style="margin:0 0 .75rem;">Grades ${c.grade_band}</p>
+        <dl style="display:grid; grid-template-columns:1fr 1fr; gap:.35rem; margin:0; font-size:.9em;">
+          <div><dt class="text-muted">Mastery</dt><dd style="margin:0; font-weight:700;">${c.mastery_pct}%</dd></div>
+          <div><dt class="text-muted">Streak</dt><dd style="margin:0; font-weight:700;">${c.streak_days}d</dd></div>
+          <div><dt class="text-muted">This week</dt><dd style="margin:0; font-weight:700;">${c.time_on_task_7d_minutes} min</dd></div>
+          <div><dt class="text-muted">Due reviews</dt><dd style="margin:0; font-weight:700;">${c.due_reviews}</dd></div>
+        </dl>
+      </a>`).join('');
+})();
+</script>
+{% endblock %}

@@ -88,6 +88,10 @@ class StorageManager:
         # (data/catalog/courses/, physically separate from user electives)
         self.standards = StandardsStore(self.db_path)
         self.exams = ExamStore(self.db_path)
+        self.notifications = NotificationStore(self.db_path)
+        self.accommodations = AccommodationStore(self.db_path)
+        self.audit = AuditStore(self.db_path)
+        self.subscriptions = SubscriptionStore(self.db_path)
         self.catalog_dir = os.path.join(data_dir, "catalog", "courses")
         os.makedirs(self.catalog_dir, exist_ok=True)
         self.catalog_courses = CourseStore(self.catalog_dir, self.data_dir)
@@ -464,6 +468,114 @@ class StorageManager:
                 """)
                 cursor.execute("UPDATE schema_version SET version = 6")
                 logger.info("Schema migrated to v6: exam tables")
+
+            # v6 → v7: per-student gamification (spec 01 §6) — replaces the
+            # librarian's global K-V when B22 lands; schema ships now so the
+            # migration chain stays linear.
+            if current_version < 7:
+                cursor.executescript("""
+                    CREATE TABLE IF NOT EXISTS student_gamification (
+                        student_id  TEXT PRIMARY KEY REFERENCES students(id) ON DELETE CASCADE,
+                        total_xp    INTEGER DEFAULT 0,
+                        level       INTEGER DEFAULT 1,
+                        streak_days INTEGER DEFAULT 0,
+                        streak_last_date TEXT,
+                        daily_xp    INTEGER DEFAULT 0,
+                        daily_date  TEXT,
+                        cosmetics   TEXT DEFAULT '{}'
+                    );
+                    CREATE TABLE IF NOT EXISTS xp_ledger (
+                        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                        student_id  TEXT NOT NULL,
+                        amount      INTEGER NOT NULL,
+                        reason      TEXT,
+                        ref_uid     TEXT,
+                        created_at  TEXT DEFAULT (datetime('now'))
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_xp_student ON xp_ledger(student_id, created_at);
+                    CREATE TABLE IF NOT EXISTS badges (
+                        id TEXT PRIMARY KEY, name TEXT, description TEXT, icon TEXT,
+                        criteria TEXT, xp_reward INTEGER DEFAULT 0, scope TEXT );
+                    CREATE TABLE IF NOT EXISTS student_badges (
+                        student_id TEXT NOT NULL, badge_id TEXT NOT NULL,
+                        unlocked_at TEXT DEFAULT (datetime('now')),
+                        PRIMARY KEY (student_id, badge_id) );
+                    CREATE TABLE IF NOT EXISTS quests (
+                        id TEXT PRIMARY KEY, title TEXT, kind TEXT, target INTEGER,
+                        xp_reward INTEGER, cadence TEXT );
+                    CREATE TABLE IF NOT EXISTS student_quests (
+                        student_id TEXT NOT NULL, quest_id TEXT NOT NULL,
+                        progress INTEGER DEFAULT 0, status TEXT DEFAULT 'active',
+                        period_key TEXT,
+                        PRIMARY KEY (student_id, quest_id, period_key) );
+                """)
+                cursor.execute("UPDATE schema_version SET version = 7")
+                logger.info("Schema migrated to v7: per-student gamification tables")
+
+            # v7 → v8: accommodations, notifications, compliance audit (spec 01 §7)
+            if current_version < 8:
+                cursor.executescript("""
+                    CREATE TABLE IF NOT EXISTS accommodations (
+                        student_id   TEXT PRIMARY KEY REFERENCES students(id) ON DELETE CASCADE,
+                        extended_time INTEGER DEFAULT 0,
+                        no_timer      INTEGER DEFAULT 0,
+                        reduced_distraction INTEGER DEFAULT 0,
+                        larger_targets INTEGER DEFAULT 0,
+                        extra_scaffolding INTEGER DEFAULT 0,
+                        simplified_language INTEGER DEFAULT 0,
+                        read_aloud_default INTEGER DEFAULT 0,
+                        notes        TEXT,
+                        set_by       TEXT,
+                        updated_at   TEXT DEFAULT (datetime('now'))
+                    );
+                    CREATE TABLE IF NOT EXISTS notifications (
+                        id          TEXT PRIMARY KEY,
+                        recipient_id TEXT NOT NULL,
+                        recipient_role TEXT NOT NULL,
+                        kind        TEXT NOT NULL,
+                        title       TEXT, body TEXT, ref_uid TEXT,
+                        read_at     TEXT,
+                        created_at  TEXT DEFAULT (datetime('now'))
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_notif_recipient ON notifications(recipient_id, read_at);
+                    CREATE TABLE IF NOT EXISTS audit_log (
+                        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                        actor_id    TEXT, actor_role TEXT,
+                        action      TEXT NOT NULL,
+                        subject_student_id TEXT,
+                        detail      TEXT,
+                        ip_address  TEXT,
+                        created_at  TEXT DEFAULT (datetime('now'))
+                    );
+                """)
+                cursor.execute("UPDATE schema_version SET version = 8")
+                logger.info("Schema migrated to v8: accommodations/notifications/audit_log")
+
+            # v8 → v9: catalog version pinning, hydration provenance, billing
+            # idempotency (spec 01 §7b — cross-spec additive)
+            if current_version < 9:
+                try:
+                    cursor.execute("ALTER TABLE enrollments ADD COLUMN course_version INTEGER DEFAULT 1")
+                except sqlite3.OperationalError:
+                    pass
+                cursor.executescript("""
+                    CREATE TABLE IF NOT EXISTS hydration_provenance (
+                        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                        course_uid  TEXT NOT NULL,
+                        concept_uid TEXT NOT NULL,
+                        sources     TEXT,
+                        model       TEXT, generated_at TEXT DEFAULT (datetime('now'))
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_provenance_course ON hydration_provenance(course_uid);
+                    CREATE TABLE IF NOT EXISTS billing_events (
+                        provider_event_id TEXT PRIMARY KEY,
+                        type        TEXT, parent_id TEXT,
+                        processed_at TEXT DEFAULT (datetime('now')),
+                        payload_hash TEXT
+                    );
+                """)
+                cursor.execute("UPDATE schema_version SET version = 9")
+                logger.info("Schema migrated to v9: version pinning + provenance + billing events")
 
             conn.commit()
         finally:
@@ -2156,3 +2268,159 @@ class ExamStore:
             d["correct"] = json.loads(d["correct"] or "{}")
             out.append(d)
         return out
+
+
+class NotificationStore:
+    """In-app notifications (B24.3; schema v8)."""
+
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self._db = _ThreadLocalDB(db_path)
+
+    def _get_db(self) -> sqlite3.Connection:
+        return self._db.get()
+
+    def create(self, recipient_id: str, recipient_role: str, kind: str,
+               title: str = None, body: str = None, ref_uid: str = None) -> str:
+        nid = f"ntf_{uuid.uuid4().hex[:8]}"
+        conn = self._get_db()
+        conn.execute(
+            "INSERT INTO notifications (id, recipient_id, recipient_role, kind, title, body, ref_uid) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (nid, recipient_id, recipient_role, kind, title, body, ref_uid))
+        conn.commit()
+        return nid
+
+    def list_for(self, recipient_id: str, unread_only: bool = False) -> List[dict]:
+        q = "SELECT * FROM notifications WHERE recipient_id = ?"
+        if unread_only:
+            q += " AND read_at IS NULL"
+        rows = self._get_db().execute(q + " ORDER BY created_at DESC", (recipient_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def unread_count(self, recipient_id: str) -> int:
+        row = self._get_db().execute(
+            "SELECT COUNT(*) AS cnt FROM notifications WHERE recipient_id = ? AND read_at IS NULL",
+            (recipient_id,)).fetchone()
+        return row["cnt"] if row else 0
+
+    def mark_read(self, notification_id: str, recipient_id: str):
+        conn = self._get_db()
+        conn.execute(
+            "UPDATE notifications SET read_at = datetime('now') WHERE id = ? AND recipient_id = ?",
+            (notification_id, recipient_id))
+        conn.commit()
+
+
+class AccommodationStore:
+    """IEP/504 accommodation flags (B25.4; schema v8)."""
+
+    _FLAGS = ('extended_time', 'no_timer', 'reduced_distraction', 'larger_targets',
+              'extra_scaffolding', 'simplified_language', 'read_aloud_default')
+
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self._db = _ThreadLocalDB(db_path)
+
+    def _get_db(self) -> sqlite3.Connection:
+        return self._db.get()
+
+    def get(self, student_id: str) -> dict:
+        row = self._get_db().execute(
+            "SELECT * FROM accommodations WHERE student_id = ?", (student_id,)).fetchone()
+        if not row:
+            return {f: 0 for f in self._FLAGS}
+        return dict(row)
+
+    def set(self, student_id: str, set_by: str = None, notes: str = None, **flags):
+        flags = {k: 1 if v else 0 for k, v in flags.items() if k in self._FLAGS}
+        current = self.get(student_id)
+        merged = {f: flags.get(f, current.get(f, 0)) for f in self._FLAGS}
+        conn = self._get_db()
+        conn.execute(
+            "INSERT OR REPLACE INTO accommodations (student_id, " + ", ".join(self._FLAGS) +
+            ", notes, set_by, updated_at) VALUES (?" + ",?" * len(self._FLAGS) +
+            ", ?, ?, datetime('now'))",
+            [student_id] + [merged[f] for f in self._FLAGS] + [notes, set_by])
+        conn.commit()
+
+
+class AuditStore:
+    """FERPA/Utah data-access audit trail (B21.2; schema v8). Distinct from
+    activity_log (learning events) — this records who looked at / exported /
+    deleted whose data."""
+
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self._db = _ThreadLocalDB(db_path)
+
+    def _get_db(self) -> sqlite3.Connection:
+        return self._db.get()
+
+    def record(self, action: str, actor_id: str = None, actor_role: str = None,
+               subject_student_id: str = None, detail: dict = None,
+               ip_address: str = None):
+        conn = self._get_db()
+        conn.execute(
+            "INSERT INTO audit_log (actor_id, actor_role, action, subject_student_id, detail, ip_address) "
+            "VALUES (?,?,?,?,?,?)",
+            (actor_id, actor_role, action, subject_student_id,
+             json.dumps(detail) if detail else None, ip_address))
+        conn.commit()
+
+    def list(self, subject_student_id: str = None, actor_id: str = None,
+             limit: int = 200) -> List[dict]:
+        q = "SELECT * FROM audit_log WHERE 1=1"
+        params = []
+        if subject_student_id:
+            q += " AND subject_student_id = ?"
+            params.append(subject_student_id)
+        if actor_id:
+            q += " AND actor_id = ?"
+            params.append(actor_id)
+        q += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        rows = self._get_db().execute(q, params).fetchall()
+        return [dict(r) for r in rows]
+
+
+class SubscriptionStore:
+    """Stripe subscription mirror (B20; schema v4). Seats gate add-student."""
+
+    _VALID_COLUMNS = {'provider', 'provider_customer_id', 'provider_sub_id',
+                      'plan', 'seats', 'status', 'current_period_end'}
+
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self._db = _ThreadLocalDB(db_path)
+
+    def _get_db(self) -> sqlite3.Connection:
+        return self._db.get()
+
+    def get(self, parent_id: str) -> Optional[dict]:
+        row = self._get_db().execute(
+            "SELECT * FROM subscriptions WHERE parent_id = ?", (parent_id,)).fetchone()
+        return dict(row) if row else None
+
+    def upsert(self, parent_id: str, **kwargs):
+        kwargs = {k: v for k, v in kwargs.items() if k in self._VALID_COLUMNS}
+        current = self.get(parent_id) or {}
+        merged = {**{k: current.get(k) for k in self._VALID_COLUMNS}, **kwargs}
+        conn = self._get_db()
+        conn.execute(
+            "INSERT OR REPLACE INTO subscriptions (parent_id, provider, provider_customer_id, "
+            "provider_sub_id, plan, seats, status, current_period_end, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,datetime('now'))",
+            (parent_id, merged.get('provider') or 'stripe',
+             merged.get('provider_customer_id'), merged.get('provider_sub_id'),
+             merged.get('plan'), merged.get('seats') or 1,
+             merged.get('status') or 'inactive', merged.get('current_period_end')))
+        conn.commit()
+
+    def seats_for(self, parent_id: str, default_seats: int = 3) -> int:
+        """Seat allowance: active subscription seats, else the free default
+        (families can add up to `default_seats` learners before billing lands)."""
+        sub = self.get(parent_id)
+        if sub and sub.get('status') in ('active', 'trialing'):
+            return int(sub.get('seats') or 1)
+        return default_seats

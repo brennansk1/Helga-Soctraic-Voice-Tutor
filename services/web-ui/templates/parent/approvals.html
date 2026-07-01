@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Approvals — Helga{% endblock %}
+{% block content %}
+<div style="max-width: 720px; margin: 0 auto; padding: var(--space-5, 1.5rem);">
+    <p><a href="/parent/children">← All learners</a></p>
+    <h1>Course requests</h1>
+    <div id="queue"><p class="text-muted">Loading…</p></div>
+</div>
+<script>
+async function load() {
+    const res = await fetch('/parent/api/approvals');
+    const {approvals} = await res.json();
+    const el = document.getElementById('queue');
+    el.innerHTML = approvals.length ? approvals.map(a => `
+        <div class="stat-card" style="padding: var(--space-4, 1rem); border:1px solid var(--border,#e5e7eb); border-radius: var(--radius-lg, 12px); margin-bottom: var(--space-3, .75rem);">
+          <strong>${a.student_name}</strong> wants to learn
+          <strong>${a.course_title}</strong>
+          <div style="margin-top:.5rem; display:flex; gap:.5rem;">
+            <button class="btn btn-primary" data-act="approve" data-id="${a.enrollment_id}">Approve</button>
+            <button class="btn btn-ghost" data-act="deny" data-id="${a.enrollment_id}">Deny</button>
+          </div>
+        </div>`).join('')
+        : '<p class="text-muted">Nothing waiting for you. 🎉</p>';
+    el.querySelectorAll('button[data-act]').forEach(b => b.addEventListener('click', async () => {
+        await fetch(`/parent/api/enrollments/${b.dataset.id}/${b.dataset.act}`, {
+            method: 'POST', headers: {'X-CSRF-Token': window.CSRF_TOKEN}});
+        load();
+    }));
+}
+load();
+</script>
+{% endblock %}

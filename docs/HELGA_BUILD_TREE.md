@@ -459,13 +459,13 @@ target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
 │  ├─ B18.3  Interests-into-exams themer (standard fixed) .......... ✔️  answer key out-of-band
 │  ├─ B18.4  Item validity check (still tests target standard) ..... ✔️  structural + verifier layers
 │  └─ B18.5  GFL (74% cut) + Basic Civics (35/50) practice modes ... ✔️  boundary-tested
-├─ B19 Parent / Guardian Dashboard ................................. ⬜  (Workstream E)
-│  ├─ B19.1  Children overview ..................................... ⬜
-│  ├─ B19.2  Per-child progress + standards coverage .............. ⬜  from concept_standards/activity_log
-│  ├─ B19.3  Elective approval workflow (pending_approval) ......... ⬜  gates custom wizard
-│  ├─ B19.4  Add/manage students (seat-capped) ..................... ⬜
-│  ├─ B19.5  Exportable progress/standards PDF report ............. ⬜  homeschool records
-│  └─ B19.6  Account/consent/data export+delete ................... ⬜  ties B21
+├─ B19 Parent / Guardian Dashboard ................................. ✔️  (Workstream E — COMPLETE)
+│  ├─ B19.1  Children overview ..................................... ✔️  6 aggregates + audit rows
+│  ├─ B19.2  Per-child progress + standards coverage .............. ✔️  roll-up/Bloom/struggles/timeline
+│  ├─ B19.3  Elective approval workflow (pending_approval) ......... ✔️  approve/deny + notify
+│  ├─ B19.4  Add/manage students (seat-capped) ..................... ✔️  402 over seats
+│  ├─ B19.5  Exportable progress/standards report ................. ✔️  JSON export (PDF deferred)
+│  └─ B19.6  Account/consent/data export+delete ................... ✔️  FERPA export + purge
 ├─ B20 Billing & Subscriptions (Stripe) ........................... ⬜  (Workstream E5)
 │  ├─ B20.1  Stripe Checkout + customer portal .................... ⬜
 │  ├─ B20.2  Webhook → subscriptions mirror ....................... ⬜
@@ -527,7 +527,7 @@ target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
 │  ├─ FE5.3  Practice (merge Quiz + Review) ..................... ⬜
 │  ├─ FE5.4  My Stuff (interests, gamification, avatar) ......... ⬜
 │  └─ FE5.5  Remove Status/heavy Settings from student view ..... ⬜  (Status → admin/ops only)
-├─ FE6  Parent dashboard surface .................................. ⬜  (B19, role-gated)
+├─ FE6  Parent dashboard surface .................................. ✔️  /parent/* shell + 5 pages
 ├─ FE7  Auth & onboarding flows ................................... ✔️  signup/login/picker/PIN grid
 └─ FE8  Skill-tree map view (gamified catalog) ................... ⬜  (B22.2)
 ```

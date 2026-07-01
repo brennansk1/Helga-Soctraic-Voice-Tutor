@@ -189,7 +189,7 @@ def exit_student():
 # --- decorators (spec 03 §2.2) ----------------------------------------------
 
 def _wants_json():
-    return request.path.startswith('/api/') or request.is_json
+    return '/api/' in request.path or request.is_json
 
 
 def _deny(code, message):

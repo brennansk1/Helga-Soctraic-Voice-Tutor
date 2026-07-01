@@ -397,6 +397,10 @@ def _get_storage():
 
 helga_auth.init_auth(_get_storage)
 
+# B19/FE6: parent dashboard blueprint (role-gated under /parent/*)
+from parent_api import create_parent_blueprint
+app.register_blueprint(create_parent_blueprint(_get_storage))
+
 @app.route('/api/schedule', methods=['GET'])
 def get_schedule():
     try:
@@ -1441,6 +1445,10 @@ def create_student():
     if grade_band not in ('K-2', '3-5', '6-8', '9-12'):
         return jsonify({'error': 'invalid grade_band'}), 400
     st = _get_storage()
+    # B20.3 seat enforcement: active students may not exceed the seat allowance
+    if st.accounts.count_active_students(current_parent_id()) >= \
+            st.subscriptions.seats_for(current_parent_id()):
+        return jsonify({'error': 'seat limit reached — archive a learner or upgrade'}), 402
     pin = data.get('pin')
     pin_hash = hash_secret(str(pin)) if pin else None
     student_id = st.accounts.create_student(

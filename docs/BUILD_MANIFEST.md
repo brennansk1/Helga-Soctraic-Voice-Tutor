@@ -81,12 +81,12 @@
 
 | ID | Item | Target | Acceptance | Pri | Rel | Status |
 |---|------|------|------|---|---|---|
-| B19.1 | Children overview | web-ui parent pages | grade/courses/mastery/streak/time per child | P1 | R2 | todo |
-| B19.2 | Per-child progress + standards coverage | `concept_standards`, `activity_log` | shows Utah codes mastered/in-progress + timeline | P1 | R2 | todo |
-| B19.3 | Elective approval workflow (`pending_approval`) | parent + custom wizard | child elective needs parent approve before start | P1 | R2 | todo |
-| B19.4 | Add/manage students (seat-capped) | parent + subscriptions | cannot exceed `subscriptions.seats` | P1 | R2 | todo |
-| B19.5 | Exportable progress/standards PDF report | parent | downloadable record for homeschool/grant | P1 | R2 | todo |
-| B19.6 | Account/consent/data export+delete | parent + consent | ties B21; export/delete works | P1 | R2 | todo |
+| B19.1 | Children overview | web-ui parent pages | grade/courses/mastery/streak/time per child | P1 | R2 | done — `/parent/api/children` six aggregates (spec 06 §2.1, no per-concept loop) + `children.html` cards; FERPA audit row per load |
+| B19.2 | Per-child progress + standards coverage | `concept_standards`, `activity_log` | shows Utah codes mastered/in-progress + timeline | P1 | R2 | done — standards roll-up (conservative all-concepts-mastered rule), Bloom histogram, 30d timeline, struggle flags (≥3 low & ≥50%), per-course %; concept map via structure walk (spec 06 §3.1 option B; option A `course_concepts` table deferred to B26.4) |
+| B19.3 | Elective approval workflow (`pending_approval`) | parent + custom wizard | child elective needs parent approve before start | P1 | R2 | done — approvals queue + approve/deny endpoints (family-scoped, 404 foreign, 409 non-pending) + student notification; **wizard-side request gate wiring lands with the FE5 student-shell pass** |
+| B19.4 | Add/manage students (seat-capped) | parent + subscriptions | cannot exceed `subscriptions.seats` | P1 | R2 | done — SubscriptionStore.seats_for (active sub seats, else free default 3); add-student + un-archive both 402 over cap; manage page (band/interests/PIN/archive) |
+| B19.5 | Exportable progress/standards PDF report | parent | downloadable record for homeschool/grant | P1 | R2 | done (JSON) — full data export downloads from child detail; **PDF rendering deferred** (formatting layer over the same payload; needs a PDF dep decision) |
+| B19.6 | Account/consent/data export+delete | parent + consent | ties B21; export/delete works | P1 | R2 | done — consent list page; export (all record classes) + confirmed delete (purges 11 per-student tables, archives profile); both write FERPA audit rows; 10 tests |
 
 ## B20 — Billing & Subscriptions (Stripe) (Workstream E5) · P2 · R3
 
@@ -181,7 +181,7 @@
 | FE5.3 | Practice (merge Quiz + Review) | exams + flashcards in one tab | R3 | todo |
 | FE5.4 | My Stuff (interests, gamification, avatar) | lightweight kid settings | R3 | todo |
 | FE5.5 | Remove Status/heavy Settings from student view | student nav simplified | R3 | todo |
-| FE6 | Parent dashboard surface | role-gated parent UI (B19) | R2 | todo |
+| FE6 | Parent dashboard surface | role-gated parent UI (B19) | R2 | done — /parent/* shell: children, child_detail (standards/Bloom/struggles/timeline), approvals, manage_students, account |
 | FE7 | Auth & onboarding flows | parent signup, student PIN, consent capture | R1 | done — login/signup/students-picker/family-PIN templates; TOS+COPPA consent recorded at signup & student creation; kid-first polish continues in R3 IA pass |
 | FE8 | Skill-tree map view (gamified catalog) | renders catalog as tree (B22.2) | R3 | todo |
 

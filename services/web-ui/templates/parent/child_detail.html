@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}{{ student.display_name }} — Helga{% endblock %}
+{% block content %}
+<div style="max-width: 960px; margin: 0 auto; padding: var(--space-5, 1.5rem);">
+    <p><a href="/parent/children">← All learners</a></p>
+    <h1>{{ student.display_name }} <span class="text-muted" style="font-size:.6em;">Grades {{ student.grade_band }}</span></h1>
+
+    <section aria-labelledby="standards-h">
+        <h2 id="standards-h">Utah standards coverage</h2>
+        <div style="margin-bottom: var(--space-3, .75rem);">
+            <button class="btn btn-secondary" id="export-btn">Download data export (JSON)</button>
+        </div>
+        <div id="standards"><p class="text-muted">Loading…</p></div>
+    </section>
+
+    <section aria-labelledby="bloom-h">
+        <h2 id="bloom-h">Thinking depth (Bloom levels of mastered concepts)</h2>
+        <div id="bloom" style="display:flex; gap:.5rem; align-items:flex-end; height:120px;"></div>
+    </section>
+
+    <section aria-labelledby="struggles-h">
+        <h2 id="struggles-h">Needs help</h2>
+        <div id="struggles"><p class="text-muted">Loading…</p></div>
+    </section>
+
+    <section aria-labelledby="courses-h">
+        <h2 id="courses-h">Courses</h2>
+        <div id="courses"><p class="text-muted">Loading…</p></div>
+    </section>
+
+    <section aria-labelledby="timeline-h">
+        <h2 id="timeline-h">Last 30 days</h2>
+        <div id="timeline"><p class="text-muted">Loading…</p></div>
+    </section>
+</div>
+<script>
+const SID = {{ student.id | tojson }};
+const STATUS_ICON = {mastered: '✅', in_progress: '🔨', not_started: '⬜'};
+
+(async () => {
+    const [stdRes, bloomRes, strugRes, courseRes, tlRes] = await Promise.all([
+        fetch(`/parent/api/children/${SID}/standards`),
+        fetch(`/parent/api/children/${SID}/bloom`),
+        fetch(`/parent/api/children/${SID}/struggles`),
+        fetch(`/parent/api/children/${SID}/courses`),
+        fetch(`/parent/api/children/${SID}/timeline`),
+    ]);
+
+    const {subjects} = await stdRes.json();
+    const stdEl = document.getElementById('standards');
+    const subjNames = Object.keys(subjects);
+    stdEl.innerHTML = subjNames.length ? subjNames.map(subj => {
+        const s = subjects[subj];
+        const strands = Object.entries(s.strands).map(([strand, stds]) => `
+            <h4 style="margin:.5rem 0 .25rem;">${strand}</h4>
+            <ul style="list-style:none; padding:0; margin:0;">
+              ${stds.map(x => `<li>${STATUS_ICON[x.status]} <strong>${x.code}</strong>${x.is_enrichment ? ' ★' : ''} — ${x.text.slice(0,120)} <span class="text-muted">(${x.concepts} concepts)</span></li>`).join('')}
+            </ul>`).join('');
+        return `<details open><summary style="font-weight:700;">${subj} — ${s.coverage_pct}% mastered (${s.mastered}/${s.total})</summary>${strands}</details>`;
+    }).join('') : '<p class="text-muted">No standards-tagged courses yet.</p>';
+
+    const {bloom_histogram} = await bloomRes.json();
+    const maxN = Math.max(1, ...Object.values(bloom_histogram));
+    const labels = ['Remember','Understand','Apply','Analyze','Evaluate','Create'];
+    document.getElementById('bloom').innerHTML = Object.entries(bloom_histogram).map(([lvl, n]) => `
+        <div style="text-align:center; flex:1;">
+          <div style="background: var(--primary, #6366f1); height:${Math.round(90*n/maxN)}px; border-radius:4px 4px 0 0;" title="${n}"></div>
+          <small class="text-muted">${labels[lvl-1]}<br>${n}</small>
+        </div>`).join('');
+
+    const {struggles} = await strugRes.json();
+    document.getElementById('struggles').innerHTML = struggles.length
+        ? '<ul>' + struggles.map(s => `<li>⚠️ <strong>${s.title}</strong> — ${s.low} low grades over ${s.attempts} tries</li>`).join('') + '</ul>'
+        : '<p class="text-muted">Nothing flagged — smooth sailing.</p>';
+
+    const {courses} = await courseRes.json();
+    document.getElementById('courses').innerHTML = courses.length
+        ? '<ul>' + courses.map(c => `<li><strong>${c.title}</strong> — ${c.completion_pct}% complete <span class="text-muted">(${c.kind}, ${c.status})</span></li>`).join('') + '</ul>'
+        : '<p class="text-muted">No enrollments yet.</p>';
+
+    const {timeline} = await tlRes.json();
+    document.getElementById('timeline').innerHTML = timeline.length
+        ? '<ul>' + timeline.map(d => `<li><strong>${d.day}</strong>: ${d.minutes} min, ${d.events} activities${d.avg_grade ? `, avg grade ${d.avg_grade}` : ''}</li>`).join('') + '</ul>'
+        : '<p class="text-muted">No activity yet.</p>';
+})();
+
+document.getElementById('export-btn').addEventListener('click', async () => {
+    const res = await fetch(`/parent/api/children/${SID}/export`, {
+        method: 'POST', headers: {'X-CSRF-Token': window.CSRF_TOKEN}});
+    const blob = new Blob([JSON.stringify(await res.json(), null, 2)], {type: 'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `helga-export-${SID}.json`;
+    a.click();
+});
+</script>
+{% endblock %}

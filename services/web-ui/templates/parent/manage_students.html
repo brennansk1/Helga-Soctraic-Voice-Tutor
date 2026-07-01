@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Manage learners — Helga{% endblock %}
+{% block content %}
+<div style="max-width: 720px; margin: 0 auto; padding: var(--space-5, 1.5rem);">
+    <p><a href="/parent/children">← All learners</a></p>
+    <h1>Manage learners</h1>
+    <p id="seats" class="text-muted"></p>
+    <div id="students"><p class="text-muted">Loading…</p></div>
+    <p style="margin-top: var(--space-5, 1.5rem);"><a class="btn btn-primary" href="/students">Add a learner (from the picker)</a></p>
+</div>
+<script>
+async function load() {
+    const res = await fetch('/parent/api/students');
+    const {students, seats} = await res.json();
+    document.getElementById('seats').textContent = `Seats used: ${seats.used} of ${seats.max}`;
+    document.getElementById('students').innerHTML = students.map(s => `
+      <div class="stat-card" style="padding: var(--space-4, 1rem); border:1px solid var(--border,#e5e7eb); border-radius: var(--radius-lg, 12px); margin-bottom: var(--space-3, .75rem);">
+        <strong>${s.display_name}</strong> — Grades ${s.grade_band}
+        <span class="text-muted">(${s.status})</span>
+        <div style="margin-top:.5rem; display:flex; gap:.5rem; flex-wrap:wrap;">
+          <select data-id="${s.id}" data-field="grade_band" aria-label="Grade band for ${s.display_name}">
+            ${['K-2','3-5','6-8','9-12'].map(b => `<option ${b===s.grade_band?'selected':''}>${b}</option>`).join('')}
+          </select>
+          ${s.status === 'active'
+            ? `<button class="btn btn-ghost" data-id="${s.id}" data-act="archive">Archive</button>`
+            : s.status === 'archived'
+              ? `<button class="btn btn-secondary" data-id="${s.id}" data-act="restore">Restore</button>` : ''}
+        </div>
+      </div>`).join('');
+    document.querySelectorAll('select[data-field]').forEach(sel => sel.addEventListener('change', async () => {
+        await patch(sel.dataset.id, {grade_band: sel.value});
+    }));
+    document.querySelectorAll('button[data-act]').forEach(b => b.addEventListener('click', async () => {
+        const status = b.dataset.act === 'archive' ? 'archived' : 'active';
+        const r = await patch(b.dataset.id, {status});
+        if (!r.ok) alert((await r.json()).error || 'Could not update.');
+        load();
+    }));
+}
+function patch(id, body) {
+    return fetch(`/parent/api/students/${id}`, {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': window.CSRF_TOKEN},
+        body: JSON.stringify(body)});
+}
+load();
+</script>
+{% endblock %}

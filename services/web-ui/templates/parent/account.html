@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Account &amp; privacy — Helga{% endblock %}
+{% block content %}
+<div style="max-width: 720px; margin: 0 auto; padding: var(--space-5, 1.5rem);">
+    <p><a href="/parent/children">← All learners</a></p>
+    <h1>Account &amp; privacy</h1>
+    <section aria-labelledby="consent-h">
+        <h2 id="consent-h">Consent records</h2>
+        <div id="consents"><p class="text-muted">Loading…</p></div>
+    </section>
+    <section aria-labelledby="privacy-h">
+        <h2 id="privacy-h">Your family's data</h2>
+        <p>All tutoring runs on our own self-hosted AI — your children's learning
+        data never goes to a third-party AI provider. From each learner's detail
+        page you can download a full data export; deleting a learner permanently
+        removes their records.</p>
+    </section>
+</div>
+<script>
+(async () => {
+    const res = await fetch('/parent/api/consents');
+    const {consents} = await res.json();
+    document.getElementById('consents').innerHTML = consents.length
+        ? '<ul>' + consents.map(c => `<li><strong>${c.consent_type}</strong> — ${c.granted ? 'granted' : 'revoked'} (policy ${c.policy_version}, ${(c.created_at||'').slice(0,10)})</li>`).join('') + '</ul>'
+        : '<p class="text-muted">No consent records.</p>';
+})();
+</script>
+{% endblock %}
