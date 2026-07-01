@@ -1833,7 +1833,8 @@ class AccountStore:
         q = "SELECT * FROM students WHERE parent_id = ?"
         if not include_archived:
             q += " AND status = 'active'"
-        rows = self._get_db().execute(q + " ORDER BY created_at", (parent_id,)).fetchall()
+        rows = self._get_db().execute(q + " ORDER BY created_at, rowid",
+                                      (parent_id,)).fetchall()
         return [dict(r) for r in rows]
 
     def count_active_students(self, parent_id: str) -> int:
@@ -2428,6 +2429,20 @@ class SubscriptionStore:
              merged.get('status') or 'inactive', merged.get('current_period_end')))
         conn.commit()
 
+    def event_seen(self, provider_event_id: str) -> bool:
+        row = self._get_db().execute(
+            "SELECT 1 FROM billing_events WHERE provider_event_id = ?",
+            (provider_event_id,)).fetchone()
+        return row is not None
+
+    def mark_event(self, provider_event_id: str, event_type: str = None,
+                   parent_id: str = None, payload_hash: str = None):
+        conn = self._get_db()
+        conn.execute(
+            "INSERT OR IGNORE INTO billing_events (provider_event_id, type, parent_id, payload_hash) "
+            "VALUES (?,?,?,?)", (provider_event_id, event_type, parent_id, payload_hash))
+        conn.commit()
+
     def seats_for(self, parent_id: str, default_seats: int = 3) -> int:
         """Seat allowance: active subscription seats, else the free default
         (families can add up to `default_seats` learners before billing lands)."""
@@ -2570,3 +2585,142 @@ class GamificationStore:
             "SELECT * FROM xp_ledger WHERE student_id = ? ORDER BY created_at DESC LIMIT ?",
             (_sid(student_id), limit)).fetchall()
         return [dict(r) for r in rows]
+
+    # -- badges (B22.3): threshold criteria over the student's own numbers ----
+
+    DEFAULT_BADGES = [
+        ("bdg_streak_3",  "On a Roll",      "3-day learning streak",  "🔥", "streak:3",  25, "streak"),
+        ("bdg_streak_7",  "Week Warrior",   "7-day learning streak",  "🔥", "streak:7",  75, "streak"),
+        ("bdg_streak_30", "Habit Hero",     "30-day learning streak", "🏆", "streak:30", 300, "streak"),
+        ("bdg_level_5",   "Climber",        "Reach level 5",          "⛰️", "level:5",   50, "special"),
+        ("bdg_xp_1000",   "Knowledge Bank", "Earn 1000 XP",           "💎", "xp:1000",  100, "special"),
+        ("bdg_exam_pass", "Checkpoint Champ", "Pass your first checkpoint", "✅", "exam_pass:1", 50, "standard"),
+    ]
+
+    def seed_badges(self):
+        """Idempotent insert of the default badge catalog (global rows)."""
+        conn = self._get_db()
+        for bid, name, desc, icon, criteria, xp, scope in self.DEFAULT_BADGES:
+            conn.execute(
+                "INSERT OR IGNORE INTO badges (id, name, description, icon, criteria, xp_reward, scope) "
+                "VALUES (?,?,?,?,?,?,?)", (bid, name, desc, icon, criteria, xp, scope))
+        conn.commit()
+
+    def check_and_award_badges(self, student_id: str = None) -> List[dict]:
+        """Evaluate every locked badge's threshold against the student's own
+        numbers (never another family's — B22.6: no cross-family comparison
+        exists anywhere). Returns newly unlocked badges."""
+        sid = _sid(student_id)
+        self.seed_badges()
+        conn = self._get_db()
+        row = self.get(sid)
+        exam_passes = conn.execute(
+            "SELECT COUNT(*) AS c FROM xp_ledger WHERE student_id = ? AND reason = 'exam_pass'",
+            (sid,)).fetchone()["c"]
+        values = {"streak": row["streak_days"], "level": row["level"],
+                  "xp": row["total_xp"], "exam_pass": exam_passes}
+        unlocked_now = []
+        owned = {r["badge_id"] for r in conn.execute(
+            "SELECT badge_id FROM student_badges WHERE student_id = ?", (sid,)).fetchall()}
+        for b in conn.execute("SELECT * FROM badges").fetchall():
+            b = dict(b)
+            if b["id"] in owned:
+                continue
+            try:
+                metric, threshold = b["criteria"].split(":")
+                if values.get(metric, 0) >= int(threshold):
+                    conn.execute(
+                        "INSERT OR IGNORE INTO student_badges (student_id, badge_id) VALUES (?, ?)",
+                        (sid, b["id"]))
+                    if b.get("xp_reward"):
+                        conn.execute(
+                            "INSERT INTO xp_ledger (student_id, amount, reason, ref_uid) "
+                            "VALUES (?,?,?,?)", (sid, b["xp_reward"], "quest", b["id"]))
+                        conn.execute(
+                            "UPDATE student_gamification SET total_xp = total_xp + ? "
+                            "WHERE student_id = ?", (b["xp_reward"], sid))
+                    unlocked_now.append(b)
+            except (ValueError, AttributeError):
+                continue
+        conn.commit()
+        return unlocked_now
+
+    def badges_for(self, student_id: str = None) -> dict:
+        sid = _sid(student_id)
+        self.seed_badges()
+        conn = self._get_db()
+        owned = {r["badge_id"]: r["unlocked_at"] for r in conn.execute(
+            "SELECT badge_id, unlocked_at FROM student_badges WHERE student_id = ?",
+            (sid,)).fetchall()}
+        out = {"unlocked": [], "locked": []}
+        for b in conn.execute("SELECT * FROM badges").fetchall():
+            b = dict(b)
+            if b["id"] in owned:
+                b["unlocked_at"] = owned[b["id"]]
+                out["unlocked"].append(b)
+            else:
+                out["locked"].append(b)
+        return out
+
+    # -- daily quests (B22.3) --------------------------------------------------
+
+    DEFAULT_QUESTS = [
+        ("qst_answer_5", "Answer 5 questions", "answer", 5, 20, "daily"),
+        ("qst_review_3", "Review 3 flashcards", "review", 3, 15, "daily"),
+    ]
+
+    def seed_quests(self):
+        conn = self._get_db()
+        for qid, title, kind, target, xp, cadence in self.DEFAULT_QUESTS:
+            conn.execute(
+                "INSERT OR IGNORE INTO quests (id, title, kind, target, xp_reward, cadence) "
+                "VALUES (?,?,?,?,?,?)", (qid, title, kind, target, xp, cadence))
+        conn.commit()
+
+    def quests_for(self, student_id: str = None) -> List[dict]:
+        """Today's quests with this student's progress (created on demand)."""
+        sid = _sid(student_id)
+        self.seed_quests()
+        conn = self._get_db()
+        today = date.today().isoformat()
+        out = []
+        for q in conn.execute("SELECT * FROM quests WHERE cadence = 'daily'").fetchall():
+            q = dict(q)
+            conn.execute(
+                "INSERT OR IGNORE INTO student_quests (student_id, quest_id, period_key) "
+                "VALUES (?,?,?)", (sid, q["id"], today))
+            sq = conn.execute(
+                "SELECT * FROM student_quests WHERE student_id = ? AND quest_id = ? "
+                "AND period_key = ?", (sid, q["id"], today)).fetchone()
+            q.update({"progress": sq["progress"], "status": sq["status"],
+                      "period_key": today})
+            out.append(q)
+        conn.commit()
+        return out
+
+    def increment_quest(self, kind: str, student_id: str = None) -> List[dict]:
+        """Advance today's quests of `kind` by one; completing awards XP once.
+        Returns quests completed by this increment."""
+        sid = _sid(student_id)
+        self._row(sid)   # ensure the row exists so the XP UPDATE lands
+        completed = []
+        conn = self._get_db()
+        for q in self.quests_for(sid):
+            if q["kind"] != kind or q["status"] != "active":
+                continue
+            progress = q["progress"] + 1
+            status = "completed" if progress >= q["target"] else "active"
+            conn.execute(
+                "UPDATE student_quests SET progress = ?, status = ? "
+                "WHERE student_id = ? AND quest_id = ? AND period_key = ?",
+                (progress, status, sid, q["id"], q["period_key"]))
+            if status == "completed":
+                conn.execute(
+                    "INSERT INTO xp_ledger (student_id, amount, reason, ref_uid) "
+                    "VALUES (?,?,?,?)", (sid, q["xp_reward"], "quest", q["id"]))
+                conn.execute(
+                    "UPDATE student_gamification SET total_xp = total_xp + ? "
+                    "WHERE student_id = ?", (q["xp_reward"], sid))
+                completed.append(q)
+        conn.commit()
+        return completed

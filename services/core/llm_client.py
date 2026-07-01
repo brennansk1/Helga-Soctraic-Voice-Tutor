@@ -17,9 +17,11 @@ import time
 import requests
 
 try:
-    from gpu_gate import get_gpu_gate, GpuOverloaded, LLMContext, INTERACTIVE
+    from gpu_gate import (get_gpu_gate, GpuOverloaded, LLMContext, INTERACTIVE,
+                          get_breaker)
 except ImportError:
-    from services.core.gpu_gate import get_gpu_gate, GpuOverloaded, LLMContext, INTERACTIVE
+    from services.core.gpu_gate import (get_gpu_gate, GpuOverloaded, LLMContext,
+                                        INTERACTIVE, get_breaker)
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +92,10 @@ class LLMClient:
 
         for attempt in range(retries):
             try:
+                # B27.5: breaker OPEN → fast-fail, no 60s hang / retry storm
+                if not get_breaker().allow():
+                    logger.warning("Ollama breaker OPEN — fast-failing chat")
+                    return ""
                 # B23.1: bounded, fair GPU admission. Slot held only for the
                 # actual generation; queue-wait overload degrades gracefully.
                 try:
@@ -106,6 +112,7 @@ class LLMClient:
                 finally:
                     slot.release()
                 resp.raise_for_status()
+                get_breaker().record_success()
                 # Force UTF-8 — Ollama emits UTF-8 but some setups omit the
                 # charset parameter, causing requests to fall back to latin-1
                 # and produce mojibake on smart quotes / em dashes.
@@ -122,11 +129,16 @@ class LLMClient:
                 return content
 
             except requests.exceptions.ConnectionError:
+                get_breaker().record_failure()
+                if not get_breaker().allow():
+                    logger.error("Ollama breaker tripped mid-retry — aborting")
+                    return ""
                 wait = 2 ** attempt
                 logger.warning(f"Ollama connection failed (attempt {attempt + 1}/{retries}), "
                                f"retrying in {wait}s")
                 time.sleep(wait)
             except requests.exceptions.Timeout:
+                get_breaker().record_failure()
                 wait = 2 ** attempt
                 logger.warning(f"Ollama timeout after {timeout}s (attempt {attempt + 1}/{retries})")
                 time.sleep(wait)
@@ -263,6 +275,9 @@ class LLMClient:
             "stream": True
         }
 
+        if not get_breaker().allow():
+            logger.warning("Ollama breaker OPEN — fast-failing stream")
+            return
         try:
             slot = get_gpu_gate().admit(ctx)
         except GpuOverloaded as e:
@@ -311,6 +326,10 @@ class LLMClient:
                 except json.JSONDecodeError:
                     continue
 
+            get_breaker().record_success()
+        except requests.exceptions.ConnectionError as e:
+            get_breaker().record_failure()
+            logger.error(f"Streaming connection error: {e}")
         except Exception as e:
             logger.error(f"Streaming error: {e}")
         finally:

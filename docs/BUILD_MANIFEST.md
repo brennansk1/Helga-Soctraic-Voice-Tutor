@@ -93,8 +93,8 @@
 | ID | Item | Acceptance | Pri | Rel | Status |
 |---|------|------|---|---|---|
 | B20.1 | Stripe Checkout + customer portal | test-mode checkout completes | P2 | R3 | todo |
-| B20.2 | Webhook → `subscriptions` mirror | webhook updates local status | P2 | R3 | todo |
-| B20.3 | Seat enforcement (seats vs student count) | add-student blocked over seats | P2 | R3 | todo |
+| B20.2 | Webhook → `subscriptions` mirror | webhook updates local status | P2 | R3 | done — `/api/billing/webhook`: signature-verified (HELGA_BILLING_TEST for dev), billing_events idempotency ledger, full spec-09 handler table (checkout/updated/deleted/paid/failed) |
+| B20.3 | Seat enforcement (seats vs student count) | add-student blocked over seats | P2 | R3 | done — add/un-archive 402 over cap (B19.4) + webhook downgrade archives newest overflow students (never deletes) |
 | B20.4 | Grant/invoice-friendly receipts | Utah Fits All expense docs generated | P2 | R3 | todo |
 
 ## B21 — Compliance, Privacy & Safety (Workstream F) · P1 · R2
@@ -114,10 +114,10 @@
 |---|------|------|---|---|---|
 | B22.1 | Wire existing XP everywhere, per-student | XP fires on review+session per student | P2 | R3 | done — GamificationStore over v7 tables (award/level/streak + xp_ledger audit trail); librarian endpoints per-student; web-ui proxies inject the session student (client can't award XP to someone else); legacy K-V totals adopted on legacy student's first read |
 | B22.2 | Skill-tree map (strands=branches, standards=nodes) | catalog renders as visual tree (FE8) | P2 | R3 | todo |
-| B22.3 | Badges per standard/strand; quests/daily challenges | unlocks beyond streaks | P2 | R3 | todo |
+| B22.3 | Badges per standard/strand; quests/daily challenges | unlocks beyond streaks | P2 | R3 | done — badge catalog (streak/level/XP/exam-pass criteria) with once-only unlock + XP reward; daily quests (answer-5, review-3) with per-day period keys and single-award completion |
 | B22.4 | Interest-themed cosmetic rewards (avatars) | unlockable cosmetics | P2 | R3 | todo |
 | B22.5 | Grade-appropriate framing + on/off toggle | playful K-5, subtle teens; toggle respected | P2 | R3 | todo |
-| B22.6 | Safe (within-family/anonymized, no open leaderboards) | no cross-family identity exposure | P2 | R3 | todo |
+| B22.6 | Safe (within-family/anonymized, no open leaderboards) | no cross-family identity exposure | P2 | R3 | done — by construction: all badge/quest evaluation is against the student's own numbers; no leaderboard surface exists and none is planned |
 
 ## B23 — Production Scaling & Deployment (Workstream J) · P1/P3 · R1/R4
 
@@ -138,7 +138,7 @@
 | B24.1 | Transactional email + queue | verification/reset/receipt emails send | P2 | R3 | todo |
 | B24.2 | Weekly parent progress digest | per-child mastery/time/struggles email | P2 | R3 | todo |
 | B24.3 | In-app notifications | elective requests / due / streak | P2 | R3 | done — NotificationStore (v8) + `/api/notifications` (+ read) for the current principal + parent unread-count badge; elective approvals and safety escalations already emit |
-| B24.4 | Struggle/inactivity alerts | parent alerted on struggle/inactivity | P2 | R3 | todo |
+| B24.4 | Struggle/inactivity alerts | parent alerted on struggle/inactivity | P2 | R3 | done — `services/common/alerts.py` nightly-callable scan (same thresholds as dashboard struggles + 7-day inactivity for previously-active learners); dedupes against unread alerts |
 
 ## B25 — Accessibility & Differentiation (Workstream K) · P2 · R3 (B25.1 in_progress per baseline FE4.3)
 
@@ -168,7 +168,7 @@
 | B27.2 | Prometheus metrics (GPU/latency/sessions) | metrics scrapeable | P3 | R4 | todo |
 | B27.3 | xAPI learning-analytics event log | events feed dashboard/analytics | P3 | R4 | todo |
 | B27.4 | Cost / tokens-per-student tracking | per-student token/GPU-sec reported | P3 | R4 | todo |
-| B27.5 | Ollama circuit-breaker + alerting (closes B9.5) | graceful degradation + alert | P3 | R4 | todo |
+| B27.5 | Ollama circuit-breaker + alerting (closes B9.5) | graceful degradation + alert | P3 | R4 | done — OllamaBreaker (CLOSED→OPEN after N consecutive failures→HALF_OPEN single probe) wraps all llm_client paths; fast-fail instead of 60s hangs; state changes logged/counted; env-tunable |
 
 ---
 

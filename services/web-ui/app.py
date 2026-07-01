@@ -1376,6 +1376,107 @@ def _monitored_spawn(fn, name):
 
 
 
+# --- B20.2/B20.3: Stripe webhook → subscriptions mirror -----------------------
+
+def _billing_parse_event():
+    """Verify + parse the webhook. Real deployments verify the Stripe
+    signature; HELGA_BILLING_TEST=true accepts unsigned JSON for tests/dev."""
+    payload = request.get_data()
+    if os.environ.get('HELGA_BILLING_TEST', '').lower() == 'true':
+        return request.get_json(force=True)
+    try:
+        import stripe
+        return stripe.Webhook.construct_event(
+            payload, request.headers.get('Stripe-Signature', ''),
+            os.environ['STRIPE_WEBHOOK_SECRET'])
+    except KeyError:
+        logger.error("STRIPE_WEBHOOK_SECRET not configured")
+        return None
+    except Exception as e:
+        logger.warning(f"webhook signature rejected: {e}")
+        return None
+
+
+def _billing_apply(st, event):
+    """Handler table (spec 09 §3.2). Mirror writes are idempotent upserts
+    keyed on parent_id; seat decreases archive over-limit students (never
+    delete — records retained per spec 08)."""
+    from datetime import datetime as _dt
+    etype = event.get('type', '')
+    obj = (event.get('data') or {}).get('object') or {}
+    meta = obj.get('metadata') or {}
+    parent_id = meta.get('parent_id') or obj.get('client_reference_id')
+
+    def _period_end(o):
+        ts = o.get('current_period_end')
+        return _dt.utcfromtimestamp(ts).isoformat() if ts else None
+
+    if etype == 'checkout.session.completed':
+        if not parent_id:
+            raise ValueError('checkout event missing parent_id reference')
+        st.subscriptions.upsert(
+            parent_id,
+            provider_customer_id=obj.get('customer'),
+            provider_sub_id=obj.get('subscription'),
+            plan=meta.get('plan'),
+            seats=int(meta.get('seats') or 1),
+            status='trialing' if obj.get('trial') else 'active',
+            current_period_end=_period_end(obj))
+    elif etype == 'customer.subscription.updated':
+        if not parent_id:
+            return
+        seats = 1
+        items = ((obj.get('items') or {}).get('data') or [])
+        if items:
+            seats = int(items[0].get('quantity') or 1)
+        st.subscriptions.upsert(parent_id, status=obj.get('status', 'active'),
+                                seats=seats, current_period_end=_period_end(obj))
+        # downgrade: archive newest over-limit students (spec 09 §4.2);
+        # list_students returns insertion order, so everything beyond the
+        # first `seats` is the newest overflow
+        active = st.accounts.list_students(parent_id)
+        for s in active[seats:]:
+            st.accounts.update_student(s['id'], status='archived')
+            logger.info(f"seat downgrade archived student {s['id']}")
+    elif etype == 'customer.subscription.deleted':
+        if parent_id:
+            st.subscriptions.upsert(parent_id, status='canceled')
+    elif etype == 'invoice.paid':
+        if parent_id:
+            st.subscriptions.upsert(parent_id, status='active',
+                                    current_period_end=_period_end(obj))
+    elif etype == 'invoice.payment_failed':
+        if parent_id:
+            st.subscriptions.upsert(parent_id, status='past_due')
+            st.notifications.create(parent_id, 'parent', 'system',
+                                    title='Payment issue',
+                                    body='Your last payment did not go through. '
+                                         'Please update your payment method.')
+    else:
+        logger.debug(f"unhandled billing event {etype}")
+
+
+@app.route('/api/billing/webhook', methods=['POST'])
+def stripe_webhook():
+    """No CSRF (Stripe is not a browser); authenticated by signature; fast
+    200; idempotent via the billing_events ledger (at-least-once delivery)."""
+    event = _billing_parse_event()
+    if event is None:
+        return jsonify({'error': 'bad signature'}), 400
+    st = _get_storage()
+    event_id = event.get('id') or ''
+    if event_id and st.subscriptions.event_seen(event_id):
+        return ('', 200)
+    try:
+        _billing_apply(st, event)
+        if event_id:
+            st.subscriptions.mark_event(event_id, event.get('type'))
+    except Exception:
+        logger.exception(f"billing webhook handler failed: {event.get('type')}")
+        return ('', 500)   # Stripe retries with backoff
+    return ('', 200)
+
+
 # --- B24.3: in-app notifications (bell) --------------------------------------
 
 @app.route('/api/notifications', methods=['GET'])
