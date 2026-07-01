@@ -466,10 +466,10 @@ target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
 │  ├─ B19.4  Add/manage students (seat-capped) ..................... ✔️  402 over seats
 │  ├─ B19.5  Exportable progress/standards report ................. ✔️  JSON export (PDF deferred)
 │  └─ B19.6  Account/consent/data export+delete ................... ✔️  FERPA export + purge
-├─ B20 Billing & Subscriptions (Stripe) ........................... ⬜  (Workstream E5)
+├─ B20 Billing & Subscriptions (Stripe) ........................... 🔨  (Workstream E5)
 │  ├─ B20.1  Stripe Checkout + customer portal .................... ⬜
-│  ├─ B20.2  Webhook → subscriptions mirror ....................... ⬜
-│  ├─ B20.3  Seat enforcement (seats vs student count) ............ ⬜
+│  ├─ B20.2  Webhook → subscriptions mirror ....................... ✔️  idempotent handler table
+│  ├─ B20.3  Seat enforcement (seats vs student count) ............ ✔️  402 + downgrade archive
 │  └─ B20.4  Grant/invoice-friendly receipts ...................... ⬜  Utah Fits All expense docs
 ├─ B21 Compliance, Privacy & Safety ............................... ✔️  (Workstream F — COMPLETE*)
 │  ├─ B21.1  COPPA verifiable parental consent + data minimization  ✔️  signup + per-child consent
@@ -481,10 +481,10 @@ target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
 ├─ B22 Gamification 2.0 ............................................ 🔨  (Workstream H)
 │  ├─ B22.1  Wire existing XP everywhere, per-student .............. ✔️  GamificationStore + ledger
 │  ├─ B22.2  Skill-tree map (strands=branches, standards=nodes) .... ⬜  FE8
-│  ├─ B22.3  Badges per standard/strand; quests/daily challenges ... ⬜
+│  ├─ B22.3  Badges per standard/strand; quests/daily challenges ... ✔️  catalog + daily quests
 │  ├─ B22.4  Interest-themed cosmetic rewards (avatars) ............ ⬜
 │  ├─ B22.5  Grade-appropriate framing + on/off toggle ............ ⬜
-│  └─ B22.6  Safe (within-family/anonymized, no open leaderboards) . ⬜  COPPA
+│  └─ B22.6  Safe (within-family/anonymized, no open leaderboards) . ✔️  by construction
 ├─ B23 Production Scaling & Deployment ............................. 🔨  (Workstream J)
 │  ├─ B23.1  GPU semaphore + per-student fair queue ............... ✔️  gpu_gate.py; RR fairness; 12 tests
 │  ├─ B23.2  Interactive vs background priority classes ........... ✔️  bg≤1 slot, never starves live
@@ -497,7 +497,7 @@ target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
 │  ├─ B24.1  Transactional email + queue .......................... ⬜
 │  ├─ B24.2  Weekly parent progress digest ....................... ⬜
 │  ├─ B24.3  In-app notifications ................................ ✔️  store + endpoints + badge
-│  └─ B24.4  Struggle/inactivity alerts .......................... ⬜
+│  └─ B24.4  Struggle/inactivity alerts .......................... ✔️  nightly scan, deduped
 ├─ B25 Accessibility & Differentiation ............................. 🔨  (Workstream K; extends FE4.3/B13.9)
 │  ├─ B25.1  WCAG 2.1 AA pass (keyboard/aria-live/contrast) ....... 🔨  (focus ring already done)
 │  ├─ B25.2  Reading/dyslexia supports (read-aloud, fonts) ........ ⬜
@@ -515,7 +515,7 @@ target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
    ├─ B27.2  Prometheus metrics (GPU/latency/sessions) ........... ⬜
    ├─ B27.3  xAPI learning-analytics event log .................. ⬜
    ├─ B27.4  Cost / tokens-per-student tracking ................. ⬜
-   └─ B27.5  Ollama circuit-breaker + alerting (closes B9.5) ..... ⬜
+   └─ B27.5  Ollama circuit-breaker + alerting (closes B9.5) ..... ✔️  OllamaBreaker in gpu_gate
 ```
 
 ## FRONTEND BUILD TREE (target) — FE5–FE8
