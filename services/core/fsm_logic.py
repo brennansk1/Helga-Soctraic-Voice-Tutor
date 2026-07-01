@@ -36,6 +36,7 @@ from services.common.prompts import (
     get_typed_socratic_prompt,
     SOCRATIC_QUESTION_TYPES,
     GRADE_JSON_SCHEMA,
+    get_band_profile,
 )
 from fsrs_engine import FSRSEngine
 
@@ -1010,7 +1011,14 @@ class MnemosyneFSM:
             )
             self.course_bloom_floor = _cp["bloom_floor"]
             self.course_bloom_ceiling = _cp["bloom_ceiling"]
-        logging.info(f"Course Bloom bounds: floor={self.course_bloom_floor}, ceiling={self.course_bloom_ceiling}")
+        # B17.3: the student's grade band bounds whatever the course asks for —
+        # a K-2 learner is never pushed past Bloom 3 even by a ceiling-6 course.
+        band = get_band_profile(self.grade_band)
+        self.course_bloom_ceiling = min(self.course_bloom_ceiling or 6, band["bloom_ceiling"])
+        self.course_bloom_floor = max(self.course_bloom_floor or 1, band["bloom_floor"])
+        if self.course_bloom_floor > self.course_bloom_ceiling:
+            self.course_bloom_floor = self.course_bloom_ceiling
+        logging.info(f"Course Bloom bounds (band {self.grade_band}): floor={self.course_bloom_floor}, ceiling={self.course_bloom_ceiling}")
 
     def _seed_bloom_for_concept(self):
         """Seed bloom level from course floor and set concept target from metadata."""
@@ -1098,19 +1106,29 @@ class MnemosyneFSM:
         return analogies
 
     def _check_mastery_gate(self):
-        """GAP 4: Strengthened mastery gate — checks streak, bloom target, and question diversity."""
-        streak_met = self.concept_correct_streak >= 2 and self.concept_question_count >= 3
-        bloom_met = self.current_bloom_level >= (self.concept_bloom_target or 1)
-        diversity_met = len(self.passed_question_types) >= 3
+        """GAP 4 + B17.3: mastery gate — streak, bloom target, and question
+        diversity, with thresholds from the student's grade band (a K-2 kid
+        passes with 2 correct over 2 questions and 2 distinct types; 9-12
+        needs 3 over 4 and 3 types)."""
+        band = get_band_profile(self.grade_band)
+        need_streak = band["gate_streak"]
+        need_questions = band["gate_questions"]
+        need_types = min(band["gate_types"], len(SOCRATIC_QUESTION_TYPES))
+        streak_met = (self.concept_correct_streak >= need_streak
+                      and self.concept_question_count >= need_questions)
+        bloom_met = self.current_bloom_level >= min(
+            self.concept_bloom_target or 1, self.course_bloom_ceiling or 6)
+        diversity_met = len(self.passed_question_types) >= need_types
         if streak_met and bloom_met and diversity_met:
             return True
         reasons = []
         if not streak_met:
-            reasons.append(f"streak={self.concept_correct_streak}/2, count={self.concept_question_count}/3")
+            reasons.append(f"streak={self.concept_correct_streak}/{need_streak}, "
+                           f"count={self.concept_question_count}/{need_questions}")
         if not bloom_met:
             reasons.append(f"bloom={self.current_bloom_level}/{self.concept_bloom_target}")
         if not diversity_met:
-            reasons.append(f"types={len(self.passed_question_types)}/3")
+            reasons.append(f"types={len(self.passed_question_types)}/{need_types}")
         logging.info(f"Mastery gate not met ({', '.join(reasons)}): recycling question types")
         return False
 
@@ -1968,6 +1986,7 @@ class MnemosyneFSM:
                 user_profile=self.user_profile,
                 bloom_level=self.current_bloom_level,
                 prior_concepts=self.prior_concepts_summary,
+                grade_band=self.grade_band,
             )
         # Tune max_tokens: lectures need more room for explanations, questions are shorter
         token_limit = 500 if teaching_mode == "LECTURE" else 400
@@ -2169,6 +2188,7 @@ class MnemosyneFSM:
                 bloom_level=self.current_bloom_level,
                 learning_objectives=self.current_lesson_node.get("learning_objectives", []),
                 mastery_criteria=getattr(self, 'current_mastery_criteria', ''),
+                grade_band=self.grade_band,
             )
             logging.info(f"LLM Grading Request for: {self.current_lesson_node['title']}")
             # Grammar-constrain the grade to valid JSON (Ollama >= 0.5); the

@@ -48,6 +48,8 @@ class TestGradingLogic(unittest.TestCase):
 
         # Set all attributes needed by handle_socratic_answer
         self.fsm.state = 'SOCRATIC_LEARNING'
+        self.fsm.student_id = 'stu_test0001'
+        self.fsm.grade_band = '6-8'
         self.fsm.question_start_time = 0
         self.fsm.conversation_history = []
         self.fsm.transcript = []

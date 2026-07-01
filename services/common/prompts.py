@@ -210,10 +210,51 @@ SOCRATIC_QUESTION_TYPES = [
 ]
 
 
+# --- B17: GRADE-BAND ADAPTATION (design spec 02) ---
+# Single source of truth for per-band pedagogy parameters. Consumed by the
+# prompt builders (persona/register/output caps), the FSM (Bloom bounds +
+# mastery gate), and course hydration (band-appropriate content).
+GRADE_BAND_PROFILES = {
+  "K-2":  dict(persona="a warm, playful learning guide for a very young child",
+              max_words=25, max_sentences=2, new_ideas=1,
+              bloom_floor=1, bloom_ceiling=3, gate_streak=2, gate_questions=2, gate_types=2,
+              register="Use only simple everyday words. If you must use a new word, say what it means in kid terms. "
+                       "Talk about things the child can see or touch. Be cheerful and encouraging.",
+              answer_expectation="A single word or a short phrase is a great answer.",
+              tts_default=True, allow_emoji=True, allow_markdown=False),
+  "3-5":  dict(persona="a friendly, encouraging coach", max_words=45, max_sentences=3, new_ideas=1,
+              bloom_floor=1, bloom_ceiling=4, gate_streak=2, gate_questions=3, gate_types=3,
+              register="Use clear everyday language. Introduce at most one new term per turn and explain it. "
+                       "Use concrete examples; you may begin gentle 'what if' thinking.",
+              answer_expectation="One sentence is enough.",
+              tts_default=True, allow_emoji=False, allow_markdown=False),
+  "6-8":  dict(persona="a curious thinking-partner", max_words=70, max_sentences=4, new_ideas=2,
+              bloom_floor=2, bloom_ceiling=5, gate_streak=2, gate_questions=3, gate_types=3,
+              register="Use grade-appropriate academic vocabulary, briefly defining technical terms. "
+                       "Bridge concrete examples to the underlying principle.",
+              answer_expectation="A sentence or two, with a reason, is ideal.",
+              tts_default=False, allow_emoji=False, allow_markdown=True),
+  "9-12": dict(persona="a rigorous academic mentor", max_words=110, max_sentences=5, new_ideas=2,
+              bloom_floor=2, bloom_ceiling=6, gate_streak=3, gate_questions=4, gate_types=3,
+              register="Use precise academic language. Expect multi-step reasoning and ask the student to "
+                       "justify, compare, or critique. Do not over-affirm.",
+              answer_expectation="Expect a multi-clause answer with justification.",
+              tts_default=False, allow_emoji=False, allow_markdown=True),
+}
+
+DEFAULT_GRADE_BAND = "6-8"
+
+
+def get_band_profile(grade_band):
+    """Resolve a band profile; unknown/missing bands fall back to 6-8."""
+    return GRADE_BAND_PROFILES.get(grade_band or DEFAULT_GRADE_BAND,
+                                   GRADE_BAND_PROFILES[DEFAULT_GRADE_BAND])
+
+
 def get_typed_socratic_prompt(question_type_key, context_text, conversation_history,
                                system_note=None, misconceptions=None, analogies=None,
                                style_modifier=None, user_profile=None, bloom_level=1,
-                               prior_concepts=None):
+                               prior_concepts=None, grade_band=None):
     """
     Generates a Socratic prompt with a specific question TYPE instruction injected.
 
@@ -241,10 +282,11 @@ def get_typed_socratic_prompt(question_type_key, context_text, conversation_hist
         user_profile=user_profile,
         bloom_level=bloom_level,
         prior_concepts=prior_concepts,
+        grade_band=grade_band,
     )
 
 
-def get_socratic_tutor_prompt(context_text, conversation_history, system_note=None, misconceptions=None, analogies=None, style_modifier=None, user_profile=None, bloom_level=1, prior_concepts=None):
+def get_socratic_tutor_prompt(context_text, conversation_history, system_note=None, misconceptions=None, analogies=None, style_modifier=None, user_profile=None, bloom_level=1, prior_concepts=None, grade_band=None):
     """
     Generates a Socratic question or response as a messages array.
 
@@ -286,26 +328,24 @@ def get_socratic_tutor_prompt(context_text, conversation_history, system_note=No
         if parts:
             profile_str = "\nSTUDENT PROFILE: " + " ".join(parts)
 
-    # Dynamic Persona Configuration
-    persona_str = "You are the SOCRATIC TUTOR."
+    # B17.2: grade-band persona + register are the non-negotiable base; the
+    # style_modifier (eli5/academic/analogy/drill) is a softer overlay.
+    profile = get_band_profile(grade_band)
+    persona_str = f"You are {profile['persona']}, teaching by the Socratic method."
+    band_register = f"\nGRADE REGISTER: {profile['register']}"
     style_constraint = ""
     if style_modifier:
         style_lower = style_modifier.lower().strip()
         if "eli5" in style_lower or "five" in style_lower or "child" in style_lower or "simple" in style_lower:
-            persona_str = "You are a FRIENDLY SOCRATIC TUTOR for young learners."
-            style_constraint = "\nUse simple language and everyday metaphors. Avoid jargon."
+            style_constraint = "\nSTYLE: Use simple language and everyday metaphors. Avoid jargon."
         elif "academic" in style_lower or "strict" in style_lower or "formal" in style_lower:
-            persona_str = "You are a RIGOROUS ACADEMIC SOCRATIC TUTOR."
-            style_constraint = "\nUse precise academic language. Expect well-structured answers."
+            style_constraint = "\nSTYLE: Prefer precise language and well-structured answers (within the grade register above)."
         elif "analogy" in style_lower or "analogies" in style_lower or "metaphor" in style_lower:
-            persona_str = "You are a CREATIVE SOCRATIC TUTOR who loves analogies."
-            style_constraint = "\nAlways include a vivid analogy or metaphor."
+            style_constraint = "\nSTYLE: Always include a vivid analogy or metaphor."
         elif "drill" in style_lower or "quiz" in style_lower:
-            persona_str = "You are a DRILL SERGEANT SOCRATIC TUTOR."
-            style_constraint = "\nBe direct and rapid-fire. Ask precise factual questions."
+            style_constraint = "\nSTYLE: Be direct and rapid-fire. Ask precise factual questions."
         else:
-            persona_str = "You are the SOCRATIC TUTOR."
-            style_constraint = f"\n{style_modifier}"
+            style_constraint = f"\nSTYLE: {style_modifier}"
 
     hook_str = ""
     # Inject hook directive heavily on the first real turn
@@ -356,14 +396,16 @@ TEACHING STRATEGY:
 4. Fill In The Gaps: Use your broad knowledge base to supplement the reference material. If the reference text lacks sufficient detail to properly teach the concept, fill in the gaps with accurate information, analogies, and examples to ensure a comprehensive lesson.
 
 STRICT OUTPUT RULES:
-- Write 2-4 sentences in plain conversational text.
+- Write at most {profile['max_words']} words across at most {profile['max_sentences']} sentences of plain conversational text.
+- Introduce at most {profile['new_ideas']} new idea(s) in this turn. {profile['answer_expectation']}
 - If the SYSTEM NOTE mentions the student's prior answer, START by briefly acknowledging their answer (what was right or wrong), THEN smoothly transition into your next question. This should feel like one flowing response, not two separate messages.
 - Ask exactly ONE question per response. The question MUST be the last sentence, ending with a question mark (?).
-- NEVER use markdown formatting (no #, ##, -, *, bold, italic, numbered lists).
+- {"You may use light markdown or LaTeX when it genuinely helps (math, short lists)." if profile['allow_markdown'] else "NEVER use markdown formatting (no #, ##, -, *, bold, italic, numbered lists)."}
+- {"An occasional cheerful emoji is okay (at most one per message)." if profile['allow_emoji'] else "Do not use emoji."}
 - NEVER include meta-commentary ("Let's explore", "Great question", "That's interesting").
 - NEVER repeat the context material verbatim.
 - NEVER prefix your response with a role label like "Tutor:" or "Lecturer:".
-{style_constraint}{profile_str}{misc_str}{analog_str}{bloom_str}{prior_str}{hook_str}{notes_str}
+{band_register}{style_constraint}{profile_str}{misc_str}{analog_str}{bloom_str}{prior_str}{hook_str}{notes_str}
 
 INSTRUCTOR NOTES (pedagogical guidance only — the student has NOT seen any of this material):
 "{context_text}" """
@@ -401,7 +443,7 @@ GRADE_JSON_SCHEMA = {
 
 def get_socratic_grading_prompt(concept, question, user_answer, context_text="",
                                  bloom_level=None, learning_objectives=None,
-                                 mastery_criteria=None):
+                                 mastery_criteria=None, grade_band=None):
     """
     Generates a prompt to grade a Socratic answer using FSRS grades.
     GAP 5: Now Bloom-aware — grading criteria scale with cognitive level.
@@ -430,6 +472,20 @@ def get_socratic_grading_prompt(concept, question, user_answer, context_text="",
         obj_list = ", ".join(str(o) for o in learning_objectives[:3])
         objectives_str = f"\nLearning Objectives: {obj_list}"
 
+    # B17.2: calibrate the rubric to the learner's grade band so young kids
+    # aren't failed for terse-but-correct answers.
+    band_calibration = ""
+    if grade_band in ("K-2", "3-5"):
+        profile = get_band_profile(grade_band)
+        band_calibration = (
+            f"\nGRADE CALIBRATION: This is a {grade_band} learner. "
+            f"{profile['answer_expectation']} A correct answer at that length earns Grade 3 — "
+            "do NOT demand written explanation or mechanism from a young child. "
+            "Grade the idea, not the prose.")
+    elif grade_band == "9-12":
+        band_calibration = ("\nGRADE CALIBRATION: This is a 9-12 learner. Expect justification; "
+                            "a bare correct term without reasoning is Grade 2.")
+
     safe_answer = sanitize_untrusted(user_answer)
 
     return [{"role": "system", "content": f"""You are a strict grading assistant. Grade the student's answer.
@@ -453,7 +509,7 @@ Evaluate the student's mastery. Be STRICT — do not give Grade 3 unless the ans
 - Grade 2 (Hard): Partially correct but vague, just keywords without reasoning, restating facts without explaining WHY, or missing the core mechanism. If the student copies text without showing they understand it, this is Grade 2.
 - Grade 3 (Good): Correct AND explains the reasoning/mechanism. The student must show they understand WHY, not just WHAT. They connect cause to effect or explain the underlying logic.
 - Grade 4 (Easy): EXCEPTIONAL — novel connection, unprompted edge case, precise mechanism explanation, or multi-concept synthesis. RARE (1 in 5 correct answers).
-{bloom_criteria}{objectives_str}
+{bloom_criteria}{objectives_str}{band_calibration}
 GRADING RULES:
 - If the student admits they don't know -> Grade 1, always.
 - If the answer is just keywords or definitions without reasoning -> Grade 2, not 3.

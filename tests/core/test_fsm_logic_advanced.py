@@ -48,6 +48,8 @@ with patch.dict('sys.modules', core_deps):
 def fsm():
     with patch.object(MnemosyneFSM, '__init__', lambda self, *a, **kw: None):
         fsm_instance = MnemosyneFSM.__new__(MnemosyneFSM)
+        fsm_instance.student_id = 'stu_test0001'
+        fsm_instance.grade_band = '6-8'
 
     # Set all attributes that __init__ normally creates
     fsm_instance.dev_mode = True

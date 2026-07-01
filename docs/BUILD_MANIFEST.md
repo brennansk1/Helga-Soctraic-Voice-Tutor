@@ -59,9 +59,9 @@
 
 | ID | Item | Target | Acceptance | Pri | Rel | Status |
 |---|------|------|------|---|---|---|
-| B17.1 | `grade_band` on students + catalog courses | `storage.py` | value flows into FSM + prompts | P1 | R1 | todo |
-| B17.2 | Grade-aware prompts (vocab/length/register/ideas-per-turn) | `services/common/prompts.py:289-329` | distinct output K-2 vs 9-12 (snapshot test) | P1 | R1 | todo |
-| B17.3 | Grade-bounded Bloom/mastery defaults | `fsm_logic.py`, `course_builder.py` | reuses `progressive_bloom`/`_check_mastery_gate` with grade bounds | P1 | R1 | todo |
+| B17.1 | `grade_band` on students + catalog courses | `storage.py` | value flows into FSM + prompts | P1 | R1 | done — `students.grade_band` (v4) resolved in `MnemosyneFSM.__init__`, persisted in session blob, flows into prompts + Bloom bounds |
+| B17.2 | Grade-aware prompts (vocab/length/register/ideas-per-turn) | `services/common/prompts.py:289-329` | distinct output K-2 vs 9-12 (snapshot test) | P1 | R1 | done — `GRADE_BAND_PROFILES` (spec 02 §3 verbatim); persona/register/word-caps/markdown-emoji gating in tutor prompt; K-2/9-12 grading calibration; `pytest tests/core/test_grade_bands.py → 18 passed` |
+| B17.3 | Grade-bounded Bloom/mastery defaults | `fsm_logic.py`, `course_builder.py` | reuses `progressive_bloom`/`_check_mastery_gate` with grade bounds | P1 | R1 | done — band clamps course Bloom floor/ceiling; mastery gate thresholds (streak/questions/types) band-parameterized; low-ceiling completion regression test (B3.5) |
 | B17.4 | Grade-banded hint ladder + micro-lectures | `prompts.py` (`get_hint_prompt`, `get_micro_lecture_prompt`) | more scaffolding for younger; faster fade older | P1 | R2 | todo |
 | B17.5 | Manipulatives / visual answer modes (early math) | learn UI + FSM | K-2 can answer without typing abstractions; grades feed mastery | P2 | R3 | todo |
 | B17.6 | Voice-first early-literacy / World-Lang loop | STT/TTS (B7.3) | read-aloud + pronunciation works | P2 | R3 | todo |
@@ -123,9 +123,9 @@
 
 | ID | Item | Target | Acceptance | Pri | Rel | Status |
 |---|------|------|------|---|---|---|
-| B23.1 | GPU semaphore + per-student fair queue | `services/core/llm_client.py` (`chat()`/`get_llm_client()`) | M students, no 60s timeouts, bounded p95 | P1 | R1 | todo |
-| B23.2 | Interactive vs background priority classes | `llm_client.py` | background build never starves live tutoring | P1 | R1 | todo |
-| B23.3 | Ollama tuning (`KEEP_ALIVE=-1`, `MAX_LOADED_MODELS=1`) | host env | model stays warm across students | P1 | R1 | todo |
+| B23.1 | GPU semaphore + per-student fair queue | `services/core/llm_client.py` (`chat()`/`get_llm_client()`) | M students, no 60s timeouts, bounded p95 | P1 | R1 | done — `gpu_gate.py` admission gate wraps all LLM entry points; RR fairness across student_ids; busy backpressure + overload shedding; `pytest tests/core/test_gpu_gate.py → 12 passed` |
+| B23.2 | Interactive vs background priority classes | `llm_client.py` | background build never starves live tutoring | P1 | R1 | done — bg ≤ 1 slot, never granted while interactive waits (tested); llm_utils build pipelines default BACKGROUND, FSM turns INTERACTIVE |
+| B23.3 | Ollama tuning (`KEEP_ALIVE=-1`, `MAX_LOADED_MODELS=1`) | host env | model stays warm across students | P1 | R1 | done — documented in `.env.example` + compose (`OLLAMA_NUM_PARALLEL` shared by gate cap); host launchctl instructions |
 | B23.4 | SQLite→Postgres (psycopg pool behind sub-stores) | `storage.py` | ETL preserves `student_id`; same interface | P3 | R4 | todo |
 | B23.5 | Multi-worker (Redis sessions + Socket.IO MQ + stateless FSM) | `app.py`, `fsm_registry.py` | >1 worker serves any student | P3 | R4 | todo |
 | B23.6 | Caddy/TLS + gunicorn-gevent topology | infra/compose | HTTPS; WS upgrade; gevent worker | P3 | R4 | todo |

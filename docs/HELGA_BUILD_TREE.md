@@ -445,10 +445,10 @@ target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
 │  ├─ B16.5  Phase-2 subjects (SEEd, Social Studies, CS) ........... ⬜
 │  ├─ B16.6  Phase-3 subjects (World Lang, Health, Lib/Digital) .... ⬜
 │  └─ B16.7  ★ baseline/enrichment toggle ......................... ⬜
-├─ B17 Grade-Level (K-12) Adaptation & Kid-First Tutoring .......... ⬜  (Workstreams C+D)
-│  ├─ B17.1  grade_band on students + catalog courses .............. ⬜
-│  ├─ B17.2  Grade-aware prompts (vocab/length/register) ........... ⬜  prompts.py:289-329 insertion point
-│  ├─ B17.3  Grade-bounded Bloom/mastery defaults .................. ⬜  reuses progressive_bloom/_check_mastery_gate
+├─ B17 Grade-Level (K-12) Adaptation & Kid-First Tutoring .......... 🔨  (Workstreams C+D)
+│  ├─ B17.1  grade_band on students + catalog courses .............. ✔️  FSM resolves from students row
+│  ├─ B17.2  Grade-aware prompts (vocab/length/register) ........... ✔️  GRADE_BAND_PROFILES; 18 tests
+│  ├─ B17.3  Grade-bounded Bloom/mastery defaults .................. ✔️  band clamps + banded gate
 │  ├─ B17.4  Grade-banded hint ladder + micro-lectures ............. ⬜  get_hint_prompt/get_micro_lecture_prompt
 │  ├─ B17.5  Manipulatives/visual answer modes (early math) ........ ⬜
 │  ├─ B17.6  Voice-first early-literacy/WL loop .................... ⬜  reuses STT/TTS (B7.3)
@@ -485,10 +485,10 @@ target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
 │  ├─ B22.4  Interest-themed cosmetic rewards (avatars) ............ ⬜
 │  ├─ B22.5  Grade-appropriate framing + on/off toggle ............ ⬜
 │  └─ B22.6  Safe (within-family/anonymized, no open leaderboards) . ⬜  COPPA
-├─ B23 Production Scaling & Deployment ............................. ⬜  (Workstream J)
-│  ├─ B23.1  GPU semaphore + per-student fair queue ............... ⬜  llm_client.py chat()/get_llm_client()
-│  ├─ B23.2  Interactive vs background priority classes ........... ⬜
-│  ├─ B23.3  Ollama tuning (KEEP_ALIVE=-1, MAX_LOADED_MODELS=1) .... ⬜
+├─ B23 Production Scaling & Deployment ............................. 🔨  (Workstream J)
+│  ├─ B23.1  GPU semaphore + per-student fair queue ............... ✔️  gpu_gate.py; RR fairness; 12 tests
+│  ├─ B23.2  Interactive vs background priority classes ........... ✔️  bg≤1 slot, never starves live
+│  ├─ B23.3  Ollama tuning (KEEP_ALIVE=-1, MAX_LOADED_MODELS=1) .... ✔️  .env.example + compose
 │  ├─ B23.4  SQLite→Postgres (psycopg pool behind sub-stores) ..... ⬜  deferred trigger: write contention
 │  ├─ B23.5  Multi-worker (Redis sessions + Socket.IO MQ + stateless FSM) ⬜  deferred
 │  ├─ B23.6  Caddy/TLS + gunicorn-gevent topology ................. ⬜
