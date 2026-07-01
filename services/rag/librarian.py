@@ -62,6 +62,61 @@ try:
 except Exception as e:
     logger.error(f"Exam engine mount failed (non-fatal): {e}")
 
+
+# B26.2: admin catalog review endpoints. Gated by ADMIN_TOKEN (never linked
+# from the student UI; students only ever see published catalog rows).
+from functools import wraps as _wraps
+
+def _admin_required(f):
+    @_wraps(f)
+    def decorated(*args, **kwargs):
+        token = os.getenv("ADMIN_TOKEN")
+        supplied = request.headers.get("X-Admin-Token")
+        if not token or supplied != token:
+            return jsonify({"error": "admin token required"}), 403
+        return f(*args, **kwargs)
+    return decorated
+
+
+@app.route("/api/admin/catalog/courses", methods=["GET"])
+@_admin_required
+def admin_catalog_list():
+    courses = storage.catalog_courses.list_catalog_courses(published_only=False)
+    report = {r["code"]: r for r in storage.standards.coverage_report()}
+    return jsonify({"courses": courses,
+                    "coverage": [r for r in report.values()]})
+
+
+@app.route("/api/admin/catalog/courses/<uid>", methods=["GET"])
+@_admin_required
+def admin_catalog_get(uid):
+    course = storage.catalog_courses.get_course(uid)
+    if not course:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(course)
+
+
+@app.route("/api/admin/catalog/courses/<uid>/transition", methods=["POST"])
+@_admin_required
+def admin_catalog_transition(uid):
+    from services.core.catalog_admin import transition_catalog_course
+    body = request.get_json(force=True)
+    try:
+        new_status = transition_catalog_course(
+            storage, uid, body.get("action"),
+            actor=body.get("actor", "admin"), note=body.get("note"))
+        return jsonify({"catalog_status": new_status})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 409
+
+
+@app.route("/api/admin/catalog/coverage", methods=["GET"])
+@_admin_required
+def admin_catalog_coverage():
+    """B26.4: standards-coverage audit — published vs gaps per Utah code."""
+    return jsonify({"report": storage.standards.coverage_report(
+        subject=request.args.get("subject"))})
+
 # Embedding model for (planned) dense/hybrid retrieval. Loaded LAZILY: the old
 # eager load was pure startup cost because search currently uses SQLite FTS5 and
 # nothing called the model (B2). get_embed_model() is the seam the sqlite-vec

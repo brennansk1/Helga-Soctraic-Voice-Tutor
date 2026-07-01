@@ -440,7 +440,7 @@ target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
 ├─ B16 Curriculum Catalog & Standards .............................. 🔨  (Workstream B)
 │  ├─ B16.1  standards + concept_standards tables (Utah codes) ..... ✔️  v5 + StandardsStore + loader
 │  ├─ B16.2  Read-only catalog store (data/catalog/, catalog flag) . ✔️  published-only student view
-│  ├─ B16.3  Standards-driven batch build pipeline ................. ⬜  reuses Skeleton/Auditor/Hydrator
+│  ├─ B16.3  Standards-driven batch build pipeline ................. ✔️  catalog_admin.py briefs
 │  ├─ B16.4  Phase-1 subjects published (K-8 Math, K-12 ELA, GFL, USG) ⬜
 │  ├─ B16.5  Phase-2 subjects (SEEd, Social Studies, CS) ........... ⬜
 │  ├─ B16.6  Phase-3 subjects (World Lang, Health, Lib/Digital) .... ⬜
@@ -504,12 +504,12 @@ target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
 │  ├─ B25.3  ELL simplified-language + glossing .................. ⬜
 │  ├─ B25.4  IEP/504 accommodation flags honored by FSM/exams ..... ⬜
 │  └─ B25.5  Alt-text/captions → TTS/text-only ................... ⬜
-├─ B26 Content Authoring & Review CMS .............................. ⬜  (Workstream M; legal+quality gate)
-│  ├─ B26.1  Offline authoring job runner ......................... ⬜
-│  ├─ B26.2  Admin review console (draft→reviewed→published) ...... ⬜
-│  ├─ B26.3  Catalog versioning + changelog ...................... ⬜
-│  ├─ B26.4  Standards-coverage audit report ..................... ⬜
-│  └─ B26.5  Hydration provenance log ............................ ⬜
+├─ B26 Content Authoring & Review CMS .............................. 🔨  (Workstream M; legal+quality gate)
+│  ├─ B26.1  Offline authoring job runner ......................... ✔️  CLI, sequential
+│  ├─ B26.2  Admin review console (draft→reviewed→published) ...... ✔️  guarded state machine + API
+│  ├─ B26.3  Catalog versioning + changelog ...................... ✔️  snapshots + republish
+│  ├─ B26.4  Standards-coverage audit report ..................... ✔️  coverage_report + endpoint
+│  └─ B26.5  Hydration provenance log ............................ ⬜  (v9 table ready; hydrator wiring)
 └─ B27 Observability, Analytics & Unit Economics ................... ⬜  (Workstream N; expands B9.7)
    ├─ B27.1  Structured JSON logging + correlation ............... ⬜
    ├─ B27.2  Prometheus metrics (GPU/latency/sessions) ........... ⬜

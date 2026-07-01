@@ -49,7 +49,7 @@
 |---|------|------|------|---|---|---|
 | B16.1 | `standards` + `concept_standards` tables (Utah strand codes) | `storage.py` | codes from reference doc loadable; join works | P1 | R2 | done — v5 migration; StandardsStore (upsert/list/tagging/coverage_report, retire-block); `standards_loader.py` YAML/JSON idempotent seed + prune; 16 tests |
 | B16.2 | Read-only catalog store (`data/catalog/`, `catalog`+`version` flags) | `storage.py`, `librarian.py` | catalog separate from user courses; read-only to students | P1 | R2 | done — `catalog_courses` CourseStore at `data/catalog/courses/`; catalog columns synced to SQLite; `list_catalog_courses` filters published-only for students; suite 676 passed |
-| B16.3 | Standards-driven batch build pipeline (reuse Skeleton/Auditor/Hydrator) | `services/core/course_builder.py`, CMS runner | builds a course from a standards spec offline | P1 | R2 | todo |
+| B16.3 | Standards-driven batch build pipeline (reuse Skeleton/Auditor/Hydrator) | `services/core/course_builder.py`, CMS runner | builds a course from a standards spec offline | P1 | R2 | done — `catalog_admin.py build_from_brief` (brief → standards-block topic, band Bloom bounds, catalog store, hint-map + flagged-LLM concept tagging); CLI `python -m services.core.catalog_admin build` |
 | B16.4 | Phase-1 subjects published (K-8 Math, K-12 ELA, GFL, US Gov) | catalog | each published concept tags ≥1 Utah code; human-reviewed | P1 | R2 | todo |
 | B16.5 | Phase-2 subjects (SEEd K-8 + 4 HS sciences, Social Studies, CS theory) | catalog | published + reviewed | P3 | R4 | todo |
 | B16.6 | Phase-3 subjects (World Lang, Health, Library/Digital Literacy) | catalog | published + reviewed | P3 | R4 | todo |
@@ -154,10 +154,10 @@
 
 | ID | Item | Acceptance | Pri | Rel | Status |
 |---|------|------|---|---|---|
-| B26.1 | Offline authoring job runner | batch builds catalog from standards map | P2 | R2 | todo |
-| B26.2 | Admin review console (draft→reviewed→published) | only published visible to students | P2 | R2 | todo |
-| B26.3 | Catalog versioning + changelog | students pinned to a version | P2 | R3 | todo |
-| B26.4 | Standards-coverage audit report | shows published vs gaps per Utah code | P2 | R3 | todo |
+| B26.1 | Offline authoring job runner | batch builds catalog from standards map | P2 | R2 | done — CLI runs brief file or directory sequentially (Mac Mini constraint); never in a student request path |
+| B26.2 | Admin review console (draft→reviewed→published) | only published visible to students | P2 | R2 | done — server-side state machine with all spec-04 §4.1 guards (untagged-concepts block, reviewer sign-off, full-coverage + no-unconfirmed-LLM-tag publish gates, revise action) + ADMIN_TOKEN endpoints on RAG; **console UI = API-first, HTML front-end deferred to polish** |
+| B26.3 | Catalog versioning + changelog | students pinned to a version | P2 | R3 | done — per-publish immutable `versions/v{n}.json` snapshots + append-only CHANGELOG; `republish` bumps version; `get_version_snapshot` serves pinned enrollments (enrollments.course_version, v9) |
+| B26.4 | Standards-coverage audit report | shows published vs gaps per Utah code | P2 | R3 | done — `StandardsStore.coverage_report` + `/api/admin/catalog/coverage` |
 | B26.5 | Hydration provenance log | sources recorded (supports F1) | P2 | R3 | todo |
 
 ## B27 — Observability, Analytics & Unit Economics (Workstream N) · P3 · R4
