@@ -21,6 +21,36 @@ from typing import List, Dict, Optional, Any
 
 logger = logging.getLogger(__name__)
 
+# B23.2: llm_utils callers are the build pipelines (course_builder, wizard
+# drafting, librarian flashcard/quiz gen), so calls admit at BACKGROUND
+# priority: at most 1 in-flight slot and never granted while a live tutoring
+# turn waits. In processes without the core gate (RAG container), the import
+# fails and the gate is a no-op — those callers are never blocked.
+try:
+    from services.core.gpu_gate import get_gpu_gate, GpuOverloaded, LLMContext, BACKGROUND
+    _GATE_AVAILABLE = True
+except ImportError:
+    _GATE_AVAILABLE = False
+
+    class GpuOverloaded(Exception):
+        pass
+
+
+class _NoopSlot:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def _admit_background():
+    """Acquire a BACKGROUND slot on the GPU gate (no-op outside core)."""
+    if not _GATE_AVAILABLE:
+        return _NoopSlot()
+    return get_gpu_gate().admit(LLMContext(BACKGROUND, "_system"))
+
+
 LLM_API_URL = os.getenv(
     "LLM_API_URL", "http://host.docker.internal:11434/v1/chat/completions"
 )
@@ -185,7 +215,8 @@ def llm_generate(
                 )
                 hb_thread.start()
 
-            resp = requests.post(LLM_API_URL, json=data, timeout=timeout)
+            with _admit_background():
+                resp = requests.post(LLM_API_URL, json=data, timeout=timeout)
             heartbeat_stop.set()  # Stop heartbeat on response
             resp.raise_for_status()
             content = (

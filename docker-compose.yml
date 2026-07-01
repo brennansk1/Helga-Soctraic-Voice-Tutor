@@ -57,6 +57,12 @@ services:
     environment:
       - OLLAMA_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3.5:9b}
+      # B23.1: GPU gate cap — must equal the host's OLLAMA_NUM_PARALLEL
+      - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-4}
+      # B15.6: per-student FSM registry sizing
+      - FSM_REGISTRY_MAX=${FSM_REGISTRY_MAX:-64}
+      - FSM_IDLE_TTL=${FSM_IDLE_TTL:-1800}
+      - FSM_SWEEP_INTERVAL=${FSM_SWEEP_INTERVAL:-60}
       - RAG_URL=http://helga-rag-engine:5002
       - TTS_URL=http://helga-tts:5005
       - WEB_UI_URL=http://helga-web-ui:5000

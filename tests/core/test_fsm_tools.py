@@ -27,6 +27,8 @@ def _bare_fsm():
     fsm._tutor_tools_enabled = False
     fsm._tutor_tools_registry = None
     fsm.active_course_uid = "course_abc"
+    fsm.student_id = "stu_test0001"       # B23.2: _llm_ctx tags calls
+    fsm.send_status_update = MagicMock()
     fsm.llm_client = MagicMock()
     fsm.storage = MagicMock()
     return fsm

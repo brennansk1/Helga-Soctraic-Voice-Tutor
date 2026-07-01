@@ -12,6 +12,11 @@ import threading
 import json
 import re
 from services.common.storage import StorageManager, DEFAULT_STUDENT_ID
+
+try:
+    from gpu_gate import LLMContext, INTERACTIVE
+except ImportError:
+    from services.core.gpu_gate import LLMContext, INTERACTIVE
 import psutil
 import signal
 from flask import Flask, request, jsonify
@@ -436,8 +441,22 @@ class MnemosyneFSM:
             timeout=timeout,
             json_schema=json_schema,
             images=images,
+            ctx=self._llm_ctx(),
         )
         return result if result else None
+
+    def _llm_ctx(self):
+        """B23.2: tag live tutoring turns INTERACTIVE for the GPU gate; a
+        queued turn past the busy threshold pushes a friendly status to this
+        student instead of a frozen spinner."""
+        return LLMContext(
+            INTERACTIVE,
+            self.student_id,
+            on_busy=lambda info: self.send_status_update(
+                info.get("msg", "One moment…"),
+                event={"type": "GPU_BUSY", "queue_depth": info.get("queue_depth")},
+            ),
+        )
 
     def _call_llm_stream(self, messages, max_tokens=1000, timeout=120):
         """Call the LLM via Ollama streaming API, forwarding tokens to web-ui.
@@ -471,6 +490,7 @@ class MnemosyneFSM:
                 user_message.strip() or "Continue the conversation.",
                 max_tokens=max_tokens,
                 timeout=timeout,
+                ctx=self._llm_ctx(),
             ):
                 if chunk:
                     accumulated.append(chunk)
@@ -572,6 +592,7 @@ class MnemosyneFSM:
             out = self.llm_client.chat_with_tools(
                 sys_prompt, user, registry,
                 max_rounds=2, max_tool_calls=2, timeout=30,
+                ctx=self._llm_ctx(),
             )
             if not out.get("tool_calls"):
                 return ""

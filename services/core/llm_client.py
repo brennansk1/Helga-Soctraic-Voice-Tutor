@@ -16,6 +16,11 @@ import time
 
 import requests
 
+try:
+    from gpu_gate import get_gpu_gate, GpuOverloaded, LLMContext, INTERACTIVE
+except ImportError:
+    from services.core.gpu_gate import get_gpu_gate, GpuOverloaded, LLMContext, INTERACTIVE
+
 logger = logging.getLogger(__name__)
 
 OLLAMA_URL = os.environ.get('OLLAMA_URL', 'http://host.docker.internal:11434')
@@ -46,7 +51,7 @@ class LLMClient:
 
     def chat(self, system_prompt, user_message, max_tokens=512,
              temperature=0.6, json_mode=False, json_schema=None, images=None,
-             timeout=60, retries=3):
+             timeout=60, retries=3, ctx=None):
         """Send a chat completion request to Ollama.
 
         Args:
@@ -85,11 +90,21 @@ class LLMClient:
 
         for attempt in range(retries):
             try:
-                resp = requests.post(
-                    self.api_url,
-                    json=payload,
-                    timeout=timeout
-                )
+                # B23.1: bounded, fair GPU admission. Slot held only for the
+                # actual generation; queue-wait overload degrades gracefully.
+                try:
+                    slot = get_gpu_gate().admit(ctx)
+                except GpuOverloaded as e:
+                    logger.warning(f"GPU overloaded, shedding request: {e}")
+                    return ""
+                try:
+                    resp = requests.post(
+                        self.api_url,
+                        json=payload,
+                        timeout=timeout
+                    )
+                finally:
+                    slot.release()
                 resp.raise_for_status()
                 # Force UTF-8 — Ollama emits UTF-8 but some setups omit the
                 # charset parameter, causing requests to fall back to latin-1
@@ -128,14 +143,15 @@ class LLMClient:
         logger.error(f"LLM request failed after {retries} attempts")
         return ""
 
-    def chat_json(self, system_prompt, user_message, max_tokens=512,
+    def chat_json(self, system_prompt, user_message, max_tokens=512, ctx=None,
                   temperature=0.6, json_schema=None, timeout=60, retries=3):
         """Chat with JSON output. If json_schema is given, output is schema-
         constrained (Ollama >=0.5). Returns parsed dict/list or None."""
         raw = self.chat(
             system_prompt, user_message,
             max_tokens=max_tokens, temperature=temperature,
-            json_mode=True, json_schema=json_schema, timeout=timeout, retries=retries
+            json_mode=True, json_schema=json_schema, timeout=timeout, retries=retries,
+            ctx=ctx,
         )
         if not raw:
             return None
@@ -152,7 +168,7 @@ class LLMClient:
             logger.warning(f"Failed to parse JSON from LLM response: {raw[:200]}")
             return None
 
-    def describe_image(self, image, instruction=None, max_tokens=400, timeout=90):
+    def describe_image(self, image, instruction=None, max_tokens=400, timeout=90, ctx=None):
         """Vision helper (qwen3.5:9b): caption/analyse an image. `image` is a data
         URI or base64 string. Returns the model's description — for alt text,
         relevance filtering of scraped figures, or grounding a Socratic question
@@ -164,22 +180,25 @@ class LLMClient:
         return self.chat(
             "You are a precise visual analyst for a tutoring system.",
             instruction, images=[image], max_tokens=max_tokens, timeout=timeout,
+            ctx=ctx,
         )
 
-    def _raw_chat(self, messages, tools=None, temperature=0.4, timeout=60):
+    def _raw_chat(self, messages, tools=None, temperature=0.4, timeout=60, ctx=None):
         """Single chat round returning the full assistant MESSAGE dict (so callers
         can see tool_calls). Used by chat_with_tools."""
         payload = {"model": self.model, "messages": messages,
                    "temperature": temperature, "stream": False}
         if tools:
             payload["tools"] = tools
-        resp = requests.post(self.api_url, json=payload, timeout=timeout)
+        with get_gpu_gate().admit(ctx):
+            resp = requests.post(self.api_url, json=payload, timeout=timeout)
         resp.raise_for_status()
         resp.encoding = "utf-8"
         return resp.json().get("choices", [{}])[0].get("message", {}) or {}
 
     def chat_with_tools(self, system_prompt, user_message, registry,
-                        max_rounds=3, max_tool_calls=3, temperature=0.4, timeout=60):
+                        max_rounds=3, max_tool_calls=3, temperature=0.4, timeout=60,
+                        ctx=None):
         """Agentic tool-use loop (B14). The model may call tools from `registry`
         (tier-gated for this model — the registry enforces that and the output
         caps); each call is executed with failsafes and fed back. Loops until the
@@ -193,7 +212,7 @@ class LLMClient:
         last_text = ""
         for _ in range(max(1, max_rounds)):
             try:
-                msg = self._raw_chat(messages, tools=tools, temperature=temperature, timeout=timeout)
+                msg = self._raw_chat(messages, tools=tools, temperature=temperature, timeout=timeout, ctx=ctx)
             except Exception as e:
                 logger.warning(f"tool chat round failed: {e}")
                 break
@@ -220,7 +239,7 @@ class LLMClient:
         return {"text": last_text, "tool_calls": used}
 
     def chat_stream(self, system_prompt, user_message, max_tokens=512,
-                    temperature=0.6, timeout=120):
+                    temperature=0.6, timeout=120, ctx=None):
         """Stream a chat completion. Yields text chunks.
 
         Args:
@@ -243,6 +262,12 @@ class LLMClient:
             "temperature": temperature,
             "stream": True
         }
+
+        try:
+            slot = get_gpu_gate().admit(ctx)
+        except GpuOverloaded as e:
+            logger.warning(f"GPU overloaded, shedding stream request: {e}")
+            return
 
         try:
             resp = requests.post(
@@ -288,6 +313,8 @@ class LLMClient:
 
         except Exception as e:
             logger.error(f"Streaming error: {e}")
+        finally:
+            slot.release()
 
     def health_check(self):
         """Check if Ollama is reachable and model is loaded."""
