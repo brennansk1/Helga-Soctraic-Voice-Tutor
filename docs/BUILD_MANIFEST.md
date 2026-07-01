@@ -71,11 +71,11 @@
 
 | ID | Item | Target | Acceptance | Pri | Rel | Status |
 |---|------|------|------|---|---|---|
-| B18.1 | Formal exam/assessment generator | new exam module | produces multi-item exams (system had none) | P1 | R2 | todo |
-| B18.2 | Per-standard mastery checkpoints gate progression | exam module + FSM | unit/module checkpoints block advance until passed | P1 | R2 | todo |
-| B18.3 | Interests-into-exams themer (standard fixed, theme varies) | exam module; `students.interests` | soccer-themed ratio item still tests the ratio standard | P1 | R2 | todo |
-| B18.4 | Item validity check (still tests target standard) | exam module | automated check: difficulty/standard unchanged | P1 | R2 | todo |
-| B18.5 | GFL (74% cut) + Basic Civics (35/50) practice modes | exam module | scored modes match Utah thresholds | P2 | R2 | todo |
+| B18.1 | Formal exam/assessment generator | new exam module | produces multi-item exams (system had none) | P1 | R2 | done — `services/exam/exam_engine.py` (blueprint on RAG proc) + v6 tables + ExamStore; per-attempt constrained-JSON generation, per-type validation, stock fallback; lazy `next` with answer-stripped views |
+| B18.2 | Per-standard mastery checkpoints gate progression | exam module + FSM | unit/module checkpoints block advance until passed | P1 | R2 | done — pass → mark unit concepts completed + advance `enrollments.current_concept_uid`; fail → remediation queue from missed standards' concepts (mastery reset, never bypassed); tested both paths |
+| B18.3 | Interests-into-exams themer (standard fixed, theme varies) | exam module; `students.interests` | soccer-themed ratio item still tests the ratio standard | P1 | R2 | done — generate→theme→validate flow; answer key re-attached out of band so the themer physically cannot move it; soccer-ratio acceptance test green |
+| B18.4 | Item validity check (still tests target standard) | exam module | automated check: difficulty/standard unchanged | P1 | R2 | done — two-layer guard: deterministic structural checks (numeric-token multiset, answer-index, drift) + LLM verifier; bad theme falls back to base item (integrity never degrades) |
+| B18.5 | GFL (74% cut) + Basic Civics (35/50) practice modes | exam module | scored modes match Utah thresholds | P2 | R2 | done — `standardized_prep` kind non-gating; 0.74 GFL cut and 35/50 civics display both boundary-tested; suite 706 passed |
 
 ## B19 — Parent / Guardian Dashboard (Workstream E) · P1 · R2
 

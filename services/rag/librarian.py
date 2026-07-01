@@ -53,6 +53,15 @@ except Exception as e:
 
 app = Flask(__name__)
 
+# B18: mount the assessment engine blueprint (spec 05 §0 — shares this
+# process, the StorageManager, and llm_utils; no new container).
+try:
+    from services.exam.exam_engine import create_exam_blueprint
+    app.register_blueprint(create_exam_blueprint(storage))
+    logger.info("Exam engine blueprint mounted")
+except Exception as e:
+    logger.error(f"Exam engine mount failed (non-fatal): {e}")
+
 # Embedding model for (planned) dense/hybrid retrieval. Loaded LAZILY: the old
 # eager load was pure startup cost because search currently uses SQLite FTS5 and
 # nothing called the model (B2). get_embed_model() is the seam the sqlite-vec

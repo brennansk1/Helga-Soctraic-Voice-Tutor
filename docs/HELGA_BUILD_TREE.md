@@ -453,12 +453,12 @@ target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
 │  ├─ B17.5  Manipulatives/visual answer modes (early math) ........ ⬜
 │  ├─ B17.6  Voice-first early-literacy/WL loop .................... ⬜  reuses STT/TTS (B7.3)
 │  └─ B17.7  Affect/frustration handling for young learners ........ ⬜  extends _detect_ignorance
-├─ B18 Assessment, Exams & Interest-Themed Engagement .............. ⬜  (Workstream G)
-│  ├─ B18.1  Formal exam/assessment generator ..................... ⬜  (baseline has quiz+grading, no exams)
-│  ├─ B18.2  Per-standard mastery checkpoints (gate progression) ... ⬜
-│  ├─ B18.3  Interests-into-exams themer (standard fixed, theme varies) ⬜  uses students.interests
-│  ├─ B18.4  Item validity check (still tests target standard) ..... ⬜
-│  └─ B18.5  GFL (74% cut) + Basic Civics (35/50) practice modes ... ⬜
+├─ B18 Assessment, Exams & Interest-Themed Engagement .............. ✔️  (Workstream G — COMPLETE)
+│  ├─ B18.1  Formal exam/assessment generator ..................... ✔️  exam_engine.py + v6 + ExamStore
+│  ├─ B18.2  Per-standard mastery checkpoints (gate progression) ... ✔️  pass→unlock, fail→remediate
+│  ├─ B18.3  Interests-into-exams themer (standard fixed) .......... ✔️  answer key out-of-band
+│  ├─ B18.4  Item validity check (still tests target standard) ..... ✔️  structural + verifier layers
+│  └─ B18.5  GFL (74% cut) + Basic Civics (35/50) practice modes ... ✔️  boundary-tested
 ├─ B19 Parent / Guardian Dashboard ................................. ⬜  (Workstream E)
 │  ├─ B19.1  Children overview ..................................... ⬜
 │  ├─ B19.2  Per-child progress + standards coverage .............. ⬜  from concept_standards/activity_log

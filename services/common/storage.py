@@ -87,6 +87,7 @@ class StorageManager:
         # B16: standards layer + read-only catalog course files
         # (data/catalog/courses/, physically separate from user electives)
         self.standards = StandardsStore(self.db_path)
+        self.exams = ExamStore(self.db_path)
         self.catalog_dir = os.path.join(data_dir, "catalog", "courses")
         os.makedirs(self.catalog_dir, exist_ok=True)
         self.catalog_courses = CourseStore(self.catalog_dir, self.data_dir)
@@ -416,6 +417,53 @@ class StorageManager:
                         pass  # Column already exists
                 cursor.execute("UPDATE schema_version SET version = 5")
                 logger.info("Schema migrated to v5: standards + concept_standards + catalog columns")
+
+            # Schema migration v5 → v6: assessment/exam tables (spec 01 §5)
+            if current_version < 6:
+                cursor.executescript("""
+                    CREATE TABLE IF NOT EXISTS exams (
+                        id           TEXT PRIMARY KEY,
+                        course_uid   TEXT,
+                        scope_uid    TEXT,
+                        kind         TEXT NOT NULL,
+                        standard_codes TEXT DEFAULT '[]',
+                        blueprint    TEXT NOT NULL,
+                        pass_threshold REAL DEFAULT 0.8,
+                        created_at   TEXT DEFAULT (datetime('now'))
+                    );
+
+                    CREATE TABLE IF NOT EXISTS exam_attempts (
+                        id           TEXT PRIMARY KEY,
+                        student_id   TEXT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+                        exam_id      TEXT NOT NULL REFERENCES exams(id),
+                        course_uid   TEXT,
+                        status       TEXT DEFAULT 'in_progress',
+                        score        REAL,
+                        passed       INTEGER,
+                        theme        TEXT,
+                        accommodations TEXT DEFAULT '{}',
+                        started_at   TEXT DEFAULT (datetime('now')),
+                        submitted_at TEXT
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_attempt_student ON exam_attempts(student_id, exam_id);
+
+                    CREATE TABLE IF NOT EXISTS exam_item_responses (
+                        id            TEXT PRIMARY KEY,
+                        attempt_id    TEXT NOT NULL REFERENCES exam_attempts(id) ON DELETE CASCADE,
+                        standard_code TEXT,
+                        bloom_level   INTEGER,
+                        item_type     TEXT,
+                        prompt        TEXT,
+                        correct       TEXT,
+                        response      TEXT,
+                        grade         INTEGER,
+                        is_correct    INTEGER,
+                        theme_validated INTEGER DEFAULT 0
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_response_attempt ON exam_item_responses(attempt_id);
+                """)
+                cursor.execute("UPDATE schema_version SET version = 6")
+                logger.info("Schema migrated to v6: exam tables")
 
             conn.commit()
         finally:
@@ -1937,3 +1985,174 @@ class StandardsStore:
         q += "GROUP BY s.code ORDER BY s.subject, s.code"
         rows = self._get_db().execute(q, params).fetchall()
         return [dict(r) for r in rows]
+
+
+class ExamStore:
+    """Exams, attempts, and item responses (B18, spec 01 §5). Attempts and
+    responses are student-scoped; exam definitions are global."""
+
+    _ATTEMPT_COLUMNS = {'status', 'score', 'passed', 'theme', 'accommodations',
+                        'submitted_at'}
+    _RESPONSE_COLUMNS = {'response', 'grade', 'is_correct'}
+
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self._db = _ThreadLocalDB(db_path)
+
+    def _get_db(self) -> sqlite3.Connection:
+        return self._db.get()
+
+    # -- exam definitions -----------------------------------------------------
+
+    def create_exam(self, kind: str, blueprint: dict, course_uid: str = None,
+                    scope_uid: str = None, pass_threshold: float = 0.8) -> str:
+        codes = sorted({s.get("standard_code") for s in blueprint.get("slots", [])
+                        if s.get("standard_code")})
+        eid = f"exm_{uuid.uuid4().hex[:8]}"
+        conn = self._get_db()
+        conn.execute(
+            "INSERT INTO exams (id, course_uid, scope_uid, kind, standard_codes, blueprint, pass_threshold) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (eid, course_uid, scope_uid, kind, json.dumps(codes),
+             json.dumps(blueprint), pass_threshold))
+        conn.commit()
+        return eid
+
+    def get_exam(self, exam_id: str) -> Optional[dict]:
+        row = self._get_db().execute("SELECT * FROM exams WHERE id = ?", (exam_id,)).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d["blueprint"] = json.loads(d["blueprint"] or "{}")
+        d["standard_codes"] = json.loads(d["standard_codes"] or "[]")
+        return d
+
+    def list_exams(self, course_uid: str = None, scope_uid: str = None,
+                   kind: str = None) -> List[dict]:
+        q = "SELECT * FROM exams WHERE 1=1"
+        params = []
+        if course_uid:
+            q += " AND course_uid = ?"
+            params.append(course_uid)
+        if scope_uid:
+            q += " AND scope_uid = ?"
+            params.append(scope_uid)
+        if kind:
+            q += " AND kind = ?"
+            params.append(kind)
+        rows = self._get_db().execute(q + " ORDER BY created_at", params).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["blueprint"] = json.loads(d["blueprint"] or "{}")
+            d["standard_codes"] = json.loads(d["standard_codes"] or "[]")
+            out.append(d)
+        return out
+
+    # -- attempts -------------------------------------------------------------
+
+    def create_attempt(self, exam_id: str, course_uid: str = None,
+                       theme: str = None, accommodations: dict = None,
+                       student_id: str = None) -> str:
+        aid = f"att_{uuid.uuid4().hex[:8]}"
+        conn = self._get_db()
+        conn.execute(
+            "INSERT INTO exam_attempts (id, student_id, exam_id, course_uid, theme, accommodations) "
+            "VALUES (?,?,?,?,?,?)",
+            (aid, _sid(student_id), exam_id, course_uid, theme,
+             json.dumps(accommodations or {})))
+        conn.commit()
+        return aid
+
+    def get_attempt(self, attempt_id: str, student_id: str = None) -> Optional[dict]:
+        row = self._get_db().execute(
+            "SELECT * FROM exam_attempts WHERE id = ? AND student_id = ?",
+            (attempt_id, _sid(student_id))).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d["accommodations"] = json.loads(d["accommodations"] or "{}")
+        return d
+
+    def in_progress_attempt(self, exam_id: str, student_id: str = None) -> Optional[dict]:
+        row = self._get_db().execute(
+            "SELECT * FROM exam_attempts WHERE exam_id = ? AND student_id = ? "
+            "AND status = 'in_progress' ORDER BY started_at DESC LIMIT 1",
+            (exam_id, _sid(student_id))).fetchone()
+        return dict(row) if row else None
+
+    def update_attempt(self, attempt_id: str, student_id: str = None, **kwargs):
+        kwargs = {k: v for k, v in kwargs.items() if k in self._ATTEMPT_COLUMNS}
+        if not kwargs:
+            return
+        if "accommodations" in kwargs and not isinstance(kwargs["accommodations"], str):
+            kwargs["accommodations"] = json.dumps(kwargs["accommodations"])
+        sets = ", ".join(f"{k} = ?" for k in kwargs)
+        conn = self._get_db()
+        conn.execute(f"UPDATE exam_attempts SET {sets} WHERE id = ? AND student_id = ?",
+                     list(kwargs.values()) + [attempt_id, _sid(student_id)])
+        conn.commit()
+
+    def count_attempts_since(self, exam_id: str, since_iso: str,
+                             student_id: str = None) -> int:
+        """Attempts counting toward the limit: graded/submitted always;
+        abandoned only when at least one item was answered (spec 05 §9.3)."""
+        row = self._get_db().execute(
+            "SELECT COUNT(*) AS cnt FROM exam_attempts a WHERE a.exam_id = ? "
+            "AND a.student_id = ? AND a.started_at >= ? AND ("
+            "  a.status IN ('submitted','graded') OR "
+            "  (a.status = 'abandoned' AND EXISTS ("
+            "     SELECT 1 FROM exam_item_responses r WHERE r.attempt_id = a.id "
+            "     AND r.response IS NOT NULL)))",
+            (exam_id, _sid(student_id), since_iso)).fetchone()
+        return row["cnt"] if row else 0
+
+    # -- item responses -------------------------------------------------------
+
+    def add_item(self, attempt_id: str, item: dict, correct: dict,
+                 theme_validated: bool = False) -> str:
+        """Persist a generated item WITH its answer key (server-side only)."""
+        rid = f"rsp_{uuid.uuid4().hex[:8]}"
+        conn = self._get_db()
+        conn.execute(
+            "INSERT INTO exam_item_responses (id, attempt_id, standard_code, bloom_level, "
+            "item_type, prompt, correct, theme_validated) VALUES (?,?,?,?,?,?,?,?)",
+            (rid, attempt_id, item.get("standard_code"), item.get("bloom"),
+             item.get("item_type"), json.dumps(item), json.dumps(correct),
+             1 if theme_validated else 0))
+        conn.commit()
+        return rid
+
+    def get_item(self, response_id: str) -> Optional[dict]:
+        row = self._get_db().execute(
+            "SELECT * FROM exam_item_responses WHERE id = ?", (response_id,)).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d["prompt"] = json.loads(d["prompt"] or "{}")
+        d["correct"] = json.loads(d["correct"] or "{}")
+        return d
+
+    def update_item(self, response_id: str, **kwargs):
+        kwargs = {k: v for k, v in kwargs.items() if k in self._RESPONSE_COLUMNS}
+        if not kwargs:
+            return
+        if "response" in kwargs and not isinstance(kwargs["response"], str):
+            kwargs["response"] = json.dumps(kwargs["response"])
+        sets = ", ".join(f"{k} = ?" for k in kwargs)
+        conn = self._get_db()
+        conn.execute(f"UPDATE exam_item_responses SET {sets} WHERE id = ?",
+                     list(kwargs.values()) + [response_id])
+        conn.commit()
+
+    def items_for_attempt(self, attempt_id: str) -> List[dict]:
+        rows = self._get_db().execute(
+            "SELECT * FROM exam_item_responses WHERE attempt_id = ? ORDER BY rowid",
+            (attempt_id,)).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["prompt"] = json.loads(d["prompt"] or "{}")
+            d["correct"] = json.loads(d["correct"] or "{}")
+            out.append(d)
+        return out
