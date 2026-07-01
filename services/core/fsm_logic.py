@@ -11,7 +11,7 @@ import threading
 # ThreadPoolExecutor removed — TTS thread pool no longer needed
 import json
 import re
-from services.common.storage import StorageManager
+from services.common.storage import StorageManager, DEFAULT_STUDENT_ID
 import psutil
 import signal
 from flask import Flask, request, jsonify
@@ -205,7 +205,13 @@ app = Flask(__name__)
 
 
 class MnemosyneFSM:
-    def __init__(self):
+    def __init__(self, student_id=None, storage=None):
+        # B15.6: the isolation key. Every storage call passes it; every
+        # outbound status/token payload is stamped with it (B15.5).
+        # Defaults to the legacy student until real auth lands (B15.4).
+        self.student_id = student_id or DEFAULT_STUDENT_ID
+        self.last_touch = time.time()
+
         # Use DEV_MODE for laptop if environment variable set
         self.dev_mode = (
             os.getenv("DEV_MODE", "False").lower() == "true" or sys.platform == "win32"
@@ -332,9 +338,20 @@ class MnemosyneFSM:
         logging.info(f"Dev mode: {self.dev_mode}")
         logging.info(f"Service URLs: RAG={self.rag_url}, WebUI={self.web_ui_url}")
 
-        # Initialize StorageManager (replaces KuzuDB)
-        self.storage = StorageManager(self.data_root)
+        # Initialize StorageManager. When constructed via the FSMRegistry a
+        # single shared instance is injected (B15.6); standalone construction
+        # (tests, scripts) builds its own.
+        self.storage = storage or StorageManager(self.data_root)
         self.conn = None  # Legacy compat
+
+        # B17.1: grade band resolved from the students row, drives prompts/Bloom
+        self.grade_band = "9-12"
+        try:
+            student_row = self.storage.accounts.get_student(self.student_id)
+            if student_row and student_row.get("grade_band"):
+                self.grade_band = student_row["grade_band"]
+        except Exception as e:
+            logging.warning(f"Could not resolve grade_band for {self.student_id}: {e}")
 
         # B14: MCP-style tutor tool layer. OFF by default — flip
         # HELGA_ENABLE_TUTOR_TOOLS=true once tool-call reliability is validated
@@ -342,15 +359,13 @@ class MnemosyneFSM:
         self._tutor_tools_enabled = os.getenv("HELGA_ENABLE_TUTOR_TOOLS", "false").lower() == "true"
         self._tutor_tools_registry = None
 
-        self.timer_thread = threading.Thread(target=self.check_timers, daemon=True)
-        self.timer_thread.start()
+        # B15.6: the per-FSM timer thread and per-instance signal handlers are
+        # gone — one registry-level sweeper calls tick(now) for every resident
+        # FSM, and maintenance signals are process-level (module tail).
 
-        # Setup signal handlers for maintenance mode
-        signal.signal(signal.SIGUSR1, self._handle_maintenance_pause)
-        signal.signal(signal.SIGUSR2, self._handle_maintenance_resume)
-
-        # Restore State
-        self._load_state_from_disk()
+        # Restore state from this student's fsm_sessions row (B15.7); imports
+        # the legacy user_state.json once for the legacy student.
+        self._hydrate_from_row()
 
         self.add_message("Helga online. Ready to learn.")
 
@@ -574,6 +589,7 @@ class MnemosyneFSM:
             "type": "stream_token",
             "token": token,
             "done": done,
+            "student_id": self.student_id,  # B15.5: room-scoped delivery
         }
         try:
             requests.post(
@@ -594,7 +610,9 @@ class MnemosyneFSM:
         structured fields instead of parsing the free-text `message`. The message
         is kept for human display and legacy string-matching handlers.
         """
-        data = {"message": message}
+        # B15.5: stamp ownership at the source — web-ui emits to this
+        # student's Socket.IO room and never broadcasts.
+        data = {"message": message, "student_id": self.student_id}
         if log:
             data["log"] = log
         if progress is not None:
@@ -653,36 +671,36 @@ class MnemosyneFSM:
         """No-op — audio removed in text-only mode."""
         pass
 
-    def check_timers(self):
-        while True:
-            time.sleep(1)
-            # Skip timers if in maintenance mode
-            if self.state == "PAUSED" or self.maintenance_paused:
-                continue
-            now = time.time()
-            elapsed = now - self.last_interaction_time
+    def tick(self, now=None):
+        """One timer pass (B15.6). Called by the registry sweeper for every
+        resident FSM — replaces the per-FSM `while True: sleep(1)` thread."""
+        # Skip timers if in maintenance mode
+        if self.state == "PAUSED" or self.maintenance_paused:
+            return
+        now = now or time.time()
+        elapsed = now - self.last_interaction_time
 
-            if (
-                self.state == "SOCRATIC_LEARNING"
-                and elapsed > 20
-                and self.question_start_time > 0
-            ):
-                # Silent nudge - just reset timer, don't spam the chat
-                self.last_interaction_time = now
+        if (
+            self.state == "SOCRATIC_LEARNING"
+            and elapsed > 20
+            and self.question_start_time > 0
+        ):
+            # Silent nudge - just reset timer, don't spam the chat
+            self.last_interaction_time = now
 
-            if (
-                self.state == "SPACED_REPETITION"
-                and elapsed > 15
-                and self.question_start_time > 0
-            ):
-                self.play_sound("FRICTION_GRIND")
-                name = (
-                    self.current_card.get("title", "unknown")
-                    if self.current_card
-                    else "the concept"
-                )
-                self.speak(f"The answer involves {name}. Should I reveal it?")
-                self.last_interaction_time = now
+        if (
+            self.state == "SPACED_REPETITION"
+            and elapsed > 15
+            and self.question_start_time > 0
+        ):
+            self.play_sound("FRICTION_GRIND")
+            name = (
+                self.current_card.get("title", "unknown")
+                if self.current_card
+                else "the concept"
+            )
+            self.speak(f"The answer involves {name}. Should I reveal it?")
+            self.last_interaction_time = now
 
     def transition(self, event):
         logging.info(f"Transition: {self.state} with {event}")
@@ -1412,17 +1430,37 @@ class MnemosyneFSM:
             self.speak("Technical error loading course.")
             self.state = "LOBBY"
 
+    def _read_session_blob(self):
+        """Read this student's fsm_sessions blob (B15.7). Returns the parsed
+        dict or a fresh skeleton. One-time legacy import: if the student has
+        no row yet but the old user_state.json exists, adopt its contents so
+        the pre-multi-tenant user's position survives the migration."""
+        try:
+            row = self.storage.fsm.get(self.student_id)
+            if row and row.get("blob"):
+                return json.loads(row["blob"])
+        except Exception as e:
+            logging.error(f"Failed to read fsm_sessions blob: {e}")
+        # Legacy import (only meaningful for the legacy student's first load)
+        try:
+            if self.student_id == DEFAULT_STUDENT_ID and os.path.exists(self.state_file):
+                with open(self.state_file, "r") as f:
+                    legacy = json.load(f)
+                if isinstance(legacy, dict) and legacy.get("courses"):
+                    legacy["schema"] = 1
+                    logging.info("Imported legacy user_state.json into fsm_sessions")
+                    return legacy
+        except Exception as e:
+            logging.warning(f"Legacy user_state.json import failed: {e}")
+        return {"schema": 1, "courses": {}}
+
     def _save_current_course_progress(self):
         if not self.active_course_uid:
             return
 
         try:
-            # Load existing full state to not overwrite other courses
-            if os.path.exists(self.state_file):
-                with open(self.state_file, "r") as f:
-                    full_state = json.load(f)
-            else:
-                full_state = {"courses": {}}
+            # Load existing blob to not overwrite other courses' progress
+            full_state = self._read_session_blob()
 
             course_state = {
                 "current_node": self.current_lesson_node,
@@ -1452,20 +1490,21 @@ class MnemosyneFSM:
                 full_state["courses"] = {}
             full_state["courses"][self.active_course_uid] = course_state
             full_state["last_active_uid"] = self.active_course_uid
+            full_state["schema"] = 1
+            full_state["state"] = self.state
+            full_state["grade_band"] = self.grade_band
 
-            # LRN-8: Use atomic write to prevent corruption from concurrent requests
-            self._atomic_write(self.state_file, json.dumps(full_state, indent=2))
-            logging.info(f"Saved progress for course {self.active_course_uid}")
+            # B15.7: single-row upsert in WAL — atomic by construction, so the
+            # old LRN-8 atomic-file-write concern disappears.
+            self.storage.fsm.upsert(self.student_id, json.dumps(full_state))
+            logging.info(f"Saved progress for course {self.active_course_uid} "
+                         f"(student {self.student_id})")
         except Exception as e:
             logging.error(f"Failed to save state: {e}")
 
     def _load_course_progress(self, course_uid):
-        if not os.path.exists(self.state_file):
-            return False
         try:
-            with open(self.state_file, "r") as f:
-                full_state = json.load(f)
-
+            full_state = self._read_session_blob()
             courses = full_state.get("courses", {})
             if course_uid in courses:
                 data = courses[course_uid]
@@ -1501,23 +1540,17 @@ class MnemosyneFSM:
             logging.error(f"Failed to load course progress: {e}")
         return False
 
-    def _load_state_from_disk(self):
-        """Initial load on startup"""
-        if not os.path.exists(self.state_file):
-            return
+    def _hydrate_from_row(self):
+        """Initial load on construction (B15.7) — replaces _load_state_from_disk.
+        We stay in LOBBY but remember the last active course so RESUME works."""
         try:
-            with open(self.state_file, "r") as f:
-                full_state = json.load(f)
+            full_state = self._read_session_blob()
             last_uid = full_state.get("last_active_uid")
             if last_uid:
                 self.active_course_uid = last_uid
-                # Optional: Auto-load the last course?
-                # For now, we stay in LOBBY but user can say "Resume" commands later.
-                # Or we could pre-load variables but stay in LOBBY until user says "Start".
-                # Let's just track the UID for now.
-                logging.info(f"Found last active course: {last_uid}")
+                logging.info(f"Found last active course for {self.student_id}: {last_uid}")
         except Exception as e:
-            logging.error(f"Failed to load global state: {e}")
+            logging.error(f"Failed to hydrate FSM session: {e}")
 
     def shutdown(self):
         self.state = "SHUTDOWN"
@@ -3417,20 +3450,15 @@ class MnemosyneFSM:
                 self.state = "LOBBY"
                 self.speak("Course deleted. Returning to lobby.")
 
-            # Update Disk State — use atomic write to prevent corruption
-            if os.path.exists(self.state_file):
-                with open(self.state_file, "r") as f:
-                    full_state = json.load(f)
-
-                courses = full_state.get("courses", {})
-                if uid in courses:
-                    del courses[uid]
-
-                if full_state.get("last_active_uid") == uid:
-                    full_state["last_active_uid"] = None
-
-                self._atomic_write(self.state_file, json.dumps(full_state, indent=2))
-                logging.info(f"Deleted state for course {uid}")
+            # Update the persisted session blob (B15.7)
+            full_state = self._read_session_blob()
+            courses = full_state.get("courses", {})
+            if uid in courses:
+                del courses[uid]
+            if full_state.get("last_active_uid") == uid:
+                full_state["last_active_uid"] = None
+            self.storage.fsm.upsert(self.student_id, json.dumps(full_state))
+            logging.info(f"Deleted state for course {uid}")
         except Exception as e:
             logging.error(f"Failed to delete course state: {e}")
 
@@ -3495,13 +3523,63 @@ class MnemosyneFSM:
         return state_dict
 
 
-fsm = MnemosyneFSM()
+# B15.6: per-student FSM registry replaces the global singleton. The shared
+# StorageManager is thread-safe (_ThreadLocalDB, WAL) and injected into every
+# FSM. `registry.get(sid)` is the ONLY place that decides resident-vs-fresh,
+# which is the seam for the stateless multi-worker Option A (spec 03 §7).
+try:
+    from fsm_registry import FSMRegistry            # container layout (flat dir)
+except ImportError:
+    from services.core.fsm_registry import FSMRegistry  # repo/package layout
+
+_shared_storage = StorageManager(os.getenv("DATA_ROOT", "/app/data"))
+registry = FSMRegistry(
+    lambda sid, storage: MnemosyneFSM(sid, storage=storage),
+    _shared_storage,
+    max_size=int(os.getenv("FSM_REGISTRY_MAX", "64")),
+    idle_ttl=int(os.getenv("FSM_IDLE_TTL", "1800")),
+    sweep_interval=int(os.getenv("FSM_SWEEP_INTERVAL", "60")),
+)
+
+
+def _student_id_from_request():
+    """Resolve the acting student. web-ui injects student_id from the
+    authenticated session (spec 03 §5); core trusts it because web-ui is the
+    sole caller inside the docker network. Falls back to the legacy student
+    until B15.4 auth lands (the R0→R1 cutover swaps this for abort(400))."""
+    body = request.get_json(silent=True) or {}
+    return body.get("student_id") or request.args.get("student_id") or DEFAULT_STUDENT_ID
+
+
+# Process-level maintenance signal handlers (were per-FSM instance handlers,
+# which cannot be installed once FSMs are built on request threads).
+def _maintenance_pause(signum, frame):
+    logging.info("SIGUSR1 received: Entering maintenance mode (pause)")
+    registry.set_maintenance(True)
+
+
+def _maintenance_resume(signum, frame):
+    logging.info("SIGUSR2 received: Exiting maintenance mode (resume)")
+    registry.set_maintenance(False)
+
+
+try:
+    signal.signal(signal.SIGUSR1, _maintenance_pause)
+    signal.signal(signal.SIGUSR2, _maintenance_resume)
+except ValueError:
+    # Not on the main thread (e.g. test import under a runner) — skip.
+    logging.warning("Skipping signal-handler install (not main thread)")
 
 
 @app.route("/event", methods=["POST"])
 def handle_event():
     event = request.json
-    fsm.transition(event)
+    sid = _student_id_from_request()
+    fsm = registry.get(sid)
+    # Serialize one student's rapid events (double-tap, two tabs); different
+    # students take different locks and run fully concurrently (spec 03 §4.7).
+    with registry.lock_for(sid):
+        fsm.transition(event)
     return {"status": "ok"}
 
 
@@ -3510,24 +3588,23 @@ def handle_event():
 
 @app.route("/state", methods=["GET"])
 def get_state():
-    return fsm.get_state()
+    return registry.get(_student_id_from_request()).get_state()
 
 
 @app.route("/api/schedule/stats", methods=["GET"])
 def get_schedule_stats():
+    sid = _student_id_from_request()
     try:
-        fsm.storage.schedule.mark_overdue()
-        upcoming = fsm.storage.schedule.get_upcoming_count(days=7)
-        all_reviews = fsm.storage.schedule.get_scheduled_reviews()
+        _shared_storage.schedule.mark_overdue(student_id=sid)
+        upcoming = _shared_storage.schedule.get_upcoming_count(days=7, student_id=sid)
+        all_reviews = _shared_storage.schedule.get_scheduled_reviews(student_id=sid)
         overdue_curr = len([r for r in all_reviews if r.get("status") == "overdue"])
         completed_curr = len([r for r in all_reviews if r.get("status") == "completed"])
         retention = 100
         if completed_curr + overdue_curr > 0:
             retention = int((completed_curr / (completed_curr + overdue_curr)) * 100)
 
-        streak = 0
-        if hasattr(fsm.storage, "activity"):
-            streak = fsm.storage.activity.get_streak()
+        streak = _shared_storage.activity.get_streak(student_id=sid)
 
         return {
             "streak": streak,
@@ -3544,6 +3621,7 @@ def get_schedule_stats():
 def get_schedule():
     month = request.args.get("month")
     year = request.args.get("year")
+    sid = _student_id_from_request()
     try:
         if month and year:
             import calendar
@@ -3551,11 +3629,11 @@ def get_schedule():
             start_date = f"{year}-{int(month):02d}-01"
             last_day = calendar.monthrange(int(year), int(month))[1]
             end_date = f"{year}-{int(month):02d}-{last_day}"
-            reviews = fsm.storage.schedule.get_scheduled_reviews(
-                start_date=start_date, end_date=end_date
+            reviews = _shared_storage.schedule.get_scheduled_reviews(
+                start_date=start_date, end_date=end_date, student_id=sid
             )
         else:
-            reviews = fsm.storage.schedule.get_scheduled_reviews()
+            reviews = _shared_storage.schedule.get_scheduled_reviews(student_id=sid)
         return jsonify(reviews)
     except Exception as e:
         logging.error(f"Schedule list error: {e}")
@@ -3569,7 +3647,7 @@ def complete_schedule_review():
     if not review_id:
         return {"error": "missing review_id"}, 400
     try:
-        fsm.storage.schedule.complete_review(review_id)
+        _shared_storage.schedule.complete_review(review_id, student_id=_student_id_from_request())
         return {"status": "ok"}
     except Exception as e:
         logging.error(f"Schedule complete error: {e}")
@@ -3585,8 +3663,11 @@ def health():
         memory_percent = memory.percent
         memory_used_gb = memory.used / (1024**3)
 
-        # Latency: time since last interaction
-        latency = time.time() - fsm.last_interaction_time
+        reg = registry.stats()
+        # Legacy fields keyed to the legacy student's FSM when resident
+        legacy_fsm = registry.peek(DEFAULT_STUDENT_ID)
+        latency = (time.time() - legacy_fsm.last_interaction_time) if legacy_fsm else 0
+        state = legacy_fsm.state if legacy_fsm else "LOBBY"
 
         return {
             "status": "healthy",
@@ -3595,7 +3676,8 @@ def health():
             "cpu_percent": cpu_percent,
             "memory_percent": memory_percent,
             "memory_used_gb": round(memory_used_gb, 2),
-            "state": fsm.state,
+            "state": state,
+            "fsm_registry": {"resident": reg["resident"], "max_size": reg["max_size"]},
         }
     except Exception as e:
         logging.error(f"Health check failed: {e}", exc_info=True)
@@ -3625,7 +3707,7 @@ Return JSON only:
 [{{"title": "Module Name", "description": "What this module covers (1 sentence)"}}]"""
 
     try:
-        result = fsm.llm_client.chat_json(prompt_sys, prompt_user, max_tokens=500)
+        result = get_llm_client().chat_json(prompt_sys, prompt_user, max_tokens=500)
         if isinstance(result, list):
             return {"modules": result}
         elif isinstance(result, dict) and "modules" in result:
@@ -3658,7 +3740,7 @@ Return JSON only:
 [{{"title": "Concept Name", "description": "One sentence about what this covers"}}]"""
 
     try:
-        result = fsm.llm_client.chat_json(prompt_sys, prompt_user, max_tokens=500)
+        result = get_llm_client().chat_json(prompt_sys, prompt_user, max_tokens=500)
         if isinstance(result, list):
             return {"concepts": result}
         elif isinstance(result, dict) and "concepts" in result:
@@ -3701,7 +3783,7 @@ Return JSON only:
 [{{"question": "Your question text", "context": "Why this matters for course quality"}}]"""
 
     try:
-        result = fsm.llm_client.chat_json(prompt_sys, prompt_user, max_tokens=600)
+        result = get_llm_client().chat_json(prompt_sys, prompt_user, max_tokens=600)
         if isinstance(result, list):
             return {"questions": result}
         elif isinstance(result, dict) and "questions" in result:
@@ -3720,6 +3802,7 @@ def create_course_custom():
     if not title:
         return {"error": "Title required"}, 400
 
+    fsm = registry.get(_student_id_from_request())
     if fsm.creation_in_progress:
         return {"error": "Course creation already in progress"}, 409
 
@@ -3762,6 +3845,7 @@ def api_create_course():
     if not topic:
         return jsonify({"error": "topic required"}), 400
 
+    fsm = registry.get(_student_id_from_request())
     if fsm.creation_in_progress:
         return jsonify({"error": "Course creation already in progress"}), 409
 
@@ -3780,6 +3864,7 @@ def api_set_active_course():
     data = request.get_json(force=True)
     uid = data.get("uid", "")
     title = data.get("title", "")
+    fsm = registry.get(_student_id_from_request())
     if uid:
         fsm.active_course_uid = uid
         try:
@@ -3795,6 +3880,7 @@ def api_set_active_course():
 @app.route("/api/reset_state", methods=["POST"])
 def api_reset_state():
     """VG-08: Reset FSM state for test isolation."""
+    fsm = registry.get(_student_id_from_request())
     fsm.state = "LOBBY"
     fsm.active_course_uid = None
     fsm.transcript = []
@@ -3809,12 +3895,13 @@ def api_reset_state():
 @app.route("/api/creation_status", methods=["GET"])
 def api_creation_status():
     """Monitor course creation progress. Returns current phase, topic, and progress."""
-    return jsonify(fsm.creation_status)
+    return jsonify(registry.get(_student_id_from_request()).creation_status)
 
 
 @app.route("/api/cancel_creation", methods=["POST"])
 def api_cancel_creation():
     """Cancel an in-progress course creation."""
+    fsm = registry.get(_student_id_from_request())
     if not fsm.creation_in_progress:
         return jsonify({"status": "no_creation_active"})
     fsm.creation_in_progress = False

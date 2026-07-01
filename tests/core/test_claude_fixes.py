@@ -252,28 +252,43 @@ class TestTranscriptCapping:
 
 
 class TestAtomicWrite:
-    """LRN-8: _save_current_course_progress uses atomic write."""
+    """B15.7 (supersedes LRN-8): progress save is a single-row fsm_sessions
+    upsert in WAL — atomic by construction, no file write at all."""
 
-    def test_save_uses_atomic_write(self):
+    def test_save_upserts_fsm_session_row(self):
         fsm = _make_fsm()
+        fsm.student_id = 'stu_test0001'
+        fsm.grade_band = '9-12'
+        fsm.state = 'SOCRATIC_LEARNING'
         fsm.active_course_uid = 'course_abc'
         fsm.current_lesson_node = {'uid': 'con_1', 'title': 'Test'}
         fsm.syllabus_queue = []
         fsm.completed_topics = set(['con_0'])
-        fsm._atomic_write = MagicMock(return_value=True)
-        
-        with tempfile.NamedTemporaryFile(suffix='.json', mode='w', delete=False) as f:
-            json.dump({'courses': {}}, f)
-            fsm.state_file = f.name
-        
-        try:
-            fsm._save_current_course_progress()
-            fsm._atomic_write.assert_called_once()
-            # Verify it was called with the state file path
-            call_args = fsm._atomic_write.call_args
-            assert call_args[0][0] == fsm.state_file
-        finally:
-            os.unlink(f.name)
+        fsm.transcript = []
+        fsm.conversation_history = []
+        fsm.socratic_type_index = 0
+        fsm.concept_correct_streak = 0
+        fsm.concept_question_count = 0
+        fsm.current_bloom_level = 1
+        fsm.bloom_correct_streak = 0
+        fsm.current_locus_uid = None
+        fsm.current_locus_desc = ''
+        fsm.concept_bloom_target = None
+        fsm.passed_question_types = set()
+        fsm.prior_concepts_summary = []
+        fsm.course_bloom_floor = 1
+        fsm.course_bloom_ceiling = 6
+        fsm.storage.fsm.get.return_value = None
+        fsm.state_file = '/nonexistent/user_state.json'
+
+        fsm._save_current_course_progress()
+
+        fsm.storage.fsm.upsert.assert_called_once()
+        sid, blob = fsm.storage.fsm.upsert.call_args[0]
+        assert sid == 'stu_test0001'
+        data = json.loads(blob)
+        assert data['courses']['course_abc']['current_node']['uid'] == 'con_1'
+        assert data['last_active_uid'] == 'course_abc'
 
 
 # --- LLM Utils Tests ---

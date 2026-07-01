@@ -39,8 +39,8 @@
 | B15.3 | StorageManager sub-store `student_id` scoping + `_VALID_COLUMNS` whitelist update | `storage.py` | every per-user query filters `student_id`; unit-tested | P0 | R0 | done — Progress/Flashcard/Activity/Schedule stores scoped; **note:** `student_id` is a trailing kwarg defaulting to `stu_legacy0` (not leading positional) — same isolation guarantee, zero R0 call-site breakage; removing the default is the R0→R1 cutover (spec 03 §1.2); full suite 603 passed |
 | B15.4 | Flask-Login auth: parent email/pw (argon2), student profile/PIN, role gating | `services/web-ui/app.py` | parent & student login; role gates routes | P0 | R1 | todo |
 | B15.5 | Socket.IO room scoping (fix B6.3 broadcast) | `app.py:172,245,582`; `fsm_logic.py` send_status_update | two-session test shows no cross-student leakage | P0 | R1 | todo |
-| B15.6 | Per-student FSM registry (kill singleton) | new `services/core/fsm_registry.py`; `fsm_logic.py:3498` | N concurrent students hold isolated FSM state | P0 | R1 | todo |
-| B15.7 | Per-student FSM persistence (`fsm_sessions` row replaces `user_state.json`) | `fsm_logic.py:237,1415,1462`; `storage.py` | restart restores each student's position | P0 | R1 | todo |
+| B15.6 | Per-student FSM registry (kill singleton) | new `services/core/fsm_registry.py`; `fsm_logic.py:3498` | N concurrent students hold isolated FSM state | P0 | R1 | done — LRU registry (cap/TTL/flush-on-evict), single sweeper replaces per-FSM threads, per-student RLocks, all routes resolve `registry.get(sid)`; `pytest tests/core/test_fsm_registry.py → 9 passed` |
+| B15.7 | Per-student FSM persistence (`fsm_sessions` row replaces `user_state.json`) | `fsm_logic.py:237,1415,1462`; `storage.py` | restart restores each student's position | P0 | R1 | done — save/load/delete re-pointed to `fsm_sessions` row upsert (atomic in WAL); one-time legacy `user_state.json` import; restart-restore + eviction-lossless tests pass; suite 615 passed |
 | B15.8 | Isolation test suite | `tests/` | student A cannot read/write student B (progress/flashcards/FSM) | P0 | R1 | todo |
 
 ## B16 — Curriculum Catalog & Standards (Workstream B) · P1/P3 · R2/R4

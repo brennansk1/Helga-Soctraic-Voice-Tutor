@@ -21,6 +21,7 @@ def _make_fsm():
     with patch.object(FSM, '__init__', lambda self, *a, **k: None):
         fsm = FSM.__new__(FSM)
     fsm.web_ui_url = 'http://web-ui:5000'
+    fsm.student_id = 'stu_test0001'  # B15.5: every status payload is stamped
     return fsm
 
 

@@ -434,8 +434,8 @@ target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
 │  ├─ B15.3  StorageManager sub-store student_id scoping ........... ✔️  kwarg default stu_legacy0 (R1 cutover)
 │  ├─ B15.4  Flask-Login auth (parent pw / student PIN, roles) ..... ⬜  app.py
 │  ├─ B15.5  Socket.IO room scoping (fixes B6.3 broadcast) ......... ⬜  app.py:172,245,582
-│  ├─ B15.6  Per-student FSM registry (kills global singleton) ..... ⬜  new fsm_registry.py; fsm_logic.py:3498
-│  ├─ B15.7  Per-student FSM persistence (fsm_sessions row) ........ ⬜  replaces user_state.json
+│  ├─ B15.6  Per-student FSM registry (kills global singleton) ..... ✔️  fsm_registry.py LRU+sweeper+locks
+│  ├─ B15.7  Per-student FSM persistence (fsm_sessions row) ........ ✔️  row upsert; legacy JSON import
 │  └─ B15.8  Isolation test suite (A can't read/write B) ........... ⬜
 ├─ B16 Curriculum Catalog & Standards .............................. ⬜  (Workstream B)
 │  ├─ B16.1  standards + concept_standards tables (Utah codes) ..... ⬜
