@@ -81,6 +81,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# B27.1: opt-in structured JSON logs (HELGA_JSON_LOGS=true)
+try:
+    from services.common.logging_utils import configure_json_logging
+    configure_json_logging("web-ui")
+except Exception:
+    pass
+
+
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE + 1024  # Slightly above per-file limit for overhead
 # B9.3: prefer a stable secret from the environment so sessions survive restarts.

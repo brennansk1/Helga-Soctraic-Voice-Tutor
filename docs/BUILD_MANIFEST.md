@@ -116,7 +116,7 @@
 | B22.2 | Skill-tree map (strands=branches, standards=nodes) | catalog renders as visual tree (FE8) | P2 | R3 | todo |
 | B22.3 | Badges per standard/strand; quests/daily challenges | unlocks beyond streaks | P2 | R3 | done — badge catalog (streak/level/XP/exam-pass criteria) with once-only unlock + XP reward; daily quests (answer-5, review-3) with per-day period keys and single-award completion |
 | B22.4 | Interest-themed cosmetic rewards (avatars) | unlockable cosmetics | P2 | R3 | todo |
-| B22.5 | Grade-appropriate framing + on/off toggle | playful K-5, subtle teens; toggle respected | P2 | R3 | todo |
+| B22.5 | Grade-appropriate framing + on/off toggle | playful K-5, subtle teens; toggle respected | P2 | R3 | done — per-student `settings.gamification_enabled=false` returns a muted payload server-side (UI toggle already existed); grade framing rides GRADE_BAND_PROFILES |
 | B22.6 | Safe (within-family/anonymized, no open leaderboards) | no cross-family identity exposure | P2 | R3 | done — by construction: all badge/quest evaluation is against the student's own numbers; no leaderboard surface exists and none is planned |
 
 ## B23 — Production Scaling & Deployment (Workstream J) · P1/P3 · R1/R4
@@ -158,14 +158,14 @@
 | B26.2 | Admin review console (draft→reviewed→published) | only published visible to students | P2 | R2 | done — server-side state machine with all spec-04 §4.1 guards (untagged-concepts block, reviewer sign-off, full-coverage + no-unconfirmed-LLM-tag publish gates, revise action) + ADMIN_TOKEN endpoints on RAG; **console UI = API-first, HTML front-end deferred to polish** |
 | B26.3 | Catalog versioning + changelog | students pinned to a version | P2 | R3 | done — per-publish immutable `versions/v{n}.json` snapshots + append-only CHANGELOG; `republish` bumps version; `get_version_snapshot` serves pinned enrollments (enrollments.course_version, v9) |
 | B26.4 | Standards-coverage audit report | shows published vs gaps per Utah code | P2 | R3 | done — `StandardsStore.coverage_report` + `/api/admin/catalog/coverage` |
-| B26.5 | Hydration provenance log | sources recorded (supports F1) | P2 | R3 | todo |
+| B26.5 | Hydration provenance log | sources recorded (supports F1) | P2 | R3 | done — hydrator writes a hydration_provenance row (sources JSON + model) per concept |
 
 ## B27 — Observability, Analytics & Unit Economics (Workstream N) · P3 · R4
 
 | ID | Item | Acceptance | Pri | Rel | Status |
 |---|------|------|---|---|---|
-| B27.1 | Structured JSON logging + correlation | logs carry `student_id`/request id | P3 | R4 | todo |
-| B27.2 | Prometheus metrics (GPU/latency/sessions) | metrics scrapeable | P3 | R4 | todo |
+| B27.1 | Structured JSON logging + correlation | logs carry `student_id`/request id | P3 | R4 | done — `logging_utils.py` JsonFormatter + with_student adapter; opt-in HELGA_JSON_LOGS=true across all three services |
+| B27.2 | Prometheus metrics (GPU/latency/sessions) | metrics scrapeable | P3 | R4 | done (lite) — `/metrics` on core in Prometheus text format (gate/breaker/registry counters); full prometheus_client swap is endpoint-compatible |
 | B27.3 | xAPI learning-analytics event log | events feed dashboard/analytics | P3 | R4 | todo |
 | B27.4 | Cost / tokens-per-student tracking | per-student token/GPU-sec reported | P3 | R4 | todo |
 | B27.5 | Ollama circuit-breaker + alerting (closes B9.5) | graceful degradation + alert | P3 | R4 | done — OllamaBreaker (CLOSED→OPEN after N consecutive failures→HALF_OPEN single probe) wraps all llm_client paths; fast-fail instead of 60s hangs; state changes logged/counted; env-tunable |

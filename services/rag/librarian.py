@@ -53,6 +53,14 @@ except Exception as e:
 
 app = Flask(__name__)
 
+# B27.1: opt-in structured JSON logs (HELGA_JSON_LOGS=true)
+try:
+    from services.common.logging_utils import configure_json_logging
+    configure_json_logging("rag-engine")
+except Exception:
+    pass
+
+
 # B18: mount the assessment engine blueprint (spec 05 §0 — shares this
 # process, the StorageManager, and llm_utils; no new container).
 try:
@@ -1844,6 +1852,16 @@ def get_gamification():
     legacy student's first read). student_id injected by the web-ui proxy."""
     sid = request.args.get("student_id")
     try:
+        # B22.5: per-student toggle — a parent can turn gamification off for
+        # a learner; the API then reports a muted payload the UI hides.
+        student = storage.accounts.get_student(sid) if sid else None
+        if student:
+            import json as _json
+            settings = _json.loads(student.get("settings") or "{}")
+            if settings.get("gamification_enabled") is False:
+                return jsonify({"enabled": False, "total_xp": 0, "level": 1,
+                                "streak_days": 0, "daily_xp": 0,
+                                "achievements_unlocked": []})
         row = storage.gamification.get(student_id=sid)
         daily_goal = 5
         try:

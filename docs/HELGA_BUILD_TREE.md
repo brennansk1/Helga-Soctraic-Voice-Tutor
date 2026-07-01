@@ -483,7 +483,7 @@ target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
 │  ├─ B22.2  Skill-tree map (strands=branches, standards=nodes) .... ⬜  FE8
 │  ├─ B22.3  Badges per standard/strand; quests/daily challenges ... ✔️  catalog + daily quests
 │  ├─ B22.4  Interest-themed cosmetic rewards (avatars) ............ ⬜
-│  ├─ B22.5  Grade-appropriate framing + on/off toggle ............ ⬜
+│  ├─ B22.5  Grade-appropriate framing + on/off toggle ............ ✔️  server-side toggle
 │  └─ B22.6  Safe (within-family/anonymized, no open leaderboards) . ✔️  by construction
 ├─ B23 Production Scaling & Deployment ............................. 🔨  (Workstream J)
 │  ├─ B23.1  GPU semaphore + per-student fair queue ............... ✔️  gpu_gate.py; RR fairness; 12 tests
@@ -504,15 +504,15 @@ target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
 │  ├─ B25.3  ELL simplified-language + glossing .................. ⬜
 │  ├─ B25.4  IEP/504 accommodation flags honored by FSM/exams ..... ⬜
 │  └─ B25.5  Alt-text/captions → TTS/text-only ................... ⬜
-├─ B26 Content Authoring & Review CMS .............................. 🔨  (Workstream M; legal+quality gate)
+├─ B26 Content Authoring & Review CMS .............................. ✔️  (Workstream M — COMPLETE)
 │  ├─ B26.1  Offline authoring job runner ......................... ✔️  CLI, sequential
 │  ├─ B26.2  Admin review console (draft→reviewed→published) ...... ✔️  guarded state machine + API
 │  ├─ B26.3  Catalog versioning + changelog ...................... ✔️  snapshots + republish
 │  ├─ B26.4  Standards-coverage audit report ..................... ✔️  coverage_report + endpoint
-│  └─ B26.5  Hydration provenance log ............................ ⬜  (v9 table ready; hydrator wiring)
+│  └─ B26.5  Hydration provenance log ............................ ✔️  per-concept rows
 └─ B27 Observability, Analytics & Unit Economics ................... ⬜  (Workstream N; expands B9.7)
-   ├─ B27.1  Structured JSON logging + correlation ............... ⬜
-   ├─ B27.2  Prometheus metrics (GPU/latency/sessions) ........... ⬜
+   ├─ B27.1  Structured JSON logging + correlation ............... ✔️  opt-in JsonFormatter
+   ├─ B27.2  Prometheus metrics (GPU/latency/sessions) ........... ✔️  /metrics (lite)
    ├─ B27.3  xAPI learning-analytics event log .................. ⬜
    ├─ B27.4  Cost / tokens-per-student tracking ................. ⬜
    └─ B27.5  Ollama circuit-breaker + alerting (closes B9.5) ..... ✔️  OllamaBreaker in gpu_gate

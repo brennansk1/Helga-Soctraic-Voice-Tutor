@@ -1909,6 +1909,24 @@ class ContentHydrator:
             # Save to filesystem (thread-safe: each concept writes a different file)
             self.storage.courses.save_concept_content(course_uid, uid, structured_md)
 
+            # B26.5: hydration provenance — durable record of which sources
+            # and model produced this concept (legal/licensing posture).
+            try:
+                _prov_conn = getattr(self.storage, "progress", None)
+                if _prov_conn is not None:
+                    _prov_conn._get_db().execute(
+                        "INSERT INTO hydration_provenance (course_uid, concept_uid, sources, model) "
+                        "VALUES (?,?,?,?)",
+                        (course_uid, uid,
+                         json.dumps([{"title": s.get("title"), "url": s.get("url"),
+                                      "type": s.get("type"),
+                                      "tier": s.get("domain_tier")}
+                                     for s in (research_sources or [])]),
+                         os.getenv("OLLAMA_MODEL", "qwen3.5:9b")))
+                    _prov_conn._get_db().commit()
+            except Exception as _prov_err:
+                logger.debug(f"provenance write skipped: {_prov_err}")
+
             if self.status_callback:
                 self.status_callback(f"STRUCT:HYDRATED:{uid}:{source_type}:{title}")
 

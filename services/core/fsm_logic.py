@@ -210,6 +210,14 @@ logging.basicConfig(
 
 app = Flask(__name__)
 
+# B27.1: opt-in structured JSON logs (HELGA_JSON_LOGS=true)
+try:
+    from services.common.logging_utils import configure_json_logging
+    configure_json_logging("core-logic")
+except Exception:
+    pass
+
+
 
 class MnemosyneFSM:
     def __init__(self, student_id=None, storage=None):
@@ -3784,6 +3792,34 @@ def complete_schedule_review():
     except Exception as e:
         logging.error(f"Schedule complete error: {e}")
         return {"error": str(e)}, 500
+
+
+@app.route("/metrics", methods=["GET"])
+def metrics():
+    """B27.2-lite: ops counters in Prometheus text format — GPU gate,
+    Ollama breaker, FSM registry. Scrape-ready; a full prometheus_client
+    integration can replace this without changing the endpoint."""
+    try:
+        from gpu_gate import get_gpu_gate, get_breaker
+    except ImportError:
+        from services.core.gpu_gate import get_gpu_gate, get_breaker
+    gate = get_gpu_gate().stats()
+    breaker = get_breaker().stats()
+    reg = registry.stats()
+    lines = [
+        f"helga_gpu_inflight {gate['inflight']}",
+        f"helga_gpu_cap {gate['cap']}",
+        f"helga_gpu_waiting_interactive {gate['waiting_interactive']}",
+        f"helga_gpu_waiting_background {gate['waiting_background']}",
+        f"helga_gpu_granted_total {gate['granted_total']}",
+        f"helga_gpu_busy_emits_total {gate['busy_emits']}",
+        f"helga_gpu_overloads_total {gate['overloads']}",
+        f"helga_breaker_open {1 if breaker['state'] == 'open' else 0}",
+        f"helga_breaker_state_changes_total {breaker['state_changes']}",
+        f"helga_fsm_resident {reg['resident']}",
+        f"helga_fsm_max {reg['max_size']}",
+    ]
+    return "\n".join(lines) + "\n", 200, {"Content-Type": "text/plain; version=0.0.4"}
 
 
 @app.route("/health", methods=["GET"])
