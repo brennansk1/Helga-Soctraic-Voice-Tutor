@@ -47,8 +47,8 @@
 
 | ID | Item | Target | Acceptance | Pri | Rel | Status |
 |---|------|------|------|---|---|---|
-| B16.1 | `standards` + `concept_standards` tables (Utah strand codes) | `storage.py` | codes from reference doc loadable; join works | P1 | R2 | todo |
-| B16.2 | Read-only catalog store (`data/catalog/`, `catalog`+`version` flags) | `storage.py`, `librarian.py` | catalog separate from user courses; read-only to students | P1 | R2 | todo |
+| B16.1 | `standards` + `concept_standards` tables (Utah strand codes) | `storage.py` | codes from reference doc loadable; join works | P1 | R2 | done — v5 migration; StandardsStore (upsert/list/tagging/coverage_report, retire-block); `standards_loader.py` YAML/JSON idempotent seed + prune; 16 tests |
+| B16.2 | Read-only catalog store (`data/catalog/`, `catalog`+`version` flags) | `storage.py`, `librarian.py` | catalog separate from user courses; read-only to students | P1 | R2 | done — `catalog_courses` CourseStore at `data/catalog/courses/`; catalog columns synced to SQLite; `list_catalog_courses` filters published-only for students; suite 676 passed |
 | B16.3 | Standards-driven batch build pipeline (reuse Skeleton/Auditor/Hydrator) | `services/core/course_builder.py`, CMS runner | builds a course from a standards spec offline | P1 | R2 | todo |
 | B16.4 | Phase-1 subjects published (K-8 Math, K-12 ELA, GFL, US Gov) | catalog | each published concept tags ≥1 Utah code; human-reviewed | P1 | R2 | todo |
 | B16.5 | Phase-2 subjects (SEEd K-8 + 4 HS sciences, Social Studies, CS theory) | catalog | published + reviewed | P3 | R4 | todo |

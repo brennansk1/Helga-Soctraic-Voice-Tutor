@@ -84,6 +84,12 @@ class StorageManager:
         self.enrollments = EnrollmentStore(self.db_path)
         self.consent = ConsentStore(self.db_path)
         self.fsm = FsmSessionStore(self.db_path)
+        # B16: standards layer + read-only catalog course files
+        # (data/catalog/courses/, physically separate from user electives)
+        self.standards = StandardsStore(self.db_path)
+        self.catalog_dir = os.path.join(data_dir, "catalog", "courses")
+        os.makedirs(self.catalog_dir, exist_ok=True)
+        self.catalog_courses = CourseStore(self.catalog_dir, self.data_dir)
 
     def _init_db(self):
         """Create SQLite tables if they don't exist."""
@@ -369,6 +375,48 @@ class StorageManager:
                 logger.info("Schema migrated to v4: multi-tenancy core (tenancy tables, "
                             "student_id scoping, legacy backfill, user_progress PK rebuild)")
 
+            # Schema migration v4 → v5: standards layer + catalog columns
+            # (design spec 01 §4, spec 04). Catalog tables carry NO student_id —
+            # they are global and read-only to students.
+            if current_version < 5:
+                cursor.executescript("""
+                    CREATE TABLE IF NOT EXISTS standards (
+                        code         TEXT PRIMARY KEY,
+                        subject      TEXT NOT NULL,
+                        grade_band   TEXT,
+                        grade_numeric INTEGER,
+                        strand       TEXT NOT NULL,
+                        text         TEXT NOT NULL,
+                        is_enrichment INTEGER DEFAULT 0,
+                        source       TEXT DEFAULT 'USBE',
+                        adopted_year INTEGER
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_standards_subject ON standards(subject, grade_band);
+
+                    CREATE TABLE IF NOT EXISTS concept_standards (
+                        concept_uid   TEXT NOT NULL,
+                        standard_code TEXT NOT NULL REFERENCES standards(code),
+                        coverage      TEXT DEFAULT 'full',
+                        PRIMARY KEY (concept_uid, standard_code)
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_cs_standard ON concept_standards(standard_code);
+                """)
+                for col, decl in (
+                        ("subject", "TEXT"), ("grade_band", "TEXT"),
+                        ("grade_numeric", "INTEGER"),
+                        ("is_catalog", "INTEGER DEFAULT 0"),
+                        ("catalog_status", "TEXT DEFAULT 'draft'"),
+                        ("version", "INTEGER DEFAULT 1"),
+                        ("visibility", "TEXT DEFAULT 'private'"),
+                        ("reviewed_by", "TEXT"), ("published_at", "TEXT"),
+                        ("enrichment_included", "INTEGER DEFAULT 0")):
+                    try:
+                        cursor.execute(f"ALTER TABLE courses ADD COLUMN {col} {decl}")
+                    except sqlite3.OperationalError:
+                        pass  # Column already exists
+                cursor.execute("UPDATE schema_version SET version = 5")
+                logger.info("Schema migrated to v5: standards + concept_standards + catalog columns")
+
             conn.commit()
         finally:
             conn.close()
@@ -401,18 +449,28 @@ class CourseStore:
             course_dict["status"] = "skeleton"
 
         # AUTO-10: Write SQLite row first; only write JSON if SQLite succeeds
+        cat = course_dict.get("catalog") or {}
         db_path = os.path.join(self.data_dir, "helga.db")
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT OR REPLACE INTO courses (uid, title, overview, status, teaching_style)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO courses (uid, title, overview, status, teaching_style,
+                    subject, grade_band, grade_numeric, is_catalog, catalog_status,
+                    version, visibility, reviewed_by, published_at, enrichment_included)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 uid,
                 course_dict.get("title", ""),
                 course_dict.get("overview", ""),
                 course_dict.get("status", "unknown"),
-                course_dict.get("teaching_style", "")
+                course_dict.get("teaching_style", ""),
+                cat.get("subject"), cat.get("grade_band"), cat.get("grade_numeric"),
+                1 if cat.get("is_catalog") else 0,
+                cat.get("catalog_status", "draft") if cat else "draft",
+                cat.get("version", 1) if cat else 1,
+                cat.get("visibility", "private") if cat else "private",
+                cat.get("reviewed_by"), cat.get("published_at"),
+                1 if cat.get("enrichment_included") else 0,
             ))
             conn.commit()
 
@@ -460,19 +518,54 @@ class CourseStore:
             db_path = os.path.join(self.data_dir, "helga.db")
             with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
+                cat = course_dict.get("catalog") or {}
                 cursor.execute("""
-                    UPDATE courses SET title=?, overview=?, status=?, teaching_style=?
+                    UPDATE courses SET title=?, overview=?, status=?, teaching_style=?,
+                        subject=?, grade_band=?, grade_numeric=?, is_catalog=?,
+                        catalog_status=?, version=?, visibility=?, reviewed_by=?,
+                        published_at=?, enrichment_included=?
                     WHERE uid=?
                 """, (
                     course_dict.get("title", ""),
                     course_dict.get("overview", ""),
                     course_dict.get("status", "unknown"),
                     course_dict.get("teaching_style", ""),
+                    cat.get("subject"), cat.get("grade_band"), cat.get("grade_numeric"),
+                    1 if cat.get("is_catalog") else 0,
+                    cat.get("catalog_status", "draft") if cat else "draft",
+                    cat.get("version", 1) if cat else 1,
+                    cat.get("visibility", "private") if cat else "private",
+                    cat.get("reviewed_by"), cat.get("published_at"),
+                    1 if cat.get("enrichment_included") else 0,
                     uid
                 ))
                 conn.commit()
         except Exception as e:
             logger.error(f"Failed to update course metadata in SQLite: {e}")
+
+    def list_catalog_courses(self, published_only: bool = True,
+                             subject: str = None, grade_band: str = None) -> List[dict]:
+        """B16.2: catalog listing. Students only ever see
+        is_catalog=1 AND catalog_status='published' rows."""
+        q = "SELECT * FROM courses WHERE is_catalog = 1"
+        params = []
+        if published_only:
+            q += " AND catalog_status = 'published'"
+        if subject:
+            q += " AND subject = ?"
+            params.append(subject)
+        if grade_band:
+            q += " AND grade_band = ?"
+            params.append(grade_band)
+        try:
+            with sqlite3.connect(os.path.join(self.data_dir, "helga.db")) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(q + " ORDER BY subject, grade_numeric, title",
+                                    params).fetchall()
+                return [dict(r) for r in rows]
+        except Exception as e:
+            logger.error(f"Failed to list catalog courses: {e}")
+            return []
 
     def list_courses(self) -> List[dict]:
         """List all courses (metadata only from SQLite)."""
@@ -1727,3 +1820,120 @@ class FsmSessionStore:
         conn = self._get_db()
         conn.execute("DELETE FROM fsm_sessions WHERE student_id = ?", (_sid(student_id),))
         conn.commit()
+
+
+class StandardsStore:
+    """Utah standards + concept↔standard tagging (B16.1). Global, read-only
+    to students; written only by the standards loader and the catalog admin
+    job — never in the student request path."""
+
+    _VALID_COLUMNS = {'code', 'subject', 'grade_band', 'grade_numeric', 'strand',
+                      'text', 'is_enrichment', 'source', 'adopted_year'}
+    SUBJECTS = {'math', 'ela', 'science', 'social_studies', 'world_lang',
+                'health', 'cs', 'financial_lit', 'library_media'}
+    COVERAGE = {'full', 'partial', 'enrichment'}
+
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self._db = _ThreadLocalDB(db_path)
+
+    def _get_db(self) -> sqlite3.Connection:
+        return self._db.get()
+
+    def upsert(self, code: str, subject: str, strand: str, text: str,
+               grade_band: str = None, grade_numeric: int = None,
+               is_enrichment: bool = False, source: str = 'USBE',
+               adopted_year: int = None) -> bool:
+        """Idempotent upsert keyed on the Utah code. Returns True if a new
+        row was inserted, False if an existing one was replaced."""
+        if subject not in self.SUBJECTS:
+            raise ValueError(f"unknown subject {subject!r}")
+        if not code or not strand or not text:
+            raise ValueError("code, strand and text are required")
+        conn = self._get_db()
+        existed = conn.execute("SELECT 1 FROM standards WHERE code = ?", (code,)).fetchone()
+        conn.execute(
+            "INSERT OR REPLACE INTO standards (code, subject, grade_band, grade_numeric, "
+            "strand, text, is_enrichment, source, adopted_year) VALUES (?,?,?,?,?,?,?,?,?)",
+            (code, subject, grade_band, grade_numeric, strand, text,
+             1 if is_enrichment else 0, source, adopted_year))
+        conn.commit()
+        return existed is None
+
+    def get(self, code: str) -> Optional[dict]:
+        row = self._get_db().execute("SELECT * FROM standards WHERE code = ?", (code,)).fetchone()
+        return dict(row) if row else None
+
+    def list(self, subject: str = None, grade_band: str = None,
+             include_enrichment: bool = True) -> List[dict]:
+        q = "SELECT * FROM standards WHERE 1=1"
+        params = []
+        if subject:
+            q += " AND subject = ?"
+            params.append(subject)
+        if grade_band:
+            q += " AND grade_band = ?"
+            params.append(grade_band)
+        if not include_enrichment:
+            q += " AND is_enrichment = 0"
+        rows = self._get_db().execute(q + " ORDER BY code", params).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete(self, code: str) -> bool:
+        """Delete a retired code. Refuses when concept_standards rows point at
+        it (would orphan published content)."""
+        conn = self._get_db()
+        used = conn.execute("SELECT 1 FROM concept_standards WHERE standard_code = ? LIMIT 1",
+                            (code,)).fetchone()
+        if used:
+            return False
+        conn.execute("DELETE FROM standards WHERE code = ?", (code,))
+        conn.commit()
+        return True
+
+    # -- concept tagging ------------------------------------------------------
+
+    def sync_concept_standards(self, concept_uids: List[str], mappings: List[dict]):
+        """Delete-then-insert the concept_standards rows for one course's
+        concepts. `mappings` = [{concept_uid, standard_code, coverage}]. Only
+        the catalog admin job calls this."""
+        conn = self._get_db()
+        if concept_uids:
+            ph = ",".join("?" for _ in concept_uids)
+            conn.execute(f"DELETE FROM concept_standards WHERE concept_uid IN ({ph})",
+                         concept_uids)
+        for m in mappings:
+            coverage = m.get("coverage", "full")
+            if coverage not in self.COVERAGE:
+                raise ValueError(f"invalid coverage {coverage!r}")
+            conn.execute(
+                "INSERT OR REPLACE INTO concept_standards (concept_uid, standard_code, coverage) "
+                "VALUES (?, ?, ?)",
+                (m["concept_uid"], m["standard_code"], coverage))
+        conn.commit()
+
+    def standards_for_concept(self, concept_uid: str) -> List[dict]:
+        rows = self._get_db().execute(
+            "SELECT cs.standard_code, cs.coverage, s.strand, s.subject, s.text "
+            "FROM concept_standards cs JOIN standards s ON s.code = cs.standard_code "
+            "WHERE cs.concept_uid = ?", (concept_uid,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def concepts_for_standard(self, standard_code: str) -> List[dict]:
+        rows = self._get_db().execute(
+            "SELECT concept_uid, coverage FROM concept_standards WHERE standard_code = ?",
+            (standard_code,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def coverage_report(self, subject: str = None) -> List[dict]:
+        """Per-standard count of tagged concepts (B26.4 audit input)."""
+        q = ("SELECT s.code, s.subject, s.grade_band, s.strand, s.is_enrichment, "
+             "COUNT(cs.concept_uid) AS concept_count "
+             "FROM standards s LEFT JOIN concept_standards cs ON cs.standard_code = s.code ")
+        params = []
+        if subject:
+            q += "WHERE s.subject = ? "
+            params.append(subject)
+        q += "GROUP BY s.code ORDER BY s.subject, s.code"
+        rows = self._get_db().execute(q, params).fetchall()
+        return [dict(r) for r in rows]

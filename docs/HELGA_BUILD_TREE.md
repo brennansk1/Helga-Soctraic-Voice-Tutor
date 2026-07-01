@@ -437,9 +437,9 @@ target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
 │  ├─ B15.6  Per-student FSM registry (kills global singleton) ..... ✔️  fsm_registry.py LRU+sweeper+locks
 │  ├─ B15.7  Per-student FSM persistence (fsm_sessions row) ........ ✔️  row upsert; legacy JSON import
 │  └─ B15.8  Isolation test suite (A can't read/write B) ........... ✔️  all 9 spec-03 §9 rows
-├─ B16 Curriculum Catalog & Standards .............................. ⬜  (Workstream B)
-│  ├─ B16.1  standards + concept_standards tables (Utah codes) ..... ⬜
-│  ├─ B16.2  Read-only catalog store (data/catalog/, catalog flag) . ⬜  separate from user courses
+├─ B16 Curriculum Catalog & Standards .............................. 🔨  (Workstream B)
+│  ├─ B16.1  standards + concept_standards tables (Utah codes) ..... ✔️  v5 + StandardsStore + loader
+│  ├─ B16.2  Read-only catalog store (data/catalog/, catalog flag) . ✔️  published-only student view
 │  ├─ B16.3  Standards-driven batch build pipeline ................. ⬜  reuses Skeleton/Auditor/Hydrator
 │  ├─ B16.4  Phase-1 subjects published (K-8 Math, K-12 ELA, GFL, USG) ⬜
 │  ├─ B16.5  Phase-2 subjects (SEEd, Social Studies, CS) ........... ⬜
