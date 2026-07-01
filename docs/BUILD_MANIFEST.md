@@ -101,12 +101,12 @@
 
 | ID | Item | Acceptance | Pri | Rel | Status |
 |---|------|------|---|---|---|
-| B21.1 | COPPA verifiable parental consent + data minimization | consent captured before child use (`consent_records`) | P1 | R2 | todo |
-| B21.2 | FERPA / Utah Student Data Protection Act handling | access/export/delete + retention policy | P1 | R2 | todo |
-| B21.3 | Self-hosted inference (no minor data to 3rd-party LLM) | inference stays on our GPU; documented | P1 | R2 | todo |
-| B21.4 | Health Strand 6 consent gating (abstinence framing) | gated by `consent_records`; Utah-Code framing | P1 | R2 | todo |
-| B21.5 | Minor-safe tutoring guardrails (profanity/safety) | safety filter on free-text for minors (extends B8) | P1 | R2 | todo |
-| B21.6 | ToS/Privacy Policy + Utah Fits All eligibility posture | published; provider-eligibility documented | P2 | R2 | todo |
+| B21.1 | COPPA verifiable parental consent + data minimization | consent captured before child use (`consent_records`) | P1 | R2 | done — TOS consent at signup, per-child COPPA consent at student creation (versioned, method+IP recorded); minimal child fields (name/band/interests) |
+| B21.2 | FERPA / Utah Student Data Protection Act handling | access/export/delete + retention policy | P1 | R2 | done — parent dashboard export (all record classes) + confirmed delete (11-table purge); every access/export/delete writes `audit_log`; retention stated in PRIVACY.md |
+| B21.3 | Self-hosted inference (no minor data to 3rd-party LLM) | inference stays on our GPU; documented | P1 | R2 | done — architectural (Ollama local, all LLM traffic through llm_client/llm_utils); documented in docs/legal/PRIVACY.md |
+| B21.4 | Health Strand 6 consent gating (abstinence framing) | gated by `consent_records`; Utah-Code framing | P1 | R2 | done — `concept_is_health_strand6` helper; FSM render backstop (CONSENT_REQUIRED, instant re-gate on withdrawal, fails closed); HEALTH_STRAND6_FRAMING in tutor prompt; enrollment-time catalog filter wires in with the FE5 catalog browse |
+| B21.5 | Minor-safe tutoring guardrails (profanity/safety) | safety filter on free-text for minors (extends B8) | P1 | R2 | done — output moderation on every tutor message (suppress+fallback+audit, keyword-density rule); band-aware profanity; abuse_disclosure category; self-harm/abuse → crisis resources + immediate parent alert (no transcript in alert); 15 tests |
+| B21.6 | ToS/Privacy Policy + Utah Fits All eligibility posture | published; provider-eligibility documented | P2 | R2 | done (draft) — versioned v1 docs in docs/legal/; **counsel sign-off required before launch** (spec 08 §11) |
 
 ## B22 — Gamification 2.0 (Workstream H) · P2 · R3
 

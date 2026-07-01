@@ -471,13 +471,13 @@ target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
 │  ├─ B20.2  Webhook → subscriptions mirror ....................... ⬜
 │  ├─ B20.3  Seat enforcement (seats vs student count) ............ ⬜
 │  └─ B20.4  Grant/invoice-friendly receipts ...................... ⬜  Utah Fits All expense docs
-├─ B21 Compliance, Privacy & Safety ............................... ⬜  (Workstream F)
-│  ├─ B21.1  COPPA verifiable parental consent + data minimization  ⬜  consent_records
-│  ├─ B21.2  FERPA / Utah Student Data Protection Act handling ..... ⬜  access/export/delete, retention
-│  ├─ B21.3  Self-hosted inference (no minor data to 3rd-party LLM)  ⬜  compliance advantage (locks AI-engine choice)
-│  ├─ B21.4  Health Strand 6 consent gating (abstinence framing) ... ⬜  Utah Code
-│  ├─ B21.5  Minor-safe tutoring guardrails (profanity/safety) ..... ⬜  extends B8
-│  └─ B21.6  ToS/Privacy Policy + Utah Fits All eligibility posture  ⬜
+├─ B21 Compliance, Privacy & Safety ............................... ✔️  (Workstream F — COMPLETE*)
+│  ├─ B21.1  COPPA verifiable parental consent + data minimization  ✔️  signup + per-child consent
+│  ├─ B21.2  FERPA / Utah Student Data Protection Act handling ..... ✔️  export/delete + audit trail
+│  ├─ B21.3  Self-hosted inference (no minor data to 3rd-party LLM)  ✔️  architectural; documented
+│  ├─ B21.4  Health Strand 6 consent gating (abstinence framing) ... ✔️  render backstop + framing
+│  ├─ B21.5  Minor-safe tutoring guardrails (profanity/safety) ..... ✔️  output moderation + escalation
+│  └─ B21.6  ToS/Privacy Policy + Utah Fits All posture ............ ✔️  v1 drafts (*counsel sign-off)
 ├─ B22 Gamification 2.0 ............................................ ⬜  (Workstream H; baseline XP/streak skeletal)
 │  ├─ B22.1  Wire existing XP everywhere, per-student .............. ⬜  librarian.py gamification
 │  ├─ B22.2  Skill-tree map (strands=branches, standards=nodes) .... ⬜  FE8
