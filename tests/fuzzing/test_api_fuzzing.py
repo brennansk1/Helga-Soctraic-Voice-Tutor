@@ -17,22 +17,13 @@ from unittest.mock import patch, MagicMock
 from hypothesis import given, settings, HealthCheck, assume
 from hypothesis import strategies as st
 
-# ── Module-level mocking for gevent/SocketIO ──────────────────────────
-_mock_gevent = MagicMock()
-_mock_gevent.monkey = MagicMock()
-_mock_gevent.monkey.patch_all = MagicMock()
-sys.modules["gevent"] = _mock_gevent
-sys.modules["gevent.monkey"] = _mock_gevent.monkey
-sys.modules["socketio"] = MagicMock()
-_mock_flask_socketio = MagicMock()
-_mock_flask_socketio.SocketIO.return_value = MagicMock()
-sys.modules["flask_socketio"] = _mock_flask_socketio
-
+# The web-ui app is imported REAL (no sys.modules mocking): gevent and
+# flask_socketio are genuine test dependencies, and mocking them here used to
+# poison the module cache for every later test module that needed the real
+# Socket.IO stack (B15.5 room-scoping tests). Route-level emits without
+# connected clients are harmless no-ops.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../services/web-ui")))
 
-import importlib
-if "app" in sys.modules:
-    del sys.modules["app"]
 import app as web_app
 
 
@@ -328,7 +319,9 @@ class TestThinkingStatusFuzzing:
             data=json.dumps(data, default=str),
             content_type="application/json",
         )
-        assert rv.status_code == 200
+        # 200 = delivered to the owner's room; 202 = unowned payload dropped
+        # (B15.5 fail-closed). Both are non-crash outcomes.
+        assert rv.status_code in (200, 202)
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -377,7 +370,8 @@ class TestQueryParamFuzzing:
             mock_resp.json.return_value = {"status": "ready"}
             mock_get.return_value = mock_resp
             rv = client.get(f"/api/course_status/{uid}")
-            assert rv.status_code in (200, 404, 502)
+            # 308 = Flask redirect for path-merging uids (e.g. '/0') — safe
+            assert rv.status_code in (200, 308, 404, 502)
 
 
 # ─────────────────────────────────────────────────────────────────────

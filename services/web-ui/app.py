@@ -1,5 +1,10 @@
-from gevent import monkey; monkey.patch_all()
-from flask import Flask, render_template, request, jsonify, session
+import sys as _sys
+if "pytest" not in _sys.modules:
+    # Server runtime only: gevent monkey-patching mid-pytest-run would hook
+    # threading/ssl after real threads exist and deadlock the suite.
+    from gevent import monkey
+    monkey.patch_all()
+from flask import Flask, render_template, request, jsonify, session, abort
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import requests
 import time
@@ -118,8 +123,14 @@ def csrf_protect(f):
         return f(*args, **kwargs)
     return decorated
 
-# Track initiating SID for scoped status updates (AUTO-4)
-_creation_initiator_sid = None
+# B15.4: auth module (session-key contract, spec 03 §1). init_auth is called
+# after _get_storage is defined below.
+import auth as helga_auth
+from auth import (
+    current_parent_id, current_student_id, owns_student,
+    parent_required, student_session_required, owns_student_required,
+    hash_secret, verify_secret,
+)
 
 # Service URLs — use environment variables with container name defaults
 SERVICES = {
@@ -134,47 +145,49 @@ SERVICES = {
 
 # --- Background Pollers ---
 
+def _fetch_student_state(student_id):
+    """Fetch one student's FSM state + course structure enrichment."""
+    fsm_resp = requests.get(f'{SERVICES["core"]}/state',
+                            params={'student_id': student_id}, timeout=2)
+    fsm_resp.raise_for_status()
+    full_state = dict(fsm_resp.json())
+
+    active_course_uid = full_state.get('active_course_uid')
+    try:
+        if active_course_uid:
+            rag_params = {
+                'uid': active_course_uid,
+                'current_lesson_uid': full_state.get('current_lesson_uid'),
+                'completed_topics': ','.join(full_state.get('completed_topics', [])),
+                'student_id': student_id,
+            }
+            rag_resp = requests.get(f'{SERVICES["rag"]}/api/course_structure',
+                                    params=rag_params, timeout=2)
+            rag_resp.raise_for_status()
+            full_state['course_structure'] = rag_resp.json()
+        else:
+            full_state['course_structure'] = None
+            full_state['active_course_uid'] = None
+    except Exception as rag_err:
+        logger.warning(f"course_structure enrichment failed (non-fatal): {rag_err}")
+        full_state['course_structure'] = None
+    return full_state
+
+
 def state_poller():
-    """Periodically poll the core service for state and broadcast it to all clients."""
+    """B15.5: poll per CONNECTED student and emit to that student's room only
+    (replaces the single-tenant global broadcast). Event-driven push also
+    happens on /api/event completion; this poller is the transitional
+    keep-fresh loop and scales with connected students, not sockets."""
     while True:
-        full_state = {}
-        try:
-            # 1. Fetch FSM state from core service
-            fsm_resp = requests.get(f'{SERVICES["core"]}/state', timeout=2)
-            fsm_resp.raise_for_status()
-            fsm_state = fsm_resp.json()
-            full_state.update(fsm_state)
-
-            active_course_uid = fsm_state.get('active_course_uid')
-            current_lesson_uid = fsm_state.get('current_lesson_uid')
-            completed_topics = fsm_state.get('completed_topics', [])
-
-            # 2. Fetch course structure from RAG service if a course is active
-            # Wrapped in its own try/except so a RAG failure doesn't block state broadcasting
+        for sid_student in list(_connected_students.keys()):
             try:
-                if active_course_uid:
-                    rag_params = {
-                        'uid': active_course_uid,
-                        'current_lesson_uid': current_lesson_uid,
-                        'completed_topics': ','.join(completed_topics)
-                    }
-                    rag_resp = requests.get(f'{SERVICES["rag"]}/api/course_structure', params=rag_params, timeout=2)
-                    rag_resp.raise_for_status()
-                    course_structure = rag_resp.json()
-                    full_state['course_structure'] = course_structure
-                else:
-                    full_state['course_structure'] = None
-                    full_state['active_course_uid'] = None
-            except Exception as rag_err:
-                logger.warning(f"State Poller: RAG course_structure failed (non-fatal): {rag_err}")
-                full_state['course_structure'] = None
-
-            socketio.emit('state_update', full_state)
-
-        except requests.exceptions.RequestException as e:
-            logger.error(f"State Poller: Failed to get core state: {e}")
-        except Exception as e:
-            logger.error(f"State Poller: An unexpected error occurred: {e}", exc_info=True)
+                state = _fetch_student_state(sid_student)
+                socketio.emit('state_update', state, room=f"student:{sid_student}")
+            except requests.exceptions.RequestException as e:
+                logger.error(f"State Poller: core state failed for {sid_student}: {e}")
+            except Exception as e:
+                logger.error(f"State Poller: unexpected error: {e}", exc_info=True)
         socketio.sleep(2)
 
 def health_check_poller():
@@ -235,26 +248,55 @@ def health_check_poller():
 
 # --- Flask-SocketIO Server Event Handlers ---
 
+# B15.5: which students have connected sockets (drives the scoped poller)
+_connected_students = {}   # student_id -> live socket count
+_sid_student = {}          # socket sid -> student_id
+
+
 @socketio.on('connect')
 def handle_connect():
-    logger.info(f"Browser client connected: {request.sid}")
+    # B15.5: every browser joins exactly ONE student room, derived from the
+    # same session cookie HTTP sees. All student-directed emits are
+    # room-scoped; nothing is broadcast.
+    sid_student = current_student_id()
+    if not sid_student:
+        logger.info("Rejecting socket: no student session (bare parent/anon)")
+        return False
+    join_room(f"student:{sid_student}")
+    _sid_student[request.sid] = sid_student
+    _connected_students[sid_student] = _connected_students.get(sid_student, 0) + 1
+    logger.info(f"Browser client connected: {request.sid} → room student:{sid_student}")
     try:
-        fsm_resp = requests.get(f'{SERVICES["core"]}/state', timeout=2)
+        fsm_resp = requests.get(f'{SERVICES["core"]}/state',
+                                params={'student_id': sid_student}, timeout=2)
         fsm_resp.raise_for_status()
-        fsm_state = fsm_resp.json()
-        socketio.emit('state_update', fsm_state)
+        # initial per-connection snapshot only (replaces the old global emit)
+        emit('state_update', fsm_resp.json())
     except Exception as e:
         logger.error(f"On Connect Error: {e}")
 
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    sid_student = _sid_student.pop(request.sid, None)
+    if sid_student:
+        n = _connected_students.get(sid_student, 1) - 1
+        if n <= 0:
+            _connected_students.pop(sid_student, None)
+        else:
+            _connected_students[sid_student] = n
+
 @socketio.on('text_input')
 def handle_text_input(data):
-    global _creation_initiator_sid
     logger.info(f"Socket.IO text_input: {data}")
-    # AUTO-4: Track initiating SID for scoped status updates
-    _creation_initiator_sid = request.sid
+    sid_student = _sid_student.get(request.sid) or current_student_id()
     try:
-        # AUTO-2: Increase timeout to 60s — course creation takes minutes
-        requests.post(f'{SERVICES["core"]}/event', json={'type': 'TEXT_INPUT', 'payload': data}, timeout=60)
+        # AUTO-2: 60s — course creation takes minutes. B15.5: student_id is
+        # injected from the session, never taken from the client payload.
+        requests.post(f'{SERVICES["core"]}/event',
+                      json={'type': 'TEXT_INPUT', 'payload': data,
+                            'student_id': sid_student},
+                      timeout=60)
     except Exception as e:
         logger.error(f"Failed to forward text_input to core: {e}")
         # AUTO-3: Emit error back to browser so it doesn't hang on spinner
@@ -353,6 +395,8 @@ def _get_storage():
         app._storage = StorageManager(data_root)
     return app._storage
 
+helga_auth.init_auth(_get_storage)
+
 @app.route('/api/schedule', methods=['GET'])
 def get_schedule():
     try:
@@ -360,9 +404,11 @@ def get_schedule():
         start = request.args.get('start')
         end = request.args.get('end')
         course_uid = request.args.get('course_uid')
-        storage.schedule.mark_overdue()
+        sid_student = current_student_id()
+        storage.schedule.mark_overdue(student_id=sid_student)
         reviews = storage.schedule.get_scheduled_reviews(
-            start_date=start, end_date=end, course_uid=course_uid
+            start_date=start, end_date=end, course_uid=course_uid,
+            student_id=sid_student,
         )
         return jsonify({'reviews': reviews}), 200
     except Exception as e:
@@ -379,7 +425,7 @@ def complete_schedule_review():
                 review_id = int(review_id)
             except (ValueError, TypeError):
                 return jsonify({'error': 'review_id must be an integer'}), 400
-            storage.schedule.complete_review(review_id)
+            storage.schedule.complete_review(review_id, student_id=current_student_id())
         return jsonify({'status': 'ok'}), 200
     except Exception as e:
         logger.error(f"Schedule complete error: {e}")
@@ -389,11 +435,12 @@ def complete_schedule_review():
 def get_schedule_stats():
     try:
         storage = _get_storage()
-        storage.schedule.mark_overdue()
-        upcoming = storage.schedule.get_upcoming_count(days=7)
+        sid_student = current_student_id()
+        storage.schedule.mark_overdue(student_id=sid_student)
+        upcoming = storage.schedule.get_upcoming_count(days=7, student_id=sid_student)
         streak = storage.settings.get('streak', 0) if hasattr(storage, 'settings') else 0
         # Count overdue
-        all_reviews = storage.schedule.get_scheduled_reviews()
+        all_reviews = storage.schedule.get_scheduled_reviews(student_id=sid_student)
         overdue = sum(1 for r in all_reviews if r.get('status') == 'overdue')
         completed = sum(1 for r in all_reviews if r.get('status') == 'completed')
         total = len(all_reviews)
@@ -533,7 +580,8 @@ def check_streak():
 @app.route('/api/fsm_state', methods=['GET'])
 def proxy_fsm_state():
     try:
-        resp = requests.get(f'{SERVICES["core"]}/state', timeout=2)
+        resp = requests.get(f'{SERVICES["core"]}/state',
+                            params={'student_id': current_student_id()}, timeout=2)
         return jsonify(resp.json()), resp.status_code
     except Exception as e:
         return jsonify({'error': str(e)}), 502
@@ -550,8 +598,20 @@ def proxy_stats():
 @app.route('/api/event', methods=['POST'])
 @csrf_protect
 def post_event():
+    # B15.5: student_id comes from the authenticated session — a forged value
+    # in the client body is overwritten, never trusted (spec 03 §5).
+    sid_student = current_student_id()
+    if not sid_student:
+        return jsonify({'error': 'student session required'}), 401
+    body = {**(request.json or {}), 'student_id': sid_student}
     try:
-        resp = requests.post(f'{SERVICES["core"]}/event', json=request.json, timeout=60)
+        resp = requests.post(f'{SERVICES["core"]}/event', json=body, timeout=60)
+        # push-on-completion: this student's fresh state to their room
+        try:
+            state = _fetch_student_state(sid_student)
+            socketio.emit('state_update', state, room=f"student:{sid_student}")
+        except Exception as push_err:
+            logger.warning(f"post-event state push failed (non-fatal): {push_err}")
         return jsonify(resp.json()), resp.status_code
     except Exception as e:
         return jsonify({'error': str(e)}), 502
@@ -567,19 +627,21 @@ def health():
 @app.route('/api/update_thinking_status', methods=['POST'])
 def update_thinking_status():
     data = request.json
-    # Stream tokens get their own Socket.IO event so the browser can render
-    # them incrementally without conflating with thinking/status updates.
-    if data and data.get('type') == 'stream_token':
+    # B15.5: the FSM stamps every payload with its owner; web-ui emits to that
+    # student's room only. Missing student_id → drop (fail closed, never
+    # broadcast another student's tokens).
+    owner = (data or {}).get('student_id')
+    if not owner:
+        logger.warning("Dropping unowned status payload (no student_id)")
+        return jsonify({'status': 'dropped'}), 202
+    room = f"student:{owner}"
+    if data.get('type') == 'stream_token':
         socketio.emit('stream_token', {
             'token': data.get('token', ''),
             'done': data.get('done', False),
-        })
+        }, room=room)
         return jsonify({'status': 'ok'}), 200
-    # AUTO-4: Scope status_update to originating client SID if available
-    if _creation_initiator_sid:
-        socketio.emit('status_update', data, room=_creation_initiator_sid)
-    else:
-        socketio.emit('status_update', data)
+    socketio.emit('status_update', data, room=room)
     return jsonify({'status': 'ok'}), 200
 
 @app.route('/api/search', methods=['GET'])
@@ -1303,6 +1365,172 @@ def _monitored_spawn(fn, name):
                 import gevent as _g
                 _g.sleep(5)
     return gevent.spawn(_wrapper)
+
+
+
+# --- B15.4: Auth routes (design spec 03 §2) ----------------------------------
+# Parent: email + password (argon2id). Student: parent-launch profile pick, or
+# avatar + 4-digit PIN on a shared device. Email verification and password
+# reset need outbound email — they land with B24.1 (notifications); until then
+# signup activates immediately and reset is parent-support-driven.
+
+@app.route('/signup', methods=['GET', 'POST'])
+@csrf_protect
+def signup_page():
+    if request.method == 'GET':
+        return render_template('signup.html')
+    data = request.form if request.form else (request.get_json(silent=True) or {})
+    email = (data.get('email') or '').strip().lower()
+    password = data.get('password') or ''
+    display_name = (data.get('display_name') or '').strip()
+    if not email or '@' not in email or len(password) < 8:
+        return jsonify({'error': 'valid email and a password of 8+ characters required'}), 400
+    st = _get_storage()
+    if st.accounts.get_parent_by_email(email):
+        # generic message — no user enumeration
+        return jsonify({'error': 'unable to create account'}), 400
+    parent_id = st.accounts.create_parent(email, hash_secret(password),
+                                          display_name, status='active')
+    st.consent.record(parent_id, 'tos', True, 'v1',
+                      method='checkbox', ip_address=request.remote_addr)
+    helga_auth.login_parent(parent_id)
+    return jsonify({'status': 'ok', 'parent_id': parent_id}), 201
+
+
+@app.route('/login', methods=['GET', 'POST'])
+@csrf_protect
+def login_page():
+    if request.method == 'GET':
+        return render_template('login.html')
+    data = request.form if request.form else (request.get_json(silent=True) or {})
+    email = (data.get('email') or '').strip().lower()
+    password = data.get('password') or ''
+    parent = _get_storage().accounts.get_parent_by_email(email)
+    if (not parent or parent.get('status') != 'active'
+            or not verify_secret(parent.get('password_hash', ''), password)):
+        return jsonify({'error': 'invalid credentials'}), 401  # generic, no enumeration
+    helga_auth.login_parent(parent['id'])
+    return jsonify({'status': 'ok', 'parent_id': parent['id']})
+
+
+@app.route('/logout', methods=['POST'])
+@csrf_protect
+def logout():
+    helga_auth.clear_principal()
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/students', methods=['GET'])
+@parent_required
+def students_picker():
+    students = _get_storage().accounts.list_students(current_parent_id())
+    if request.args.get('format') == 'json' or request.path.startswith('/api/'):
+        return jsonify({'students': students})
+    return render_template('students.html', students=students)
+
+
+@app.route('/api/students', methods=['POST'])
+@csrf_protect
+@parent_required
+def create_student():
+    data = request.get_json(force=True)
+    name = (data.get('display_name') or '').strip()
+    grade_band = data.get('grade_band') or '6-8'
+    if not name:
+        return jsonify({'error': 'display_name required'}), 400
+    if grade_band not in ('K-2', '3-5', '6-8', '9-12'):
+        return jsonify({'error': 'invalid grade_band'}), 400
+    st = _get_storage()
+    pin = data.get('pin')
+    pin_hash = hash_secret(str(pin)) if pin else None
+    student_id = st.accounts.create_student(
+        current_parent_id(), name, grade_band=grade_band,
+        grade_numeric=data.get('grade_numeric'), pin_hash=pin_hash,
+        interests=data.get('interests') or [])
+    st.consent.record(current_parent_id(), 'coppa_data', True, 'v1',
+                      student_id=student_id, method='checkbox',
+                      ip_address=request.remote_addr)
+    return jsonify({'status': 'ok', 'student_id': student_id}), 201
+
+
+@app.route('/students/<student_id>/launch', methods=['POST'])
+@csrf_protect
+@owns_student_required('student_id')
+def launch_student_session(student_id):
+    # parent already authed — no PIN needed (spec 03 §2.4 Path A)
+    helga_auth.launch_student(student_id)
+    return jsonify({'status': 'ok', 'student_id': student_id})
+
+
+@app.route('/students/exit', methods=['POST'])
+@csrf_protect
+def exit_student_session():
+    helga_auth.exit_student()
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/students/<student_id>/pin-set', methods=['POST'])
+@csrf_protect
+@owns_student_required('student_id')
+def set_student_pin(student_id):
+    pin = str((request.get_json(force=True) or {}).get('pin') or '')
+    if not (pin.isdigit() and len(pin) == 4):
+        return jsonify({'error': 'PIN must be exactly 4 digits'}), 400
+    _get_storage().accounts.update_student(student_id, pin_hash=hash_secret(pin))
+    helga_auth.reset_pin_failures(student_id)
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/family/<parent_id>', methods=['GET'])
+def family_pin_grid(parent_id):
+    """Avatar grid for one family's PIN login (spec 03 §2.4 Path B). The
+    family scope is the URL; the PIN is verified within it. Only students
+    with a PIN set are shown."""
+    st = _get_storage()
+    parent = st.accounts.get_parent(parent_id)
+    if not parent or parent.get('status') != 'active':
+        abort(404)
+    students = [s for s in st.accounts.list_students(parent_id) if s.get('pin_hash')]
+    safe = [{'id': s['id'], 'display_name': s['display_name'],
+             'avatar_url': s.get('avatar_url'), 'grade_band': s['grade_band']}
+            for s in students]
+    return render_template('family.html', parent_id=parent_id, students=safe)
+
+
+@app.route('/students/<student_id>/pin', methods=['POST'])
+@csrf_protect
+def student_pin_login(student_id):
+    data = request.form if request.form else (request.get_json(silent=True) or {})
+    pin = str(data.get('pin') or '')
+    family = data.get('parent_id') or ''
+    st = _get_storage()
+    student = st.accounts.get_student(student_id)
+    # PIN can never select a sibling-family's student (spec 03 §8.1)
+    if (not student or student.get('status') != 'active'
+            or not student.get('pin_hash') or student.get('parent_id') != family):
+        return jsonify({'error': 'invalid'}), 404
+    wait = helga_auth.pin_locked(student_id)
+    if wait:
+        return jsonify({'error': f'locked, retry in {wait}s'}), 423
+    if not verify_secret(student['pin_hash'], pin):
+        helga_auth.record_pin_failure(student_id)
+        return jsonify({'error': 'invalid'}), 401
+    helga_auth.reset_pin_failures(student_id)
+    helga_auth._regenerate_session()
+    session['parent_id'] = student['parent_id']
+    helga_auth.launch_student(student_id)
+    return jsonify({'status': 'ok', 'student_id': student_id})
+
+
+@app.route('/api/auth/session', methods=['GET'])
+def auth_session_info():
+    """Who am I — drives the FE7 shell (login state, active student)."""
+    return jsonify({
+        'parent_id': current_parent_id(),
+        'student_id': session.get('student_id'),
+        'role': session.get('role'),
+        'effective_student_id': current_student_id(),
+    })
 
 
 if __name__ == '__main__':

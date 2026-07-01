@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Sign up — Helga{% endblock %}
+{% block content %}
+<div class="auth-card" style="max-width: 460px; margin: 6vh auto; padding: var(--space-6, 2rem); background: var(--surface, #fff); border-radius: var(--radius-lg, 12px); box-shadow: var(--shadow-lg, 0 8px 30px rgba(0,0,0,.12));">
+    <h1 style="margin-top:0;">Create your family account</h1>
+    <p class="text-muted">One parent account manages all your learners.</p>
+    <form id="signup-form" autocomplete="on">
+        <label for="su-name">Your name</label>
+        <input id="su-name" name="display_name" type="text" autocomplete="name"
+               style="width:100%; margin-bottom: var(--space-3, .75rem);">
+        <label for="su-email">Email</label>
+        <input id="su-email" name="email" type="email" required autocomplete="email"
+               style="width:100%; margin-bottom: var(--space-3, .75rem);">
+        <label for="su-password">Password <span class="text-muted">(8+ characters)</span></label>
+        <input id="su-password" name="password" type="password" required minlength="8" autocomplete="new-password"
+               style="width:100%; margin-bottom: var(--space-4, 1rem);">
+        <label style="display:flex; gap:.5rem; align-items:flex-start; margin-bottom: var(--space-4, 1rem);">
+            <input id="su-tos" type="checkbox" required>
+            <span>I agree to the Terms of Service and consent to my children's learning data being
+            processed on this self-hosted service (COPPA parental consent).</span>
+        </label>
+        <button type="submit" class="btn btn-primary" style="width:100%;">Create account</button>
+        <p id="signup-error" role="alert" aria-live="polite" style="color: var(--danger, #dc2626); min-height:1.2em;"></p>
+    </form>
+    <p>Already have an account? <a href="/login">Log in</a></p>
+</div>
+<script>
+document.getElementById('signup-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById('signup-error');
+    errEl.textContent = '';
+    const res = await fetch('/signup', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': window.CSRF_TOKEN},
+        body: JSON.stringify({
+            display_name: document.getElementById('su-name').value,
+            email: document.getElementById('su-email').value,
+            password: document.getElementById('su-password').value,
+        }),
+    });
+    if (res.ok) { window.location.href = '/students'; }
+    else {
+        const data = await res.json().catch(() => ({}));
+        errEl.textContent = data.error || 'Could not create the account.';
+    }
+});
+</script>
+{% endblock %}

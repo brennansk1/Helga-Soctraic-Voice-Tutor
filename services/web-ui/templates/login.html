@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Log in — Helga{% endblock %}
+{% block content %}
+<div class="auth-card" style="max-width: 420px; margin: 8vh auto; padding: var(--space-6, 2rem); background: var(--surface, #fff); border-radius: var(--radius-lg, 12px); box-shadow: var(--shadow-lg, 0 8px 30px rgba(0,0,0,.12));">
+    <h1 style="margin-top:0;">Welcome back</h1>
+    <p class="text-muted">Parents log in here. Kids: ask a parent to open your profile, or use your family's PIN page.</p>
+    <form id="login-form" autocomplete="on">
+        <label for="login-email">Email</label>
+        <input id="login-email" name="email" type="email" required autocomplete="email"
+               style="width:100%; margin-bottom: var(--space-3, .75rem);">
+        <label for="login-password">Password</label>
+        <input id="login-password" name="password" type="password" required autocomplete="current-password"
+               style="width:100%; margin-bottom: var(--space-4, 1rem);">
+        <button type="submit" class="btn btn-primary" style="width:100%;">Log in</button>
+        <p id="login-error" role="alert" aria-live="polite" style="color: var(--danger, #dc2626); min-height:1.2em;"></p>
+    </form>
+    <p>New here? <a href="/signup">Create a family account</a></p>
+</div>
+<script>
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById('login-error');
+    errEl.textContent = '';
+    const res = await fetch('/login', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': window.CSRF_TOKEN},
+        body: JSON.stringify({
+            email: document.getElementById('login-email').value,
+            password: document.getElementById('login-password').value,
+        }),
+    });
+    if (res.ok) { window.location.href = '/students'; }
+    else {
+        const data = await res.json().catch(() => ({}));
+        errEl.textContent = data.error || 'Login failed. Check your email and password.';
+    }
+});
+</script>
+{% endblock %}

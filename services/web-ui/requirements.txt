@@ -4,3 +4,4 @@ Flask-SocketIO==5.3.6
 python-socketio==5.11.2
 gevent-websocket==0.10.1
 gevent==24.2.1
+argon2-cffi==23.1.0

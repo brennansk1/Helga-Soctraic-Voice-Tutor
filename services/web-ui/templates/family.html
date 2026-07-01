@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Family login — Helga{% endblock %}
+{% block content %}
+<div style="max-width: 640px; margin: 6vh auto; text-align:center;">
+    <h1>Pick your name</h1>
+    <div style="display:flex; flex-wrap:wrap; gap: var(--space-4, 1rem); justify-content:center; margin: var(--space-5, 1.5rem) 0;">
+        {% for s in students %}
+        <button class="pin-tile" data-student-id="{{ s.id }}" data-name="{{ s.display_name }}"
+                style="width:140px; padding: var(--space-4, 1rem); border-radius: var(--radius-lg, 12px); border: 2px solid var(--border, #e5e7eb); background: var(--surface, #fff); cursor:pointer;">
+            <div style="font-size:3rem;" aria-hidden="true">{{ '🧒' if s.grade_band in ('K-2','3-5') else '🧑‍🎓' }}</div>
+            <div style="font-weight:700;">{{ s.display_name }}</div>
+        </button>
+        {% endfor %}
+    </div>
+    {% if not students %}
+    <p class="text-muted">No PIN logins set up for this family yet. A parent can add PINs from their account.</p>
+    {% endif %}
+
+    <div id="pin-entry" hidden style="max-width:280px; margin:0 auto;">
+        <h2 id="pin-title" style="font-size:1.1rem;"></h2>
+        <label for="pin-input" class="visually-hidden">Your 4-digit PIN</label>
+        <input id="pin-input" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4"
+               autocomplete="off" aria-label="Your 4-digit PIN"
+               style="width:100%; text-align:center; font-size:2rem; letter-spacing:.6em; margin-bottom: var(--space-3, .75rem);">
+        <button id="pin-go" class="btn btn-primary" style="width:100%;">Let's go!</button>
+        <p id="pin-error" role="alert" aria-live="polite" style="color: var(--danger, #dc2626); min-height:1.2em;"></p>
+    </div>
+</div>
+<script>
+const PARENT_ID = {{ parent_id | tojson }};
+let selectedStudent = null;
+document.querySelectorAll('.pin-tile').forEach(tile => {
+    tile.addEventListener('click', () => {
+        selectedStudent = tile.dataset.studentId;
+        document.getElementById('pin-title').textContent = `Hi ${tile.dataset.name}! Enter your PIN`;
+        document.getElementById('pin-entry').hidden = false;
+        document.getElementById('pin-input').value = '';
+        document.getElementById('pin-input').focus();
+    });
+});
+document.getElementById('pin-go').addEventListener('click', async () => {
+    const errEl = document.getElementById('pin-error');
+    errEl.textContent = '';
+    const res = await fetch(`/students/${selectedStudent}/pin`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': window.CSRF_TOKEN},
+        body: JSON.stringify({pin: document.getElementById('pin-input').value, parent_id: PARENT_ID}),
+    });
+    if (res.ok) { window.location.href = '/'; }
+    else if (res.status === 423) {
+        const data = await res.json().catch(() => ({}));
+        errEl.textContent = data.error || 'Too many tries — wait a bit and try again.';
+    } else {
+        errEl.textContent = "That PIN didn't match. Try again!";
+    }
+});
+document.getElementById('pin-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('pin-go').click();
+});
+</script>
+{% endblock %}

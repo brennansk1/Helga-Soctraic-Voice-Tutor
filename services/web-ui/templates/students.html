@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Who's learning? — Helga{% endblock %}
+{% block content %}
+<div style="max-width: 720px; margin: 6vh auto; text-align:center;">
+    <h1>Who's learning today?</h1>
+    <div id="student-grid" style="display:flex; flex-wrap:wrap; gap: var(--space-4, 1rem); justify-content:center; margin: var(--space-5, 1.5rem) 0;">
+        {% for s in students %}
+        <button class="student-tile" data-student-id="{{ s.id }}"
+                style="width:150px; padding: var(--space-4, 1rem); border-radius: var(--radius-lg, 12px); border: 2px solid var(--border, #e5e7eb); background: var(--surface, #fff); cursor:pointer;">
+            <div style="font-size:3rem;" aria-hidden="true">{{ '🧒' if s.grade_band in ('K-2','3-5') else '🧑‍🎓' }}</div>
+            <div style="font-weight:700;">{{ s.display_name }}</div>
+            <div class="text-muted" style="font-size:.85em;">Grades {{ s.grade_band }}</div>
+        </button>
+        {% endfor %}
+    </div>
+    {% if not students %}
+    <p class="text-muted">No learners yet — add your first one below.</p>
+    {% endif %}
+
+    <details style="max-width:420px; margin: 0 auto; text-align:left;">
+        <summary class="btn btn-secondary" style="cursor:pointer;">+ Add a learner</summary>
+        <form id="add-student-form" style="margin-top: var(--space-4, 1rem);">
+            <label for="ns-name">Name</label>
+            <input id="ns-name" type="text" required style="width:100%; margin-bottom: var(--space-3, .75rem);">
+            <label for="ns-band">Grade band</label>
+            <select id="ns-band" style="width:100%; margin-bottom: var(--space-3, .75rem);">
+                <option value="K-2">K–2</option>
+                <option value="3-5">3–5</option>
+                <option value="6-8" selected>6–8</option>
+                <option value="9-12">9–12</option>
+            </select>
+            <label for="ns-pin">4-digit PIN <span class="text-muted">(optional — lets them log in alone)</span></label>
+            <input id="ns-pin" type="text" inputmode="numeric" pattern="[0-9]{4}" maxlength="4"
+                   style="width:100%; margin-bottom: var(--space-4, 1rem);">
+            <button type="submit" class="btn btn-primary" style="width:100%;">Add learner</button>
+            <p id="add-error" role="alert" aria-live="polite" style="color: var(--danger, #dc2626); min-height:1.2em;"></p>
+        </form>
+    </details>
+
+    <p style="margin-top: var(--space-6, 2rem);">
+        <button id="logout-btn" class="btn btn-ghost">Log out</button>
+    </p>
+</div>
+<script>
+document.querySelectorAll('.student-tile').forEach(tile => {
+    tile.addEventListener('click', async () => {
+        const id = tile.dataset.studentId;
+        const res = await fetch(`/students/${id}/launch`, {
+            method: 'POST',
+            headers: {'X-CSRF-Token': window.CSRF_TOKEN},
+        });
+        if (res.ok) window.location.href = '/';
+    });
+});
+document.getElementById('add-student-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById('add-error');
+    errEl.textContent = '';
+    const pin = document.getElementById('ns-pin').value.trim();
+    const res = await fetch('/api/students', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': window.CSRF_TOKEN},
+        body: JSON.stringify({
+            display_name: document.getElementById('ns-name').value,
+            grade_band: document.getElementById('ns-band').value,
+            pin: pin || null,
+        }),
+    });
+    if (res.ok) window.location.reload();
+    else {
+        const data = await res.json().catch(() => ({}));
+        errEl.textContent = data.error || 'Could not add the learner.';
+    }
+});
+document.getElementById('logout-btn').addEventListener('click', async () => {
+    await fetch('/logout', {method: 'POST', headers: {'X-CSRF-Token': window.CSRF_TOKEN}});
+    window.location.href = '/login';
+});
+</script>
+{% endblock %}

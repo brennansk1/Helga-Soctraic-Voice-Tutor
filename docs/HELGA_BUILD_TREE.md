@@ -428,15 +428,15 @@ target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
 ## PHASE 4 — PLATFORM FEATURE TREE (target)
 
 ```
-├─ B15 Accounts, Identity & Multi-Tenancy .......................... 🔨  (Workstream A; the #1 blocker)
+├─ B15 Accounts, Identity & Multi-Tenancy .......................... ✔️  (Workstream A — COMPLETE)
 │  ├─ B15.1  Tenancy schema (parents/students/enrollments/consent/subs) ✔️  storage.py v4 + 4 new stores
 │  ├─ B15.2  student_id on all per-user tables + backfill legacy ... ✔️  PK rebuild; zero-loss migration test
 │  ├─ B15.3  StorageManager sub-store student_id scoping ........... ✔️  kwarg default stu_legacy0 (R1 cutover)
-│  ├─ B15.4  Flask-Login auth (parent pw / student PIN, roles) ..... ⬜  app.py
-│  ├─ B15.5  Socket.IO room scoping (fixes B6.3 broadcast) ......... ⬜  app.py:172,245,582
+│  ├─ B15.4  Auth (parent pw argon2 / student PIN, roles) .......... ✔️  auth.py + routes + pages
+│  ├─ B15.5  Socket.IO room scoping (fixes B6.3 broadcast) ......... ✔️  rooms + fail-closed drops
 │  ├─ B15.6  Per-student FSM registry (kills global singleton) ..... ✔️  fsm_registry.py LRU+sweeper+locks
 │  ├─ B15.7  Per-student FSM persistence (fsm_sessions row) ........ ✔️  row upsert; legacy JSON import
-│  └─ B15.8  Isolation test suite (A can't read/write B) ........... ⬜
+│  └─ B15.8  Isolation test suite (A can't read/write B) ........... ✔️  all 9 spec-03 §9 rows
 ├─ B16 Curriculum Catalog & Standards .............................. ⬜  (Workstream B)
 │  ├─ B16.1  standards + concept_standards tables (Utah codes) ..... ⬜
 │  ├─ B16.2  Read-only catalog store (data/catalog/, catalog flag) . ⬜  separate from user courses
@@ -528,7 +528,7 @@ target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
 │  ├─ FE5.4  My Stuff (interests, gamification, avatar) ......... ⬜
 │  └─ FE5.5  Remove Status/heavy Settings from student view ..... ⬜  (Status → admin/ops only)
 ├─ FE6  Parent dashboard surface .................................. ⬜  (B19, role-gated)
-├─ FE7  Auth & onboarding flows ................................... ⬜  parent signup, student PIN, consent capture
+├─ FE7  Auth & onboarding flows ................................... ✔️  signup/login/picker/PIN grid
 └─ FE8  Skill-tree map view (gamified catalog) ................... ⬜  (B22.2)
 ```
 

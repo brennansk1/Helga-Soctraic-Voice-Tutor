@@ -37,11 +37,11 @@
 | B15.1 | Tenancy tables (parents, students, enrollments, consent_records, subscriptions) | `services/common/storage.py` (v3→v4 migration) | v4 migration creates tables; idempotent | P0 | R0 | done — v4 migration + `fsm_sessions`; new AccountStore/EnrollmentStore/ConsentStore/FsmSessionStore; `pytest tests/core/test_multitenancy_storage.py → 23 passed` |
 | B15.2 | `student_id` on all per-user tables + legacy backfill; composite PK rebuild on `user_progress` | `storage.py` | existing rows backfilled to `legacy-default`; no data loss; composite indexes added | P0 | R0 | done — backfill to `stu_legacy0`, PK `(student_id, concept_uid)`, v3-fixture migration test proves zero row loss |
 | B15.3 | StorageManager sub-store `student_id` scoping + `_VALID_COLUMNS` whitelist update | `storage.py` | every per-user query filters `student_id`; unit-tested | P0 | R0 | done — Progress/Flashcard/Activity/Schedule stores scoped; **note:** `student_id` is a trailing kwarg defaulting to `stu_legacy0` (not leading positional) — same isolation guarantee, zero R0 call-site breakage; removing the default is the R0→R1 cutover (spec 03 §1.2); full suite 603 passed |
-| B15.4 | Flask-Login auth: parent email/pw (argon2), student profile/PIN, role gating | `services/web-ui/app.py` | parent & student login; role gates routes | P0 | R1 | todo |
-| B15.5 | Socket.IO room scoping (fix B6.3 broadcast) | `app.py:172,245,582`; `fsm_logic.py` send_status_update | two-session test shows no cross-student leakage | P0 | R1 | todo |
+| B15.4 | Flask-Login auth: parent email/pw (argon2), student profile/PIN, role gating | `services/web-ui/app.py` | parent & student login; role gates routes | P0 | R1 | done — `auth.py` (argon2id, session-key contract per spec 03 §1.1; plain-session impl, Flask-Login swap localized); signup/login/launch/PIN routes + templates; PIN lockout (5 fails → exp backoff); **deferred to B24.1:** email verification + password reset (need outbound email) |
+| B15.5 | Socket.IO room scoping (fix B6.3 broadcast) | `app.py:172,245,582`; `fsm_logic.py` send_status_update | two-session test shows no cross-student leakage | P0 | R1 | done — every socket joins `student:<id>`; FSM stamps status/stream payloads; unowned payloads dropped (fail closed); `_creation_initiator_sid` deleted; poller scoped per connected student + push-on-event; two-session leakage test proves 0 cross-delivery |
 | B15.6 | Per-student FSM registry (kill singleton) | new `services/core/fsm_registry.py`; `fsm_logic.py:3498` | N concurrent students hold isolated FSM state | P0 | R1 | done — LRU registry (cap/TTL/flush-on-evict), single sweeper replaces per-FSM threads, per-student RLocks, all routes resolve `registry.get(sid)`; `pytest tests/core/test_fsm_registry.py → 9 passed` |
 | B15.7 | Per-student FSM persistence (`fsm_sessions` row replaces `user_state.json`) | `fsm_logic.py:237,1415,1462`; `storage.py` | restart restores each student's position | P0 | R1 | done — save/load/delete re-pointed to `fsm_sessions` row upsert (atomic in WAL); one-time legacy `user_state.json` import; restart-restore + eviction-lossless tests pass; suite 615 passed |
-| B15.8 | Isolation test suite | `tests/` | student A cannot read/write student B (progress/flashcards/FSM) | P0 | R1 | todo |
+| B15.8 | Isolation test suite | `tests/` | student A cannot read/write student B (progress/flashcards/FSM) | P0 | R1 | done — all 9 spec-03 §9 rows covered across test_multitenancy_storage (storage), test_fsm_registry (FSM/restart/eviction), test_auth_isolation (auth gating, PIN lockout, forged student_id, socket leakage); suite 660 passed |
 
 ## B16 — Curriculum Catalog & Standards (Workstream B) · P1/P3 · R2/R4
 
@@ -182,7 +182,7 @@
 | FE5.4 | My Stuff (interests, gamification, avatar) | lightweight kid settings | R3 | todo |
 | FE5.5 | Remove Status/heavy Settings from student view | student nav simplified | R3 | todo |
 | FE6 | Parent dashboard surface | role-gated parent UI (B19) | R2 | todo |
-| FE7 | Auth & onboarding flows | parent signup, student PIN, consent capture | R1 | todo |
+| FE7 | Auth & onboarding flows | parent signup, student PIN, consent capture | R1 | done — login/signup/students-picker/family-PIN templates; TOS+COPPA consent recorded at signup & student creation; kid-first polish continues in R3 IA pass |
 | FE8 | Skill-tree map view (gamified catalog) | renders catalog as tree (B22.2) | R3 | todo |
 
 ---
