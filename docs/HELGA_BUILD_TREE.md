@@ -452,7 +452,7 @@ target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
 │  ├─ B17.4  Grade-banded hint ladder + micro-lectures ............. ✔️  band ladder skip + caps
 │  ├─ B17.5  Manipulatives/visual answer modes (early math) ........ ⬜
 │  ├─ B17.6  Voice-first early-literacy/WL loop .................... ⬜  reuses STT/TTS (B7.3)
-│  └─ B17.7  Affect/frustration handling for young learners ........ ⬜  extends _detect_ignorance
+│  └─ B17.7  Affect/frustration handling for young learners ........ ✔️  miss-streak scaffold
 ├─ B18 Assessment, Exams & Interest-Themed Engagement .............. ✔️  (Workstream G — COMPLETE)
 │  ├─ B18.1  Formal exam/assessment generator ..................... ✔️  exam_engine.py + v6 + ExamStore
 │  ├─ B18.2  Per-standard mastery checkpoints (gate progression) ... ✔️  pass→unlock, fail→remediate
@@ -482,7 +482,7 @@ target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
 │  ├─ B22.1  Wire existing XP everywhere, per-student .............. ✔️  GamificationStore + ledger
 │  ├─ B22.2  Skill-tree map (strands=branches, standards=nodes) .... ⬜  FE8
 │  ├─ B22.3  Badges per standard/strand; quests/daily challenges ... ✔️  catalog + daily quests
-│  ├─ B22.4  Interest-themed cosmetic rewards (avatars) ............ ⬜
+│  ├─ B22.4  Interest-themed cosmetic rewards (avatars) ............ ✔️  level-gated catalog
 │  ├─ B22.5  Grade-appropriate framing + on/off toggle ............ ✔️  server-side toggle
 │  └─ B22.6  Safe (within-family/anonymized, no open leaderboards) . ✔️  by construction
 ├─ B23 Production Scaling & Deployment ............................. 🔨  (Workstream J)
@@ -513,8 +513,8 @@ target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
 └─ B27 Observability, Analytics & Unit Economics ................... ⬜  (Workstream N; expands B9.7)
    ├─ B27.1  Structured JSON logging + correlation ............... ✔️  opt-in JsonFormatter
    ├─ B27.2  Prometheus metrics (GPU/latency/sessions) ........... ✔️  /metrics (lite)
-   ├─ B27.3  xAPI learning-analytics event log .................. ⬜
-   ├─ B27.4  Cost / tokens-per-student tracking ................. ⬜
+   ├─ B27.3  xAPI learning-analytics event log .................. ✔️  statement export
+   ├─ B27.4  Cost / tokens-per-student tracking ................. ✔️  usage_tracker + /metrics
    └─ B27.5  Ollama circuit-breaker + alerting (closes B9.5) ..... ✔️  OllamaBreaker in gpu_gate
 ```
 

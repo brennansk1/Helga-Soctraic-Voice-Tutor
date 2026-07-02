@@ -302,6 +302,7 @@ class MnemosyneFSM:
 
         # Multi-question mastery tracking
         self.concept_correct_streak = 0  # Consecutive correct answers (grade >= 3), reset on grade < 3
+        self.concept_miss_streak = 0  # B17.7: consecutive misses — drives affect handling for young bands
         self.concept_question_count = 0  # Total questions asked for current concept
 
         # Bloom's Taxonomy Level Tracking (1-6)
@@ -1605,6 +1606,7 @@ class MnemosyneFSM:
                 "conversation_history": self.conversation_history[-10:],
                 "socratic_type_index": self.socratic_type_index,
                 "concept_correct_streak": self.concept_correct_streak,
+                "concept_miss_streak": getattr(self, "concept_miss_streak", 0),
                 "concept_question_count": self.concept_question_count,
                 # Bloom's Taxonomy level persistence
                 "bloom_level": self.current_bloom_level,
@@ -1650,6 +1652,7 @@ class MnemosyneFSM:
                 self.conversation_history = data.get("conversation_history", [])
                 self.socratic_type_index = data.get("socratic_type_index", 0)
                 self.concept_correct_streak = data.get("concept_correct_streak", 0)
+                self.concept_miss_streak = data.get("concept_miss_streak", 0)
                 self.concept_question_count = data.get("concept_question_count", 0)
                 # Restore Bloom's Taxonomy level
                 self.current_bloom_level = data.get("bloom_level", 1)
@@ -1984,6 +1987,7 @@ class MnemosyneFSM:
         self.socratic_type_index = 0  # Reset question type for new concept
         self.socratic_retry_count = 0  # Reset retry counter for new concept
         self.concept_correct_streak = 0  # Reset mastery tracking for new concept
+        self.concept_miss_streak = 0
         self.concept_question_count = 0
         self.current_bloom_level = 1  # Reset Bloom's level for new concept
         self.bloom_correct_streak = 0
@@ -2024,6 +2028,30 @@ class MnemosyneFSM:
                 # Fix 5: Grade 2 with 2+ consecutive partials → scaffolding lecture
                 elif self._last_socratic_grade == 2 and self.socratic_retry_count >= 2:
                     teaching_mode = "LECTURE"
+
+        # B17.7: affect handling for young learners — after 2+ consecutive
+        # misses, a K-2/3-5 student gets encouragement plus an EASIER, more
+        # concrete next step instead of being pressed harder. Bloom eases
+        # toward the floor so the next question genuinely gets simpler.
+        affect_note = None
+        if (self.grade_band in ("K-2", "3-5")
+                and getattr(self, "concept_miss_streak", 0) >= 2):
+            floor = self.course_bloom_floor or 1
+            if self.current_bloom_level > floor:
+                self.current_bloom_level -= 1
+                self.bloom_correct_streak = 0
+            affect_note = (
+                "AFFECT NOTE: The student has missed several questions in a row "
+                "and may be feeling discouraged. START by warmly reassuring them "
+                "that tricky things take practice and they are doing fine. Then "
+                "make this turn EASIER and more concrete than the last one: use "
+                "a smaller, touchable example, or break the idea into one tiny "
+                "step. Do not press harder, do not point out the string of "
+                "misses, and never sound disappointed.")
+            logging.info(f"Affect scaffold engaged (miss_streak="
+                         f"{self.concept_miss_streak}, band={self.grade_band})")
+        if affect_note:
+            system_note = f"{system_note}\n{affect_note}" if system_note else affect_note
 
         logging.info(f"Teaching Mode Selected: {teaching_mode}")
         self.send_status_update(f"Mode: {teaching_mode}...", progress=70)
@@ -2314,11 +2342,13 @@ class MnemosyneFSM:
         self.concept_question_count += 1
         if grade >= 3:
             self.concept_correct_streak += 1
+            self.concept_miss_streak = 0
             # GAP 4: Track which question type categories were passed
             q_idx = min(self.socratic_type_index, len(SOCRATIC_QUESTION_TYPES) - 1)
             self.passed_question_types.add(SOCRATIC_QUESTION_TYPES[q_idx]["key"])
         else:
             self.concept_correct_streak = 0
+            self.concept_miss_streak += 1
 
         # Bloom's Taxonomy Level Progression
         # Grade 3+ (correct): increment bloom_correct_streak; after 2 consecutive, advance level (max 6)
@@ -3819,7 +3849,29 @@ def metrics():
         f"helga_fsm_resident {reg['resident']}",
         f"helga_fsm_max {reg['max_size']}",
     ]
+    try:
+        from usage_tracker import totals as _usage_totals
+    except ImportError:
+        from services.core.usage_tracker import totals as _usage_totals
+    u = _usage_totals()
+    lines += [
+        f"helga_llm_calls_total {u['calls']}",
+        f"helga_llm_prompt_tokens_total {u['prompt_tokens']}",
+        f"helga_llm_completion_tokens_total {u['completion_tokens']}",
+        f"helga_llm_gpu_seconds_total {round(u['gpu_seconds'], 2)}",
+        f"helga_llm_students_seen {u['students']}",
+    ]
     return "\n".join(lines) + "\n", 200, {"Content-Type": "text/plain; version=0.0.4"}
+
+
+@app.route("/api/usage", methods=["GET"])
+def api_usage():
+    """B27.4: per-student token/GPU-second usage since process start."""
+    try:
+        from usage_tracker import snapshot, totals
+    except ImportError:
+        from services.core.usage_tracker import snapshot, totals
+    return jsonify({"totals": totals(), "per_student": snapshot()})
 
 
 @app.route("/health", methods=["GET"])

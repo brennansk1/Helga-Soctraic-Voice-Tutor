@@ -68,6 +68,7 @@ class TestGradingLogic(unittest.TestCase):
 
         # Multi-question mastery tracking
         self.fsm.concept_correct_streak = 0
+        self.fsm.concept_miss_streak = 0
         self.fsm.concept_question_count = 0
 
         # Bloom's Taxonomy tracking

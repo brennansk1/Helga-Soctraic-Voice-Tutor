@@ -103,6 +103,7 @@ class LLMClient:
                 except GpuOverloaded as e:
                     logger.warning(f"GPU overloaded, shedding request: {e}")
                     return ""
+                _gen_start = time.monotonic()
                 try:
                     resp = requests.post(
                         self.api_url,
@@ -113,6 +114,19 @@ class LLMClient:
                     slot.release()
                 resp.raise_for_status()
                 get_breaker().record_success()
+                # B27.4: per-student token / GPU-second usage
+                try:
+                    from usage_tracker import record as _record_usage
+                except ImportError:
+                    from services.core.usage_tracker import record as _record_usage
+                try:
+                    usage = resp.json().get("usage") or {}
+                    _record_usage((ctx.student_id if ctx else None),
+                                  usage.get("prompt_tokens", 0),
+                                  usage.get("completion_tokens", 0),
+                                  time.monotonic() - _gen_start)
+                except Exception:
+                    pass
                 # Force UTF-8 — Ollama emits UTF-8 but some setups omit the
                 # charset parameter, causing requests to fall back to latin-1
                 # and produce mojibake on smart quotes / em dashes.

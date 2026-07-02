@@ -2698,6 +2698,72 @@ class GamificationStore:
         conn.commit()
         return out
 
+    # -- cosmetics (B22.4): interest-themed avatar unlocks by level ------------
+
+    COSMETIC_CATALOG = [
+        # (id, name, theme keyword, unlock level)
+        ("cos_star",     "Star Learner",     None,      1),
+        ("cos_rocket",   "Rocket",           "space",   2),
+        ("cos_planet",   "Planet Explorer",  "space",   4),
+        ("cos_ball",     "Golden Ball",      "soccer",  2),
+        ("cos_trophy",   "Champion Trophy",  "soccer",  4),
+        ("cos_dino",     "Dino Buddy",       "dinosaur", 2),
+        ("cos_dragon",   "Book Dragon",      "reading", 3),
+        ("cos_paw",      "Animal Friend",    "animal",  2),
+        ("cos_palette",  "Artist Palette",   "art",     2),
+        ("cos_crown",    "Scholar Crown",    None,      5),
+        ("cos_gem",      "Brilliant Gem",    None,      7),
+    ]
+
+    def cosmetics_for(self, student_id: str = None) -> dict:
+        """Unlockable cosmetics: themed items whose keyword matches the
+        student's interests surface first; unlock is by level. Never
+        references another family's data (B22.6)."""
+        sid = _sid(student_id)
+        row = self.get(sid)
+        level = row["level"]
+        state = json.loads(row.get("cosmetics") or "{}")
+        equipped = state.get("equipped")
+        interests = []
+        try:
+            conn = self._get_db()
+            student = conn.execute("SELECT interests FROM students WHERE id = ?",
+                                   (sid,)).fetchone()
+            if student:
+                interests = [i.lower() for i in json.loads(student["interests"] or "[]")]
+        except Exception:
+            pass
+
+        def _themed(theme):
+            return theme is None or any(theme in i or i in theme for i in interests)
+
+        unlocked, locked = [], []
+        for cid, name, theme, need in self.COSMETIC_CATALOG:
+            item = {"id": cid, "name": name, "theme": theme,
+                    "unlock_level": need, "themed": _themed(theme),
+                    "equipped": cid == equipped}
+            (unlocked if level >= need else locked).append(item)
+        # interest-matched items first inside each bucket
+        unlocked.sort(key=lambda c: (not c["themed"], c["unlock_level"]))
+        locked.sort(key=lambda c: (not c["themed"], c["unlock_level"]))
+        return {"level": level, "equipped": equipped,
+                "unlocked": unlocked, "locked": locked}
+
+    def equip_cosmetic(self, cosmetic_id: str, student_id: str = None) -> bool:
+        """Equip an UNLOCKED cosmetic; returns False if locked/unknown."""
+        sid = _sid(student_id)
+        state = self.cosmetics_for(sid)
+        if cosmetic_id not in {c["id"] for c in state["unlocked"]}:
+            return False
+        row = self._row(sid)
+        blob = json.loads(row.get("cosmetics") or "{}")
+        blob["equipped"] = cosmetic_id
+        conn = self._get_db()
+        conn.execute("UPDATE student_gamification SET cosmetics = ? WHERE student_id = ?",
+                     (json.dumps(blob), sid))
+        conn.commit()
+        return True
+
     def increment_quest(self, kind: str, student_id: str = None) -> List[dict]:
         """Advance today's quests of `kind` by one; completing awards XP once.
         Returns quests completed by this increment."""

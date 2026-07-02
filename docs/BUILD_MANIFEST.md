@@ -65,7 +65,7 @@
 | B17.4 | Grade-banded hint ladder + micro-lectures | `prompts.py` (`get_hint_prompt`, `get_micro_lecture_prompt`) | more scaffolding for younger; faster fade older | P1 | R2 | done — K-2 short-circuits to a worked example after one failed hint (3-5 after two, 9-12 walks the full 4-step ladder); micro-lecture word/sentence caps + register per band; 6 tests |
 | B17.5 | Manipulatives / visual answer modes (early math) | learn UI + FSM | K-2 can answer without typing abstractions; grades feed mastery | P2 | R3 | todo |
 | B17.6 | Voice-first early-literacy / World-Lang loop | STT/TTS (B7.3) | read-aloud + pronunciation works | P2 | R3 | todo |
-| B17.7 | Affect/frustration handling for young learners | `fsm_logic.py` (`_detect_ignorance`) | repeated-miss → encouragement+scaffold, not pressing | P2 | R3 | todo |
+| B17.7 | Affect/frustration handling for young learners | `fsm_logic.py` (`_detect_ignorance`) | repeated-miss → encouragement+scaffold, not pressing | P2 | R3 | done — `concept_miss_streak` (persisted in session blob); 2+ misses on K-2/3-5 injects an AFFECT NOTE (reassure first, easier/concrete next step, never sound disappointed) and eases Bloom toward the floor; never fires for 6-8/9-12 |
 
 ## B18 — Assessment, Exams & Interest-Themed Engagement (Workstream G) · P1 · R2
 
@@ -115,7 +115,7 @@
 | B22.1 | Wire existing XP everywhere, per-student | XP fires on review+session per student | P2 | R3 | done — GamificationStore over v7 tables (award/level/streak + xp_ledger audit trail); librarian endpoints per-student; web-ui proxies inject the session student (client can't award XP to someone else); legacy K-V totals adopted on legacy student's first read |
 | B22.2 | Skill-tree map (strands=branches, standards=nodes) | catalog renders as visual tree (FE8) | P2 | R3 | todo |
 | B22.3 | Badges per standard/strand; quests/daily challenges | unlocks beyond streaks | P2 | R3 | done — badge catalog (streak/level/XP/exam-pass criteria) with once-only unlock + XP reward; daily quests (answer-5, review-3) with per-day period keys and single-award completion |
-| B22.4 | Interest-themed cosmetic rewards (avatars) | unlockable cosmetics | P2 | R3 | todo |
+| B22.4 | Interest-themed cosmetic rewards (avatars) | unlockable cosmetics | P2 | R3 | done — cosmetic catalog with level gates; items matching the student's interests surface first; equip validates unlock server-side; `/api/gamification/cosmetics` (UI hookup rides FE5.4) |
 | B22.5 | Grade-appropriate framing + on/off toggle | playful K-5, subtle teens; toggle respected | P2 | R3 | done — per-student `settings.gamification_enabled=false` returns a muted payload server-side (UI toggle already existed); grade framing rides GRADE_BAND_PROFILES |
 | B22.6 | Safe (within-family/anonymized, no open leaderboards) | no cross-family identity exposure | P2 | R3 | done — by construction: all badge/quest evaluation is against the student's own numbers; no leaderboard surface exists and none is planned |
 
@@ -166,8 +166,8 @@
 |---|------|------|---|---|---|
 | B27.1 | Structured JSON logging + correlation | logs carry `student_id`/request id | P3 | R4 | done — `logging_utils.py` JsonFormatter + with_student adapter; opt-in HELGA_JSON_LOGS=true across all three services |
 | B27.2 | Prometheus metrics (GPU/latency/sessions) | metrics scrapeable | P3 | R4 | done (lite) — `/metrics` on core in Prometheus text format (gate/breaker/registry counters); full prometheus_client swap is endpoint-compatible |
-| B27.3 | xAPI learning-analytics event log | events feed dashboard/analytics | P3 | R4 | todo |
-| B27.4 | Cost / tokens-per-student tracking | per-student token/GPU-sec reported | P3 | R4 | todo |
+| B27.3 | xAPI learning-analytics event log | events feed dashboard/analytics | P3 | R4 | done — `xapi.py` translates activity_log + exam_attempts into actor/verb/object/result statements (opaque student id, no PII); admin export endpoint |
+| B27.4 | Cost / tokens-per-student tracking | per-student token/GPU-sec reported | P3 | R4 | done — `usage_tracker.py` fed by Ollama usage blocks per LLMContext.student_id; `/api/usage` + Prometheus counters on `/metrics` |
 | B27.5 | Ollama circuit-breaker + alerting (closes B9.5) | graceful degradation + alert | P3 | R4 | done — OllamaBreaker (CLOSED→OPEN after N consecutive failures→HALF_OPEN single probe) wraps all llm_client paths; fast-fail instead of 60s hangs; state changes logged/counted; env-tunable |
 
 ---

@@ -1910,6 +1910,29 @@ def award_xp():
         return jsonify({"xp_earned": 0, "error": str(e)}), 500
 
 
+@app.route("/api/gamification/cosmetics", methods=["GET", "POST"])
+def cosmetics():
+    """B22.4: interest-themed cosmetic unlocks. GET lists; POST equips."""
+    if request.method == "GET":
+        return jsonify(storage.gamification.cosmetics_for(
+            student_id=request.args.get("student_id")))
+    data = request.get_json(force=True)
+    ok = storage.gamification.equip_cosmetic(
+        data.get("cosmetic_id", ""), student_id=data.get("student_id"))
+    if not ok:
+        return jsonify({"error": "cosmetic locked or unknown"}), 409
+    return jsonify({"status": "equipped", "cosmetic_id": data.get("cosmetic_id")})
+
+
+@app.route("/api/admin/xapi/<student_id>", methods=["GET"])
+@_admin_required
+def admin_xapi(student_id):
+    """B27.3: xAPI statement export for one learner (admin/analytics)."""
+    from services.common.xapi import statements_for_student
+    return jsonify({"statements": statements_for_student(
+        storage, student_id, since=request.args.get("since"))})
+
+
 @app.route("/api/gamification/check_streak", methods=["POST"])
 def check_streak():
     """B22.1: check/update the per-student daily streak."""
