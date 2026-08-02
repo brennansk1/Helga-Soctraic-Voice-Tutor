@@ -210,22 +210,38 @@ def search():
     # Default: SQLite FTS5 (ranked, searches title AND body content).
     # Optional hybrid mode: FTS5 + dense via sqlite-vec, fused with RRF.
     #   - Hybrid is only active when ?mode=hybrid AND sqlite-vec is available.
-    #   - If dense deps are absent the hybrid path silently degrades to FTS5.
+    #   - If dense deps are absent the request degrades to FTS5, and the
+    #     response says so (`retrieval_mode` + `degraded`). A2: degradation is
+    #     reported, never silent.
     #   - Never raises — always falls back to substring search on any exception.
+    # A2: hybrid degradation must be LOUD. Silently serving lexical-only
+    # results when the caller asked for dense retrieval hides a real quality
+    # cliff — the caller believes it got semantic search and cannot tell it
+    # didn't. `retrieval_mode` in the response reports what actually ran.
+    actual_mode = "fts5"
+    degraded_reason = None
     try:
-        if mode == "hybrid" and storage.search.is_dense_available():
-            # Lazy-load the embedding model; if it fails, fall back to FTS5.
-            try:
-                embed_fn = get_embed_model().encode
-            except Exception as embed_err:
-                logger.warning(f"hybrid search: embed model unavailable ({embed_err}), using FTS5")
-                embed_fn = None
-            concept_rows = storage.search.hybrid_search(
-                query,
-                embed_fn=embed_fn,
-                course_uid=course_uid,
-                limit=10,
-            )
+        if mode == "hybrid":
+            if not storage.search.is_dense_available():
+                degraded_reason = "sqlite-vec unavailable"
+                logger.warning(
+                    "hybrid search requested but DEGRADED to FTS5: %s", degraded_reason)
+                concept_rows = storage.search.search(query, course_uid=course_uid, limit=10)
+            else:
+                try:
+                    embed_fn = get_embed_model().encode
+                except Exception as embed_err:
+                    embed_fn = None
+                    degraded_reason = f"embedding model unavailable ({embed_err})"
+                    logger.warning(
+                        "hybrid search requested but DEGRADED to FTS5: %s", degraded_reason)
+                concept_rows = storage.search.hybrid_search(
+                    query,
+                    embed_fn=embed_fn,
+                    course_uid=course_uid,
+                    limit=10,
+                )
+                actual_mode = "fts5" if embed_fn is None else "hybrid"
         else:
             concept_rows = storage.search.search(query, course_uid=course_uid, limit=10)
 
@@ -242,8 +258,16 @@ def search():
     except Exception as e:
         logger.warning(f"Search failed, falling back to substring: {e}")
         results = _substring_concept_search(query, course_uid)
+        actual_mode = "substring"
+        degraded_reason = str(e)
 
-    return jsonify({"results": results})
+    payload = {"results": results, "retrieval_mode": actual_mode}
+    if mode == "hybrid" and actual_mode != "hybrid":
+        # Explicit, machine-readable signal that the caller did NOT get what
+        # it asked for.
+        payload["degraded"] = True
+        payload["degraded_reason"] = degraded_reason or "hybrid unavailable"
+    return jsonify(payload)
 
 
 @app.route("/api/courses", methods=["GET", "DELETE"])

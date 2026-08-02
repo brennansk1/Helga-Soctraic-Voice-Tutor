@@ -1008,7 +1008,12 @@
 
                             // Task #51: Low-confidence indicator
                             const srcConf = concept.source_confidence;
-                            const isLowConfidence = (typeof srcConf === 'number' && srcConf < 0.3);
+                            // A2: aligned with the builder's HELGA_CONFIDENCE_FLOOR
+                            // (0.5). At the old 0.3 threshold most weakly-sourced
+                            // concepts showed no marker at all — in the sample
+                            // course 24 of 36 sat below 0.5 and looked identical
+                            // to well-grounded ones.
+                            const isLowConfidence = (typeof srcConf === 'number' && srcConf < 0.5);
                             const lowConfBadge = isLowConfidence
                                 ? '<span class="low-confidence-badge" title="Low source confidence — content may be unverified">unverified</span>'
                                 : '';

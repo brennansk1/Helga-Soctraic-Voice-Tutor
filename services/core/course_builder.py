@@ -1736,6 +1736,10 @@ class ContentHydrator:
         self.max_depth_retries = int(os.getenv("HELGA_DEPTH_RETRIES", "2"))
         self.topic_domain = None  # set by hydrate(); beats guessing from a string
         self._contract_failures = []
+        # A2: below this, grounding is too thin to present as verified. Set 0
+        # to disable the retry+marker behaviour entirely.
+        self.confidence_floor = float(os.getenv("HELGA_CONFIDENCE_FLOOR", "0.5"))
+        self._low_confidence_concepts = []
 
         if storage:
             self.storage = storage
@@ -1762,6 +1766,7 @@ class ContentHydrator:
         if self.topic_domain is None:
             self.topic_domain = infer_domain(course_title)
         self._contract_failures = []
+        self._low_confidence_concepts = []
 
         # Build hierarchy context, concept list, and prerequisite map from JSON
         concept_list = []
@@ -1873,8 +1878,56 @@ class ContentHydrator:
             except Exception as research_err:
                 logger.warning(f"  [RESEARCH] Unavailable for '{title}': {research_err}")
 
+            # A2: make source_confidence load-bearing. It was computed, stored
+            # and displayed but nothing ever acted on it — in the sample course
+            # 24 of 36 concepts scored below 0.5 and shipped unmarked. A weak
+            # score means the grounding pass found little, so retry once with a
+            # broadened query before accepting thin sourcing.
+            if (self.confidence_floor > 0
+                    and research_confidence < self.confidence_floor):
+                logger.info(
+                    f"  [RESEARCH] '{title}' confidence {research_confidence:.2f} "
+                    f"< floor {self.confidence_floor:.2f} — retrying broader")
+                if self.status_callback:
+                    self.status_callback(f"STRUCT:RESEARCH_RETRY:{title}")
+                try:
+                    broad = requests.post(
+                        f"{research_url}/api/research_concept",
+                        json={
+                            # Drop the narrow concept framing and search the
+                            # parent topic, which is what a thin result usually
+                            # needs.
+                            "title": f"{title} {h_ctx.get('module', '')}".strip(),
+                            "module_title": h_ctx.get("module", ""),
+                            "course_title": course_title,
+                            "mastery": self.mastery_level,
+                            "broaden": True,
+                        },
+                        timeout=20,
+                    )
+                    if broad.status_code == 200:
+                        bd = broad.json()
+                        if bd.get("confidence", 0.0) > research_confidence:
+                            reference_material = bd.get("combined_text", "") or reference_material
+                            research_sources = bd.get("sources", []) or research_sources
+                            research_confidence = bd.get("confidence", 0.0)
+                            logger.info(
+                                f"  [RESEARCH] '{title}' improved to "
+                                f"{research_confidence:.2f}")
+                except Exception as e:
+                    logger.warning(f"  [RESEARCH] broaden failed for '{title}': {e}")
+
             content_to_use = reference_material if reference_material else ""
             source_type = "research+llm" if reference_material else "llm-only"
+
+            # Still weak after the retry: say so in the artifact itself rather
+            # than shipping thin content that looks identical to well-grounded
+            # content. The learner sees this; it is not only a metric.
+            low_confidence = research_confidence < self.confidence_floor
+            if low_confidence:
+                self._low_confidence_concepts.append(
+                    {"uid": uid, "title": title,
+                     "confidence": round(research_confidence, 2)})
 
             # Pre-structure research material into buckets for better LLM utilization
             research_structured = self._preprocess_research(content_to_use)
@@ -1927,6 +1980,16 @@ class ContentHydrator:
                         "uid": uid, "title": title,
                         "problems": contract_detail.get("problems", []),
                     })
+
+            # A2: an honest marker on thin content. Previously a 0.0-confidence
+            # concept was visually identical to a well-sourced one.
+            if low_confidence:
+                structured_md += (
+                    "\n\n> **Limited sources.** The grounding pass found little "
+                    "corroborating material for this concept "
+                    f"(confidence {research_confidence:.2f}), so it leans more "
+                    "on the model's own knowledge. Treat specifics with extra "
+                    "care and verify before relying on them.\n")
 
             # Append research citations
             if research_sources:
@@ -2073,6 +2136,23 @@ class ContentHydrator:
                     self.status_callback(
                         f"STRUCT:WARN:DEPTH_SUMMARY:{missed}/{total_concepts} "
                         f"concepts below level {self.mastery_level}")
+
+        # A2: course-level grounding verdict, so thin sourcing is visible at a
+        # glance instead of only per-concept.
+        if total_concepts > 0:
+            weak = len(self._low_confidence_concepts)
+            course["grounding"] = {
+                "confidence_floor": self.confidence_floor,
+                "concepts_total": total_concepts,
+                "concepts_below_floor": weak,
+                "well_grounded_pct": round(
+                    100 * (total_concepts - weak) / total_concepts, 1),
+                "low_confidence": self._low_confidence_concepts[:25],
+            }
+            if weak:
+                logger.warning(
+                    f"[GROUNDING] {weak}/{total_concepts} concepts below "
+                    f"confidence floor {self.confidence_floor}")
 
         self.storage.courses.update_course(course_uid, course)
 
