@@ -18,6 +18,11 @@ from services.common.llm_utils import (
     extract_python_list,
     llm_generate_json,
 )
+from services.core.depth_contract import (
+    validate_concept,
+    regeneration_hint,
+    infer_domain,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1724,6 +1729,13 @@ class ContentHydrator:
         self.mastery_level = mastery if mastery is not None else course_depth
         self.used_source_ids = set()
         self.model = None
+        # A1 depth contract. Off via HELGA_ENFORCE_DEPTH=0 for callers that
+        # need raw generation (e.g. reproducing a historical build).
+        self.enforce_depth = os.getenv("HELGA_ENFORCE_DEPTH", "1").lower() not in (
+            "0", "false", "no")
+        self.max_depth_retries = int(os.getenv("HELGA_DEPTH_RETRIES", "2"))
+        self.topic_domain = None  # set by hydrate(); beats guessing from a string
+        self._contract_failures = []
 
         if storage:
             self.storage = storage
@@ -1742,6 +1754,14 @@ class ContentHydrator:
             return
 
         course_title = course.get("title", "General Knowledge")
+
+        # A1: resolve the domain once per course rather than guessing per
+        # concept from a topic string. Keyword matching on a title is fragile
+        # ("the french revolution" contains no history keyword), so this is a
+        # best-effort default that an explicit caller can override.
+        if self.topic_domain is None:
+            self.topic_domain = infer_domain(course_title)
+        self._contract_failures = []
 
         # Build hierarchy context, concept list, and prerequisite map from JSON
         concept_list = []
@@ -1889,6 +1909,25 @@ class ContentHydrator:
                 if self.status_callback:
                     self.status_callback(f"STRUCT:WARN:CONCEPT_STUB:{title}")
 
+            # A1: enforce the depth contract. The mastery slider was previously
+            # only a prompt hint, so output converged on one house style
+            # regardless of level (measured: every concept 626-876 words, and a
+            # mastery=4 course with worked examples in 0/36 concepts). Validate
+            # what actually came back and regenerate against the NAMED
+            # deficiency rather than retrying blindly.
+            if not is_fallback and self.enforce_depth:
+                structured_md, contract_detail = self._enforce_depth_contract(
+                    structured_md, title, course_title, complexity_role,
+                    source_type, h_ctx, research_sources, research_confidence,
+                    user_note, bloom_level, learning_objectives_list,
+                    prerequisite_titles, research_structured, content_to_use,
+                )
+                if contract_detail and not contract_detail.get("ok"):
+                    self._contract_failures.append({
+                        "uid": uid, "title": title,
+                        "problems": contract_detail.get("problems", []),
+                    })
+
             # Append research citations
             if research_sources:
                 sources_md = "\n\n## Sources\n"
@@ -2006,6 +2045,35 @@ class ContentHydrator:
         if hydration_fallback_count > 0:
             existing_fallbacks = course.get("fallback_count", 0)
             course["fallback_count"] = existing_fallbacks + hydration_fallback_count
+
+        # A1: record whether the course actually met the level it claims.
+        # A course whose concepts miss the depth contract must not present
+        # itself as that level — that is precisely the "college-level setting
+        # doesn't produce a college-level course" complaint. We record the
+        # verdict rather than silently shipping, so the UI and the golden-course
+        # gate can both see it.
+        if self.enforce_depth and total_concepts > 0:
+            missed = len(self._contract_failures)
+            met_pct = round(100 * (total_concepts - missed) / total_concepts, 1)
+            course["depth_contract"] = {
+                "mastery": self.mastery_level,
+                "domain": self.topic_domain,
+                "concepts_total": total_concepts,
+                "concepts_missing_contract": missed,
+                "met_pct": met_pct,
+                # Below this the course is not credibly at its stated level.
+                "level_verified": met_pct >= 80.0,
+                "failures": self._contract_failures[:25],
+            }
+            if missed:
+                logger.warning(
+                    f"[DEPTH] {missed}/{total_concepts} concepts missed the "
+                    f"mastery-{self.mastery_level} contract ({met_pct}% met)")
+                if self.status_callback:
+                    self.status_callback(
+                        f"STRUCT:WARN:DEPTH_SUMMARY:{missed}/{total_concepts} "
+                        f"concepts below level {self.mastery_level}")
+
         self.storage.courses.update_course(course_uid, course)
 
         # Refresh the FTS5 search index now that this course's content exists, so
@@ -2067,6 +2135,74 @@ class ContentHydrator:
         result["edge_cases"] = " ".join(edges[:3])
         result["remainder"] = " ".join(other)[:1500]
         return result
+
+    def _enforce_depth_contract(self, structured_md, title, course_title,
+                                complexity_role, source_type, h_ctx,
+                                research_sources, research_confidence,
+                                user_note, bloom_level, learning_objectives,
+                                prerequisite_titles, research_structured,
+                                content_to_use):
+        """Validate a concept against its depth contract, regenerating on miss.
+
+        Returns (best_markdown, detail). The contract check runs on the body
+        BEFORE the Sources block is appended, so a citation list can't be what
+        satisfies a rigor requirement.
+
+        On failure we retry with a targeted instruction naming the missing
+        element ("include a step-by-step derivation", "cite a primary source"),
+        because a blind retry of the same prompt reproduces the same gap. If
+        every attempt misses, we keep the LONGEST attempt and report the
+        failure upward — the course-level gate then decides whether the course
+        may keep claiming this level.
+        """
+        ok, problems, detail = validate_concept(
+            structured_md, self.mastery_level, course_title, self.topic_domain)
+        if ok:
+            return structured_md, {"ok": True, "problems": [], **detail}
+
+        best_md, best_problems, best_detail = structured_md, problems, detail
+        for attempt in range(self.max_depth_retries):
+            hint = regeneration_hint(best_problems)
+            logger.info(
+                f"  [DEPTH] '{title}' missed contract "
+                f"({', '.join(best_detail.get('missing') or []) or 'length'}); "
+                f"retry {attempt + 1}/{self.max_depth_retries}")
+            if self.status_callback:
+                self.status_callback(f"STRUCT:DEPTH_RETRY:{title}")
+            try:
+                candidate = self._condense_and_structure_content(
+                    title, content_to_use, course_title, self.mastery_level,
+                    complexity_role, source_type,
+                    hierarchy_context=h_ctx,
+                    previous_concepts=[], module_concepts=[],
+                    research_sources=research_sources,
+                    research_confidence=research_confidence,
+                    user_note=(user_note + "\n\n" + hint).strip(),
+                    bloom_level=bloom_level,
+                    learning_objectives=learning_objectives,
+                    prerequisite_titles=prerequisite_titles,
+                    research_structured=research_structured,
+                )
+            except Exception as e:
+                logger.warning(f"  [DEPTH] retry failed for '{title}': {e}")
+                break
+            if not candidate or "[Hydration failed]" in candidate:
+                break
+            c_ok, c_problems, c_detail = validate_concept(
+                candidate, self.mastery_level, course_title, self.topic_domain)
+            if c_ok:
+                logger.info(f"  [DEPTH] '{title}' met contract on retry {attempt + 1}")
+                return candidate, {"ok": True, "problems": [], **c_detail}
+            # Keep whichever attempt is closer to the contract.
+            if len(c_problems) < len(best_problems):
+                best_md, best_problems, best_detail = candidate, c_problems, c_detail
+
+        logger.warning(
+            f"  [DEPTH] '{title}' still below contract after "
+            f"{self.max_depth_retries} retries: {'; '.join(best_problems)}")
+        if self.status_callback:
+            self.status_callback(f"STRUCT:WARN:DEPTH_MISS:{title}")
+        return best_md, {"ok": False, "problems": best_problems, **best_detail}
 
     def _condense_and_structure_content(
         self,

@@ -172,6 +172,9 @@ def evaluate_course(uid):
             "monotonic_nondecreasing": blooms == sorted(blooms) if blooms else None,
             "span": bloom_span,
         },
+        # A1: the builder's own verdict on whether the course met the level it
+        # claims. Absent on courses built before enforcement existed.
+        "depth_contract": s.get("depth_contract"),
     }
 
 
@@ -191,6 +194,15 @@ def _gate_failures(m):
         f.append(f"Bloom span only {b['span']} — progression is nearly flat")
     if g["citation_coverage_pct"] < 90:
         f.append(f"citation coverage {g['citation_coverage_pct']}% (<90% — A2 gate)")
+
+    dc = m.get("depth_contract")
+    if dc is None:
+        f.append("no depth-contract verdict (built before A1 enforcement) — regenerate to verify level")
+    elif not dc.get("level_verified"):
+        f.append(
+            f"level NOT verified: only {dc.get('met_pct')}% of concepts met the "
+            f"mastery-{dc.get('mastery')} contract "
+            f"({dc.get('concepts_missing_contract')}/{dc.get('concepts_total')} missed)")
     return f
 
 
@@ -232,6 +244,13 @@ def cmd_evaluate(args):
               f"(<0.5: {g['below_0.5']})")
         print(f"  bloom      {b['targets']}  span={b['span']}  "
               f"monotonic={b['monotonic_nondecreasing']}")
+        dc = m.get("depth_contract")
+        if dc:
+            print(f"  depth      mastery={dc.get('mastery')} "
+                  f"met={dc.get('met_pct')}%  "
+                  f"level_verified={dc.get('level_verified')}")
+        else:
+            print("  depth      (no verdict — built before A1 enforcement)")
 
         fails = _gate_failures(m)
         if fails:
