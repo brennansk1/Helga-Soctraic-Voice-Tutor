@@ -60,7 +60,7 @@ weakest concept (renders "causal pathway" in epidemiology framing), and **7 of 2
 concept** — a third of the tree is degenerate scaffolding.
 
 > **Evidence gap that matters:** there is exactly **one** generated course on disk, with
-> `teaching_style=""`. We have no empirical basis for claiming quality across settings. Sprint S1
+> `teaching_style=""`. We have no empirical basis for claiming quality across settings. Sprint A1
 > exists primarily to create that basis.
 
 ---
@@ -158,7 +158,7 @@ Audited against code, not against the manifest's own claims.
 >
 > Consequence: **Mode B cannot teach a single standards-aligned lesson today.** No amount of
 > gamification, billing, or UX work changes that. Curriculum content is therefore promoted out of
-> Arc III into **S1.5 — a blocking prerequisite for every other Mode B sprint.**
+> Arc III entirely — and, per the 2026-08-02 sequencing decision, parked with Mode B (see §4.9).
 >
 > This is also the clearest possible vindication of the review discipline in §5: a plan built on
 > the manifest's self-reported status would have sequenced months of work on top of an empty table.
@@ -179,13 +179,13 @@ across five backbone models**. Apache 2.0 means we may port code with attributio
 
 ### Adopt (high value, fits our constraints)
 
-**1. Citation-grounded generation — S2.** This is the single most important lift. DeepTutor's core
+**1. Citation-grounded generation — A2.** This is the single most important lift. DeepTutor's core
 claim is that tutoring output is *grounded in retrievable sources with citations*. It directly fixes
 our worst honesty defect: content labelled `research+llm` with zero references. Adopting this makes
 `source_confidence` meaningful for the first time — a concept with no retrievable support should be
 *visibly* ungrounded, or regenerated, not silently shipped.
 
-**2. TutorBench-style evaluation — S0 and every sprint after.** The paper introduces **TutorBench**,
+**2. TutorBench-style evaluation — A0 and every sprint after.** The paper introduces **TutorBench**,
 "an interactive benchmark incorporating customized learner profiles grounded in university-level
 curricula across five domains," evaluated by "an LLM-based first-person interactive evaluation
 protocol that conducts assessments via a profile-driven student simulator."
@@ -216,14 +216,35 @@ repo tree — treat the layering as a design idea to evaluate, not a verified sp
 
 ## 4. Sprint plan
 
-Nine sprints in three arcs. Each has an explicit **exit gate** — objective, checkable, and verified
-by an independent reviewer who did not do the work (see §5). **A sprint does not end because work
+> **Sequencing decision (2026-08-02): Mode A ships first, complete. Mode B is parked.**
+> Curriculum sourcing is a licensing/content problem with lead time that engineering cannot
+> compress, and it gates nothing in Mode A. So we finish the Scholar product end to end — every
+> advertised capability reachable and honest — before resuming K-12. See §4.9 for what's parked
+> and why none of it rots while it waits.
+
+Eight sprints. Each has an explicit **exit gate** — objective, checkable, and verified by an
+independent reviewer who did not do the work (see §5). **A sprint does not end because work
 finished; it ends because the gate passed.**
 
-### Arc I — Make it true (S0–S2)
+### Definition of done for Mode A
+Mode A is finished when a self-directed adult can, without hitting a dead end:
+
+1. Ask for any subject and get a course **at the genuine depth requested** — a graduate-level ask
+   produces graduate-level material, not a uniform 700-words-per-concept flattening.
+2. Learn it Socratically, by **voice or text**, with tutoring that adapts to their demonstrated level.
+3. See **where the content came from** — real citations, and honest signalling when something is
+   thinly sourced.
+4. Be **reviewed on schedule** via FSRS, with review tied to what they actually struggled with.
+5. Use **all three advertised learning modes** — Socratic, Spaced Repetition, and Memory Palace.
+6. **Bring their own material** — upload an EPUB/PDF and have a course built from it.
+7. Trust that **every control does what it says it does.**
+
+Today, items 1, 3, 5, and 6 fail outright, and 7 is violated by known no-op toggles.
+
+### Arc I — Make it true (A0–A2)
 Stop shipping claims we can't back. Nothing new gets built on unverified ground.
 
-**S0 — Ground truth & harness** *(no features)*
+**A0 — Ground truth & harness** *(no features)*
 - Audit every "landed/partial" row in §2 to DONE/NOT-DONE with file:line evidence.
 - Stand up the stack; convert the 8 environmental e2e failures into genuine pass/fail.
 - Build **HelgaBench v0**: ≥6 student-simulator profiles, ≥3 subjects, run by a second model;
@@ -232,7 +253,7 @@ Stop shipping claims we can't back. Nothing new gets built on unverified ground.
   starting_from) and 2 grade bands. This creates the missing evidence base.
 - *Gate:* baseline numbers exist and are reproducible; §2 has no "needs verification" rows.
 
-**S1 — Course depth contract**
+**A1 — Course depth contract** *(the heart of Mode A)*
 - Define measurable depth targets per (scope, mastery) cell: concept count, word budget, required
   formalism (equations/proofs/derivations for STEM), prerequisite chain depth.
 - Enforce post-generation: verify output against the contract; regenerate or flag on miss.
@@ -242,61 +263,80 @@ Stop shipping claims we can't back. Nothing new gets built on unverified ground.
   measurably deeper output than an introductory one on the same topic. Blind-rated by an
   independent reviewer.
 
-**S1.5 — Curriculum content** *(blocking prerequisite for all Mode B work)*
-- Author/ingest Utah Core Standards seed files into `data/standards/*.yaml|json` — the loader
-  (`standards_loader.py`) is already built and idempotent, so this is a content task, not a code task.
-- Create the `data/catalog/` read-only catalog store (B16.2 — never started despite being marked done).
-- Generate and review a first tranche of catalog courses, standards-tagged, for at least one
-  subject × one grade band.
-- *Gate:* `SELECT COUNT(*) FROM standards` is non-trivial and matches the published Utah strand
-  count for the covered subjects; coverage audit (`storage.py:2100`) reports zero unmapped standards
-  in that tranche; a real student can complete a standards-aligned lesson end to end.
-
-**S2 — Real grounding & citations**
+**A2 — Real grounding & citations**
 - Complete hybrid retrieval; **remove silent degradation** — if dense is unavailable, say so loudly.
 - Emit inline citations in generated concepts, resolvable to a retrieved source.
 - Make `source_confidence` load-bearing: below threshold → regenerate, or surface as
   "limited sources" in the UI. Stop labelling ungrounded content `research+llm`.
 - *Gate:* ≥90% of concepts in golden courses carry ≥1 resolvable citation; zero concepts ship below
-  the confidence floor without a visible marker; HelgaBench grounding score beats S0 baseline.
+  the confidence floor without a visible marker; HelgaBench grounding score beats A0 baseline.
 
-### Arc II — Make it good (S3–S5)
+### Arc II — Make it whole (A3–A5)
+Close the gap between what Helga advertises and what a user can actually reach.
 
-**S3 — Pedagogy & personalization**
+**A3 — Complete the advertised surface** *(the literal "finish personal mode" sprint)*
+Three of the seven done-criteria fail because a feature exists in the backend with no way in:
+- **Memory Palace UI.** The FSM has the state (`fsm_logic.py:957`, `:2707`) but **no template
+  exists** — one of three advertised learning modes is unreachable. Build it, or make a deliberate
+  decision to drop it from the product and stop advertising it. Do not leave it half-present.
+- **EPUB/PDF ingestion UI.** `/api/upload_epub` is implemented (`app.py:686`) with **zero frontend
+  references**. "Bring your own material" is arguably *the* personal-mode feature; wire the upload
+  flow, progress feedback, and error states, and run the ingested text through the A1 depth contract.
+- **Honest controls.** `TOGGLE_TTS` / `TOGGLE_TEXT_ONLY` are no-ops (`fsm_logic.py:785`);
+  `/api/profile/reset` 404s for lack of a web-ui proxy. **No control may lie about its effect.**
+- *Gate:* all seven Mode A done-criteria are reachable end to end by a user who was given no
+  instructions; every interactive control has a verified effect; no advertised feature is
+  unreachable.
+
+**A4 — Pedagogy & personalization**
 - Enable tutor tools (`HELGA_ENABLE_TUTOR_TOOLS`) behind a reliability gate — they're built and
   disabled; validate and turn on. Keep `run_python` off by default.
-- Layered learner memory; difficulty-calibrated item generation; wire FSRS ↔ Socratic loop.
-- *Gate:* HelgaBench personalization score up materially vs baseline; no regression in grading
+- Layered learner memory; difficulty-calibrated question generation; wire FSRS ↔ Socratic loop so
+  review targets what the learner actually struggled with.
+- *Gate:* HelgaBench personalization score up materially vs A0 baseline; no regression in grading
   accuracy; tool-call failure rate below an agreed threshold.
 
-**S4 — UX truth & the learn loop**
-- Fix the no-op toggles and the `/api/profile/reset` 404 — **no control may lie about its effect**.
+**A5 — UX polish & the learn loop**
 - Reconcile the April orphaned UI work (`wip/april-2026-orphaned-work`: `learn-chat.css` 1138 lines,
-  `progress-tree.js`, avatars) — cherry-pick what's still wanted.
-- Kid-first IA (8→4 tabs per `docs/design/11`), onboarding, notifications.
-- *Gate:* every interactive control has a verified effect; e2e suite green; accessibility pass.
+  `progress-tree.js`, avatars) — cherry-pick what's still wanted onto the current trunk.
+- Learn-tab path visualization, session continuity, transcript persistence across restarts.
+- Accessibility pass.
+- *Gate:* e2e suite green on a live stack; accessibility pass; no dead UI or orphaned handlers.
 
-**S5 — Compliance & safety** *(hard gate for Mode B)*
-- COPPA verifiable parental consent; FERPA/Utah data rights (export + deletion).
-- Output moderation, crisis detection, parent alerting without sensitive-transcript transmission.
-- Health Strand 6 consent gating.
-- *Gate:* independent adversarial safety review — red-team the tutor with distress, abuse, and
-  jailbreak prompts. **No Mode B exposure to a real minor before this passes.**
+### Arc III — Make it last (A6–A7)
 
-### Arc III — Make it last (S6–S8)
+**A6 — Optimization pass** — see §6. *Gate:* p95 latency and course-generation-time targets met with
+**no quality regression** on HelgaBench or the golden courses. Optimization that costs quality is
+rejected, not traded off.
 
-**S6 — Catalog breadth** — extend S1.5's first tranche to the remaining subjects and grade bands;
-CMS review pipeline; versioning and provenance; admin console HTML frontend (API exists, UI deferred).
-*Gate:* coverage report shows no unmapped standards across all shipped subjects.
+**A7 — Hardening & release**
+- Ollama circuit breaker and graceful degradation (currently a hard external dependency with no
+  fallback); backup/restore drill; observability.
+- **Safety-lite:** even for consenting adults, keep crisis-resource surfacing and self-harm signal
+  handling. This is the one piece of the parked compliance work that ships with Mode A.
+- Fix `main.py:81`'s substring model preflight (false green).
+- *Gate:* survives a soak test and a simulated Ollama outage with no data loss; adversarial safety
+  review passes; a fresh install works from a clean checkout following only the README.
 
-**S7 — Optimization pass** — see §6. *Gate:* p95 latency and generation-time targets met, no quality
-regression on HelgaBench/golden courses.
+### 4.9 What is parked with Mode B — and why it won't rot
 
-**S8 — Scale & ops** — GPU fair-queue hardening, Ollama circuit breaker, Postgres migration path,
-backups, observability. *Gate:* survives a soak test and a simulated Ollama outage without data loss.
+Parked: Utah curriculum sourcing and catalog (B16), COPPA/FERPA consent gating, parent dashboard,
+Stripe Checkout, gamification skill-tree, kid-first IA, admin console frontend, Postgres/multi-worker
+scale-out.
 
-**Billing (B20) and gamification (B22)** slot into R3 alongside S4/S6; they are not on the quality
-critical path and must never gate a correctness sprint.
+**None of this is deleted or reverted.** The multi-tenant schema, per-student FSM registry, auth,
+Socket.IO room scoping, exam engine, GPU fair-queue, and compliance/audit primitives are already
+built, tested, and remain on main — they simply run with a single default student in Mode A. That is
+a deliberate advantage: Mode A exercises the multi-tenant paths continuously, so they stay alive
+rather than bit-rotting behind a flag.
+
+Two standing rules while parked:
+1. **The shared-core rule still applies** (§1). Mode A work must not hard-code single-user
+   assumptions that a later Mode B would have to unpick. Grade-band bounding stays a *profile
+   selection*, not a removed feature.
+2. **Curriculum sourcing has long lead time.** It is off the engineering schedule, not off the
+   calendar — begin rights/sourcing conversations whenever convenient, since that clock runs
+   independently of sprint velocity.
 
 ---
 
@@ -332,7 +372,7 @@ re-checked before it's believed.
 
 ## 6. Optimization passes
 
-Deliberately scheduled *after* correctness (S7), because optimizing unverified behavior is waste.
+Deliberately scheduled *after* correctness (A6), because optimizing unverified behavior is waste.
 
 **Model routing.** We currently use one model for everything. Skeleton generation, hydration,
 grading, and conversational turns have very different latency and quality needs. Route: a small fast
@@ -361,11 +401,11 @@ degrades gracefully rather than timing out. Keep the caches (`tts_cache`, `resea
    `qwen3.5:9b` is local and works.
 2. Fix `main.py:81` — its model preflight uses a **substring** match, so `qwen3:14b` "matches"
    `qwen3:14b-q4_K_M` and reports a false green while inference 404s.
-3. Start **S0**. Do not start S1 until §2 has no unverified rows.
-4. Triage `wip/april-2026-orphaned-work` for the UI work worth keeping (scheduled in S4).
-5. **Scope the curriculum-content effort early.** S1.5 is the long pole for Mode B and it is a
-   content/licensing problem, not an engineering one — sourcing and rights for Utah Core Standards
-   material has a lead time that no sprint velocity can compress. Begin it in parallel with S0.
+3. Start **A0**. Do not start A1 until §2 has no unverified rows.
+4. Triage `wip/april-2026-orphaned-work` for the UI work worth keeping (scheduled in A5).
+5. **Mode B curriculum sourcing is parked** (§4.9) but its clock runs independently of sprint
+   velocity — begin rights/sourcing conversations whenever convenient, since nothing in Mode A
+   blocks on them and nothing they need blocks on Mode A.
 
 ---
 
