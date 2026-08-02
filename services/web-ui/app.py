@@ -546,6 +546,22 @@ def update_profile():
         return jsonify({"error": str(e)}), 502
 
 
+@app.route('/api/profile/reset', methods=['POST'])
+def reset_profile():
+    """Reset learning progress (keeps course content).
+
+    A3: the Settings "Reset Progress" button has always POSTed here, but no
+    proxy existed on web-ui — only the implementation in librarian — so the
+    control 404'd. Mirrors the GET/PATCH proxies above.
+    """
+    try:
+        resp = requests.post(f'{SERVICES["rag"]}/api/profile/reset', timeout=10)
+        return jsonify(resp.json()), resp.status_code
+    except Exception as e:
+        logger.error(f"Profile reset error: {e}")
+        return jsonify({"error": str(e)}), 502
+
+
 @app.route('/api/gamification', methods=['GET'])
 def get_gamification():
     """Get gamification state (XP, level, streak, achievements)."""

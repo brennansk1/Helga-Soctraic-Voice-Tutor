@@ -1,0 +1,100 @@
+"""A3 tests: every user-facing control must have a verified effect.
+
+These guard the class of defect where the UI presents a control that silently
+does nothing — either a route the frontend calls that was never proxied, or an
+FSM event that returns success for a state change that never happened.
+"""
+
+import os
+import sys
+import unittest
+from unittest.mock import MagicMock, patch
+
+_here = os.path.dirname(__file__)
+_root = os.path.abspath(os.path.join(_here, '../../../'))
+_webui = os.path.join(_root, 'services/web-ui')
+for p in (_root, _webui):
+    if p not in sys.path:
+        sys.path.insert(0, p)
+
+for _mod in ("gevent", "gevent.monkey", "socketio", "flask_socketio"):
+    if isinstance(sys.modules.get(_mod), MagicMock):
+        del sys.modules[_mod]
+        sys.modules.pop("app", None)
+        sys.modules.pop("auth", None)
+
+import app as webui_app  # noqa: E402
+
+app = webui_app.app
+app.config['TESTING'] = True
+
+
+class TestProfileResetProxy(unittest.TestCase):
+    """The Settings 'Reset Progress' button POSTs /api/profile/reset.
+
+    librarian implemented it; web-ui never proxied it, so the button 404'd.
+    """
+
+    def test_reset_route_is_registered(self):
+        rules = {r.rule for r in app.url_map.iter_rules()}
+        self.assertIn(
+            '/api/profile/reset', rules,
+            "Settings 'Reset Progress' POSTs here; without a web-ui proxy the "
+            "control silently 404s."
+        )
+
+    def test_reset_route_accepts_post(self):
+        methods = set()
+        for r in app.url_map.iter_rules():
+            if r.rule == '/api/profile/reset':
+                methods |= r.methods
+        self.assertIn('POST', methods)
+
+    def test_reset_forwards_to_rag_and_returns_its_response(self):
+        client = app.test_client()
+        fake = MagicMock()
+        fake.json.return_value = {"status": "reset"}
+        fake.status_code = 200
+        with patch.object(webui_app.requests, 'post', return_value=fake) as post:
+            rv = client.post('/api/profile/reset')
+        self.assertEqual(rv.status_code, 200)
+        self.assertEqual(rv.get_json(), {"status": "reset"})
+        self.assertTrue(post.called, "reset must actually reach the RAG service")
+        self.assertIn('/api/profile/reset', post.call_args[0][0])
+
+    def test_reset_reports_upstream_failure_rather_than_faking_success(self):
+        client = app.test_client()
+        with patch.object(webui_app.requests, 'post',
+                          side_effect=Exception("rag down")):
+            rv = client.post('/api/profile/reset')
+        self.assertEqual(rv.status_code, 502)
+        self.assertIn('error', rv.get_json())
+
+
+class TestNoVestigialToggleEvents(unittest.TestCase):
+    """TOGGLE_MIC / TOGGLE_TTS / TOGGLE_TEXT_ONLY were removed, not implemented.
+
+    The FSM does not own audio: TTS is per-message and client-side, mic capture
+    is push-to-talk in session.js. The old handler swallowed these events and
+    returned True — reporting success for a no-op. Nothing may reintroduce that
+    without also implementing a real effect.
+    """
+
+    def test_fsm_does_not_silently_swallow_toggle_events(self):
+        fsm_path = os.path.join(_root, 'services/core/fsm_logic.py')
+        with open(fsm_path) as f:
+            src = f.read()
+        offending = [
+            ln.strip() for ln in src.splitlines()
+            if 'TOGGLE_TTS' in ln and not ln.lstrip().startswith('#')
+        ]
+        self.assertEqual(
+            offending, [],
+            "TOGGLE_* reappeared in fsm_logic as live code. If a global mute is "
+            "wanted it belongs in the client beside the playback it controls; "
+            "an FSM handler returning True is a control that lies."
+        )
+
+
+if __name__ == '__main__':
+    unittest.main()

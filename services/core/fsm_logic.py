@@ -978,10 +978,15 @@ class MnemosyneFSM:
         if not text and event_type != "PAUSE" and event_type != "RESUME":
             return False
 
-        # Voice-related events are no-ops in text-only mode
-        if event_type in ("TOGGLE_MIC", "TOGGLE_TTS", "TOGGLE_TEXT_ONLY"):
-            return True
-
+        # A3: TOGGLE_MIC / TOGGLE_TTS / TOGGLE_TEXT_ONLY were removed rather than
+        # implemented. They are vestiges of the old always-on-voice architecture
+        # and had no effect here: the FSM does not own audio. TTS is per-message
+        # and client-side (a play button per chat message -> POST /api/tts), and
+        # mic capture is push-to-talk in session.js -> POST /api/stt. Nothing in
+        # the UI has sent these events since that migration. Swallowing them
+        # returned True, which reported success for a state change that never
+        # happened. If a global mute is ever wanted, it belongs in the client
+        # next to the playback it controls, not in the FSM.
         if "pause" in text or event_type == "PAUSE":
             if self.state != "PAUSED":
                 self.previous_state = self.state

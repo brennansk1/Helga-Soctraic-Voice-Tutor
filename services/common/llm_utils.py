@@ -150,13 +150,17 @@ def llm_generate(
     retries: int = 3,
     max_tokens: int = 800,
     progress_callback=None,
+    think: bool = False,
 ) -> str:
     """Call LLM with retry logic.
 
-    Llama 3.1 8B Instruct adaptations:
+    Adaptations for Ollama + Qwen3.5:
     - Standard temperature (0.7) with slight increase on retry
     - Generous timeouts scaled to max_tokens
     - Heartbeat thread for progress feedback during long calls
+    - `think` defaults to False: qwen3.5 is a reasoning model whose thinking
+      block otherwise consumes the whole token budget and returns empty
+      content. See the comment at the request body below for measurements.
     """
     for attempt in range(retries):
         timeout = max(
@@ -195,9 +199,33 @@ def llm_generate(
                 ],
                 "max_tokens": max_tokens,
                 "temperature": temp,
+                # A1/A6: qwen3.5 is a reasoning model. Left enabled, it spends
+                # the ENTIRE token budget on its thinking block and returns an
+                # empty `content` — measured on this exact prompt:
+                #   max_tokens=400 -> 0 chars   (finish_reason=length)
+                #   max_tokens=800 -> 0 chars   (finish_reason=length)
+                # Every structured-generation call in course_builder uses
+                # 400-800, so skeletons, units, lessons and concepts were
+                # routinely coming back BLANK and falling through to retries
+                # and generic fallbacks. That is the likely root cause of both
+                # the long-blamed "~30% JSON failure rate" and the degenerate
+                # lessons (7 of 21 with <=1 concept) in the sample course.
+                #
+                # This endpoint is Ollama's OpenAI-compatible /v1 shim, which
+                # IGNORES the native `think` field — verified: think=False
+                # still returned 0 chars. The field it honors is
+                # `reasoning_effort`, and only the value "none" works
+                # ("low" still returned 0 chars):
+                #   reasoning_effort="none" -> 780 chars, finish=stop,  8.8s
+                #   (default/thinking)      ->   0 chars, finish=length, 34.4s
+                # So this is both the correctness fix and a ~4x speedup.
+                # Pass think=True to restore deliberation where it earns its
+                # latency; default off for build-time structured output.
+                **({} if think else {"reasoning_effort": "none"}),
             }
             logger.info(
-                f"[{req_id}] LLM Call (tokens:{max_tokens}, temp:{temp:.1f}): sys='{sys_prompt[:60]}...'"
+                f"[{req_id}] LLM Call (tokens:{max_tokens}, temp:{temp:.1f}, "
+                f"think={think}): sys='{sys_prompt[:60]}...'"
             )
 
             # Start heartbeat if we have a callback

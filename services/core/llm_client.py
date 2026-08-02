@@ -53,7 +53,7 @@ class LLMClient:
 
     def chat(self, system_prompt, user_message, max_tokens=512,
              temperature=0.6, json_mode=False, json_schema=None, images=None,
-             timeout=60, retries=3, ctx=None):
+             timeout=60, retries=3, ctx=None, think=False):
         """Send a chat completion request to Ollama.
 
         Args:
@@ -81,7 +81,18 @@ class LLMClient:
             ],
             "max_tokens": max_tokens,
             "temperature": temperature,
-            "stream": False
+            "stream": False,
+            # A1/A6: qwen3.5 is a reasoning model and this is Ollama's /v1
+            # shim. With reasoning on, the thinking block consumes the whole
+            # budget and `content` comes back EMPTY at these token counts —
+            # measured 0 chars at both max_tokens=400 and 800, and this
+            # method defaults to 512. That silently emptied live tutoring and
+            # grading responses, not just course building.
+            # The /v1 shim ignores the native `think` field; `reasoning_effort`
+            # is what it honors, and only "none" takes effect ("low" still
+            # returned 0 chars). Also ~4x faster (8.8s vs 34.4s).
+            # Pass think=True where deliberation is worth the latency.
+            **({} if think else {"reasoning_effort": "none"}),
         }
         # Constrained decoding: a JSON schema forces schema-valid output; plain
         # json_mode only nudges toward JSON. Prefer the schema when given.
@@ -265,7 +276,7 @@ class LLMClient:
         return {"text": last_text, "tool_calls": used}
 
     def chat_stream(self, system_prompt, user_message, max_tokens=512,
-                    temperature=0.6, timeout=120, ctx=None):
+                    temperature=0.6, timeout=120, ctx=None, think=False):
         """Stream a chat completion. Yields text chunks.
 
         Args:
@@ -286,7 +297,11 @@ class LLMClient:
             ],
             "max_tokens": max_tokens,
             "temperature": temperature,
-            "stream": True
+            "stream": True,
+            # See chat(): reasoning must be off or the thinking block eats the
+            # budget and the stream yields nothing usable. Streaming makes this
+            # worse — the user watches an empty response arrive.
+            **({} if think else {"reasoning_effort": "none"}),
         }
 
         if not get_breaker().allow():
