@@ -269,6 +269,12 @@ def main():
     p.add_argument("--out", help="write full results JSON here")
     p.add_argument("--compare", help="baseline JSON to diff against")
     p.add_argument("--verbose", action="store_true")
+    p.add_argument("--repeat", type=int, default=3,
+                   help="repeats per profile/topic (default 3). MEASURED: at "
+                        "1 repeat the run-to-run noise on this benchmark is up "
+                        "to ±1.4 on a 5-point scale — two identical runs "
+                        "scored misconception_handling 1.4 and 2.8. A single "
+                        "run CANNOT gate a sprint.")
     args = p.parse_args()
 
     keys = (list(PROFILES) if args.profiles == "all"
@@ -288,7 +294,9 @@ def main():
     runs, t0 = [], time.time()
     for key in keys:
         for topic in topics:
-            print(f"  {PROFILES[key]['label']} / {topic['concept']}")
+          for rep in range(max(1, args.repeat)):
+            suffix = f" [{rep + 1}/{args.repeat}]" if args.repeat > 1 else ""
+            print(f"  {PROFILES[key]['label']} / {topic['concept']}{suffix}")
             d = run_dialogue(client, key, topic, args.turns, args.verbose,
                              url=args.url, model=args.model)
             if d.get("error"):
@@ -314,15 +322,27 @@ def main():
         return 1
 
     print("\n" + "=" * 68)
-    overall = {}
+    overall, spread = {}, {}
     for d_ in DIMENSIONS:
         vals = [r["scores"][d_] for r in runs if r["scores"].get(d_)]
         overall[d_] = round(statistics.mean(vals), 2) if vals else None
-        print(f"  {d_:24} {overall[d_]}")
+        # Report dispersion alongside the mean. Without it a reader will treat
+        # a 0.2 move as signal when the noise floor is over 1 point.
+        sd = round(statistics.pstdev(vals), 2) if len(vals) > 1 else 0.0
+        spread[d_] = sd
+        print(f"  {d_:24} {overall[d_]}   (sd {sd}, n={len(vals)})")
     means = [r["mean"] for r in runs if r["mean"] is not None]
     overall["overall"] = round(statistics.mean(means), 2) if means else None
-    print(f"  {'OVERALL':24} {overall['overall']}")
+    overall_sd = round(statistics.pstdev(means), 2) if len(means) > 1 else 0.0
+    spread["overall"] = overall_sd
+    print(f"  {'OVERALL':24} {overall['overall']}   (sd {overall_sd}, n={len(means)})")
     print(f"  ({len(runs)} dialogues in {time.time() - t0:.0f}s)")
+
+    # The smallest difference worth believing, given observed dispersion.
+    if means:
+        mde = round(2 * (overall_sd / max(1, len(means)) ** 0.5), 2)
+        print(f"\n  Smallest trustworthy change at this sample size: ~{mde} "
+              f"(2 SE). Ignore differences below it.")
 
     # Weakest profile is usually the actionable signal.
     worst = min((r for r in runs if r["mean"] is not None),
@@ -336,13 +356,23 @@ def main():
             with open(args.compare) as f:
                 base = json.load(f).get("overall", {})
             print("\n  vs baseline:")
+            # Threshold from THIS run's dispersion, not a guessed constant.
+            # Measured: two identical 5-dialogue runs differed by 1.4 on
+            # misconception_handling, so a fixed ±0.3 rule reports noise as
+            # signal in both directions.
+            thresh = max(0.3, round(2 * (spread.get("overall", 0)
+                                         / max(1, len(means)) ** 0.5), 2))
             for d_ in DIMENSIONS + ["overall"]:
                 b, n = base.get(d_), overall.get(d_)
                 if b is None or n is None:
                     continue
                 delta = round(n - b, 2)
-                flag = "REGRESSION" if delta <= -0.3 else ("improved" if delta >= 0.3 else "")
+                if abs(delta) < thresh:
+                    flag = "(within noise)"
+                else:
+                    flag = "REGRESSION" if delta < 0 else "improved"
                 print(f"    {d_:24} {b} -> {n}  ({delta:+}) {flag}")
+            print(f"    [changes below {thresh} are not distinguishable from noise]")
         except Exception as e:
             print(f"  compare failed: {e}")
 

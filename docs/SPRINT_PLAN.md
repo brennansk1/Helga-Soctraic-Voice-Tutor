@@ -409,8 +409,26 @@ re-checked before it's believed.
 > read-only instructions**. Both were caught only because findings were independently verified.
 > **Never accept a self-reported GREEN.** Run the gate yourself, in a clean state.
 
+> ### ⚠️ Gates must clear the noise floor
+> Measured 2026-08-02, and it invalidates any gate phrased as "score beats baseline":
+> **two identical HelgaBench runs (same code, same prompt, 5 dialogues each) scored
+> `misconception_handling` 1.4 and 2.8, and `accuracy` 3.2 and 4.4** — a swing of ±1.4 on a
+> 5-point scale from sampling alone.
+>
+> Consequences, which apply to every LLM-judged metric in this plan:
+> 1. **A single run is not a gate.** Use `--repeat` (≥3) and judge on the mean with its
+>    dispersion, never on one number.
+> 2. **A fixed ±0.3 threshold reports noise as signal.** The harness now derives the
+>    smallest trustworthy change from the observed standard error and labels anything
+>    below it "(within noise)".
+> 3. **Report `sd` and `n` beside every mean.** A mean without dispersion invites exactly
+>    the false conclusion this note exists to prevent.
+> 4. If an effect is smaller than the noise floor, the honest report is *"no measurable
+>    effect"* — not a directional claim in whichever way the dice fell.
+
 **Standing quality instruments** (run every sprint, tracked over time):
-- **HelgaBench** — simulated-student tutoring quality across profiles.
+- **HelgaBench** — simulated-student tutoring quality across profiles. Run with `--repeat 3`
+  minimum; see the noise-floor warning above.
 - **Golden courses** — regenerate the 6-course matrix; diff quality metrics; catch generation drift.
 - **Grading eval** — `tools/grading_eval.py` + `grading_eval_cases.json` already exist; extend.
 - **Honesty audit** — every user-visible claim (labels, confidence scores, toggles) verified to
