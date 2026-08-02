@@ -3235,7 +3235,7 @@ class MnemosyneFSM:
         topic = text.lower()
         interactive = False
 
-        # Handle EPUB upload: extract filepath and derive topic from filename
+        # Handle uploaded document: extract filepath and derive topic
         if "from epub" in topic and not epub_filepath:
             parts = topic.split("from epub", 1)
             epub_filepath = parts[1].strip()
@@ -3244,6 +3244,40 @@ class MnemosyneFSM:
             topic = epub_name.replace('_', ' ').replace('-', ' ').strip()
             if not topic:
                 topic = "Uploaded Course"
+
+        # A3: actually READ the uploaded document. Until now the filename was
+        # the only thing used — uploading "organic_chemistry.epub" produced a
+        # generic course about the words "organic chemistry" and the book was
+        # never opened. Extraction failures are surfaced to the user rather
+        # than silently falling back to a filename-derived course, because a
+        # course that ignores the supplied material while appearing to use it
+        # is worse than a clear error.
+        source_text = ""
+        if epub_filepath:
+            try:
+                from services.common.document_extract import (
+                    extract, summarize_source, UnsupportedDocument,
+                    ExtractionFailed,
+                )
+                source_text = extract(epub_filepath)
+                logging.info(
+                    f"[SOURCE] {os.path.basename(epub_filepath)}: "
+                    f"{summarize_source(source_text)}")
+                self.send_status_update(
+                    f"Read {os.path.basename(epub_filepath)} — "
+                    f"{len(source_text.split()):,} words")
+            except (UnsupportedDocument, ExtractionFailed) as e:
+                msg = f"Could not read {os.path.basename(epub_filepath)}: {e}"
+                logging.error(f"[SOURCE] {msg}")
+                self.send_status_update(msg)
+                self.speak(msg)
+                return
+            except Exception as e:
+                logging.error(f"[SOURCE] Unexpected extraction error: {e}")
+                self.send_status_update(f"Could not read the uploaded file: {e}")
+                self.speak("I couldn't read that file, so I've stopped rather "
+                           "than build a course that ignores it.")
+                return
 
         for prefix in ["create course on ", "create course ", "create "]:
             if topic.startswith(prefix):
@@ -3454,6 +3488,11 @@ class MnemosyneFSM:
                     storage=self.storage,
                     mastery=_mastery,
                 )
+                # A3: if the user supplied a document, teach from IT. Previously
+                # the uploaded file was only used to guess a topic from its
+                # filename and its contents were never read.
+                if source_text:
+                    hydrator.source_document = source_text
                 try:
                     hydrator.hydrate(course_uid)
                 finally:

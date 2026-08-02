@@ -385,9 +385,14 @@ def review_page():
 
 @app.route('/palace')
 def palace_page():
-    """Memory Palace removed — redirect to home."""
-    from flask import redirect
-    return redirect('/')
+    """Memory Palace — the third advertised learning mode.
+
+    A3: this previously redirected to home ("removed"), while the FSM kept the
+    full MEMORY_PALACE state and five handlers and librarian kept /palace/start,
+    /locus/next and /anchor. The feature was half-present: advertised, backed by
+    working services, and unreachable. Restored rather than left in that state.
+    """
+    return render_template('palace.html')
 
 @app.route('/schedule')
 def schedule_page():
@@ -828,9 +833,18 @@ def upload_epub():
     if file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
     
-    # EPUB-2: Validate file type
-    if not file.filename.lower().endswith('.epub'):
-        return jsonify({'error': 'Only .epub files are accepted'}), 400
+    # EPUB-2/A3: accept exactly what services/common/document_extract.py can
+    # actually parse. PDF is rejected explicitly with a reason rather than
+    # accepted-then-ignored, which is how this feature used to behave.
+    name = file.filename.lower()
+    ACCEPTED = ('.epub', '.md', '.markdown', '.txt')
+    if not name.endswith(ACCEPTED):
+        if name.endswith(('.pdf', '.doc', '.docx', '.mobi', '.azw', '.azw3')):
+            return jsonify({'error':
+                f'{os.path.splitext(name)[1]} is not supported — no parser is '
+                f'installed for it. Convert to EPUB, Markdown or plain text first.'
+            }), 400
+        return jsonify({'error': f'Accepted formats: {", ".join(ACCEPTED)}'}), 400
     
     try:
         upload_dir = '/app/data/uploads'
@@ -1075,10 +1089,18 @@ def palace_start():
 
 @app.route('/locus/next', methods=['GET'])
 def locus_next():
-    """Get next locus in memory palace."""
+    """Get next locus in memory palace.
+
+    A3: previously dropped course_uid, which librarian's /locus/next requires —
+    the call always 400'd, so walking the palace could never work.
+    """
     current = request.args.get('current', '')
+    course_uid = request.args.get('course_uid', '')
     try:
-        resp = requests.get(f'{SERVICES["rag"]}/locus/next', params={'current': current}, timeout=5)
+        resp = requests.get(
+            f'{SERVICES["rag"]}/locus/next',
+            params={'current': current, 'course_uid': course_uid},
+            timeout=5)
         return jsonify(resp.json()), resp.status_code
     except Exception as e:
         return jsonify({'error': str(e)}), 502

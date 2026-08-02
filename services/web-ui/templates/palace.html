@@ -1,0 +1,274 @@
+{% extends "base.html" %}
+
+{% block title %}Memory Palace - Helga{% endblock %}
+
+{% block content %}
+<div class="palace-page">
+    <header class="palace-header">
+        <h1>Memory Palace</h1>
+        <p class="palace-sub">
+            Walk your course as a sequence of places. At each locus, anchor the
+            idea to a vivid image — the stranger and more sensory, the better it sticks.
+        </p>
+    </header>
+
+    <div id="palace-setup" class="palace-card">
+        <label for="palace-course">Choose a course to walk</label>
+        <select id="palace-course"><option value="">Loading courses…</option></select>
+        <button id="palace-begin" class="btn-primary" disabled>Begin walk</button>
+        <p id="palace-setup-error" class="palace-error" hidden></p>
+    </div>
+
+    <div id="palace-session" hidden>
+        <div class="palace-progress">
+            <span id="palace-position">Locus 1 of 1</span>
+            <div class="palace-bar"><div id="palace-bar-fill"></div></div>
+        </div>
+
+        <div class="palace-card palace-locus">
+            <div class="palace-locus-label">You are standing at</div>
+            <h2 id="palace-locus-title">—</h2>
+
+            <div id="palace-anchor-existing" hidden>
+                <div class="palace-anchor-badge">Anchored here</div>
+                <p id="palace-anchor-concept" class="palace-anchor-concept"></p>
+                <p id="palace-anchor-sensory" class="palace-anchor-sensory"></p>
+            </div>
+
+            <div id="palace-anchor-empty" class="palace-empty">
+                Nothing anchored here yet.
+            </div>
+        </div>
+
+        <div class="palace-card">
+            <h3>Place an image here</h3>
+            <label for="palace-concept-text">What are you memorising?</label>
+            <input id="palace-concept-text" type="text"
+                   placeholder="e.g. Confounding variable" maxlength="200">
+
+            <label for="palace-sensory-text">Describe it as a vivid scene</label>
+            <textarea id="palace-sensory-text" rows="3" maxlength="600"
+                placeholder="e.g. A tangled knot of red wires sparking between two doors, so loud you cover your ears."></textarea>
+
+            <div class="palace-actions">
+                <button id="palace-place" class="btn-primary">Anchor it</button>
+                <button id="palace-next" class="btn-secondary">Walk on →</button>
+            </div>
+            <p id="palace-msg" class="palace-msg" hidden></p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+(function () {
+    'use strict';
+
+    var state = { courseUid: '', locusUid: '', index: 0, total: 0 };
+
+    function $(id) { return document.getElementById(id); }
+
+    function show(el, on) {
+        if (el) { el.hidden = !on; }
+    }
+
+    function msg(text, isError) {
+        var m = $('palace-msg');
+        if (!m) return;
+        m.textContent = text;
+        m.className = 'palace-msg' + (isError ? ' palace-error' : '');
+        show(m, !!text);
+        if (text && !isError) {
+            setTimeout(function () { show(m, false); }, 4000);
+        }
+    }
+
+    // --- load courses -------------------------------------------------------
+    fetch('/api/courses')
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            var list = (data && (data.courses || data)) || [];
+            var sel = $('palace-course');
+            sel.innerHTML = '';
+            if (!list.length) {
+                sel.innerHTML = '<option value="">No courses yet — create one first</option>';
+                return;
+            }
+            sel.innerHTML = '<option value="">Select a course…</option>';
+            list.forEach(function (c) {
+                var o = document.createElement('option');
+                o.value = c.uid;
+                o.textContent = c.title || c.uid;
+                sel.appendChild(o);
+            });
+            sel.addEventListener('change', function () {
+                $('palace-begin').disabled = !this.value;
+            });
+        })
+        .catch(function (e) {
+            var err = $('palace-setup-error');
+            err.textContent = 'Could not load courses: ' + e.message;
+            show(err, true);
+        });
+
+    // --- render a locus -----------------------------------------------------
+    function render(d) {
+        if (!d || d.error) {
+            msg((d && d.error) || 'Could not load this locus.', true);
+            return;
+        }
+        state.locusUid = d.uid || '';
+        if (typeof d.index === 'number') state.index = d.index;
+        if (typeof d.total === 'number') state.total = d.total;
+
+        $('palace-locus-title').textContent = d.description || 'Unknown location';
+        $('palace-position').textContent =
+            'Locus ' + (state.index + 1) + ' of ' + (state.total || 1);
+        var pct = state.total ? ((state.index + 1) / state.total) * 100 : 0;
+        $('palace-bar-fill').style.width = pct + '%';
+
+        var has = !!d.has_concept;
+        show($('palace-anchor-existing'), has);
+        show($('palace-anchor-empty'), !has);
+        if (has) {
+            $('palace-anchor-concept').textContent = d.concept_title || '';
+            $('palace-anchor-sensory').textContent = d.sensory_text || '';
+        }
+        // Pre-fill so walking back lets you refine an existing image.
+        $('palace-concept-text').value = has ? (d.concept_title || '') : '';
+        $('palace-sensory-text').value = has ? (d.sensory_text || '') : '';
+    }
+
+    // --- begin --------------------------------------------------------------
+    $('palace-begin').addEventListener('click', function () {
+        var uid = $('palace-course').value;
+        if (!uid) return;
+        state.courseUid = uid;
+        this.disabled = true;
+        this.textContent = 'Starting…';
+        var self = this;
+
+        fetch('/palace/start?course_uid=' + encodeURIComponent(uid))
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (d.error) {
+                    var err = $('palace-setup-error');
+                    err.textContent = d.error;
+                    show(err, true);
+                    self.disabled = false;
+                    self.textContent = 'Begin walk';
+                    return;
+                }
+                show($('palace-setup'), false);
+                show($('palace-session'), true);
+                render(d);
+                // Tell the FSM which course we're in so its MEMORY_PALACE
+                // handlers operate on the same course as this page.
+                if (window.sendEvent) {
+                    window.sendEvent('SET_CONTEXT', { course_uid: uid });
+                }
+            })
+            .catch(function (e) {
+                var err = $('palace-setup-error');
+                err.textContent = 'Could not start: ' + e.message;
+                show(err, true);
+                self.disabled = false;
+                self.textContent = 'Begin walk';
+            });
+    });
+
+    // --- anchor -------------------------------------------------------------
+    $('palace-place').addEventListener('click', function () {
+        var concept = $('palace-concept-text').value.trim();
+        var sensory = $('palace-sensory-text').value.trim();
+        if (!concept) { msg('Name what you are memorising first.', true); return; }
+        if (!state.locusUid) { msg('No locus selected.', true); return; }
+
+        var btn = this;
+        btn.disabled = true;
+        fetch('/anchor', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                course_uid: state.courseUid,
+                locus_uid: state.locusUid,
+                concept_text: concept,
+                sensory_text: sensory
+            })
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                btn.disabled = false;
+                if (d.error) { msg(d.error, true); return; }
+                msg(d.message || 'Anchored.');
+                show($('palace-anchor-existing'), true);
+                show($('palace-anchor-empty'), false);
+                $('palace-anchor-concept').textContent = concept;
+                $('palace-anchor-sensory').textContent = sensory;
+            })
+            .catch(function (e) {
+                btn.disabled = false;
+                msg('Could not anchor: ' + e.message, true);
+            });
+    });
+
+    // --- walk on ------------------------------------------------------------
+    $('palace-next').addEventListener('click', function () {
+        if (!state.locusUid) return;
+        var btn = this;
+        btn.disabled = true;
+        // course_uid is required by the service; the proxy used to drop it.
+        fetch('/locus/next?current=' + encodeURIComponent(state.locusUid) +
+              '&course_uid=' + encodeURIComponent(state.courseUid))
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                btn.disabled = false;
+                if (d.error) { msg(d.error, true); return; }
+                if (d.end || d.finished) {
+                    msg('You have walked the whole palace.');
+                    return;
+                }
+                render(d);
+            })
+            .catch(function (e) {
+                btn.disabled = false;
+                msg('Could not walk on: ' + e.message, true);
+            });
+    });
+})();
+</script>
+<style>
+.palace-page { max-width: 780px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+.palace-header h1 { margin-bottom: .35rem; }
+.palace-sub { opacity: .75; margin-bottom: 1.5rem; line-height: 1.5; }
+.palace-card {
+    background: var(--card-bg, rgba(127,127,127,.08));
+    border: 1px solid var(--border-color, rgba(127,127,127,.25));
+    border-radius: 12px; padding: 1.25rem; margin-bottom: 1.25rem;
+}
+.palace-card label { display: block; margin: .75rem 0 .3rem; font-weight: 600; font-size: .92rem; }
+.palace-card input[type=text], .palace-card textarea, .palace-card select {
+    width: 100%; padding: .6rem .7rem; border-radius: 8px;
+    border: 1px solid var(--border-color, rgba(127,127,127,.35));
+    background: var(--input-bg, transparent); color: inherit; font: inherit;
+}
+.palace-locus-label { font-size: .8rem; text-transform: uppercase;
+    letter-spacing: .08em; opacity: .6; }
+.palace-locus h2 { margin: .25rem 0 1rem; }
+.palace-empty { opacity: .6; font-style: italic; }
+.palace-anchor-badge { display: inline-block; font-size: .75rem; padding: .15rem .5rem;
+    border-radius: 999px; background: rgba(80,160,120,.2); margin-bottom: .5rem; }
+.palace-anchor-concept { font-weight: 600; margin: 0 0 .25rem; }
+.palace-anchor-sensory { opacity: .8; margin: 0; line-height: 1.5; }
+.palace-progress { display: flex; align-items: center; gap: .75rem; margin-bottom: 1rem; }
+.palace-progress span { font-size: .85rem; opacity: .75; white-space: nowrap; }
+.palace-bar { flex: 1; height: 6px; border-radius: 999px;
+    background: rgba(127,127,127,.2); overflow: hidden; }
+#palace-bar-fill { height: 100%; width: 0; background: var(--accent, #6c8cff);
+    transition: width .3s ease; }
+.palace-actions { display: flex; gap: .6rem; margin-top: 1rem; flex-wrap: wrap; }
+.palace-msg { margin-top: .75rem; font-size: .9rem; }
+.palace-error { color: var(--danger, #d9534f); }
+</style>
+{% endblock %}

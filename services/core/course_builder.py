@@ -1740,6 +1740,10 @@ class ContentHydrator:
         # to disable the retry+marker behaviour entirely.
         self.confidence_floor = float(os.getenv("HELGA_CONFIDENCE_FLOOR", "0.5"))
         self._low_confidence_concepts = []
+        # A3: text of a user-supplied document (EPUB/markdown/text). When set,
+        # concepts are grounded in the user's OWN material rather than only in
+        # web research. Previously uploaded files were never read at all.
+        self.source_document = ""
 
         if storage:
             self.storage = storage
@@ -1917,8 +1921,25 @@ class ContentHydrator:
                 except Exception as e:
                     logger.warning(f"  [RESEARCH] broaden failed for '{title}': {e}")
 
-            content_to_use = reference_material if reference_material else ""
-            source_type = "research+llm" if reference_material else "llm-only"
+            # A3: the user's own document takes precedence as source material —
+            # that is the entire point of uploading it. Web research is
+            # appended as supporting context, not as a replacement.
+            user_excerpt = ""
+            if self.source_document:
+                user_excerpt = self._excerpt_for_concept(
+                    self.source_document, title, h_ctx)
+
+            if user_excerpt:
+                content_to_use = user_excerpt
+                if reference_material:
+                    content_to_use += "\n\n---\n\n" + reference_material
+                source_type = "user-document+research" if reference_material else "user-document"
+                # Material supplied by the learner is authoritative for them,
+                # so it should not be penalised by the web-grounding floor.
+                research_confidence = max(research_confidence, self.confidence_floor)
+            else:
+                content_to_use = reference_material if reference_material else ""
+                source_type = "research+llm" if reference_material else "llm-only"
 
             # Still weak after the retry: say so in the artifact itself rather
             # than shipping thin content that looks identical to well-grounded
@@ -2215,6 +2236,51 @@ class ContentHydrator:
         result["edge_cases"] = " ".join(edges[:3])
         result["remainder"] = " ".join(other)[:1500]
         return result
+
+    def _excerpt_for_concept(self, document, title, hierarchy_ctx=None,
+                             window=6000):
+        """Pull the most relevant slice of a user document for one concept.
+
+        A whole book will not fit in context, so we locate the passages that
+        mention the concept (and its parent module) and return a window around
+        the best match. Deliberately simple lexical scoring: this runs once per
+        concept during a build, and the alternative — embedding an entire book
+        on a local 9B setup — is not worth the cost here.
+
+        Returns "" when the document has nothing to say about the concept, so
+        the caller can fall back to research rather than feeding in an
+        arbitrary, unrelated chunk.
+        """
+        if not document or not title:
+            return ""
+
+        terms = [t for t in re.findall(r"[a-z0-9]+", title.lower()) if len(t) > 3]
+        if hierarchy_ctx:
+            for key in ("module", "unit", "lesson"):
+                val = hierarchy_ctx.get(key) or ""
+                terms += [t for t in re.findall(r"[a-z0-9]+", val.lower())
+                          if len(t) > 3]
+        if not terms:
+            return ""
+
+        low = document.lower()
+        # Score fixed-size blocks by how many distinct concept terms they hit.
+        block = max(1000, window // 2)
+        best_score, best_pos = 0, -1
+        for start in range(0, max(1, len(low) - 1), block):
+            chunk = low[start:start + block]
+            score = sum(1 for t in set(terms) if t in chunk)
+            if score > best_score:
+                best_score, best_pos = score, start
+
+        # Require more than a single incidental term match.
+        if best_pos < 0 or best_score < 2:
+            return ""
+
+        half = window // 2
+        centre = best_pos + block // 2
+        s = max(0, centre - half)
+        return document[s:s + window].strip()
 
     def _enforce_depth_contract(self, structured_md, title, course_title,
                                 complexity_role, source_type, h_ctx,

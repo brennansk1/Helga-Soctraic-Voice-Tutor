@@ -12,8 +12,175 @@
         <div class="action-buttons">
             <button class="btn-alpine btn-alpine-primary" onclick="openQuickCreate()">Quick Create</button>
             <button class="btn-alpine btn-alpine-secondary" onclick="window.location.href='/courses/new'">Build Custom</button>
+            <button class="btn-alpine btn-alpine-secondary" onclick="openImportModal()">Import a Book</button>
         </div>
     </div>
+
+<!-- A3: "bring your own material". The backend route existed with no UI at
+     all, and (until now) never read the uploaded file. -->
+<div id="import-backdrop" class="alpine-modal-backdrop" onclick="if(event.target===this) closeImportModal();">
+    <div class="alpine-modal" style="max-width: 520px;">
+        <h2>Build a course from your own material</h2>
+        <p class="modal-sub">
+            Upload a book or notes and Helga will teach from its actual
+            contents. Supported: <strong>.epub</strong>, <strong>.md</strong>,
+            <strong>.txt</strong>.
+        </p>
+
+        <form id="import-form" onsubmit="return false;">
+            <label for="import-file">File</label>
+            <input type="file" id="import-file" accept=".epub,.md,.markdown,.txt">
+            <p id="import-file-info" class="modal-hint" hidden></p>
+
+            <div id="import-progress" hidden>
+                <div class="import-bar"><div id="import-bar-fill"></div></div>
+                <p id="import-progress-text" class="modal-hint">Uploading…</p>
+            </div>
+
+            <p id="import-error" class="modal-error" hidden></p>
+
+            <div style="display:flex; gap:.6rem; margin-top:1.25rem;">
+                <button type="button" id="import-submit" class="btn-alpine btn-alpine-primary"
+                        style="flex:1;" onclick="submitImport()" disabled>Build course</button>
+                <button type="button" class="btn-alpine btn-alpine-secondary"
+                        onclick="closeImportModal()">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+// Formats the backend can actually parse. PDF is deliberately excluded — no
+// parser is installed, and accepting it would produce a course that ignores
+// the file.
+var IMPORT_OK = ['.epub', '.md', '.markdown', '.txt'];
+var IMPORT_MAX_MB = 50;
+
+function openImportModal() {
+    document.getElementById('import-backdrop').classList.add('active');
+}
+
+function closeImportModal() {
+    document.getElementById('import-backdrop').classList.remove('active');
+    // EPUB-4: reset so a failed attempt doesn't leave the old file selected.
+    var f = document.getElementById('import-form');
+    if (f) f.reset();
+    ['import-error', 'import-file-info', 'import-progress'].forEach(function (id) {
+        var el = document.getElementById(id); if (el) el.hidden = true;
+    });
+    var btn = document.getElementById('import-submit');
+    btn.disabled = true;
+    btn.textContent = 'Build course';
+}
+
+function importError(msg) {
+    var e = document.getElementById('import-error');
+    e.textContent = msg;
+    e.hidden = false;
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    var input = document.getElementById('import-file');
+    if (!input) return;
+    input.addEventListener('change', function () {
+        var btn = document.getElementById('import-submit');
+        var info = document.getElementById('import-file-info');
+        document.getElementById('import-error').hidden = true;
+        var file = this.files && this.files[0];
+        if (!file) { btn.disabled = true; info.hidden = true; return; }
+
+        var name = file.name.toLowerCase();
+        var okExt = IMPORT_OK.some(function (x) { return name.endsWith(x); });
+        if (!okExt) {
+            btn.disabled = true; info.hidden = true;
+            importError(name.endsWith('.pdf')
+                ? 'PDF is not supported yet — convert to EPUB, Markdown or text first.'
+                : 'Unsupported file type. Use .epub, .md or .txt.');
+            return;
+        }
+        var mb = file.size / (1024 * 1024);
+        if (mb > IMPORT_MAX_MB) {
+            btn.disabled = true; info.hidden = true;
+            importError('File is ' + mb.toFixed(1) + ' MB — the limit is ' + IMPORT_MAX_MB + ' MB.');
+            return;
+        }
+        info.textContent = file.name + ' — ' + mb.toFixed(1) + ' MB';
+        info.hidden = false;
+        btn.disabled = false;
+    });
+});
+
+function submitImport() {
+    var input = document.getElementById('import-file');
+    var file = input.files && input.files[0];
+    if (!file) { importError('Choose a file first.'); return; }
+
+    var btn = document.getElementById('import-submit');
+    btn.disabled = true;
+    btn.textContent = 'Uploading…';
+    document.getElementById('import-error').hidden = true;
+    document.getElementById('import-progress').hidden = false;
+
+    var fd = new FormData();
+    fd.append('file', file);
+
+    // EPUB-3: XHR rather than fetch so upload progress is observable — a large
+    // book otherwise looks frozen.
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/upload_epub');
+    xhr.setRequestHeader('X-CSRF-Token', window.CSRF_TOKEN || '');
+
+    xhr.upload.onprogress = function (e) {
+        if (!e.lengthComputable) return;
+        var pct = Math.round((e.loaded / e.total) * 100);
+        document.getElementById('import-bar-fill').style.width = pct + '%';
+        document.getElementById('import-progress-text').textContent =
+            pct < 100 ? 'Uploading… ' + pct + '%'
+                      : 'Reading the document and building your course…';
+    };
+
+    xhr.onload = function () {
+        var data = {};
+        try { data = JSON.parse(xhr.responseText || '{}'); } catch (e) {}
+        if (xhr.status >= 200 && xhr.status < 300) {
+            document.getElementById('import-progress-text').textContent =
+                data.message || 'Course creation started.';
+            btn.textContent = 'Started';
+            // Creation is asynchronous; the course appears when it completes.
+            setTimeout(function () {
+                closeImportModal();
+                if (window.loadCourses) window.loadCourses();
+            }, 2500);
+        } else {
+            document.getElementById('import-progress').hidden = true;
+            importError(data.error || ('Upload failed (' + xhr.status + ')'));
+            btn.disabled = false;
+            btn.textContent = 'Build course';
+        }
+    };
+
+    xhr.onerror = function () {
+        document.getElementById('import-progress').hidden = true;
+        importError('Network error during upload.');
+        btn.disabled = false;
+        btn.textContent = 'Build course';
+    };
+
+    xhr.send(fd);
+}
+</script>
+
+<style>
+#import-form label { display:block; margin:.9rem 0 .35rem; font-weight:600; font-size:.9rem; }
+#import-form input[type=file] { width:100%; }
+.modal-sub { opacity:.75; line-height:1.5; margin-bottom:.5rem; }
+.modal-hint { font-size:.85rem; opacity:.7; margin-top:.4rem; }
+.modal-error { color: var(--danger,#d9534f); font-size:.88rem; margin-top:.6rem; }
+.import-bar { height:6px; border-radius:999px; background:rgba(127,127,127,.2);
+    overflow:hidden; margin-top:.9rem; }
+#import-bar-fill { height:100%; width:0; background:var(--accent,#6c8cff);
+    transition:width .2s ease; }
+</style>
 
     <div id="courses-grid" class="course-card-grid">
         <div class="empty-state" id="courses-loading">

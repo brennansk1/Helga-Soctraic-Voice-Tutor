@@ -61,7 +61,11 @@ class TestPageRendering:
         ("/test", 200, b"Test"),
         ("/review", 200, b"Review"),
         ("/schedule", 200, b"Schedule"),
-        ("/palace", 302, None),
+        # A3: Memory Palace is reachable again. It previously redirected to
+        # home while the FSM kept the full MEMORY_PALACE state and librarian
+        # kept /palace/start, /locus/next and /anchor — one of three advertised
+        # learning modes, backed by working services, with no way in.
+        ("/palace", 200, b"Memory Palace"),
         ("/account", 302, None),
     ]
 
