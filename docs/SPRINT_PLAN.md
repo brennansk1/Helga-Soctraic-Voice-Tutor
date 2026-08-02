@@ -127,22 +127,41 @@ implementing code found.
 | `/api/profile/reset` proxy | **Broken** | 404 |
 
 ### K-12 platform (Mode B)
-| Feature | Status |
-|---|---|
-| Data model v4–v9, multi-tenant schema | **Landed** (per branch history; audit in S0) |
-| Per-student FSM registry (kills global singleton) | **Landed, needs verification** |
-| Auth: parent/student + PIN roles | **Landed, needs verification** |
-| Utah standards ingestion + catalog | **Partial** — schema present; seed data coverage unaudited |
-| Parent dashboard + elective approval | **Partial** |
-| Gamification 2.0 (server-authoritative XP) | **Partial** |
-| Stripe billing + seat enforcement | **Partial** |
-| COPPA/FERPA consent gating | **Design-heavy, code-light** — S5 gate |
-| Output moderation + crisis detection | **Design-only** — S5 gate |
-| GPU fair-queue + Ollama circuit breaker | **Partial** |
-| xAPI analytics, `/metrics`, structured logs | **Landed** |
+Audited against code, not against the manifest's own claims.
 
-> S0 exists to convert every "landed, needs verification" and "partial" above into a hard
-> DONE/NOT-DONE with file:line evidence. **Do not plan on top of unverified status.**
+| Feature | Status | Evidence |
+|---|---|---|
+| Data model v4–v9, multi-tenant schema | **Done** | `storage.py:100` `_init_db`, migrations to v9 |
+| Auto-migration v1→v9 on open | **Done** | `storage.py:380–579`; stale v3 dev DBs self-upgrade |
+| Per-student FSM registry (kills global singleton) | **Done** | `services/core/fsm_registry.py` |
+| Auth: parent/student + PIN roles | **Done** | `services/web-ui/auth.py` |
+| Socket.IO per-student room scoping | **Done** | `app.py:273` `join_room(f"student:{sid}")` |
+| Exam engine + interest theming | **Done** | `services/exam/exam_engine.py` |
+| Parent dashboard + elective approval | **Done** | `parent_api.py`, `templates/parent/*` |
+| COPPA/FERPA rights + audit trail | **Done** | `parent_api.py:403`, `storage.py:2377` |
+| Safety moderation gating | **Done** | `safety.py:71` → `fsm_logic.py:895` |
+| GPU fair-queue | **Done** | `services/core/gpu_gate.py` |
+| xAPI, `/metrics`, structured logs | **Done** | `services/common/xapi.py` |
+| Standards loader | **Built** | `services/common/standards_loader.py` |
+| **Utah standards CONTENT** | **🔴 ABSENT** | `standards` table = **0 rows**; `data/standards/` does not exist; `catalog/` empty |
+| Read-only catalog store (B16.2) | **Not started** | `data/catalog/` does not exist (docs claim done) |
+| Stripe Checkout + portal (B20.1) | **Not started** | webhook/seats exist (`app.py:1467`); no Checkout |
+| Gamification skill-tree UI | **Partial** | tables exist; UI missing |
+| Crisis detection + parent alerting | **Partial** | alerts exist (`common/alerts.py`); crisis path unverified |
+
+> ### 🔴 The finding that reorders this plan
+> **Mode B has a complete machine and no fuel.** Schema, loader, exam engine, parent dashboard,
+> compliance code, and grade-band adaptation are all genuinely built and verified. But the
+> `standards` table holds **zero rows**, the `data/standards/` seed directory the loader reads
+> from **does not exist**, and `catalog/` is **empty**. `BUILD_MANIFEST.md` marks B16.1/B16.2 as
+> done; the code disagrees.
+>
+> Consequence: **Mode B cannot teach a single standards-aligned lesson today.** No amount of
+> gamification, billing, or UX work changes that. Curriculum content is therefore promoted out of
+> Arc III into **S1.5 — a blocking prerequisite for every other Mode B sprint.**
+>
+> This is also the clearest possible vindication of the review discipline in §5: a plan built on
+> the manifest's self-reported status would have sequenced months of work on top of an empty table.
 
 ---
 
@@ -223,6 +242,16 @@ Stop shipping claims we can't back. Nothing new gets built on unverified ground.
   measurably deeper output than an introductory one on the same topic. Blind-rated by an
   independent reviewer.
 
+**S1.5 — Curriculum content** *(blocking prerequisite for all Mode B work)*
+- Author/ingest Utah Core Standards seed files into `data/standards/*.yaml|json` — the loader
+  (`standards_loader.py`) is already built and idempotent, so this is a content task, not a code task.
+- Create the `data/catalog/` read-only catalog store (B16.2 — never started despite being marked done).
+- Generate and review a first tranche of catalog courses, standards-tagged, for at least one
+  subject × one grade band.
+- *Gate:* `SELECT COUNT(*) FROM standards` is non-trivial and matches the published Utah strand
+  count for the covered subjects; coverage audit (`storage.py:2100`) reports zero unmapped standards
+  in that tranche; a real student can complete a standards-aligned lesson end to end.
+
 **S2 — Real grounding & citations**
 - Complete hybrid retrieval; **remove silent degradation** — if dense is unavailable, say so loudly.
 - Emit inline citations in generated concepts, resolvable to a retrieved source.
@@ -256,8 +285,9 @@ Stop shipping claims we can't back. Nothing new gets built on unverified ground.
 
 ### Arc III — Make it last (S6–S8)
 
-**S6 — Catalog & standards depth** — complete Utah standards ingestion and coverage audit; CMS
-review pipeline; provenance. *Gate:* coverage report shows no unmapped standards in shipped subjects.
+**S6 — Catalog breadth** — extend S1.5's first tranche to the remaining subjects and grade bands;
+CMS review pipeline; versioning and provenance; admin console HTML frontend (API exists, UI deferred).
+*Gate:* coverage report shows no unmapped standards across all shipped subjects.
 
 **S7 — Optimization pass** — see §6. *Gate:* p95 latency and generation-time targets met, no quality
 regression on HelgaBench/golden courses.
@@ -333,3 +363,17 @@ degrades gracefully rather than timing out. Keep the caches (`tts_cache`, `resea
    `qwen3:14b-q4_K_M` and reports a false green while inference 404s.
 3. Start **S0**. Do not start S1 until §2 has no unverified rows.
 4. Triage `wip/april-2026-orphaned-work` for the UI work worth keeping (scheduled in S4).
+5. **Scope the curriculum-content effort early.** S1.5 is the long pole for Mode B and it is a
+   content/licensing problem, not an engineering one — sourcing and rights for Utah Core Standards
+   material has a lead time that no sprint velocity can compress. Begin it in parallel with S0.
+
+---
+
+## 8. Provenance of this document
+
+Every status claim here was verified against running code, a live service call, or a database query
+on 2026-08-02 — not taken from `BUILD_MANIFEST.md`, which was materially wrong about B16.1/B16.2.
+Where a claim could not be independently confirmed (the DeepTutor layered-memory structure), it is
+labelled as unverified in place. Bulk file reading was delegated; **every consequential finding was
+re-checked directly**, and two delegated claims were found wrong and corrected. Apply the same
+standard to anything added to this plan.
