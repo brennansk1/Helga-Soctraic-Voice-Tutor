@@ -48,8 +48,7 @@ MLX); `tutor_tools.py` (~25 tools, flag-gated **off** via `HELGA_ENABLE_TUTOR_TO
   Progress" button 404s.
 - `source_confidence` is computed and displayed but **nothing acts on it**. In the one existing
   course, **24 of 36 concepts score below 0.5** and ship anyway.
-- Generated concepts are labelled `Source: research+llm` but contain **zero citations** — no URLs,
-  DOIs, or references in any of the 36 files. The label is not currently truthful.
+- `source_confidence` is inert *despite* the content being grounded — see the correction below.
 - Hybrid dense retrieval **degrades silently** to FTS5 when deps are missing — a silent quality
   cliff with no operator signal.
 
@@ -60,8 +59,25 @@ weakest concept (renders "causal pathway" in epidemiology framing), and **7 of 2
 concept** — a third of the tree is degenerate scaffolding.
 
 > **Evidence gap that matters:** there is exactly **one** generated course on disk, with
-> `teaching_style=""`. We have no empirical basis for claiming quality across settings. Sprint A1
-> exists primarily to create that basis.
+> `teaching_style=""`. We have no empirical basis for claiming quality across settings. Sprint A0's
+> golden-course harness (`tools/golden_courses.py`) exists primarily to create that basis.
+
+> ### Correction — grounding is REAL, and better than first reported
+> An earlier automated pass reported "zero citations — purely parametric generation," and that
+> claim was propagated into this plan before being checked. **It is wrong.** Measured directly:
+> **35 of 36 concepts carry a `## Sources` block with 69 unique resolvable URLs**, tier-labelled by
+> provenance (70× Tier 1, 6× Tier 2, 1× Tier 3) — PMC articles, university methods pages, and
+> reference works. The research service + SearXNG grounding pipeline works.
+>
+> Two consequences: (1) A2 is **not** "build citations from nothing" — it is closing the last gap
+> (one ungrounded concept, notably the one with `source_confidence` 0.0) and making confidence
+> load-bearing; (2) the DeepTutor citation-grounding lift in §3 drops in priority accordingly.
+>
+> The real defect is narrower and still serious: **`source_confidence` is computed, displayed, and
+> ignored.** 24 of 36 concepts score below 0.5 and ship with no gate and no user-visible marker.
+>
+> Filed here rather than quietly edited, because the failure mode — accepting a delegated finding
+> without verification — is the exact thing §5 exists to prevent.
 
 ---
 
@@ -120,8 +136,9 @@ implementing code found.
 | Tutor tools (~25) | **Built, disabled** | Flag-gated off pending reliability validation |
 | FTS5 lexical search | **Done** | |
 | Hybrid dense retrieval | **Partial** | Opt-in `?mode=hybrid`, silent degradation |
-| Citations / grounding | **Missing** | Label claims research grounding; zero citations emitted |
-| `source_confidence` acted upon | **Missing** | Computed, shown, ignored |
+| Citations / grounding | **Done** | 35/36 concepts have a `## Sources` block; 69 unique URLs, tiered |
+| `source_confidence` acted upon | **Missing** | Computed, shown, ignored; 24/36 below 0.5 ship anyway |
+| Reasoning-mode handling | **Fixed 2026-08-02** | `reasoning_effort:"none"`; was emptying every response |
 | Depth/rigor verification | **Missing** | No check output matches requested level |
 | TTS/text-only toggles | **Broken** | No-ops |
 | `/api/profile/reset` proxy | **Broken** | 404 |
@@ -254,22 +271,53 @@ Stop shipping claims we can't back. Nothing new gets built on unverified ground.
 - *Gate:* baseline numbers exist and are reproducible; §2 has no "needs verification" rows.
 
 **A1 — Course depth contract** *(the heart of Mode A)*
-- Define measurable depth targets per (scope, mastery) cell: concept count, word budget, required
-  formalism (equations/proofs/derivations for STEM), prerequisite chain depth.
-- Enforce post-generation: verify output against the contract; regenerate or flag on miss.
-- Fix degenerate structure (7/21 lessons with ≤1 concept) — merge or expand.
-- Fix domain drift (the epidemiology-framing bug).
-- *Gate:* all 6 golden courses meet their depth contract; a graduate-level request produces
-  measurably deeper output than an introductory one on the same topic. Blind-rated by an
-  independent reviewer.
 
-**A2 — Real grounding & citations**
-- Complete hybrid retrieval; **remove silent degradation** — if dense is unavailable, say so loudly.
-- Emit inline citations in generated concepts, resolvable to a retrieved source.
-- Make `source_confidence` load-bearing: below threshold → regenerate, or surface as
-  "limited sources" in the UI. Stop labelling ungrounded content `research+llm`.
-- *Gate:* ≥90% of concepts in golden courses carry ≥1 resolvable citation; zero concepts ship below
-  the confidence floor without a visible marker; HelgaBench grounding score beats A0 baseline.
+> **Stated requirement:** setting a course to college level today does **not** produce something
+> with the rigor of a real college course. The slider label is a promise the output doesn't keep.
+> A1 is not done until that gap is closed and *enforced* — not nudged via prompt wording.
+
+The measured evidence agrees with that experience. In the sample course every concept landed
+between **626 and 876 words (stdev 57.7)** regardless of Bloom level, module position, or
+requested mastery. That flat band is the signature of a pipeline producing a **house style**
+rather than a level. A graduate treatment and a primer come out the same size and shape.
+
+Part of the cause is now fixed: with reasoning enabled, structured-generation calls at 400–800
+tokens returned **empty** and fell back to generic scaffolding. But a token fix alone will not
+produce college rigor — the contract has to be specified and enforced.
+
+- **Specify the contract per (scope, mastery) cell** as machine-checkable targets, not adjectives:
+  concepts per lesson, word floor *and* required structural elements — worked examples, derivations
+  or proofs for STEM, formal definitions, non-trivial problem sets, primary-literature citations,
+  and an explicit prerequisite chain depth. A college-level cell should *require* e.g. formal
+  notation, a derivation, and a primary source — and be rejected without them.
+- **Enforce post-generation with real teeth:** validate every concept against its cell's contract;
+  on miss, regenerate with the specific deficiency named; after N failures mark the concept (and
+  the course) as failing its level rather than silently shipping it. **A course that cannot meet
+  its contract must not be labelled with that level.**
+- **Calibrate against reality:** for at least three subjects, compare the generated syllabus
+  against an actual published university syllabus for the same course. This is the only honest
+  check on "is this really college level."
+- Fix degenerate structure (7/21 lessons with ≤1 concept — the harness gates on >20%).
+- Fix domain drift (the epidemiology-framing bug in the weakest concept).
+- *Gate:* the golden matrix shows **depth responds to the sliders** — scope=5/mastery=5 produces
+  measurably more and deeper material than scope=2/mastery=2 on the *same topic* (word stdev
+  across levels must rise well above the current 57.7, and required elements must be present at
+  high levels and absent at low). Plus: a blind independent reviewer, shown a generated
+  college-level course and a real one, cannot dismiss the generated one as obviously not
+  college-level.
+
+**A2 — Make grounding load-bearing** *(re-scoped — citations already exist)*
+- **Make `source_confidence` act.** It is currently computed, displayed, and ignored: 24 of 36
+  concepts score below 0.5 and ship unmarked. Below the floor → regenerate with broader retrieval,
+  and if it still fails, surface "limited sources" to the learner rather than hiding it.
+- Close the coverage gap: 1 of 36 concepts has no `## Sources` block at all.
+- Raise citation *quality*, not just presence — prefer primary literature over reference works for
+  high-mastery cells (currently 70 Tier-1 vs 1 Tier-3), and tie this to the A1 contract.
+- Complete hybrid retrieval; **remove silent degradation** — if dense retrieval is unavailable the
+  system must say so loudly rather than quietly serving lexical-only results.
+- *Gate:* 100% of concepts in golden courses carry ≥1 resolvable source; zero concepts ship below
+  the confidence floor without a visible marker; hybrid degradation is loud; HelgaBench grounding
+  score beats the A0 baseline.
 
 ### Arc II — Make it whole (A3–A5)
 Close the gap between what Helga advertises and what a user can actually reach.
