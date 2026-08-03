@@ -1,0 +1,163 @@
+[
+  {
+    "uid": "course_786769fe",
+    "title": "the pythagorean theorem",
+    "status": "ready",
+    "settings": {
+      "scope": 1,
+      "mastery": 2,
+      "starting_from": 1,
+      "teaching_style": "",
+      "bloom_floor": 1,
+      "bloom_ceiling": 3
+    },
+    "structure": {
+      "modules": 3,
+      "units": 3,
+      "lessons": 3,
+      "concepts": 12,
+      "degenerate_lessons": 0,
+      "degenerate_units": 3,
+      "degenerate_lesson_pct": 0.0
+    },
+    "content": {
+      "files_present": 12,
+      "files_missing": 0,
+      "stub_count": 2,
+      "stub_uids": [
+        "con_273b0522",
+        "con_0068548e"
+      ],
+      "words_min": 125,
+      "words_median": 951,
+      "words_max": 1715,
+      "words_total": 10926,
+      "words_stdev": 410.8
+    },
+    "grounding": {
+      "concepts_with_citation": 0,
+      "citation_coverage_pct": 0.0,
+      "concepts_with_sources_block": 0,
+      "unique_sources": 0,
+      "ungrounded_uids": [
+        "con_30426216",
+        "con_12c20200",
+        "con_dad4535b",
+        "con_273b0522",
+        "con_9e5d5ebf",
+        "con_0068548e",
+        "con_0c056281",
+        "con_20ebb730",
+        "con_ff24b1e4",
+        "con_028116a9"
+      ],
+      "source_confidence_mean": 0.0,
+      "source_confidence_min": 0.0,
+      "source_confidence_max": 0.0,
+      "below_0.5": 12
+    },
+    "bloom": {
+      "targets": [
+        1,
+        2,
+        3
+      ],
+      "monotonic_nondecreasing": true,
+      "span": 2
+    },
+    "depth_contract": {
+      "mastery": 2,
+      "domain": null,
+      "concepts_total": 12,
+      "concepts_missing_contract": 10,
+      "met_pct": 16.7,
+      "level_verified": false,
+      "failures": [
+        {
+          "uid": "con_30426216",
+          "title": "Identify the Right Angle",
+          "problems": [
+            "too long for Understanding: 906 words (max 550)",
+            "missing required element: worked_example",
+            "missing required element: any_source"
+          ]
+        },
+        {
+          "uid": "con_12c20200",
+          "title": "Name the Short Sides",
+          "problems": [
+            "too long for Understanding: 756 words (max 550)",
+            "missing required element: worked_example",
+            "missing required element: any_source"
+          ]
+        },
+        {
+          "uid": "con_dad4535b",
+          "title": "Find the Longest Side",
+          "problems": [
+            "too long for Understanding: 902 words (max 550)",
+            "missing required element: worked_example",
+            "missing required element: any_source"
+          ]
+        },
+        {
+          "uid": "con_9e5d5ebf",
+          "title": "Grid-Based Square Construction",
+          "problems": [
+            "too long for Understanding: 888 words (max 550)",
+            "missing required element: any_source"
+          ]
+        },
+        {
+          "uid": "con_0c056281",
+          "title": "Side-Length Squaring Visualization",
+          "problems": [
+            "too long for Understanding: 1211 words (max 550)",
+            "missing required element: any_source"
+          ]
+        },
+        {
+          "uid": "con_20ebb730",
+          "title": "Orientation Independence",
+          "problems": [
+            "too long for Understanding: 926 words (max 550)",
+            "missing required element: worked_example",
+            "missing required element: any_source"
+          ]
+        },
+        {
+          "uid": "con_ff24b1e4",
+          "title": "Variable Classification Heuristics",
+          "problems": [
+            "too long for Understanding: 960 words (max 550)",
+            "missing required element: any_source"
+          ]
+        },
+        {
+          "uid": "con_028116a9",
+          "title": "Hypotenuse Identification Protocol",
+          "problems": [
+            "too long for Understanding: 1000 words (max 550)",
+            "missing required element: any_source"
+          ]
+        },
+        {
+          "uid": "con_ad9513a7",
+          "title": "Leg Variable Differentiation Matrix",
+          "problems": [
+            "too long for Understanding: 1067 words (max 550)",
+            "missing required element: any_source"
+          ]
+        },
+        {
+          "uid": "con_17fbeb58",
+          "title": "Unknown Variable Placement Strategy",
+          "problems": [
+            "too long for Understanding: 1680 words (max 550)",
+            "missing required element: any_source"
+          ]
+        }
+      ]
+    }
+  }
+]

@@ -1,0 +1,202 @@
+{
+  "title": "the pythagorean theorem",
+  "scope": 1,
+  "mastery": 2,
+  "starting_from": 1,
+  "status": "ready",
+  "depth_contract": {
+    "mastery": 2,
+    "domain": null,
+    "concepts_total": 12,
+    "concepts_missing_contract": 10,
+    "met_pct": 16.7,
+    "level_verified": false,
+    "failures": [
+      {
+        "uid": "con_30426216",
+        "title": "Identify the Right Angle",
+        "problems": [
+          "too long for Understanding: 906 words (max 550)",
+          "missing required element: worked_example",
+          "missing required element: any_source"
+        ]
+      },
+      {
+        "uid": "con_12c20200",
+        "title": "Name the Short Sides",
+        "problems": [
+          "too long for Understanding: 756 words (max 550)",
+          "missing required element: worked_example",
+          "missing required element: any_source"
+        ]
+      },
+      {
+        "uid": "con_dad4535b",
+        "title": "Find the Longest Side",
+        "problems": [
+          "too long for Understanding: 902 words (max 550)",
+          "missing required element: worked_example",
+          "missing required element: any_source"
+        ]
+      },
+      {
+        "uid": "con_9e5d5ebf",
+        "title": "Grid-Based Square Construction",
+        "problems": [
+          "too long for Understanding: 888 words (max 550)",
+          "missing required element: any_source"
+        ]
+      },
+      {
+        "uid": "con_0c056281",
+        "title": "Side-Length Squaring Visualization",
+        "problems": [
+          "too long for Understanding: 1211 words (max 550)",
+          "missing required element: any_source"
+        ]
+      },
+      {
+        "uid": "con_20ebb730",
+        "title": "Orientation Independence",
+        "problems": [
+          "too long for Understanding: 926 words (max 550)",
+          "missing required element: worked_example",
+          "missing required element: any_source"
+        ]
+      },
+      {
+        "uid": "con_ff24b1e4",
+        "title": "Variable Classification Heuristics",
+        "problems": [
+          "too long for Understanding: 960 words (max 550)",
+          "missing required element: any_source"
+        ]
+      },
+      {
+        "uid": "con_028116a9",
+        "title": "Hypotenuse Identification Protocol",
+        "problems": [
+          "too long for Understanding: 1000 words (max 550)",
+          "missing required element: any_source"
+        ]
+      },
+      {
+        "uid": "con_ad9513a7",
+        "title": "Leg Variable Differentiation Matrix",
+        "problems": [
+          "too long for Understanding: 1067 words (max 550)",
+          "missing required element: any_source"
+        ]
+      },
+      {
+        "uid": "con_17fbeb58",
+        "title": "Unknown Variable Placement Strategy",
+        "problems": [
+          "too long for Understanding: 1680 words (max 550)",
+          "missing required element: any_source"
+        ]
+      }
+    ]
+  },
+  "fact_check": {
+    "concepts_total": 12,
+    "concepts_checked": 3,
+    "sample_fraction": 0.34,
+    "concepts_with_false_claims": 1,
+    "clean_pct": 91.7,
+    "failures": [
+      {
+        "uid": "con_0c056281",
+        "title": "Side-Length Squaring Visualization",
+        "remaining": 1,
+        "claims": [
+          "{'claim': 'The Babylonian tablet Plimpton 322 lists integer triples ($a$, $b$, $c$) related to right triangles that allow builders to calculate material needs for triangular gables or roof supports by"
+        ]
+      }
+    ]
+  },
+  "grounding": {
+    "confidence_floor": 0.5,
+    "concepts_total": 12,
+    "concepts_below_floor": 12,
+    "well_grounded_pct": 0.0,
+    "low_confidence": [
+      {
+        "uid": "con_30426216",
+        "title": "Identify the Right Angle",
+        "confidence": 0.0
+      },
+      {
+        "uid": "con_12c20200",
+        "title": "Name the Short Sides",
+        "confidence": 0.0
+      },
+      {
+        "uid": "con_dad4535b",
+        "title": "Find the Longest Side",
+        "confidence": 0.0
+      },
+      {
+        "uid": "con_273b0522",
+        "title": "Differentiate Legs from Hypotenuse",
+        "confidence": 0.0
+      },
+      {
+        "uid": "con_9e5d5ebf",
+        "title": "Grid-Based Square Construction",
+        "confidence": 0.0
+      },
+      {
+        "uid": "con_0068548e",
+        "title": "Right-Angle Corner Verification",
+        "confidence": 0.0
+      },
+      {
+        "uid": "con_0c056281",
+        "title": "Side-Length Squaring Visualization",
+        "confidence": 0.0
+      },
+      {
+        "uid": "con_20ebb730",
+        "title": "Orientation Independence",
+        "confidence": 0.0
+      },
+      {
+        "uid": "con_ff24b1e4",
+        "title": "Variable Classification Heuristics",
+        "confidence": 0.0
+      },
+      {
+        "uid": "con_028116a9",
+        "title": "Hypotenuse Identification Protocol",
+        "confidence": 0.0
+      },
+      {
+        "uid": "con_ad9513a7",
+        "title": "Leg Variable Differentiation Matrix",
+        "confidence": 0.0
+      },
+      {
+        "uid": "con_17fbeb58",
+        "title": "Unknown Variable Placement Strategy",
+        "confidence": 0.0
+      }
+    ]
+  },
+  "level_calibration": {
+    "claimed": 2,
+    "judged": 3,
+    "sd": 0.0,
+    "n": 6,
+    "gap": 1.0,
+    "calibrated": true,
+    "levels": [
+      3,
+      3,
+      3,
+      3,
+      3,
+      3
+    ]
+  }
+}
