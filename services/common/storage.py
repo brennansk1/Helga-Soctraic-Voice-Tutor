@@ -591,6 +591,31 @@ class StorageManager:
                 cursor.execute("UPDATE schema_version SET version = 9")
                 logger.info("Schema migrated to v9: version pinning + provenance + billing events")
 
+            # v9 → v10: FSRS memory state on user_progress.
+            #
+            # Concept-level review scheduling used a fixed grade→interval table
+            # ({4: [7, 30]} and so on) while the FSRS engine — already used for
+            # flashcards, with 48 passing tests — sat unused. So the schedule
+            # ignored review history entirely: answering a concept correctly for
+            # the fifth time scheduled it exactly as far out as the first time.
+            # That is the difference between spaced repetition and a reminder.
+            #
+            # These are the columns FSRS needs to carry memory between reviews.
+            # Additive and nullable: an existing row with NULL stability is
+            # simply a card that has not been reviewed under FSRS yet, which is
+            # the engine's own first-review path.
+            if current_version < 10:
+                for col, decl in (("stability", "REAL"),
+                                  ("difficulty", "REAL"),
+                                  ("lapses", "INTEGER DEFAULT 0")):
+                    try:
+                        cursor.execute(
+                            f"ALTER TABLE user_progress ADD COLUMN {col} {decl}")
+                    except sqlite3.OperationalError:
+                        pass  # already present
+                cursor.execute("UPDATE schema_version SET version = 10")
+                logger.info("Schema migrated to v10: FSRS memory state on user_progress")
+
             conn.commit()
         finally:
             conn.close()
@@ -1267,7 +1292,9 @@ class ProgressStore:
     _VALID_COLUMNS = {
         'status', 'grade', 'easiness_factor', 'interval_days', 'repetitions',
         'next_review_date', 'last_review_date', 'times_reviewed', 'times_correct',
-        'updated_at', 'concept_uid', 'course_uid', 'bloom_level', 'student_id'
+        'updated_at', 'concept_uid', 'course_uid', 'bloom_level', 'student_id',
+        # FSRS memory state (schema v10)
+        'stability', 'difficulty', 'lapses',
     }
 
     def _get_db(self) -> sqlite3.Connection:
@@ -1301,13 +1328,32 @@ class ProgressStore:
             if existing and existing["course_uid"]:
                 course_uid = existing["course_uid"]
         kwargs["updated_at"] = datetime.utcnow().isoformat()
-        # PERF-1: Use INSERT OR REPLACE upsert pattern
         kwargs["concept_uid"] = concept_uid
         kwargs["course_uid"] = course_uid
         kwargs["student_id"] = sid
+
+        # A TRUE upsert: touch only the columns the caller supplied.
+        #
+        # This was INSERT OR REPLACE, which deletes the existing row and writes
+        # a new one — so every column the caller did NOT pass silently reverted
+        # to its default. update_progress(status="completed") erased grade,
+        # bloom_level, times_reviewed and the review schedule; the very next
+        # call, update_progress(grade=..., status="reviewed"), erased whatever
+        # the first one had set. Both are real call sites in fsm_logic.
+        #
+        # The hazard was already known for one column — the course_uid guard
+        # above exists precisely because a blank course_uid orphaned progress —
+        # but only that symptom was patched, not the mechanism. FSRS memory
+        # state on this table would have been wiped the same way, which is how
+        # it was found.
         cols = ", ".join(kwargs.keys())
         placeholders = ", ".join("?" for _ in kwargs)
-        conn.execute(f"INSERT OR REPLACE INTO user_progress ({cols}) VALUES ({placeholders})", list(kwargs.values()))
+        updates = ", ".join(f"{c} = excluded.{c}" for c in kwargs
+                            if c not in ("concept_uid", "student_id"))
+        conn.execute(
+            f"INSERT INTO user_progress ({cols}) VALUES ({placeholders}) "
+            f"ON CONFLICT(student_id, concept_uid) DO UPDATE SET {updates}",
+            list(kwargs.values()))
         conn.commit()
 
     def mark_completed(self, concept_uid: str, course_uid: str, student_id: str = None):
@@ -1733,26 +1779,113 @@ class ScheduleStore:
         conn.commit()
         logger.info(f"Scheduled {len(intervals)} reviews for unit {unit_title}")
 
+    # Fallback intervals, used only when the FSRS engine cannot be constructed.
+    # Previously this table WAS the scheduler; it is now the degraded path.
+    _FALLBACK_INTERVALS = {1: [1, 3], 2: [2, 7], 3: [3, 14], 4: [7, 30]}
+
     def schedule_concept_review(self, course_uid: str, concept_uid: str,
                                  concept_title: str, rating: int = 3,
                                  student_id: str = None):
-        """Schedule a review for a single concept based on Socratic grade.
-        Uses simple grade-based intervals until FSRS engine is upgraded."""
-        # Grade-to-interval mapping (days): lower grade = sooner review
-        grade_intervals = {1: [1, 3], 2: [2, 7], 3: [3, 14], 4: [7, 30]}
-        intervals = grade_intervals.get(min(max(rating, 1), 4), [3, 14])
+        """Schedule a concept's next review from its FSRS memory state.
+
+        This used to be a fixed grade→interval table: grade 4 always meant
+        [7, 30] days, whether it was the learner's first encounter with the
+        concept or their tenth consecutive correct recall. The schedule ignored
+        review history entirely, which is the difference between spaced
+        repetition and a reminder — and it did so while the FSRS engine, with
+        48 passing tests, was already scheduling flashcards properly.
+
+        Now the concept's stability/difficulty are read from user_progress,
+        advanced through the engine, and written back, so the interval grows
+        with demonstrated retention. A concept with no memory state yet takes
+        the engine's own first-review path.
+
+        Writes ONE row. The old table wrote two rows per call (a review and a
+        follow-up), which is how a single answer created a small pile of
+        pending reviews; under FSRS the next interval is computed at the next
+        review, from what the learner actually does then.
+        """
+        rating = min(max(int(rating), 1), 4)
+        sid = _sid(student_id)
         conn = self._get_db()
         try:
+            engine, days = None, None
+            try:
+                from services.core.fsrs_engine import FSRSEngine
+                engine = FSRSEngine()
+            except Exception as e:
+                logger.warning(
+                    f"FSRS engine unavailable, falling back to fixed intervals: {e}")
+
+            if engine is not None:
+                row = conn.execute(
+                    "SELECT stability, difficulty, lapses, last_review_date "
+                    "FROM user_progress WHERE concept_uid = ? AND student_id = ?",
+                    (concept_uid, sid)
+                ).fetchone()
+                prior = dict(row) if row else {}
+
+                elapsed = 0
+                if prior.get("last_review_date"):
+                    try:
+                        elapsed = max(0, (date.today() - date.fromisoformat(
+                            prior["last_review_date"])).days)
+                    except (ValueError, TypeError):
+                        elapsed = 0
+
+                stability, difficulty = engine.calculate_memory(
+                    stability=prior.get("stability"),
+                    difficulty=prior.get("difficulty"),
+                    rating=rating,
+                    days_elapsed=elapsed,
+                )
+                days = engine.next_interval(stability)
+                lapses = (prior.get("lapses") or 0)
+                if rating == 1:
+                    # A lapse comes back tomorrow regardless of prior stability,
+                    # matching the flashcard path.
+                    days, lapses = 1, lapses + 1
+
+                # Persist the memory state, or the next review recomputes from
+                # scratch and the whole point is lost. UPSERT because a concept
+                # can be graded before any progress row exists for it.
+                conn.execute(
+                    "INSERT INTO user_progress "
+                    "(student_id, concept_uid, course_uid, status, grade, "
+                    " stability, difficulty, lapses, last_review_date, "
+                    " next_review_date, interval_days, times_reviewed) "
+                    "VALUES (?, ?, ?, 'reviewed', ?, ?, ?, ?, ?, ?, ?, 1) "
+                    "ON CONFLICT(student_id, concept_uid) DO UPDATE SET "
+                    "  stability = excluded.stability, "
+                    "  difficulty = excluded.difficulty, "
+                    "  lapses = excluded.lapses, "
+                    "  grade = excluded.grade, "
+                    "  last_review_date = excluded.last_review_date, "
+                    "  next_review_date = excluded.next_review_date, "
+                    "  interval_days = excluded.interval_days, "
+                    "  times_reviewed = COALESCE(user_progress.times_reviewed, 0) + 1, "
+                    "  updated_at = CURRENT_TIMESTAMP",
+                    (sid, concept_uid, course_uid, rating,
+                     stability, difficulty, lapses,
+                     date.today().isoformat(),
+                     (date.today() + timedelta(days=days)).isoformat(), days)
+                )
+
             base = date.today()
-            for i, days in enumerate(intervals, 1):
-                review_date = (base + timedelta(days=days)).isoformat()
+            offsets = ([days] if days is not None
+                       else self._FALLBACK_INTERVALS.get(rating, [3, 14]))
+            for i, offset in enumerate(offsets, 1):
                 conn.execute(
                     "INSERT INTO scheduled_reviews (course_uid, unit_uid, unit_title, scheduled_date, review_number, student_id) "
                     "VALUES (?, ?, ?, ?, ?, ?)",
-                    (course_uid, concept_uid, concept_title, review_date, i, _sid(student_id))
+                    (course_uid, concept_uid, concept_title,
+                     (base + timedelta(days=offset)).isoformat(), i, sid)
                 )
             conn.commit()
-            logger.info(f"Scheduled concept review for '{concept_title}' (grade {rating}): intervals {intervals}")
+            logger.info(
+                f"Scheduled concept review for '{concept_title}' "
+                f"(grade {rating}): +{offsets} days"
+                + ("" if days is not None else " [FALLBACK: no FSRS]"))
         except Exception as e:
             logger.warning(f"Failed to schedule concept review: {e}")
 

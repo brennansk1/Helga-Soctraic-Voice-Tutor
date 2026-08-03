@@ -19,6 +19,11 @@ Last measured: 2026-08-03.
 >
 > Plus the HelgaBench judge, self-tested for the first time, was found to be
 > manufacturing scores. See §4.
+>
+> Closing out criterion 4 then surfaced two more: concept scheduling ignored
+> review history entirely (a fixed grade→interval table, while the FSRS engine
+> sat unused), and `update_progress` used `INSERT OR REPLACE`, so **every
+> column the caller did not pass was silently reset to its default**.
 
 ---
 
@@ -71,12 +76,12 @@ A self-directed adult can, without hitting a dead end:
 | 1 | Course at the **genuine depth requested** | **VERIFIED** | every tier observed reachable (`tier_probe`, ~80% first-attempt); a mastery-2 course scores 100% at L2 and **0% at L4/L5** |
 | 2 | Learn Socratically, **voice or text** | BUILT, unverified | `/api/stt` → `session.js`; no end-to-end voice run measured |
 | 3 | **See where content came from** | **VERIFIED** | 100% citation coverage on the passing course; primary literature via Crossref at mastery ≥4 |
-| 4 | **Reviewed on schedule** (FSRS) | **PARTIAL, now exercised** | loop verified on a real DB (22 tests). Flashcards are genuinely FSRS (stability/difficulty persisted); **concept-level scheduling is still a fixed grade→interval table**, so this cannot yet claim "FSRS end to end" |
+| 4 | **Reviewed on schedule** (FSRS) | **VERIFIED** | loop verified on a real DB (37 tests). FSRS now drives **both** flashcards and concepts — schema v10 persists stability/difficulty/lapses on `user_progress`; measured interval growth on repeated recall: **3 → 11 → 35 → 101 days** |
 | 5 | **All three learning modes** reachable | **VERIFIED** | Socratic ✅, Spaced Repetition ✅, Memory Palace walked end-to-end against real storage (17 tests) |
 | 6 | **Bring your own material** | PARTIAL | extraction verified (13 tests, synthetic EPUB, spine order, bad-zip, PDF honestly rejected); **no real book taken through to a built course** — needs a hydration run |
 | 7 | **Every control does what it says** | **VERIFIED** | dead toggles removed, `/api/profile/reset` proxied, tests assert both |
 
-**4 of 7 verified, 2 partial, 1 unrun.** The earlier headline — "most remaining
+**5 of 7 verified, 1 partial, 1 unrun.** The earlier headline — "most remaining
 risk is *unrun*, not *unwritten*" — was right, and running it proved the point:
 every one of the three criteria exercised on 2026-08-03 was broken, and none of
 those breaks was visible to the unit tests on either side of the seam. Voice
@@ -180,23 +185,18 @@ Ranked by risk, not effort.
    questioning* and *ignoring what the student actually asked* — a different
    problem from the one 1.6 pointed at, and the one worth working on next.
 
-2. **Concept-level scheduling is not FSRS.** Flashcards run the engine with
-   persisted stability/difficulty; concepts use a fixed grade→interval table
-   (`{4: [7, 30]}` etc.), so the schedule ignores review history. Making it
-   history-dependent needs `stability`/`difficulty` columns on `user_progress`
-   — a schema migration. Asserted in tests so it is not mistaken for done.
-3. **Voice never exercised** — the last done-criterion with no end-to-end run.
+2. **Voice never exercised** — the last done-criterion with no end-to-end run.
    Document import is verified as far as extraction; taking a real book through
    to a built course needs a hydration run.
-4. **A6 — optimization.** Ollama idle-eviction unbuilt (≈6 GB pinned when
+3. **A6 — optimization.** Ollama idle-eviction unbuilt (≈6 GB pinned when
    idle); `tts` container allocated 2048M for a 319 MB model; two duplicate
    Kokoro copies on disk.
-5. **A7 — hardening.** No Ollama circuit-breaker fallback, no soak test, no
+4. **A7 — hardening.** No Ollama circuit-breaker fallback, no soak test, no
    backup/restore drill. (The `main.py` false green is **fixed** — the preflight
    required only a substring, so `qwen3:14b` "matched" `qwen3:14b-q4_K_M` and
    then every call 404'd. It now requires an exact tag, honours the one alias
    Ollama really resolves, and names the closest installed tag on a miss.)
-6. **n=1 everywhere, and now n=0.** No course currently passes the full gate,
+5. **n=1 everywhere, and now n=0.** No course currently passes the full gate,
    and there is one probe per tier. Given a measured
    ±1.4/5 noise floor on LLM judges, single results are directional only. The
    golden matrix across the slider space is the real evidence base and has not
