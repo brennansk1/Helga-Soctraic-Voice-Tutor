@@ -31,23 +31,44 @@ def _snap(**kw):
 
 class TestPressureDetection(unittest.TestCase):
     def test_healthy_machine_allows_background(self):
-        self.assertIsNone(mg.pressure_reason(_snap()))
-        self.assertTrue(mg.allow_background(_snap()))
+        with patch.object(mg, 'macos_pressure_level', return_value=1):
+            self.assertIsNone(mg.pressure_reason(_snap()))
+            self.assertTrue(mg.allow_background(_snap()))
 
     def test_low_free_memory_is_pressure(self):
-        r = mg.pressure_reason(_snap(available_gb=1.0))
+        with patch.object(mg, 'macos_pressure_level', return_value=1):
+            r = mg.pressure_reason(_snap(available_gb=1.0))
         self.assertIsNotNone(r)
         self.assertIn("free", r)
 
-    def test_high_swap_is_pressure_even_with_free_ram(self):
-        """The observed real failure: RAM looked fine, swap was at 86%.
+    def test_full_swap_with_ample_free_ram_is_NOT_pressure(self):
+        """Calibration lesson that cost a course build.
 
-        A naive free-RAM check passes here and lets the machine keep thrashing.
+        macOS keeps swap populated on purpose. Treating swap-fill as distress
+        made the guard refuse all background work at "swap 89% used" while the
+        kernel reported pressure level 1 (NORMAL) and 82% free. It aborted a
+        build three times, and the refusal surfaced two layers away as "LLM
+        consistently failed to generate 3 modules".
         """
-        r = mg.pressure_reason(_snap(available_gb=15.0, swap_used_gb=6.9,
-                                     swap_used_frac=0.86))
-        self.assertIsNotNone(r, "swap exhaustion must count as pressure")
+        with patch.object(mg, 'macos_pressure_level', return_value=1):
+            r = mg.pressure_reason(_snap(available_gb=15.0, swap_used_gb=6.9,
+                                         swap_used_frac=0.89))
+        self.assertIsNone(r, "full swap with ample free RAM is normal on macOS")
+
+    def test_high_swap_WITH_low_free_ram_is_pressure(self):
+        """Swap is corroborating evidence, not a signal on its own."""
+        with patch.object(mg, 'macos_pressure_level', return_value=1):
+            r = mg.pressure_reason(_snap(available_gb=4.0, swap_used_gb=6.9,
+                                         swap_used_frac=0.89))
+        self.assertIsNotNone(r)
         self.assertIn("swap", r)
+
+    def test_kernel_pressure_level_outranks_our_heuristics(self):
+        """The OS's own verdict is authoritative."""
+        with patch.object(mg, 'macos_pressure_level', return_value=4):
+            r = mg.pressure_reason(_snap(available_gb=20.0, swap_used_frac=0.0))
+        self.assertIsNotNone(r)
+        self.assertIn("pressure level", r)
 
     def test_unreadable_memory_fails_open(self):
         """An unreadable memory subsystem must not wedge the pipeline."""

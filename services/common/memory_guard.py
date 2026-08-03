@@ -176,17 +176,58 @@ def snapshot(force=False):
     return snap
 
 
+def macos_pressure_level():
+    """macOS's own verdict: 1=normal, 2=warning, 4=critical. None elsewhere.
+
+    This is the AUTHORITATIVE signal on this platform and it must outrank our
+    own heuristics — see pressure_reason() for why that matters.
+    """
+    try:
+        out = subprocess.run(
+            ["sysctl", "-n", "kern.memorystatus_vm_pressure_level"],
+            capture_output=True, text=True, timeout=3).stdout.strip()
+        return int(out) if out else None
+    except Exception:
+        return None
+
+
 def pressure_reason(snap=None):
-    """Return a human reason if memory is tight, else None."""
+    """Return a human reason if memory is genuinely tight, else None.
+
+    CALIBRATION NOTE — this was wrong once and blocked real work.
+
+    The first version treated swap-fill percentage as distress. On macOS that
+    is simply false: the OS keeps swap populated on purpose, so a high fill is
+    normal steady state, not thrashing. Measured while it was misfiring:
+
+        my guard    : "PRESSURE: swap 89% used"   -> refused all background work
+        macOS says  : pressure_level = 1 (NORMAL), free percentage 82%
+
+    It aborted a course build three times over, and because the refusal
+    surfaced as "LLM consistently failed to generate 3 modules", the real cause
+    was two layers away from the error message.
+
+    So: trust the kernel's own pressure level first. Swap fill is only
+    corroborating evidence, and only when free memory is ALSO low — swap being
+    full while 82% of RAM is free is not a reason to stop working.
+    """
     s = snap or snapshot()
     if s.source == "unavailable":
         return None
+
+    lvl = macos_pressure_level()
+    if lvl is not None and lvl >= 2:
+        return f"macOS reports memory pressure level {lvl} (2=warn, 4=critical)"
+
     if s.available_gb < MIN_FREE_GB:
         return (f"only {s.available_gb:.1f} GB free "
                 f"(floor {MIN_FREE_GB:.1f} GB)")
-    if s.swap_used_frac > MAX_SWAP_USED_FRAC:
-        return (f"swap {100 * s.swap_used_frac:.0f}% used "
-                f"({s.swap_used_gb:.1f}/{s.swap_total_gb:.1f} GB)")
+
+    # Swap alone is NOT distress. Require corroboration from low free memory.
+    if (s.swap_used_frac > MAX_SWAP_USED_FRAC
+            and s.available_gb < MIN_FREE_GB * 2):
+        return (f"swap {100 * s.swap_used_frac:.0f}% used with only "
+                f"{s.available_gb:.1f} GB free")
     return None
 
 
