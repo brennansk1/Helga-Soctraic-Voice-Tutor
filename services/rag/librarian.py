@@ -1600,14 +1600,22 @@ def anchor_concept():
 
 
 def _get_anchor_for_locus(course_uid: str, locus_uid: str) -> dict:
-    """Retrieve the most recent palace anchor for a specific locus."""
+    """Retrieve the most recent palace anchor for a specific locus.
+
+    This returned the OLDEST anchor, not the newest. get_activities() orders
+    newest-first, and the loop below iterated reversed(activities) — so the
+    first match was the earliest anchor ever placed at that locus. Re-anchoring
+    silently did nothing: the learner was stuck with their first association
+    forever, which is exactly the thing memory-palace practice tells you to
+    revise when an image is not sticking.
+    """
     try:
         activities = storage.activity.get_activities(
             course_uid=course_uid,
             activity_type="palace_anchor",
         )
-        # Find the latest anchor for this locus
-        for act in reversed(activities):
+        # get_activities is newest-first; take the first match.
+        for act in activities:
             details = act.get("details", {})
             if isinstance(details, str):
                 try:

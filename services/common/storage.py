@@ -1641,7 +1641,11 @@ class ActivityStore:
         if activity_type:
             query += " AND activity_type = ?"
             params.append(activity_type)
-        query += " ORDER BY created_at DESC"
+        # created_at is CURRENT_TIMESTAMP, which has one-second granularity, so
+        # two rows written in the same second tie and their order is whatever
+        # SQLite happens to return. id breaks the tie by true insertion order —
+        # callers that ask for "the most recent" need that to be answerable.
+        query += " ORDER BY created_at DESC, id DESC"
         rows = conn.execute(query, params).fetchall()
         return [dict(r) for r in rows]
 
