@@ -109,6 +109,24 @@ is NOT a defect.
 Marking an absent topic as covered hides a real hole in someone's education.
 Return STRICT JSON."""
 
+def outline_of(struct):
+    """Compact outline from a structure DICT, on disk or still in memory.
+
+    Split out from _outline so the generator can run this check pre-persist.
+    Criterion 6 was the only gate criterion that ran by hand, which meant the
+    one check with external ground truth was the one nobody ran.
+    """
+    lines = []
+    for m in (struct or {}).get("modules", []) or []:
+        lines.append(f"MODULE: {m.get('title')}")
+        for u in m.get("units", []) or []:
+            for les in u.get("lessons", []) or []:
+                names = [c.get("title") for c in (les.get("concepts") or [])]
+                if names:
+                    lines.append(f"  {les.get('title')}: " + "; ".join(names))
+    return "\n".join(lines)
+
+
 def _outline(uid):
     """Compact outline of a generated course: modules -> lessons -> concepts."""
     path = os.path.join(COURSES_DIR, uid, "structure.json")
@@ -116,15 +134,7 @@ def _outline(uid):
         return None, None
     with open(path) as f:
         s = json.load(f)
-    lines = []
-    for m in s.get("modules", []) or []:
-        lines.append(f"MODULE: {m.get('title')}")
-        for u in m.get("units", []) or []:
-            for les in u.get("lessons", []) or []:
-                names = [c.get("title") for c in (les.get("concepts") or [])]
-                if names:
-                    lines.append(f"  {les.get('title')}: " + "; ".join(names))
-    return s, "\n".join(lines)
+    return s, outline_of(s)
 
 
 def core_topics(reference_text, subject, mastery, model=None):
@@ -194,6 +204,30 @@ def coverage(topics, outline, model=None):
     missing = [t for t in topics if not _is_covered(t)]
     return {"covered": covered, "missing": missing, "sequencing": seq,
             "model_missing": mis}
+
+
+def check_structure(struct, reference_text=None, model=None):
+    """Run criterion 6 against an in-memory structure. Never raises.
+
+    Returns a summary dict, or {"error": ...} when the instrument could not
+    run. Course generation calls this, so a judge outage must degrade to
+    "not measured" rather than taking down the build.
+    """
+    try:
+        outline = outline_of(struct)
+        if not outline:
+            return {"error": "empty outline"}
+        return _summarise(
+            coverage(core_topics(reference_text, struct.get("title"),
+                                 struct.get("mastery"), model=model) or [],
+                     outline, model=model) or {"covered": [], "missing": []},
+            uid=struct.get("uid"), title=struct.get("title"),
+            mastery=struct.get("mastery"),
+            grounding=("external" if reference_text
+                       else "model-knowledge (WEAK — same model family "
+                            "wrote the course)"))
+    except Exception as e:  # instrument failure must not fail the course
+        return {"error": f"syllabus check unavailable: {e}"}
 
 
 def check(uid, reference_text=None, model=None, url=None):

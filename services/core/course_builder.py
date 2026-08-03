@@ -1255,6 +1255,12 @@ class SkeletonBuilder:
         # Normalise degenerate lessons before persisting.
         self._merge_degenerate_lessons(course_dict)
 
+        # Gate criterion 6 — syllabus realism. Runs here, on the skeleton,
+        # BEFORE the expensive hydration: a curriculum hole is an outline
+        # defect, and finding it after 40 minutes of hydration teaches nothing
+        # that finding it now does not.
+        self._record_syllabus_check(course_dict)
+
         # Write course structure to JSON
         self.storage.courses.create_course(course_dict)
         _skeleton_elapsed = time.perf_counter() - _pipeline_start
@@ -1263,6 +1269,67 @@ class SkeletonBuilder:
         )
 
         return course_uid
+
+    def _record_syllabus_check(self, course_dict):
+        """Attach the criterion-6 verdict to the course. Never raises.
+
+        WHY THIS IS RECORDED AND NOT ENFORCED BY DEFAULT
+        ------------------------------------------------
+        Every other gate criterion is self-referential — an LLM judging output
+        an LLM produced. This is the only one with external ground truth, which
+        is exactly why it was worth wiring in, and it was the only one still
+        run by hand.
+
+        It is non-blocking by default because the instrument is a documented
+        UNDERCOUNT: with a 9B judge it scores a complete outline at ~71%,
+        omitting topics that are plainly present ("Potential outcomes" declared
+        missing from a module literally titled "Potential Outcomes"). The
+        verdict discriminates; the percentage is a lower bound. Failing a build
+        on a lower bound would reject good courses, so the number is recorded
+        and surfaced, and the operator opts in to blocking with
+        HELGA_SYLLABUS_GATE=1 once a larger judge makes the number tight.
+
+        A judge outage degrades to "not measured", never to a failed build.
+        """
+        if os.getenv("HELGA_SYLLABUS_CHECK", "1") == "0":
+            return
+        try:
+            from tools.syllabus_check import check_structure, MIN_COVERAGE
+        except Exception as e:
+            logger.info(f"[SYLLABUS] check unavailable, skipping: {e}")
+            return
+
+        result = check_structure(course_dict)
+        course_dict["syllabus_check"] = result
+
+        if result.get("error"):
+            logger.info(f"[SYLLABUS] not measured: {result['error']}")
+            if self.status_callback:
+                self.status_callback("CHECK:SYLLABUS:SKIP:not measured")
+            return
+
+        pct, verdict = result.get("coverage_pct"), result.get("verdict")
+        missing = result.get("missing") or []
+        logger.info(
+            f"[SYLLABUS] {verdict} — {pct}% of {result.get('topics_checked')} "
+            f"core topics covered (floor {MIN_COVERAGE}%); "
+            f"grounding={result.get('grounding')}"
+        )
+        if missing:
+            # Name them. "78% covered" is not actionable; a list of absent
+            # topics is the only form of this result anyone can act on.
+            logger.warning(f"[SYLLABUS] not covered: {', '.join(missing[:12])}")
+        for problem in result.get("sequencing") or []:
+            logger.warning(f"[SYLLABUS] sequencing: {problem}")
+
+        if self.status_callback:
+            self.status_callback(f"CHECK:SYLLABUS:{verdict}:{pct}%")
+
+        if verdict == "INADEQUATE" and os.getenv("HELGA_SYLLABUS_GATE") == "1":
+            raise CourseCreationError(
+                f"Syllabus coverage {pct}% is below the {MIN_COVERAGE}% floor. "
+                f"Missing: {', '.join(missing[:8]) or 'n/a'}"
+            )
 
     def _merge_degenerate_lessons(self, course_dict, min_concepts=2):
         """Fold single-concept lessons into a sibling.
