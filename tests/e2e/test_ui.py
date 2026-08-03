@@ -1,192 +1,259 @@
-"""
-End-to-End (E2E) UI Interaction Tests using Playwright, HTTPX, and Hypothesis.
+"""End-to-end UI journeys against a real, running Helga stack.
 
-Demonstrates combining:
-1. HTTPX for fast backend API state injection/validation
-2. pytest-playwright for headless browser interaction
-3. Hypothesis for edge-case input generation
+WHY THIS FILE WAS REWRITTEN
+---------------------------
+The previous version had eight tests and effectively asserted nothing:
+
+  - every one hardcoded http://localhost:5050 and failed on
+    ERR_CONNECTION_REFUSED, because nothing ever started the app. Permanently
+    red, and therefore ignored.
+  - the selectors had rotted past the UI. It clicked a "Start Journey" button
+    that no longer exists, opened a `#settings-modal` replaced long ago by a
+    Settings *page*, and switched to "Cyberpunk" and "Reader" themes that were
+    removed (there is light and dark). It visited /test and /wizard, neither of
+    which is a page any more.
+  - nearly every assertion sat behind `if element.is_visible():`, so when a
+    selector stopped matching, the test quietly passed instead of failing.
+
+A suite that cannot run, and that passes when its target is missing, is worse
+than none: it reports coverage that does not exist. These are rewritten against
+the six-tab IA, they run on a stack the fixture starts (see conftest.py), and
+they assert unconditionally.
+
+Skips appear only where a precondition is genuinely absent (no built course on
+disk), and each one says so.
 """
+
 import re
-import pytest
+
 import httpx
+import pytest
+from hypothesis import HealthCheck, given, settings, strategies as st
 from playwright.sync_api import Page, expect
-from hypothesis import given, settings, HealthCheck, strategies as st
-
-BASE_URL = "http://localhost:5050"
-
-class TestE2EUIInteractions:
-    
-    def test_course_navigation_flow(self, page: Page):
-        """Manual Test #1: Course Navigation"""
-        # 1. API Validation via HTTPX (synchronous)
-        with httpx.Client() as client:
-            resp = client.get(f"{BASE_URL}/api/course_structure")
-            assert resp.status_code in (200, 400, 404)
-        
-        # 2. UI Interaction via Playwright
-        page.goto(f"{BASE_URL}/courses")
-        
-        course_cards = page.locator(".course-card")
-        if course_cards.count() > 0:
-            first_course = course_cards.nth(0)
-            first_course.locator("text=Journey").click()
-            expect(page).to_have_url(re.compile(r".*/learn\?course_uid=.*"))
-            
-            status_bar = page.locator("#course-title-display")
-            expect(status_bar).to_be_visible()
-        else:
-            pytest.skip("No courses in database to navigate to.")
-
-    def test_test_page_selection(self, page: Page):
-        """Manual Test #3: Test Page Course Selection"""
-        page.goto(f"{BASE_URL}/test")
-        
-        all_courses_btn = page.locator("text='All Courses'")
-        
-        if all_courses_btn.is_visible():
-            all_courses_btn.click()
-            expect(page).to_have_url(re.compile(r".*/test\?course_uid=all.*"))
-            
-            change_course_btn = page.locator("text='Change Course'")
-            expect(change_course_btn).to_be_visible()
-        else:
-            empty_state = page.locator("text=No courses available")
-            if empty_state.is_visible():
-                pytest.skip("No courses to test.")
-
-    def test_theme_switching(self, page: Page):
-        """Manual Test #6: Theme Switching"""
-        page.goto(f"{BASE_URL}/")
-        
-        settings_btn = page.locator("button[aria-label='Settings'], #settings-btn, i[data-feather='settings']")
-        if settings_btn.count() == 0:
-            settings_btn = page.locator(".nav-link:has(svg.feather-settings)")
-            
-        if settings_btn.is_visible():
-            settings_btn.click()
-            
-            modal = page.locator("#settings-modal").first
-            expect(modal).to_be_visible()
-            
-            cyberpunk_btn = page.locator("button:has-text('Cyberpunk'), .theme-option[data-theme='cyberpunk']")
-            if cyberpunk_btn.is_visible():
-                cyberpunk_btn.click()
-                html = page.locator("html")
-                expect(html).to_have_attribute("data-theme", "cyberpunk")
-                
-            reader_btn = page.locator("button:has-text('Reader'), .theme-option[data-theme='reader']")
-            if reader_btn.is_visible():
-                reader_btn.click()
-                html = page.locator("html")
-                expect(html).to_have_attribute("data-theme", "reader")
-
-            close_btn = modal.locator(".close, button:has-text('Close')")
-            if close_btn.is_visible():
-                close_btn.click()
-                expect(modal).not_to_be_visible()
-
-    def test_home_page_stats(self, page: Page):
-        """Manual Test #7: Home Page Stats rendering and mobile viewport"""
-        page.goto(f"{BASE_URL}/")
-        
-        stats_container = page.locator(".hero-stats")
-        expect(stats_container).to_be_visible()
-        
-        page.set_viewport_size({"width": 375, "height": 812})
-        expect(stats_container).to_be_visible()
-        
-        page.set_viewport_size({"width": 1280, "height": 720})
-
-    def test_schedule_page(self, page: Page):
-        """Manual Test #8: Schedule Page calendar rendering"""
-        page.goto(f"{BASE_URL}/schedule")
-        
-        calendar = page.locator("#calendar, .fc, .cal-grid")
-        
-        try:
-            expect(calendar.first).to_be_visible(timeout=3000)
-        except AssertionError:
-            empty = page.locator("text=No reviews scheduled")
-            if empty.count() > 0:
-                expect(empty).to_be_visible()
-
-    def test_memory_palace_flow(self, page: Page):
-        """Manual Test #9: Memory Palace navigation"""
-        page.goto(f"{BASE_URL}/palace")
-        
-        empty_state = page.locator("text=No loci created yet")
-        locus_content = page.locator("#locus-content")
-        
-        is_empty = empty_state.is_visible(timeout=2000)
-        
-        if is_empty:
-            expect(empty_state).to_be_visible()
-        else:
-            expect(locus_content).to_be_visible()
-            
-            next_btn = page.locator("button:has-text('Next')")
-            if next_btn.is_visible():
-                next_btn.click()
-
-    def test_accessibility_focus_management(self, page: Page):
-        """Manual Test #12: Accessibility (Keyboard Navigation & Focus Traps)"""
-        page.goto(f"{BASE_URL}/")
-        
-        page.keyboard.press("Tab")
-        page.keyboard.press("Tab")
-        page.keyboard.press("Tab")
-        
-        settings_btn = page.locator(".nav-link:has(svg.feather-settings), button[aria-label='Settings']")
-        if settings_btn.is_visible():
-            settings_btn.click()
-            
-            modal = page.locator("#settings-modal").first
-            expect(modal).to_be_visible()
-            
-            page.keyboard.press("Escape")
-            expect(modal).not_to_be_visible()
 
 
-    def test_course_generation_wizard(self, page: Page):
-        """Manual Test #9: Course Wizard E2E Flow"""
-        page.goto(f"{BASE_URL}/wizard")
-        
-        # Step 1: Initial Input
-        topic_input = page.locator("#wizard-topic, input[placeholder*='topic']")
-        if topic_input.is_visible():
-            topic_input.fill("Ollama GPU Acceleration")
-            page.locator("button:has-text('Next'), #wizard-next-btn").click()
-            
-            # Step 2: Generation/Loading
-            loading_indicator = page.locator(".wizard-loading, text='Generating Curriculum'")
-            expect(loading_indicator).to_be_visible()
-            
-            # Since this is hitting Native Ollama, it should take < 15 seconds, but we give it 60s
-            review_screen = page.locator(".wizard-review, text='Review Curriculum', #module-list")
-            expect(review_screen).to_be_visible(timeout=60000)
-            
-            # Change settings
-            depth_select = page.locator("select[name='depth'], #wizard-depth")
-            if depth_select.is_visible():
-                depth_select.select_option("Advanced")
-            
-            # Final Generation
-            page.locator("button:has-text('Generate Course'), #wizard-submit-btn, button.generate-btn").click()
-            
-            # Verify Redirect to Course List or Learn Page
-            expect(page).to_have_url(re.compile(r".*/courses|.*/learn"), timeout=60000)
+# --- shell ------------------------------------------------------------------
 
-# Example of using Hypothesis to generate weird input data for HTTPX backend validation
+class TestAppShell:
+
+    def test_home_renders_with_the_six_tab_nav(self, page: Page, base_url):
+        page.goto(base_url + "/")
+        expect(page.locator("#app-nav .nav-link")).to_have_count(6)
+        for label in ("Home", "Courses", "Learn", "Progress", "Practice", "Settings"):
+            expect(page.locator(f"#app-nav .nav-link:text-is('{label}')")).to_be_visible()
+
+    def test_every_nav_destination_actually_loads(self, page: Page, base_url):
+        for path in ("/", "/courses", "/progress", "/practice", "/settings"):
+            resp = page.goto(base_url + path)
+            assert resp.status < 400, f"{path} returned {resp.status}"
+            expect(page.locator("#app-nav")).to_be_visible()
+
+    def test_retired_tabs_redirect_into_practice(self, page: Page, base_url):
+        for old, tab in (("/quiz", "quiz"), ("/review", "due"),
+                         ("/schedule", "upcoming")):
+            page.goto(base_url + old)
+            expect(page).to_have_url(re.compile(r".*/practice\?tab=" + tab))
+
+    def test_the_page_never_scrolls_sideways(self, page: Page, base_url):
+        """Horizontal overflow is the commonest way a layout looks broken, and
+        it is invisible in a screenshot taken at the width you designed for."""
+        for width in (1440, 1100, 820, 390):
+            page.set_viewport_size({"width": width, "height": 900})
+            for path in ("/", "/courses", "/progress", "/practice"):
+                page.goto(base_url + path)
+                page.wait_for_timeout(250)
+                overflow = page.evaluate(
+                    "document.documentElement.scrollWidth >"
+                    " document.documentElement.clientWidth")
+                assert not overflow, f"{path} overflows at {width}px"
+
+    def test_nav_collapses_to_a_hamburger_on_a_phone(self, page: Page, base_url):
+        page.set_viewport_size({"width": 390, "height": 844})
+        page.goto(base_url + "/progress")
+        expect(page.locator("#hamburger-btn")).to_be_visible()
+        expect(page.locator("#app-nav .nav-link").first).to_be_hidden()
+        page.locator("#hamburger-btn").click()
+        expect(page.locator("#app-nav .nav-link").first).to_be_visible()
+
+
+# --- theme ------------------------------------------------------------------
+
+class TestTheming:
+
+    def test_theme_toggle_flips_and_persists(self, page: Page, base_url):
+        page.goto(base_url + "/")
+        start = page.evaluate("document.documentElement.getAttribute('data-theme')")
+        page.locator("#header-theme-toggle").click()
+        page.wait_for_timeout(300)
+        flipped = page.evaluate("document.documentElement.getAttribute('data-theme')")
+        assert flipped != start, "toggling did not change the theme"
+        page.reload()
+        page.wait_for_timeout(200)
+        after = page.evaluate("document.documentElement.getAttribute('data-theme')")
+        assert after == flipped, "theme did not survive a reload"
+
+    @pytest.mark.parametrize("theme", ["light", "dark"])
+    def test_both_themes_render_every_surface(self, page: Page, base_url, theme):
+        page.goto(base_url + "/")
+        page.evaluate(f"localStorage.setItem('helga-theme','{theme}')")
+        for path in ("/", "/courses", "/progress", "/practice", "/settings"):
+            page.goto(base_url + path)
+            page.wait_for_timeout(250)
+            same = page.evaluate("""() => {
+                const b = getComputedStyle(document.body);
+                return b.color === b.backgroundColor;
+            }""")
+            assert not same, f"{path} paints text in the background colour ({theme})"
+
+
+# --- assets -----------------------------------------------------------------
+
+class TestNoBrokenAssets:
+    """A missing image does not raise; it just looks broken. helga-avatar.svg
+    and user-avatar.svg were referenced from eight places and did not exist."""
+
+    def test_no_static_asset_404s(self, page: Page, base_url):
+        missing = []
+        page.on("response", lambda r: missing.append(r.url)
+                if r.status == 404 and '/static/' in r.url else None)
+        for path in ("/", "/courses", "/progress", "/practice", "/settings", "/palace"):
+            page.goto(base_url + path)
+            page.wait_for_timeout(400)
+        assert missing == [], f"404s on static assets: {sorted(set(missing))}"
+
+    def test_no_uncaught_javascript_errors(self, page: Page, base_url):
+        errors = []
+        page.on("pageerror", lambda e: errors.append(str(e)))
+        for path in ("/", "/courses", "/progress", "/practice", "/settings"):
+            page.goto(base_url + path)
+            page.wait_for_timeout(400)
+        assert errors == [], f"uncaught JS errors: {errors}"
+
+
+# --- practice ---------------------------------------------------------------
+
+class TestPractice:
+
+    def test_tabs_switch_and_stay_linkable(self, page: Page, base_url):
+        page.goto(base_url + "/practice")
+        expect(page.locator("#panel-due")).to_be_visible()
+        page.locator("#tab-upcoming").click()
+        expect(page).to_have_url(re.compile(r".*tab=upcoming"))
+        expect(page.locator("#panel-upcoming")).to_be_visible()
+        page.go_back()
+        expect(page.locator("#panel-due")).to_be_visible()
+
+    def test_a_deep_link_opens_the_right_tab(self, page: Page, base_url):
+        page.goto(base_url + "/practice?tab=quiz")
+        expect(page.locator("#panel-quiz")).to_be_visible()
+
+    def test_tabs_are_keyboard_operable(self, page: Page, base_url):
+        page.goto(base_url + "/practice")
+        page.locator("#tab-due").focus()
+        page.keyboard.press("ArrowRight")
+        expect(page.locator("#panel-quiz")).to_be_visible()
+
+
+# --- progress ---------------------------------------------------------------
+
+class TestProgress:
+
+    def test_progress_reports_a_real_state(self, page: Page, base_url):
+        """Either totals, or an explicit "nothing yet". Never an empty shell."""
+        page.goto(base_url + "/progress")
+        page.wait_for_timeout(1200)
+        totals = page.locator("#progress-totals .progress-stat")
+        empty = page.locator("#progress-empty")
+        assert totals.count() > 0 or empty.is_visible(), \
+            "Progress rendered neither data nor an empty state"
+
+    def test_no_raw_uids_are_shown_to_the_learner(self, page: Page, base_url):
+        """Failed builds were listed as 'course_c6620699 — 0 / 0 known'."""
+        page.goto(base_url + "/progress")
+        page.wait_for_timeout(1200)
+        body = page.locator("body").inner_text()
+        assert not re.search(r"\bcourse_[0-9a-f]{8}\b", body), \
+            "a raw course uid is visible on Progress"
+
+
+# --- courses ----------------------------------------------------------------
+
+class TestCourses:
+
+    def test_courses_page_lists_or_explains_itself(self, page: Page, base_url):
+        page.goto(base_url + "/courses")
+        page.wait_for_timeout(1200)
+        assert page.locator(".course-card").count() > 0 \
+            or page.locator(".empty-icon").count() > 0, \
+            "Courses rendered neither cards nor an empty state"
+
+    def test_an_empty_course_offers_no_button_that_must_fail(self, page: Page, base_url):
+        """A course with no concepts used to show 'Start Learning' next to
+        '0 Concepts' — an action that could only error."""
+        page.goto(base_url + "/courses")
+        page.wait_for_timeout(1200)
+        expect(page.locator(".course-card:has(.course-card-empty) "
+                            "button:text-is('Start Learning')")).to_have_count(0)
+
+
+# --- learn path -------------------------------------------------------------
+
+class TestLearnPath:
+
+    def _open_a_built_course(self, page, base_url):
+        page.goto(base_url + "/courses")
+        page.wait_for_timeout(1200)
+        ready = page.locator(".course-card:not(:has(.course-card-empty))")
+        if ready.count() == 0:
+            pytest.skip("no fully-built course on disk")
+        ready.first.locator(
+            "button:text-is('Start Learning'), button:text-is('Continue')"
+        ).first.click()
+        expect(page).to_have_url(re.compile(r".*/learn\?course_uid=.*"))
+        page.wait_for_timeout(2800)
+
+    def test_the_path_renders_labelled_nodes(self, page: Page, base_url):
+        self._open_a_built_course(page, base_url)
+        nodes = page.locator(".path-node")
+        assert nodes.count() > 0, "the learn path rendered no nodes"
+        labels = page.locator(".node-label")
+        assert labels.count() == nodes.count(), \
+            "every node needs a permanent label; titles used to be hover-only"
+        assert labels.first.inner_text().strip(), "node label is empty"
+
+    def test_memory_palace_is_reachable_from_learn(self, page: Page, base_url):
+        """It has shipped reachable-by-URL-only twice."""
+        self._open_a_built_course(page, base_url)
+        link = page.locator("#palace-mode-link")
+        expect(link).to_be_visible()
+        assert "course_uid=" in (link.get_attribute("href") or ""), \
+            "Palace must open the course you are in, not whatever the FSM saw last"
+
+
+# --- settings ---------------------------------------------------------------
+
+class TestSettings:
+
+    def test_settings_exposes_system_status(self, page: Page, base_url):
+        """Status stopped being a tab in A5.1. If Settings does not link to it,
+        it is reachable only by URL."""
+        page.goto(base_url + "/settings")
+        expect(page.locator("a[href='/status']")).to_be_visible()
+
+    def test_status_page_loads(self, page: Page, base_url):
+        assert page.goto(base_url + "/status").status < 400
+
+
+# --- backend fuzzing --------------------------------------------------------
+
+@settings(max_examples=20, deadline=None,
+          suppress_health_check=[HealthCheck.too_slow,
+                                 HealthCheck.function_scoped_fixture])
 @given(search_query=st.text(max_size=100))
-@settings(max_examples=20, suppress_health_check=[HealthCheck.too_slow, HealthCheck.function_scoped_fixture])
-def test_backend_search_resilience_with_hypothesis(search_query):
-    """
-    Hypothesis generates edge-case queries.
-    HTTPX validates the backend doesn't crash (500).
-    """
-    with httpx.Client() as client:
-        try:
-            resp = client.get(f"{BASE_URL}/api/due_cards", params={"topic": search_query})
-            assert resp.status_code in (200, 400, 404, 502)
-        except httpx.ConnectError:
-            pytest.skip("Server not running to test against")
+def test_backend_search_resilience_with_hypothesis(base_url, search_query):
+    """Hypothesis generates edge-case queries; the endpoint must not 500."""
+    with httpx.Client(timeout=10) as client:
+        resp = client.get(base_url + "/api/due_concepts",
+                          params={"topic": search_query})
+    assert resp.status_code in (200, 400, 404, 502), \
+        f"{resp.status_code} for query {search_query!r}"

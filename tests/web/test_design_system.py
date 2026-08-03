@@ -369,11 +369,22 @@ class TestNavigationBar(unittest.TestCase):
         rendered. A more specific selector (`.app-header > nav.app-nav`) beat
         the media query outright, which is the subtler version of the same
         mistake."""
-        mobile = re.search(r'@media \(max-width: 768px\) \{(.*?)\n\}',
-                           self.ds, re.S)
-        self.assertIsNotNone(mobile, "no 768px block re-asserting the collapse")
-        self.assertIn('display: none', mobile.group(1))
-        self.assertIn('.app-nav.nav-open', mobile.group(1))
+        # The exact breakpoint is a layout decision (it moved 768 -> 900 when
+        # an e2e width sweep found the bar overflowing at 820px), so this
+        # asserts the BEHAVIOUR: some narrow media query hides the nav and
+        # restores it for .nav-open.
+        blocks = re.findall(r'@media \(max-width: (\d+)px\) \{(.*?)\n\}',
+                            self.ds, re.S)
+        collapse = [(w, b) for w, b in blocks
+                    if '.app-nav' in b and 'display: none' in b
+                    and '.app-nav.nav-open' in b]
+        self.assertTrue(
+            collapse,
+            "no media query collapses .app-nav behind the hamburger; without "
+            "one, a phone renders BOTH the hamburger and the full nav")
+        self.assertTrue(
+            all(int(w) <= 1000 for w, _ in collapse),
+            "the collapse breakpoint should be a narrow-screen rule")
 
     def test_no_selector_outranks_the_mobile_collapse(self):
         """Any `.app-nav` rule with a more specific selector than `.app-nav`

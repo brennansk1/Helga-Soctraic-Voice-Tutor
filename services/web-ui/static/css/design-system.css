@@ -1080,23 +1080,40 @@ body:not(.page-home) .matterhorn-bg { display: none; }
     .header-utils { margin-left: auto; }
 }
 
-/* --- Mobile navigation ----------------------------------------------------
- * style.css collapses .app-nav into a hamburger sheet below 768px with
- * `display: none` / `.nav-open { display: flex }`. This file loads AFTER it,
- * so the unconditional `.app-nav { display: flex }` above silently defeated
- * that: on a phone BOTH the hamburger and the full nav rendered.
+/* --- Narrow layouts -------------------------------------------------------
+ * style.css collapsed .app-nav into a hamburger sheet below 768px. This file
+ * loads after it, so the unconditional `.app-nav { display: flex }` above
+ * silently defeated that: on a phone BOTH the hamburger and the full nav
+ * rendered. Restating it here was still not enough on its own, because an
+ * earlier rule of mine, `.app-header > nav.app-nav`, is more specific than
+ * `.app-nav` and beats a media query regardless of source order. That rule is
+ * gone; this block is the collapse.
  *
- * Restated here inside the same breakpoint so the sheet works and the desktop
- * layout keeps its flex row.
+ * The breakpoint moved 768px -> 900px because 768 was too late. MEASURED at
+ * 820px: logo (105) + six nav links (470) + utilities (248) came to 851px in
+ * an 820px viewport, so the page scrolled sideways in the band between the
+ * hamburger appearing and the content actually fitting. Found by an e2e test
+ * sweeping four widths, not by looking — it is invisible at the width you
+ * design at.
  */
-@media (max-width: 768px) {
+@media (max-width: 900px) {
+    .hamburger-btn { display: flex; }
+
     .app-nav {
         display: none;
+        position: absolute;
         top: 58px;                    /* matches the shorter header */
+        left: 0;
+        right: 0;
+        flex-direction: column;
+        background: var(--bg-secondary);
         border-bottom: 1px solid var(--border-color);
         box-shadow: var(--shadow-3);
+        padding: var(--space-3);
+        gap: var(--space-1);
         margin-left: 0;
         margin-right: 0;
+        z-index: 100;
     }
 
     .app-nav.nav-open { display: flex; }
@@ -1105,11 +1122,18 @@ body:not(.page-home) .matterhorn-bg { display: none; }
 
     .app-nav .nav-link { padding: var(--space-3) var(--space-4); }
 
-    /* The underline indicator is a horizontal-bar idea; in a vertical sheet
-       the active item gets a tinted row instead. */
+    /* The underline is a horizontal-bar idea; in a vertical sheet the active
+       item gets a tinted row instead. */
     .app-nav .nav-link.active::after { display: none; }
     .app-nav .nav-link.active {
         background: var(--bg-tertiary);
         border-radius: var(--border-radius-sm);
     }
+}
+
+/* The XP / level / streak chips are a reward display, not navigation. They are
+   the first thing to go when the bar gets tight — they were what pushed the
+   utilities cluster past the viewport edge at 820px. */
+@media (max-width: 1100px) {
+    .header-utils .gamification-bar { display: none; }
 }
