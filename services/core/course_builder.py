@@ -1148,6 +1148,9 @@ class SkeletonBuilder:
                     f"LOG: Warning — {self.fallback_count} item(s) used fallback titles due to LLM failures."
                 )
 
+        # Normalise degenerate lessons before persisting.
+        self._merge_degenerate_lessons(course_dict)
+
         # Write course structure to JSON
         self.storage.courses.create_course(course_dict)
         _skeleton_elapsed = time.perf_counter() - _pipeline_start
@@ -1156,6 +1159,47 @@ class SkeletonBuilder:
         )
 
         return course_uid
+
+    def _merge_degenerate_lessons(self, course_dict, min_concepts=2):
+        """Fold single-concept lessons into a sibling.
+
+        A lesson holding one concept is scaffolding, not a lesson — it makes the
+        learner click through a heading to reach a single card. The original
+        reference course had SEVEN of twenty-one such lessons (33%), and the
+        distribution is stochastic: consecutive builds of the same course
+        produced 0% and then 33% again, so relying on the LLM to balance them
+        does not hold.
+
+        Deterministic and structural: merge into the smallest sibling in the
+        same unit (keeping units balanced), or into the previous unit's last
+        lesson if it is the only lesson in its own unit. A lesson with no
+        siblings anywhere is left alone — a one-lesson course is legitimate.
+        """
+        merged = 0
+        for module in course_dict.get("modules", []) or []:
+            for unit in module.get("units", []) or []:
+                lessons = unit.get("lessons") or []
+                if len(lessons) < 2:
+                    continue
+                keep = []
+                for lesson in lessons:
+                    concepts = lesson.get("concepts") or []
+                    if len(concepts) >= min_concepts or not keep:
+                        keep.append(lesson)
+                        continue
+                    # Fold into whichever kept sibling is currently smallest,
+                    # so merging does not create a new oversized lesson.
+                    target = min(keep, key=lambda l: len(l.get("concepts") or []))
+                    target.setdefault("concepts", []).extend(concepts)
+                    merged += 1
+                    logger.info(
+                        f"  [STRUCTURE] merged 1-concept lesson "
+                        f"{lesson.get('title')!r} into {target.get('title')!r}")
+                unit["lessons"] = keep
+        if merged and self.status_callback:
+            self.status_callback(
+                f"LOG: merged {merged} single-concept lesson(s) into siblings")
+        return merged
 
     def _build_substructures_progressive(
         self, module_refs, max_depth, topic, all_modules_metadata,
