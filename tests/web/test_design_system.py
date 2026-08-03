@@ -68,15 +68,19 @@ class TestNoExternalAssets(unittest.TestCase):
     def test_the_font_files_are_actually_present(self):
         fonts = os.path.join(_static, 'fonts')
         self.assertTrue(os.path.isdir(fonts), "no local fonts directory")
-        for weight in ('400', '500', '600', '700', '800'):
+        for weight in ('400', '500', '600', '700'):
             self.assertTrue(
-                os.path.exists(os.path.join(fonts, f'dmsans-{weight}.woff2')),
-                f"DM Sans {weight} is referenced by the design system but "
-                f"not vendored — the brand would fall back to a system font"
+                os.path.exists(os.path.join(fonts, f'plexsans-{weight}.woff2')),
+                f"IBM Plex Sans {weight} is the UI face; without it the whole "
+                f"interface falls back to a system font"
             )
         for weight in ('400', '600'):
             self.assertTrue(os.path.exists(
                 os.path.join(fonts, f'jetbrainsmono-{weight}.woff2')))
+        self.assertTrue(
+            os.path.exists(os.path.join(fonts, 'dmsans-700.woff2')),
+            "DM Sans is kept for the wordmark only"
+        )
 
     def test_every_font_face_src_resolves_to_a_real_file(self):
         css = _read(os.path.join(_static, 'css/fonts.css'))
@@ -280,3 +284,42 @@ class TestIconSystemIsUsable(unittest.TestCase):
                         if re.search(r'textContent\s*=\s*[\'"`]\s*<', line):
                             offenders.append(f"{os.path.relpath(path, _root)}:{i}")
         self.assertEqual(offenders, [], f"markup assigned to textContent: {offenders}")
+
+
+class TestReferencedAssetsExist(unittest.TestCase):
+    """Every /static/ asset the UI points at must be on disk.
+
+    helga-avatar.svg and user-avatar.svg were referenced from eight places in
+    session.js and settings.html and did not exist, so every message in a
+    learning session and the Settings profile preview rendered a broken image.
+    session.js even had an onerror fallback pointing at the same missing file.
+    Nothing failed loudly; it just looked broken.
+    """
+
+    REF = re.compile(r'["\'(]/static/(img|fonts)/([\w.\-/]+)')
+
+    def _files(self):
+        for sub in ('templates', 'static/js', 'static/css'):
+            base = os.path.join(_root, 'services/web-ui', sub)
+            for dirpath, _, names in os.walk(base):
+                for name in names:
+                    if name.endswith(('.html', '.js', '.css')) and 'min.js' not in name:
+                        yield os.path.join(dirpath, name)
+
+    def test_every_referenced_image_and_font_exists(self):
+        missing = {}
+        for path in self._files():
+            for kind, ref in self.REF.findall(_read(path)):
+                # skip template expressions and obvious placeholders
+                if '{' in ref or '$' in ref:
+                    continue
+                target = os.path.join(_static, kind, ref)
+                if not os.path.exists(target):
+                    missing.setdefault(f"{kind}/{ref}", []).append(
+                        os.path.relpath(path, _root))
+        self.assertEqual(
+            missing, {},
+            "Referenced but not on disk — these render as broken images:\n"
+            + "\n".join(f"  {a} <- {', '.join(sorted(set(u)))}"
+                        for a, u in missing.items())
+        )

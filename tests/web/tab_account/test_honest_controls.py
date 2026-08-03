@@ -165,6 +165,24 @@ class TestNoFeatureReachableOnlyByUrl(unittest.TestCase):
             self.assertIn(f'tab={tab}', rv.headers.get('Location', ''),
                           f"{old} must land on the matching Practice state")
 
+    def test_no_page_still_advertises_a_retired_tab(self):
+        """Folding Quiz/Review/Schedule into Practice is not finished while
+        other pages still link to them. Home kept three tiles pointing at the
+        old tabs, so the front door advertised an information architecture the
+        app no longer had — the links worked (they redirect) but the product
+        described itself two different ways on two screens."""
+        import glob
+        offenders = []
+        for path in glob.glob(os.path.join(_root, 'services/web-ui/templates/*.html')):
+            if os.path.basename(path) == 'practice.html':
+                continue        # owns the redirect targets
+            with open(path) as f:
+                body = f.read()
+            for dead in ('href="/quiz"', 'href="/review"', 'href="/schedule"'):
+                if dead in body:
+                    offenders.append(f"{os.path.basename(path)} -> {dead}")
+        self.assertEqual(offenders, [], f"links to retired tabs: {offenders}")
+
     def test_the_nav_stays_at_six_destinations(self):
         """The A5.1 target shape. Nine links wrapped onto a second row at
         1280px and orphaned the settings icon; this is the regression guard."""

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Helga's avatar, shown beside every tutor message in a session.
+
+  This file was referenced from eight places in session.js and settings.html
+  and DID NOT EXIST — every tutor message in a learning session rendered a
+  broken image, and session.js's own onerror fallback pointed at the same
+  missing file. It came from the April working-tree changes that were never
+  committed.
+
+  Deliberately abstract rather than a face: the tutor is a system, and a
+  cartoon character would undercut the tone the rest of the UI now sets.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Helga">
+  <defs>
+    <linearGradient id="hg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2e6b8a"/>
+      <stop offset="1" stop-color="#4a8c6f"/>
+    </linearGradient>
+  </defs>
+  <circle cx="32" cy="32" r="32" fill="url(#hg)"/>
+  <path d="M14 44 26 24l8.5 15 5-8.5L50 44z" fill="none" stroke="#fff"
+        stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"/>
+  <circle cx="43" cy="20" r="3.6" fill="#fff" opacity="0.85"/>
+</svg>

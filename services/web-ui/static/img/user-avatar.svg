@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Default learner avatar. Replaced at runtime by an uploaded image
+  (window._userAvatarSrc); this is the fallback and the Settings preview.
+
+  Like helga-avatar.svg, this was referenced but missing, so Settings showed a
+  broken image and every learner message in a session did too.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="You">
+  <circle cx="32" cy="32" r="32" fill="#e8f4f0"/>
+  <circle cx="32" cy="25" r="10" fill="#6b7c6e"/>
+  <path d="M12 56a20 20 0 0 1 40 0z" fill="#6b7c6e"/>
+</svg>

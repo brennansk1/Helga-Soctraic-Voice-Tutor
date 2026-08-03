@@ -183,7 +183,10 @@ body {
     left: 0;
     right: 0;
     bottom: 0;
-    background: url('/static/img/matterhorn-bg.png') center center / cover no-repeat;
+    /* JPEG here so this file is correct on its own; design-system.css
+       upgrades it to WebP via image-set and re-anchors it as a horizon.
+       The original PNG was 4000x2232 / 8.8 MB for a decorative layer. */
+    background: url('/static/img/matterhorn-bg.jpg') center center / cover no-repeat;
     opacity: 0.15;
     pointer-events: none;
     z-index: 0;

@@ -78,26 +78,41 @@ async function loadCourses() {
                 actionButton = `<button class="btn-alpine btn-alpine-primary" style="flex: 1; opacity: 0.6;" disabled>${status === 'failed' || status === 'hydration_failed' ? 'Build Failed' : 'Not Ready'}</button>`;
             }
 
+            // A5.3 — the header was a full-bleed gradient slab in a colour
+            // hashed from the TITLE, so a course about Roman history could be
+            // brick red for no reason and the grid read as a set of warning
+            // banners. The accent is now a 3px spine: still per-course, still
+            // recognisable at a glance, no longer shouting.
+            //
+            // An empty course also used to offer "Start Learning" next to
+            // "0 Modules · 0 Lessons · 0 Concepts" — a button that could only
+            // fail. Those are surfaced as incomplete builds instead.
+            const isEmpty = !(stats.concepts > 0);
+            card.style.setProperty('--course-accent', bg1);
             card.innerHTML = `
-                <div class="course-card-header" style="background: linear-gradient(135deg, ${bg1}, ${bg2});">
-                    <h3>${escapeHtml(course.title)}</h3>
-                </div>
                 <div class="course-card-body">
-                    <p style="color: var(--text-secondary); font-size: 0.85rem; margin: 0;">
+                    <h3 class="course-card-title">${escapeHtml(course.title)}</h3>
+                    <p class="course-card-desc">
                         ${escapeHtml(course.description || 'A comprehensive interactive course.')}
                     </p>
                     <div class="course-card-stats">
-                        <span><span class="i i-package" aria-hidden="true"></span> ${stats.modules || 0} Modules</span>
-                        <span><span class="i i-book" aria-hidden="true"></span> ${stats.lessons || 0} Lessons</span>
-                        <span><span class="i i-brain" aria-hidden="true"></span> ${stats.concepts || 0} Concepts</span>
+                        ${isEmpty
+                          ? `<span class="course-card-empty"><span class="i i-warning" aria-hidden="true"></span> No content — build did not finish</span>`
+                          : `<span>${stats.modules || 0} modules</span>
+                             <span>${stats.lessons || 0} lessons</span>
+                             <span>${stats.concepts || 0} concepts</span>`}
                     </div>
-                    <div class="alpine-progress" style="height: 6px;">
-                        <div class="alpine-progress-fill" style="width: ${progress}%; background: ${bg1};"></div>
-                    </div>
+                    ${isEmpty ? '' : `
+                    <div class="course-card-progress">
+                        <div class="alpine-progress"><div class="alpine-progress-fill" style="width: ${progress}%;"></div></div>
+                        <span class="course-card-pct">${Math.round(progress)}%</span>
+                    </div>`}
                     <div class="course-card-actions">
-                        ${actionButton}
-                        <button class="btn-alpine btn-alpine-secondary" style="padding: 0.5rem 0.75rem;" onclick="window.location.href='/course/view?uid=${course.uid}'" title="View Structure" aria-label="View structure for ${escapeHtml(course.title)}"><span class="i i-clipboard" aria-hidden="true"></span></button>
-                        <button class="btn-alpine btn-alpine-danger" style="padding: 0.5rem 0.75rem;" onclick="deleteCourse('${course.uid}', '${escapeHtml(course.title)}')" title="Delete" aria-label="Delete ${escapeHtml(course.title)}"><span class="i i-trash" aria-hidden="true"></span></button>
+                        ${isEmpty
+                          ? `<button class="btn-alpine btn-alpine-secondary" style="flex:1;" disabled>Incomplete</button>`
+                          : actionButton}
+                        <button class="btn-alpine btn-alpine-ghost course-card-icon-btn" onclick="window.location.href='/course/view?uid=${course.uid}'" title="View structure" aria-label="View structure for ${escapeHtml(course.title)}"><span class="i i-clipboard" aria-hidden="true"></span></button>
+                        <button class="btn-alpine btn-alpine-ghost course-card-icon-btn is-danger" onclick="deleteCourse('${course.uid}', '${escapeHtml(course.title)}')" title="Delete course" aria-label="Delete ${escapeHtml(course.title)}"><span class="i i-trash" aria-hidden="true"></span></button>
                     </div>
                 </div>
             `;

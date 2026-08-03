@@ -667,3 +667,288 @@
    a table of numbers it is noise. */
 .page-progress .matterhorn-bg,
 .page-practice .matterhorn-bg { display: none; }
+
+/* ---------------------------------------------------------------------------
+ * Typeface
+ *
+ * IBM Plex Sans replaces DM Sans as the UI face. DM Sans is a geometric
+ * display type — rounded, wide, high-contrast — which is why the interface
+ * read as playful no matter how the layout was tightened. Plex was drawn as a
+ * corporate identity face: flat terminals, engineered proportions, slightly
+ * humanist so it stays warm, and it holds together at the 12-13px where most
+ * of this UI actually lives.
+ *
+ * DM Sans survives in exactly one place, the wordmark, where its geometry is
+ * an asset and it is set once at a large size.
+ * ------------------------------------------------------------------------ */
+:root {
+    --font-ui: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --font-brand: 'DM Sans', 'IBM Plex Sans', sans-serif;
+}
+
+html, body,
+button, input, select, textarea,
+h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-ui);
+}
+
+/* Plex runs slightly narrower and darker than DM Sans at the same size, so
+   body copy gets a touch more leading to stop it looking dense. */
+body { line-height: 1.55; }
+
+code, pre, kbd, samp, .mono { font-family: var(--font-mono); }
+
+.logo a,
+.brand-wordmark { font-family: var(--font-brand); }
+
+/* ---------------------------------------------------------------------------
+ * Course cards
+ *
+ * Each card led with a full-bleed gradient banner in a colour hashed from the
+ * TITLE — arbitrary, saturated, and unrelated to the content, so a grid of
+ * courses read as a wall of warning banners. The accent survives as a spine:
+ * still per-course and still recognisable, no longer the loudest thing on the
+ * page.
+ * ------------------------------------------------------------------------ */
+.course-card {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    background: var(--bg-secondary);
+    box-shadow: var(--shadow-1);
+    transition: box-shadow var(--transition-base), transform var(--transition-base);
+}
+
+.course-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background: var(--course-accent, var(--accent-primary));
+}
+
+.course-card:hover { box-shadow: var(--shadow-2); transform: translateY(-1px); }
+
+.course-card-header { display: none; }   /* the gradient slab */
+
+.course-card-body { padding: var(--space-4) var(--space-5); }
+
+.course-card-title {
+    margin: 0 0 var(--space-1);
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+    line-height: 1.25;
+}
+
+.course-card-desc {
+    margin: 0 0 var(--space-3);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.course-card-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-4);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+    margin-bottom: var(--space-3);
+}
+
+.course-card-empty { color: var(--status-warning); display: inline-flex; gap: var(--space-2); align-items: center; }
+
+.course-card-progress {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+}
+
+.course-card-progress .alpine-progress {
+    flex: 1;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--bg-tertiary);
+    overflow: hidden;
+}
+
+.course-card-progress .alpine-progress-fill {
+    height: 100%;
+    background: var(--course-accent, var(--accent-primary));
+    transition: width var(--dur-slower) var(--ease-decelerate);
+}
+
+.course-card-pct {
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+    min-width: 2.5em;
+    text-align: right;
+}
+
+.course-card-actions { display: flex; gap: var(--space-2); align-items: stretch; }
+
+/* Destructive actions do not get a permanent red slab. Delete was as visually
+   loud as "Start Learning", which is backwards. */
+.btn-alpine-ghost {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+}
+
+.btn-alpine-ghost:hover { color: var(--text-primary); border-color: var(--accent-primary); }
+.btn-alpine-ghost.is-danger:hover { color: var(--status-error); border-color: var(--status-error); }
+
+.course-card-icon-btn { padding: var(--space-2) var(--space-3); }
+
+/* The illustration behind a grid of cards is just noise. */
+.page-courses .matterhorn-bg { display: none; }
+
+/* ============================================================================
+ * Whole-frontend normalisation
+ *
+ * Pages built before the design system carry their own class vocabulary
+ * (.palace-card, .settings-section, .btn-small, .btn-primary…) and their own
+ * inline <style> blocks. Rewriting every template is a larger job than this
+ * sprint; making them all obey ONE set of rules is not, and it is what stops
+ * the app looking like four products stitched together.
+ *
+ * Everything below maps legacy names onto the system rather than restyling
+ * them individually.
+ * ==========================================================================*/
+
+/* --- Panels --------------------------------------------------------------- */
+.palace-card,
+.settings-section,
+.status-card,
+.stat-box,
+.panel,
+.quiz-card,
+.schedule-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-1);
+    padding: var(--space-5);
+}
+
+/* --- Page headers --------------------------------------------------------- */
+.palace-header h1,
+.page-settings h1,
+.page-status h1,
+.page-section > h1,
+.action-bar h1 {
+    font-size: var(--font-size-3xl);
+    font-weight: var(--font-weight-bold);
+    letter-spacing: -0.015em;
+    margin: 0 0 var(--space-1);
+}
+
+.palace-sub,
+.page-subtitle,
+.setting-hint {
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+}
+
+.settings-section > h2 {
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-bold);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    margin: 0 0 var(--space-4);
+    padding-bottom: var(--space-2);
+    border-bottom: 1px solid var(--border-color);
+}
+
+/* --- Legacy button names -------------------------------------------------
+ * .btn-primary / .btn-secondary / .btn-danger / .btn-small / .btn-alpine* all
+ * existed with different definitions in different files, so the same label
+ * was a different control depending on which page you were on.
+ */
+.btn-primary, .btn-secondary, .btn-danger, .btn-small,
+.btn-alpine, .settings-retry-btn, .palace-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-5);
+    border: 1px solid transparent;
+    border-radius: var(--border-radius-sm);
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.2;
+    text-decoration: none;
+    cursor: pointer;
+    box-shadow: none;
+    transition: background var(--transition-fast), border-color var(--transition-fast),
+                color var(--transition-fast), transform var(--transition-fast);
+}
+
+.btn-primary, .btn-alpine-primary, .palace-btn {
+    background: var(--accent-primary);
+    color: var(--text-inverted);
+}
+.btn-primary:hover, .btn-alpine-primary:hover, .palace-btn:hover {
+    background: var(--accent-primary-dark);
+}
+
+.btn-secondary, .btn-alpine-secondary, .settings-retry-btn {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border-color: var(--border-color);
+}
+.btn-secondary:hover, .btn-alpine-secondary:hover {
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+}
+
+.btn-danger, .btn-alpine-danger {
+    background: var(--status-error);
+    color: var(--text-inverted);
+}
+
+.btn-small { padding: var(--space-2) var(--space-3); font-size: var(--font-size-xs); }
+
+.btn-primary:disabled, .btn-secondary:disabled,
+.btn-alpine:disabled, .btn-danger:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* --- Form controls -------------------------------------------------------
+ * Native selects and inputs were left unstyled on several pages, so a page
+ * mixed system widgets with designed ones.
+ */
+select, input[type="text"], input[type="number"], input[type="email"],
+input[type="password"], input[type="search"], textarea {
+    font-family: inherit;
+    font-size: var(--font-size-base);
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    padding: var(--space-3) var(--space-4);
+    transition: border-color var(--transition-fast);
+}
+
+select:hover, input:hover, textarea:hover { border-color: var(--accent-primary); }
+
+label { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); }
+
+/* --- Atmosphere -----------------------------------------------------------
+ * The illustration is brand work, and brand work belongs on the front door.
+ * Behind a settings form or a status table it is just a busy background.
+ */
+body:not(.page-home) .matterhorn-bg { display: none; }
