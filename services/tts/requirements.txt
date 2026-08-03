@@ -1,4 +1,11 @@
 flask==3.0.0
-kokoro==0.3.4
+# Apple-native first: MLX runtime for the SAME Kokoro-82M model (identical
+# voices/quality, no PyTorch). See docs/SPRINT_PLAN.md.
+mlx-audio==0.4.7
+# Portable fallback backend (TTS_BACKEND=torch). Pulls PyTorch; install only
+# when running off Apple Silicon:
+#     pip install kokoro==0.9.4
+# (0.3.4 was pinned here; upstream is now 0.9.4.)
+# kokoro==0.9.4
 soundfile==0.12.1
 numpy==1.26.4

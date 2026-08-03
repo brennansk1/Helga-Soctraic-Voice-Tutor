@@ -1,6 +1,10 @@
 flask==3.0.0
 requests==2.31.0
-sentence-transformers==2.7.0
+# sentence-transformers REMOVED: embeddings now come from Ollama
+# (services/common/embeddings.py). That drops PyTorch + transformers from this
+# image entirely and upgrades the model from all-MiniLM-L6-v2 (384-dim) to
+# bge-m3 (1024-dim). Ollama is already running, so this is a net dependency
+# REMOVAL with a quality gain. Re-adding it would reintroduce multi-GB deps.
 tqdm==4.66.4
 psutil==5.9.8
 python-socketio==5.11.2

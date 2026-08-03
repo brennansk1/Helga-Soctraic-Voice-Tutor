@@ -132,13 +132,34 @@ def admin_catalog_coverage():
 _embed_model = None
 
 
+class _OllamaEmbedder:
+    """Adapter exposing `.encode` so existing call sites are unchanged."""
+
+    def __init__(self, fn):
+        self.encode = fn
+
+
 def get_embed_model():
+    """Embeddings now come from Ollama, not sentence-transformers.
+
+    sentence-transformers pulled PyTorch + transformers into this service:
+    hundreds of MB on disk, far more resident, and a recurring source of
+    dependency conflicts — on a 24 GB box that is already swapping, that is not
+    affordable for an optional retrieval path.
+
+    Ollama is already running and already serves embeddings, so this removes
+    the dependency outright AND upgrades the model: bge-m3 is 1024-dim versus
+    all-MiniLM-L6-v2's 384. Ollama also owns the model's memory, so it is
+    shared and evictable rather than pinned in this process.
+
+    NOTE: the dimension change invalidates any previously built dense index —
+    it must be rebuilt. See services/common/embeddings.expected_dim().
+    """
     global _embed_model
     if _embed_model is None:
-        from sentence_transformers import SentenceTransformer  # heavy import, lazy
-        name = os.getenv("EMBED_MODEL", "all-MiniLM-L6-v2")
-        logger.info(f"Loading embedding model: {name}")
-        _embed_model = SentenceTransformer(name)
+        from services.common.embeddings import get_embed_fn, EMBED_MODEL
+        logger.info(f"Using Ollama embeddings: {EMBED_MODEL}")
+        _embed_model = _OllamaEmbedder(get_embed_fn())
     return _embed_model
 
 # ZIM/KuzuDB removed — all content is LLM-generated and stored in SQLite + JSON

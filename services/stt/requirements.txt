@@ -2,4 +2,10 @@
 # The primary nemotron-mlx backend runs NATIVELY on the Apple-Silicon host and
 # installs its deps there (see README.md) — MLX/ANE cannot run in a Linux container.
 flask==3.0.0
-faster-whisper==1.0.3
+# faster-whisper is the PORTABLE FALLBACK backend only. The default is
+# STT_BACKEND=nemotron-mlx (host-native, Apple Silicon), whose import is lazy,
+# so this pulls CTranslate2 for a path v1 does not take. Install explicitly
+# when running the containerised fallback:
+#     pip install faster-whisper==1.0.3
+# Apple-native-first decision: see docs/SPRINT_PLAN.md
+# faster-whisper==1.0.3

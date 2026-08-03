@@ -109,6 +109,44 @@ third-party LLM may see minor data); Health Strand 6 locked by default pending e
 output moderation with crisis-resource surfacing that alerts a parent *without* transmitting the
 sensitive transcript. Nothing in Mode B ships to a real child until these are implemented and tested.
 
+### Platform decision: **Apple-native first** (2026-08-02)
+
+**v1 targets macOS on Apple Silicon natively.** Cross-platform portability is
+deferred, not abandoned — but it stops being a constraint on v1 decisions.
+
+This is driven by measurement, not preference. The target box is a Mac Mini M4 Pro
+with 24 GB unified memory, and it was found **already swapping 10.3 GB of 11.3 GB**
+with Docker down and only a browser open. The stack cannot afford to pay a
+portability tax in RAM on hardware that is already over-subscribed, especially
+since the user runs other software on the same machine.
+
+**What "Apple-native first" licenses us to do:**
+
+| Area | Portable-first (old) | Apple-native first (v1) |
+|---|---|---|
+| Inference | Ollama/llama.cpp, GGUF | **MLX** models directly (e.g. ternary 27B at ~7 GB) |
+| Embeddings | sentence-transformers + PyTorch | **Ollama `/api/embed`** — no PyTorch at all |
+| TTS | Kokoro in a 2 GB container | Kokoro lazy-loaded; **`AVSpeechSynthesis` as a 0-RAM fallback** |
+| STT | faster-whisper in a container | **Nemotron ASR via MLX**, host-native |
+| Services | six always-on containers | host-native + on-demand; unified memory is shared, not partitioned |
+
+**What this buys:** unified memory means a host-native process shares the model
+with everything else instead of reserving a container slice. Dropping the
+PyTorch dependency chain (done — see `services/common/embeddings.py`) removes
+hundreds of MB and a recurring source of version conflicts. MLX quantisations
+(1.7-bit ternary) have no GGUF equivalent, so portability was costing us the
+best memory/quality trade available.
+
+**What we explicitly accept:** v1 will not run on Linux or Jetson without work.
+Docker Compose remains the reference topology for a future portable release, and
+nothing here is allowed to hard-code macOS paths into shared logic — platform
+specifics belong behind a seam (`memory_guard`, `embeddings`, the TTS/STT
+adapters), not scattered through `fsm_logic` or `course_builder`.
+
+**What this does NOT change:** the K-12 compliance posture. All inference stays
+self-hosted regardless of platform; "Apple-native" is about *where* the model
+runs, never about sending student data anywhere.
+
 ### The shared-core rule
 Any feature built for one mode must be built in the shared core with the mode as a *parameter*, not
 forked. Grade-band bounding of Bloom is the model to follow: one algorithm, a profile table

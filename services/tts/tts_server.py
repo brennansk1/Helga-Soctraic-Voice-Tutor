@@ -31,17 +31,65 @@ VOICES = [
 ]
 
 
+# Apple-native-first: the SAME Kokoro-82M model, run on MLX instead of
+# PyTorch. This is a runtime swap, not a model swap — identical voices and
+# quality — but it drops the entire torch dependency chain from this service,
+# which matters on a 24 GB box measured already swapping 10.3/11.3 GB.
+#
+#   mlx     -> mlx-audio (Apple Silicon, default; prince-canuma/Kokoro-82M)
+#   torch   -> the original `kokoro` package (portable fallback)
+#
+# Import is lazy and the backend falls back automatically, so a machine
+# without MLX still works. See docs/SPRINT_PLAN.md "Apple-native first".
+TTS_BACKEND = os.environ.get("TTS_BACKEND", "mlx").lower()
+MLX_KOKORO_REPO = os.environ.get("MLX_KOKORO_REPO", "prince-canuma/Kokoro-82M")
+
+_backend_in_use = None
+
+
+class _MlxKokoro:
+    """Adapter presenting the same call shape as KPipeline."""
+
+    def __init__(self, repo):
+        from mlx_audio.tts.utils import load_model
+        self._model = load_model(repo)
+
+    def __call__(self, text, voice="af_heart", speed=1.0):
+        # mlx-audio yields segment objects carrying `.audio`; normalise to the
+        # (graphemes, phonemes, audio) triple the caller already unpacks.
+        for seg in self._model.generate(text=text, voice=voice, speed=speed):
+            audio = getattr(seg, "audio", seg)
+            yield (None, None, audio)
+
+
 def get_pipeline():
-    global pipeline
-    if pipeline is None:
+    global pipeline, _backend_in_use
+    if pipeline is not None:
+        return pipeline
+
+    errors = []
+    order = ["mlx", "torch"] if TTS_BACKEND == "mlx" else ["torch", "mlx"]
+    for backend in order:
         try:
-            from kokoro import KPipeline
-            pipeline = KPipeline(lang_code='a')
-            logger.info("Kokoro TTS pipeline initialized")
+            if backend == "mlx":
+                pipeline = _MlxKokoro(MLX_KOKORO_REPO)
+            else:
+                from kokoro import KPipeline
+                pipeline = KPipeline(lang_code='a')
+            _backend_in_use = backend
+            logger.info(f"Kokoro TTS initialized (backend={backend})")
+            return pipeline
         except Exception as e:
-            logger.error(f"Failed to initialize Kokoro pipeline: {e}")
-            raise
-    return pipeline
+            errors.append(f"{backend}: {e}")
+            logger.warning(f"TTS backend '{backend}' unavailable: {e}")
+
+    raise RuntimeError("no TTS backend available — " + "; ".join(errors))
+
+
+def active_backend():
+    """Which backend actually loaded. Exposed so /health can report it rather
+    than leaving an operator guessing whether the MLX path is really in use."""
+    return _backend_in_use
 
 
 @app.route('/api/tts', methods=['POST'])
@@ -89,7 +137,16 @@ def list_voices():
 
 @app.route('/health', methods=['GET'])
 def health():
-    return jsonify({"status": "healthy", "engine": "kokoro", "params": "82M"})
+    # Report the backend that ACTUALLY loaded, not the configured preference —
+    # a silent fallback from mlx to torch is a real memory regression an
+    # operator needs to be able to see.
+    return jsonify({
+        "status": "healthy",
+        "engine": "kokoro",
+        "params": "82M",
+        "backend_configured": TTS_BACKEND,
+        "backend_active": active_backend(),  # None until first synthesis
+    })
 
 
 if __name__ == '__main__':
