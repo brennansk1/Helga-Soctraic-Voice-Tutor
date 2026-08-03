@@ -769,18 +769,30 @@ class SkeletonBuilder:
             all_passed = False
 
         # 4. LLM Health Check
+        #
+        # Probe /v1/models — the standard OpenAI-compatible endpoint — before
+        # falling back to the server root. Checking only "/" assumed Ollama,
+        # which serves a root page; mlx_lm.server does not and returns 404, so
+        # preflight aborted course creation against a perfectly healthy backend
+        # with "LLM returned HTTP 404". MLX is a first-class backend under the
+        # Apple-native-first decision, so the check has to be backend-agnostic.
         start_t = time.time()
-        try:
-            health_url = LLM_API_URL.replace("/v1/chat/completions", "/")
-            resp = requests.get(health_url, timeout=5)
-            if resp.status_code == 200:
-                lat = int((time.time() - start_t) * 1000)
-                log_and_emit("✓", f"LLM Online (latency: {lat}ms)")
-            else:
-                log_and_emit("✗", f"LLM returned HTTP {resp.status_code}")
-                all_passed = False
-        except Exception as e:
-            log_and_emit("✗", f"LLM Unreachable ({e})")
+        base = LLM_API_URL.replace("/v1/chat/completions", "")
+        llm_ok, last = False, None
+        for path in ("/v1/models", "/"):
+            try:
+                resp = requests.get(base + path, timeout=5)
+                if 200 <= resp.status_code < 300:
+                    llm_ok = True
+                    break
+                last = f"HTTP {resp.status_code} at {path}"
+            except Exception as e:
+                last = f"{type(e).__name__} at {path}"
+        if llm_ok:
+            lat = int((time.time() - start_t) * 1000)
+            log_and_emit("✓", f"LLM Online (latency: {lat}ms)")
+        else:
+            log_and_emit("✗", f"LLM unreachable ({last})")
             all_passed = False
 
         # Content providers removed — LLM-only content generation
