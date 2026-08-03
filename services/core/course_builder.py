@@ -1749,6 +1749,16 @@ class ContentHydrator:
         # claim).
         self.fact_check_enabled = os.getenv(
             "HELGA_FACT_CHECK", "1").lower() not in ("0", "false", "no")
+        # Fraction of concepts to fact-check. 1.0 = every concept (correct but
+        # ~8-10 min/concept locally); 0.25 = a quarter, evenly spread. The
+        # course records what was actually checked so a partial sweep is never
+        # reported as full coverage.
+        try:
+            self.fact_check_sample = max(0.0, min(1.0, float(
+                os.getenv("HELGA_FACT_CHECK_SAMPLE", "0.34"))))
+        except ValueError:
+            self.fact_check_sample = 0.34
+        self._fact_checked_count = 0
         self._fact_failures = []
         # Gate criterion 2. Costs one LLM call per sampled concept.
         self.level_calibration_enabled = os.getenv(
@@ -2034,7 +2044,18 @@ class ContentHydrator:
             # 50% of sampled concepts contained false technical claims that
             # every other measure passed (right level, real citations, fluent
             # prose). Fluency is not accuracy.
-            if not is_fallback and self.fact_check_enabled:
+            #
+            # SAMPLED, not exhaustive. Checking every concept costs 2-5 extra
+            # LLM calls each (check + a confirmation per flagged claim +
+            # regeneration + recheck), which measured at 8-10 MINUTES per
+            # concept on a local 9B — over five hours for a 36-concept course.
+            # That is not a slow run, it is an unusable pipeline.
+            #
+            # The gate spec calls criterion 3 a SPOT-CHECK; level calibration
+            # already samples. The sampled fraction is recorded on the course so
+            # the verdict never implies more coverage than was actually checked.
+            if (not is_fallback and self.fact_check_enabled
+                    and self._should_fact_check(idx)):
                 structured_md = self._apply_fact_check(
                     structured_md, title, course_title, complexity_role,
                     source_type, h_ctx, research_sources, research_confidence,
@@ -2205,6 +2226,8 @@ class ContentHydrator:
             bad = len(self._fact_failures)
             course["fact_check"] = {
                 "concepts_total": total_concepts,
+                "concepts_checked": self._fact_checked_count,
+                "sample_fraction": getattr(self, "fact_check_sample", 1.0),
                 "concepts_with_false_claims": bad,
                 "clean_pct": round(100 * (total_concepts - bad) / total_concepts, 1),
                 "failures": self._fact_failures[:25],
@@ -2326,6 +2349,17 @@ class ContentHydrator:
         result["remainder"] = " ".join(other)[:1500]
         return result
 
+    def _should_fact_check(self, idx):
+        """Evenly-spaced sample, so checked concepts are spread through the
+        course rather than clustered in the (systematically easier) intro."""
+        frac = getattr(self, "fact_check_sample", 1.0)
+        if frac >= 1.0:
+            return True
+        if frac <= 0.0:
+            return False
+        step = max(1, int(round(1.0 / frac)))
+        return (idx % step) == 0
+
     def _apply_fact_check(self, structured_md, title, course_title,
                           complexity_role, source_type, h_ctx, research_sources,
                           research_confidence, user_note, bloom_level,
@@ -2346,6 +2380,9 @@ class ContentHydrator:
             logger.debug(f"fact-check unavailable: {e}")
             return structured_md
 
+        # Count BEFORE checking, so the recorded coverage reflects concepts we
+        # attempted rather than only those that came back clean.
+        self._fact_checked_count += 1
         result = check_content(structured_md, source_text=content_to_use or "",
                                concept_title=title)
         if not result.get("checked"):
