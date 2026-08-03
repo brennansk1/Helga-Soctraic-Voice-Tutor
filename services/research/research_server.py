@@ -151,7 +151,29 @@ async def _research_concept_async(title, module_title, course_title, mastery=1):
     combined_parts = []
 
     # 1. Wikipedia (synchronous, fast)
-    wiki_result = wiki_lookup(title)
+    #
+    # Cascade concept -> module -> course. wiki_lookup does an EXACT page-title
+    # match, and generated concept titles are pedagogical TASKS, not topics:
+    # "Identify the Right Angle", "Name the Short Sides", "Find the Longest
+    # Side". None of those is a Wikipedia article, so every concept in a real
+    # 12-concept build returned confidence 0.0 and ZERO sources — which in turn
+    # failed the depth contract's `any_source` requirement 10 times over.
+    #
+    # Verified: "Identify the Right Angle" -> 0 sources;
+    #           "Pythagorean theorem"      -> 0.4 confidence, 1 source.
+    # The subject is knowable from the module/course context even when the
+    # concept title is a task, so fall back to it rather than teaching
+    # ungrounded.
+    wiki_result = None
+    for candidate in (title, module_title, course_title):
+        if not candidate:
+            continue
+        wiki_result = wiki_lookup(candidate)
+        if wiki_result:
+            if candidate is not title:
+                logger.info(
+                    f"wiki: '{title}' had no page; grounded via '{candidate}'")
+            break
     wikipedia_data = None
     if wiki_result:
         combined_parts.append(f"## Source: Wikipedia - {wiki_result['title']}\n{wiki_result['text']}")

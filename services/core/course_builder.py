@@ -2683,8 +2683,33 @@ Prior concepts: {prereq_str}
         }
         core_inst = core_instructions.get(depth, core_instructions[3])
 
-        word_targets = {1: 150, 2: 200, 3: 250, 4: 300, 5: 400}
-        word_target = word_targets.get(depth, 250)
+        # Word budget, taken from the DEPTH CONTRACT so the instruction and the
+        # validator cannot disagree.
+        #
+        # Two bugs lived here:
+        #  1. This was a private table {1:150, 2:200, 3:250, 4:300, 5:400} that
+        #     conflicted with MASTERY_PROFILES["content_words"]
+        #     (150/250/400/600/800) — and content_words was never read into any
+        #     prompt at all, so the mastery slider's length setting had NEVER
+        #     reached the model.
+        #  2. It budgeted only the "Core Explanation" SECTION while the contract
+        #     measures the WHOLE document. ~200 words of core explanation plus
+        #     eight other sections produced a 951-word median against a 200-550
+        #     band, failing "too long" on 10 of 12 concepts.
+        # So the model is now given the total-document band it is judged on.
+        try:
+            from services.core.depth_contract import contract_for
+            _c = contract_for(depth, course_title)
+            _wmin, _wmax = _c["word_min"], _c["word_max"]
+        except Exception:
+            _wmin, _wmax = 200, 550
+        word_target = max(80, int((_wmin + _wmax) / 2 * 0.35))  # core section share
+        total_budget_note = (
+            f"\n\nLENGTH BUDGET (HARD): the COMPLETE document — every section "
+            f"combined — must be between {_wmin} and {_wmax} words. This is "
+            f"checked automatically and a document outside the band is "
+            f"rejected. Keep every section terse to stay inside it; do not pad."
+        )
 
         # Build the LLM-generated section template
         section_template = f"""## Mastery Criteria
@@ -2730,6 +2755,7 @@ Focus ONLY on what makes "{title}" DISTINCT.
 Source Material: {source_material}
 
 Generate ONLY the sections below. Do NOT generate Metadata, Learning Objectives, or Prerequisites — those are pre-filled.
+{total_budget_note}
 
 {section_template}
 """
