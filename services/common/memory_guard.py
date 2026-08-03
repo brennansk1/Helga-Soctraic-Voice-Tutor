@@ -216,13 +216,27 @@ def pressure_reason(snap=None):
         return None
 
     lvl = macos_pressure_level()
-    if lvl is not None and lvl >= 2:
-        return f"macOS reports memory pressure level {lvl} (2=warn, 4=critical)"
+    if lvl is not None:
+        # The kernel's verdict is authoritative in BOTH directions. Treating it
+        # as authoritative only when it says "bad" was the second calibration
+        # error: with the kernel reporting NORMAL, a heuristic still blocked the
+        # build at "swap 89% with only 5.9 GB free" — 0.1 GB under an arbitrary
+        # corroboration threshold. macOS knows whether it is thrashing; we do
+        # not, and second-guessing it costs real work.
+        if lvl >= 2:
+            return (f"macOS reports memory pressure level {lvl} "
+                    f"(2=warn, 4=critical)")
+        # Level 1 = normal. Still refuse only if free memory is critically low,
+        # which protects against the kernel lagging a sudden allocation.
+        if s.available_gb < MIN_FREE_GB:
+            return (f"only {s.available_gb:.1f} GB free "
+                    f"(floor {MIN_FREE_GB:.1f} GB)")
+        return None
 
+    # --- non-macOS / kernel signal unavailable: fall back to heuristics ---
     if s.available_gb < MIN_FREE_GB:
         return (f"only {s.available_gb:.1f} GB free "
                 f"(floor {MIN_FREE_GB:.1f} GB)")
-
     # Swap alone is NOT distress. Require corroboration from low free memory.
     if (s.swap_used_frac > MAX_SWAP_USED_FRAC
             and s.available_gb < MIN_FREE_GB * 2):

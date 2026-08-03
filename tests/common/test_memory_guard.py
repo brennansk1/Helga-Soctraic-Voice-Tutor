@@ -55,11 +55,25 @@ class TestPressureDetection(unittest.TestCase):
                                          swap_used_frac=0.89))
         self.assertIsNone(r, "full swap with ample free RAM is normal on macOS")
 
-    def test_high_swap_WITH_low_free_ram_is_pressure(self):
-        """Swap is corroborating evidence, not a signal on its own."""
+    def test_kernel_normal_overrides_swap_heuristics(self):
+        """Second calibration error: the kernel's verdict must be authoritative
+        in BOTH directions. With macOS reporting NORMAL, a heuristic still
+        blocked a build at "swap 89% with only 5.9 GB free" — 0.1 GB under an
+        arbitrary threshold. macOS knows whether it is thrashing; we do not."""
         with patch.object(mg, 'macos_pressure_level', return_value=1):
-            r = mg.pressure_reason(_snap(available_gb=4.0, swap_used_gb=6.9,
-                                         swap_used_frac=0.89))
+            r = mg.pressure_reason(_snap(available_gb=5.9, swap_used_frac=0.89))
+        self.assertIsNone(r, "kernel says normal -> not pressure")
+
+    def test_critically_low_free_still_blocks_even_when_kernel_says_normal(self):
+        """Protects against the kernel lagging a sudden allocation."""
+        with patch.object(mg, 'macos_pressure_level', return_value=1):
+            r = mg.pressure_reason(_snap(available_gb=1.0, swap_used_frac=0.5))
+        self.assertIsNotNone(r)
+
+    def test_swap_heuristic_applies_only_without_kernel_signal(self):
+        """On platforms with no pressure level, swap+low-free is our fallback."""
+        with patch.object(mg, 'macos_pressure_level', return_value=None):
+            r = mg.pressure_reason(_snap(available_gb=4.0, swap_used_frac=0.89))
         self.assertIsNotNone(r)
         self.assertIn("swap", r)
 
