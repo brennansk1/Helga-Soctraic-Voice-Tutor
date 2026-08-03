@@ -54,6 +54,36 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def model_is_available(wanted, installed):
+    """Is `wanted` actually servable? Returns (ok, closest_near_miss).
+
+    The old check was `any(wanted in m for m in installed)` — a SUBSTRING test,
+    which reports a green preflight for a model Ollama cannot serve. Ask for
+    'qwen3:14b' with only 'qwen3:14b-q4_K_M' pulled and it passed, then every
+    generation call 404'd. A preflight that passes when the system is broken is
+    worse than no preflight: it sends you looking somewhere else.
+
+    Ollama resolves a bare name to its ':latest' tag, so that one alias is real
+    and is honoured. Nothing else is.
+    """
+    installed = [m for m in (installed or []) if m]
+    candidates = {wanted} | ({f"{wanted}:latest"} if ":" not in wanted else set())
+    if candidates & set(installed):
+        return True, None
+    # Surface the near-miss: "not found" alongside a list containing something
+    # that looks identical is how this gets misread as a display quirk.
+    #
+    # Rank it, do not just prefix-match. A bare startswith on the base name
+    # crosses version boundaries — 'qwen3' matches 'qwen3.5:9b', so asking for
+    # 'qwen3:14b' pointed at a 9b of a different generation while the actual
+    # near miss, 'qwen3:14b-q4_K_M', sat further down the list.
+    base = wanted.split(":")[0]
+    near = next((m for m in installed if m.startswith(wanted)), None)
+    if not near:
+        near = next((m for m in installed if m.split(":")[0] == base), None)
+    return False, near
+
+
 def check_prerequisites():
     """Verify Docker, Ollama, and model are available."""
     all_ok = True
@@ -78,10 +108,18 @@ def check_prerequisites():
         resp = requests.get(f"{OLLAMA_URL}/api/tags", timeout=5)
         if resp.ok:
             models = [m.get("name", "") for m in resp.json().get("models", [])]
-            if any(OLLAMA_MODEL in m for m in models):
+            ok, near = model_is_available(OLLAMA_MODEL, models)
+            if ok:
                 logger.info(f"Ollama model '{OLLAMA_MODEL}' is available")
             else:
                 logger.warning(f"Model '{OLLAMA_MODEL}' not found. Available: {models}")
+                if near:
+                    logger.warning(
+                        f"Closest installed tag is '{near}'. That is a DIFFERENT "
+                        f"model as far as the API is concerned — requests for "
+                        f"'{OLLAMA_MODEL}' will 404. Set OLLAMA_MODEL='{near}' "
+                        f"or pull the exact tag."
+                    )
                 logger.info(f"Pulling model... run: ollama pull {OLLAMA_MODEL}")
                 all_ok = False
         else:
