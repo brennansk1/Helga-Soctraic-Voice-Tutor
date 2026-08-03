@@ -537,14 +537,29 @@ Both instruments are LLM-judged. Single-run numbers are not evidence (§5). Cali
 repeats and reports dispersion; gaps below ~0.5 are inconclusive and must not be reported
 as a pass or a fail.
 
-### Not yet done (honest status)
-- (1), (4), (5) are implemented and enforced at generation time.
-- (2) exists as `tools/level_audit.py` but is **not yet wired into generation**.
-- (3) and (6) are **not built**. Until they are, the gate is partial and must be described
-  that way — a partially-implemented gate reported as "quality verified" would itself be
-  the dishonest-artifact problem this plan is about.
-- **No course has yet been generated end-to-end with enforcement on and then measured.**
-  That is the first thing A1 must produce.
+### Status (honest)
+- **(1), (4), (5)** — implemented and enforced at generation time.
+- **(3) detection AND mitigation** — `tools/substance_check.py` detects; `services/common/fact_check.py`
+  now *fixes*: it verdicts technical claims, requires an independent unprimed confirmation
+  before acting (a false positive regenerates CORRECT content, which is worse than a miss),
+  and `ContentHydrator` regenerates around confirmed-false claims with the error named.
+  Courses record `fact_check.clean_pct`. Verified end-to-end against the real defect: both
+  false claims from the reference course caught and confirmed.
+- **(2)** — exists as `tools/level_audit.py`, **not yet wired into generation**.
+- **(6) syllabus realism** — **not built**. This is the only criterion with external ground
+  truth; everything else is self-referential LLM judgement, so its absence is the gate's
+  weakest point.
+- **No course has yet been generated end-to-end with the full pipeline and measured.**
+  Until that exists, the gate is proven per-component but not as a whole, and must be
+  described that way — a partially-verified gate reported as "quality verified" would
+  itself be the dishonest-artifact problem this plan is about.
+
+### Instrument discipline (learned the hard way, twice)
+Every judge in this gate must pass a `--self-test` before its verdicts are trusted. Both
+instruments built for criterion 3 failed their own self-test on the first attempt — the
+substance checker needed calibrating, and the fact-checker flagged a *true* statement.
+Neither failure would have been visible from its output on real content, which is exactly
+why the self-test is mandatory rather than nice-to-have.
 
 ---
 
