@@ -31,9 +31,9 @@
                 <h4>Structure</h4>
                 <table class="cv-legend-table">
                     <tbody>
-                        <tr><td class="cv-legend-icon">📦</td><td class="cv-legend-name">Module</td><td class="cv-legend-desc">A top-level section of the course</td></tr>
-                        <tr><td class="cv-legend-icon">📖</td><td class="cv-legend-name">Unit</td><td class="cv-legend-desc">A themed group of lessons within a module</td></tr>
-                        <tr><td class="cv-legend-icon">📝</td><td class="cv-legend-name">Lesson</td><td class="cv-legend-desc">A collection of related concepts</td></tr>
+                        <tr><td class="cv-legend-icon"><span class="i i-package" aria-hidden="true"></span></td><td class="cv-legend-name">Module</td><td class="cv-legend-desc">A top-level section of the course</td></tr>
+                        <tr><td class="cv-legend-icon"><span class="i i-book" aria-hidden="true"></span></td><td class="cv-legend-name">Unit</td><td class="cv-legend-desc">A themed group of lessons within a module</td></tr>
+                        <tr><td class="cv-legend-icon"><span class="i i-note" aria-hidden="true"></span></td><td class="cv-legend-name">Lesson</td><td class="cv-legend-desc">A collection of related concepts</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -41,11 +41,11 @@
                 <h4>Mastery (Bloom's taxonomy)</h4>
                 <table class="cv-legend-table">
                     <tbody>
-                        <tr><td class="cv-legend-icon">🌱</td><td class="cv-legend-name">Seedling</td><td class="cv-legend-desc">Remember — you can recall the concept</td></tr>
-                        <tr><td class="cv-legend-icon">🌿</td><td class="cv-legend-name">Growing</td><td class="cv-legend-desc">Understand — you can explain it in your own words</td></tr>
-                        <tr><td class="cv-legend-icon">🌲</td><td class="cv-legend-name">Rooted</td><td class="cv-legend-desc">Apply — you can use it to solve problems</td></tr>
-                        <tr><td class="cv-legend-icon">🏔️</td><td class="cv-legend-name">Summit</td><td class="cv-legend-desc">Analyze — you can break it into its parts</td></tr>
-                        <tr><td class="cv-legend-icon">⭐</td><td class="cv-legend-name">Edelweiss</td><td class="cv-legend-desc">Evaluate / Create — mastered, you can extend it</td></tr>
+                        <tr><td class="cv-legend-icon"><span class="i i-sprout" aria-hidden="true"></span></td><td class="cv-legend-name">Seedling</td><td class="cv-legend-desc">Remember — you can recall the concept</td></tr>
+                        <tr><td class="cv-legend-icon"><span class="i i-sprout" aria-hidden="true"></span></td><td class="cv-legend-name">Growing</td><td class="cv-legend-desc">Understand — you can explain it in your own words</td></tr>
+                        <tr><td class="cv-legend-icon"><span class="i i-tree" aria-hidden="true"></span></td><td class="cv-legend-name">Rooted</td><td class="cv-legend-desc">Apply — you can use it to solve problems</td></tr>
+                        <tr><td class="cv-legend-icon"><span class="i i-mountain" aria-hidden="true"></span></td><td class="cv-legend-name">Summit</td><td class="cv-legend-desc">Analyze — you can break it into its parts</td></tr>
+                        <tr><td class="cv-legend-icon"><span class="i i-star" aria-hidden="true"></span></td><td class="cv-legend-name">Edelweiss</td><td class="cv-legend-desc">Evaluate / Create — mastered, you can extend it</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -422,7 +422,7 @@
     var courseUid = new URLSearchParams(window.location.search).get('uid');
     if (!courseUid) { window.location.href = '/courses'; return; }
 
-    var BLOOM_BADGES = {0:'', 1:'🌱', 2:'🌿', 3:'🌲', 4:'🏔️', 5:'⭐', 6:'⭐'};
+    var BLOOM_BADGES = {0:'', 1:'<span class="i i-sprout" aria-hidden="true"></span>', 2:'<span class="i i-sprout" aria-hidden="true"></span>', 3:'<span class="i i-tree" aria-hidden="true"></span>', 4:'<span class="i i-mountain" aria-hidden="true"></span>', 5:'<span class="i i-star" aria-hidden="true"></span>', 6:'<span class="i i-star" aria-hidden="true"></span>'};
 
     function countConcepts(obj) {
         var total = 0, completed = 0;
@@ -467,11 +467,11 @@
             });
             var pct = totalConcepts > 0 ? Math.round(completedConcepts / totalConcepts * 100) : 0;
             document.getElementById('cv-meta').innerHTML =
-                '<span>📦 ' + modules.length + ' Modules</span>' +
-                '<span>📝 ' + totalConcepts + ' Concepts</span>' +
-                '<span>✅ ' + pct + '% Complete</span>' +
-                (detData.scope ? '<span>🔍 Scope ' + detData.scope + '/5</span>' : '') +
-                (detData.mastery ? '<span>🏔️ Mastery ' + detData.mastery + '/5</span>' : '');
+                '<span><span class="i i-package" aria-hidden="true"></span> ' + modules.length + ' Modules</span>' +
+                '<span><span class="i i-note" aria-hidden="true"></span> ' + totalConcepts + ' Concepts</span>' +
+                '<span><span class="i i-check" aria-hidden="true"></span> ' + pct + '% Complete</span>' +
+                (detData.scope ? '<span><span class="i i-search" aria-hidden="true"></span> Scope ' + detData.scope + '/5</span>' : '') +
+                (detData.mastery ? '<span><span class="i i-mountain" aria-hidden="true"></span> Mastery ' + detData.mastery + '/5</span>' : '');
 
             // Show action buttons
             var actionsEl = document.getElementById('cv-actions');
@@ -531,12 +531,12 @@
                 (mod.units || []).forEach(function(unit) {
                     var unitEl = document.createElement('div');
                     unitEl.className = 'cv-unit';
-                    unitEl.innerHTML = '<div class="cv-unit-title">📖 ' + escapeHtml(unit.title) + '</div>';
+                    unitEl.innerHTML = '<div class="cv-unit-title"><span class="i i-book" aria-hidden="true"></span> ' + escapeHtml(unit.title) + '</div>';
 
                     (unit.lessons || []).forEach(function(lesson) {
                         var lessonEl = document.createElement('div');
                         lessonEl.className = 'cv-lesson';
-                        lessonEl.innerHTML = '<div class="cv-lesson-title">📝 ' + escapeHtml(lesson.title) + '</div>';
+                        lessonEl.innerHTML = '<div class="cv-lesson-title"><span class="i i-note" aria-hidden="true"></span> ' + escapeHtml(lesson.title) + '</div>';
 
                         (lesson.concepts || []).forEach(function(concept) {
                             var bloom = concept.bloom_level || 0;

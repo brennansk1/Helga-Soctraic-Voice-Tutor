@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Helga logo — PLACEHOLDER.
+
+  This is a deliberate stand-in, not a finished identity. It is a single
+  self-contained file referenced from exactly one place (the .brand-mark rule
+  in design-system.css), so swapping in the real logo means replacing this file
+  and nothing else.
+
+  It replaces an emoji (🏔️), which rendered as a different illustration on
+  every operating system — the brand mark was literally not the same shape for
+  two users.
+
+  Constraints the real mark should keep:
+    - square viewBox, safe at 28px
+    - currentColor only, so it inherits the theme and never needs a dark variant
+    - no text: the wordmark is set in DM Sans beside it
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none"
+     role="img" aria-label="Helga">
+  <rect x="1.25" y="1.25" width="29.5" height="29.5" rx="8.5"
+        stroke="currentColor" stroke-width="2.5" opacity="0.28"/>
+  <path d="M7 22.5 13 11l4.2 8 2.4-4.2L25 22.5z"
+        stroke="currentColor" stroke-width="2.5"
+        stroke-linejoin="round" stroke-linecap="round"/>
+  <circle cx="21.6" cy="9.4" r="2.1" fill="currentColor" opacity="0.55"/>
+</svg>

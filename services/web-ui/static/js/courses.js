@@ -47,7 +47,7 @@ async function loadCourses() {
         if (courses.length === 0) {
             grid.innerHTML = `
                 <div class="empty-state" style="grid-column: 1/-1;">
-                    <div class="empty-icon">📚</div>
+                    <div class="empty-icon"><span class="i i-books" aria-hidden="true"></span></div>
                     <h3>Start your first course</h3>
                     <p>Pick any topic — Helga will build a structured course and teach it to you through questions.</p>
                     <button class="btn-alpine btn-alpine-primary" onclick="openQuickCreate()" style="margin-top: 1rem;">Create a course</button>
@@ -87,17 +87,17 @@ async function loadCourses() {
                         ${escapeHtml(course.description || 'A comprehensive interactive course.')}
                     </p>
                     <div class="course-card-stats">
-                        <span>📦 ${stats.modules || 0} Modules</span>
-                        <span>📖 ${stats.lessons || 0} Lessons</span>
-                        <span>🧠 ${stats.concepts || 0} Concepts</span>
+                        <span><span class="i i-package" aria-hidden="true"></span> ${stats.modules || 0} Modules</span>
+                        <span><span class="i i-book" aria-hidden="true"></span> ${stats.lessons || 0} Lessons</span>
+                        <span><span class="i i-brain" aria-hidden="true"></span> ${stats.concepts || 0} Concepts</span>
                     </div>
                     <div class="alpine-progress" style="height: 6px;">
                         <div class="alpine-progress-fill" style="width: ${progress}%; background: ${bg1};"></div>
                     </div>
                     <div class="course-card-actions">
                         ${actionButton}
-                        <button class="btn-alpine btn-alpine-secondary" style="padding: 0.5rem 0.75rem;" onclick="window.location.href='/course/view?uid=${course.uid}'" title="View Structure" aria-label="View structure for ${escapeHtml(course.title)}">📋</button>
-                        <button class="btn-alpine btn-alpine-danger" style="padding: 0.5rem 0.75rem;" onclick="deleteCourse('${course.uid}', '${escapeHtml(course.title)}')" title="Delete" aria-label="Delete ${escapeHtml(course.title)}">🗑</button>
+                        <button class="btn-alpine btn-alpine-secondary" style="padding: 0.5rem 0.75rem;" onclick="window.location.href='/course/view?uid=${course.uid}'" title="View Structure" aria-label="View structure for ${escapeHtml(course.title)}"><span class="i i-clipboard" aria-hidden="true"></span></button>
+                        <button class="btn-alpine btn-alpine-danger" style="padding: 0.5rem 0.75rem;" onclick="deleteCourse('${course.uid}', '${escapeHtml(course.title)}')" title="Delete" aria-label="Delete ${escapeHtml(course.title)}"><span class="i i-trash" aria-hidden="true"></span></button>
                     </div>
                 </div>
             `;
@@ -122,7 +122,7 @@ async function loadCourses() {
         const isAbort = e.name === 'AbortError';
         grid.innerHTML = `
             <div class="empty-state" style="grid-column: 1/-1;">
-                <div class="empty-icon">⚠️</div>
+                <div class="empty-icon"><span class="i i-warning" aria-hidden="true"></span></div>
                 <h3>${isAbort ? 'Loading is taking too long' : 'Failed to load courses'}</h3>
                 <p>${escapeHtml(isAbort ? 'The server is slow to respond. Check that rag-engine is running.' : (e.message || 'Unknown error'))}</p>
                 <button class="btn-alpine btn-alpine-primary" onclick="loadCourses()" style="margin-top: 1rem;">Retry</button>

@@ -65,7 +65,7 @@
 
         <div class="concept-actions">
             <button class="primary-btn" id="start-concept-btn" onclick="startConcept()">
-                <span>🎓</span> Start Learning
+                <span><span class="i i-graduation" aria-hidden="true"></span></span> Start Learning
             </button>
         </div>
     </div>
@@ -595,7 +595,7 @@
             section.className = 'module-section';
             section.innerHTML = `
                 <div class="module-header" id="header-${node.uid}">
-                    <h2>📦 ${node.name}</h2>
+                    <h2><span class="i i-package" aria-hidden="true"></span> ${node.name}</h2>
                     <span class="module-progress">${node.children.length} items</span>
                 </div>
                 <div class="module-content" id="content-${node.uid}"></div>
@@ -613,7 +613,7 @@
             unitDiv.className = 'unit-container';
             unitDiv.innerHTML = `
                 <div class="unit-header" id="header-${node.uid}" style="margin-bottom: 2rem;">
-                    <h3>🔖 ${node.name}</h3>
+                    <h3><span class="i i-bookmark" aria-hidden="true"></span> ${node.name}</h3>
                     <p>${node.overview || ''}</p>
                 </div>
                 <div class="unit-content" id="content-${node.uid}" style="margin-left: 2rem;"></div>
@@ -631,7 +631,7 @@
             lessonDiv.className = 'lesson-container';
             lessonDiv.innerHTML = `
                 <div class="lesson-header" id="header-${node.uid}">
-                    <h4>📖 ${node.name}</h4>
+                    <h4><span class="i i-book" aria-hidden="true"></span> ${node.name}</h4>
                     <p>${node.overview || ''}</p>
                 </div>
                 <div class="concepts-grid" id="content-${node.uid}"></div>
@@ -664,7 +664,7 @@
         const startBtn = document.getElementById('start-concept-btn');
         if (node.type === 'Concept') {
             startBtn.disabled = node.completed;
-            startBtn.textContent = '🎓 Start Learning';
+            startBtn.innerHTML = '<span class="i i-graduation" aria-hidden="true"></span> Start Learning';
             selectedConcept = node;
         } else {
             startBtn.disabled = true;
@@ -697,12 +697,12 @@
 
         // Determine node state
         let state = 'available';
-        let icon = '📘';
+        let icon = '<span class="i i-book" aria-hidden="true"></span>';
         let statusText = 'Ready to Learn';
 
         if (concept.completed) {
             state = 'completed';
-            icon = '✓';
+            icon = '<span class="i i-check" aria-hidden="true"></span>';
             statusText = 'Completed';
         } else {
             // Check if prerequisites are met
@@ -717,7 +717,7 @@
 
             if (!prereqsMet && prereqs.length > 0) {
                 state = 'locked';
-                icon = '🔒';
+                icon = '<span class="i i-lock" aria-hidden="true"></span>';
                 statusText = 'Locked';
             }
         }

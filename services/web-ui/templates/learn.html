@@ -31,7 +31,7 @@
                 that cannot happen a third time. #}
             <a id="palace-mode-link" class="learn-mode-link" href="/palace"
                title="Walk this course as a memory palace">
-                <span aria-hidden="true">🏛</span>
+                <span aria-hidden="true"><span class="i i-palace" aria-hidden="true"></span></span>
                 <span>Memory Palace</span>
             </a>
             <!-- session-header kept as empty placeholder so legacy JS that
@@ -42,6 +42,18 @@
     </div>
 
     <!-- MAIN VIEW 1: PATH VISUALIZATION -->
+    {#  Legend sits OUTSIDE #path-view: that container is a flex ROW, so a
+        child here became a full-height column and shoved the whole path
+        sideways. It also belongs above the scroll area so it stays visible
+        while the learner scrolls the path. #}
+    <div class="path-legend-bar">
+        <div class="path-legend" aria-hidden="true">
+            <span class="path-legend-item"><span class="path-legend-dot is-current"></span>Current</span>
+            <span class="path-legend-item"><span class="path-legend-dot is-done"></span>Done</span>
+            <span class="path-legend-item"><span class="path-legend-dot is-review"></span>Needs review</span>
+            <span class="path-legend-item"><span class="path-legend-dot is-locked"></span>Locked</span>
+        </div>
+    </div>
     <div id="path-view" class="path-container">
         <div class="path-background"></div>
         <div id="path-content" class="path-content">
@@ -66,7 +78,7 @@
             </div>
             <div class="learn-chat-meta">
                 <span id="session-progress-pill" class="learn-chat-badge progress hidden" title="Course progress">0 / 0</span>
-                <span id="mode-indicator-badge" class="learn-chat-badge mode">🎓 Socratic</span>
+                <span id="mode-indicator-badge" class="learn-chat-badge mode"><span class="i i-graduation" aria-hidden="true"></span> Socratic</span>
                 <span id="bloom-level-badge" class="learn-chat-badge bloom hidden">Lv 1</span>
             </div>
         </div>
@@ -794,6 +806,41 @@
             return;
         }
 
+        // --- Review state per concept (A5.3) ---------------------------------
+        // FSRS has always known which completed concepts are due, but the path
+        // had no way to show it: a concept finished three weeks ago and due
+        // today looked identical to one finished this morning. Loaded once,
+        // alongside the structure, and read synchronously while nodes render.
+        let reviewByUid = {};
+
+        async function loadReviewState() {
+            try {
+                const res = await fetch('/api/progress/overview?course_uid=' +
+                                        encodeURIComponent(courseUid));
+                if (!res.ok) return;                 // path still renders
+                const data = await res.json();
+                (data.concepts || []).forEach(c => { reviewByUid[c.concept_uid] = c; });
+            } catch (e) {
+                console.warn('[learn] review state unavailable:', e);
+            }
+        }
+
+        function conceptReviewState(uid) {
+            const c = reviewByUid[uid];
+            if (!c || c.state === 'unseen') return { needsReview: false, label: '' };
+            const due = c.next_review_date;
+            if (!due) return { needsReview: false, label: '' };
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const when = new Date(due + 'T00:00:00');
+            const days = Math.round((when - today) / 86400000);
+            if (days > 0) return { needsReview: false, label: '' };
+            return {
+                needsReview: true,
+                label: days === 0 ? 'review due today'
+                                  : `review overdue ${Math.abs(days)}d`
+            };
+        }
+
         // Palace walks THIS course; without the uid it would open whatever the
         // FSM last had in context, which is how "same course, different mode"
         // turns into "wrong course, no warning".
@@ -839,7 +886,12 @@
 
         // Fetch Structure
         try {
+            // Review state is fetched CONCURRENTLY, not before: it decorates
+            // the path but must never delay or block it. If it fails or is
+            // slow, nodes render without review badges rather than not at all.
+            const reviewReady = loadReviewState();
             const res = await fetch(`/api/course_structure?uid=${courseUid}`, { signal: controller.signal });
+            await reviewReady;
             clearTimeout(loadTimeout);
             if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
@@ -982,7 +1034,7 @@
                     if ((mod.units || []).length > 1) {
                         const unitHeader = document.createElement('div');
                         unitHeader.className = 'unit-sub-header';
-                        unitHeader.innerHTML = `<span class="icon">🔖</span>${escapeHtml(unit.title || 'Unit')}`;
+                        unitHeader.innerHTML = `<span class="icon"><span class="i i-bookmark" aria-hidden="true"></span></span>${escapeHtml(unit.title || 'Unit')}`;
                         nodesContainer.appendChild(unitHeader);
                     }
 
@@ -993,7 +1045,7 @@
                         if ((unit.lessons || []).length > 1) {
                             const lessonHeader = document.createElement('div');
                             lessonHeader.className = 'lesson-sub-header';
-                            lessonHeader.innerHTML = `<span class="icon">📖</span>${escapeHtml(lesson.title || 'Lesson')}`;
+                            lessonHeader.innerHTML = `<span class="icon"><span class="i i-book" aria-hidden="true"></span></span>${escapeHtml(lesson.title || 'Lesson')}`;
                             nodesContainer.appendChild(lessonHeader);
                         }
 
@@ -1045,12 +1097,55 @@
                                 nodeEl.classList.add('low-confidence');
                             }
 
+                            // A5.3 — the title is a PERMANENT label, not a
+                            // hover tooltip. Twelve unlabelled circles are not
+                            // a course map: you could not scan the path or use
+                            // it to decide what to study next without hovering
+                            // each node one at a time.
+                            //
+                            // Nodes pushed right of centre put their label on
+                            // the left so it does not run off the container.
+                            if (offset > 0) nodeEl.classList.add('label-left');
+
+                            // A5.3 — every node carries an icon that MEANS
+                            // something, rather than a lock for the 90% of the
+                            // path not yet reached. Bloom level is the honest
+                            // signal here: it is what Helga actually ramps
+                            // across a course, so the icon tells the learner
+                            // what KIND of thinking a node will ask for before
+                            // they get there.
+                            //
+                            // Locked nodes show their role icon too, dimmed,
+                            // with a small lock badge. Twelve identical
+                            // padlocks told the learner nothing about what was
+                            // coming; this way the path can be read ahead.
+                            const bl = Number(concept.bloom_level) || 0;
+                            const isLastOfLesson =
+                                concept === (lesson.concepts || [])[(lesson.concepts || []).length - 1];
+                            let role = 'recall';
+                            if (bl >= 5) role = 'mastery';
+                            else if (bl >= 3) role = 'apply';
+                            if (isLastOfLesson && (lesson.concepts || []).length > 1) {
+                                role = 'checkpoint';
+                            }
+                            nodeEl.classList.add('role-' + role);
+
+                            const reviewMeta = conceptReviewState(concept.uid);
+                            if (reviewMeta.needsReview) {
+                                nodeEl.classList.add('needs-review');
+                            }
+                            const metaHtml = reviewMeta.label
+                                ? `<span class="node-label-meta">${escapeHtml(reviewMeta.label)}</span>`
+                                : (isLowConfidence
+                                    ? '<span class="node-label-meta">limited sources</span>'
+                                    : '');
+
                             nodeEl.innerHTML = `
                                 <div class="path-node-inner">
                                     <span class="node-icon"></span>
                                 </div>
                                 ${badgeNodeHtml}
-                                <div class="node-tooltip">${escapeHtml(concept.title)}${lowConfBadge}${badgeTooltipHtml}</div>
+                                <span class="node-label">${escapeHtml(concept.title)}${metaHtml}</span>
                             `;
 
                             // Instant pressed visual feedback on mousedown/touchstart
@@ -1093,10 +1188,10 @@
                 const isCompleted = node.dataset.completed === 'true';
                 if (isCompleted) {
                     node.classList.add('completed');
-                    iconEl.textContent = '✓';
+                    iconEl.textContent = '';   // icon comes from the node's state class
                 } else if (!foundNext) {
                     node.classList.add('current');
-                    iconEl.textContent = '★';
+                    iconEl.textContent = '';
                     foundNext = true;
                 } else {
                     node.classList.add('locked');
@@ -1105,7 +1200,7 @@
                     // Append "(locked)" to existing aria-label so screen readers convey the state
                     var existingLabel = node.getAttribute('aria-label') || '';
                     node.setAttribute('aria-label', existingLabel + ' (locked)');
-                    iconEl.textContent = '🔒';
+                    iconEl.textContent = '';
                 }
             });
 
@@ -1442,7 +1537,7 @@
                 nodeEl.disabled = false;
                 nodeEl.removeAttribute('aria-disabled');
                 const iconEl = nodeEl.querySelector('.node-icon');
-                if (iconEl) iconEl.textContent = '✓';
+                if (iconEl) iconEl.textContent = '';
                 // Clean up the animation class after it finishes so it can
                 // fire again for the next completion.
                 setTimeout(function() {
@@ -1467,9 +1562,9 @@
 
         // Mode label map used by the state_update handler
         const _modeLabels = {
-            'SOCRATIC_LEARNING': { label: 'Socratic', icon: '🎓' },
-            'SPACED_REPETITION': { label: 'Review',   icon: '📝' },
-            'MEMORY_PALACE':     { label: 'Palace',   icon: '🏛' },
+            'SOCRATIC_LEARNING': { label: 'Socratic', icon: '<span class="i i-graduation" aria-hidden="true"></span>' },
+            'SPACED_REPETITION': { label: 'Review',   icon: '<span class="i i-note" aria-hidden="true"></span>' },
+            'MEMORY_PALACE':     { label: 'Palace',   icon: '<span class="i i-palace" aria-hidden="true"></span>' },
             'LOBBY':             { label: 'Ready',    icon: '⏸' }
         };
 
@@ -1601,7 +1696,7 @@
             card.setAttribute('aria-live', 'polite');
             card.innerHTML =
                 '<div class="chat-concept-congrats-glow"></div>' +
-                '<div class="chat-concept-congrats-trophy">🏆</div>' +
+                '<div class="chat-concept-congrats-trophy"><span class="i i-trophy" aria-hidden="true"></span></div>' +
                 '<div class="chat-concept-congrats-kicker">Congrats!</div>' +
                 '<div class="chat-concept-congrats-line">You passed</div>' +
                 '<div class="chat-concept-congrats-title"></div>' +
@@ -1625,9 +1720,9 @@
             card.className = 'chat-module-complete';
             card.innerHTML =
                 '<div class="chat-module-complete-header">' +
-                '<span class="chat-module-complete-sparkle">✨</span>' +
+                '<span class="chat-module-complete-sparkle"><span class="i i-spark" aria-hidden="true"></span></span>' +
                 '<span>Module complete</span>' +
-                '<span class="chat-module-complete-sparkle">✨</span>' +
+                '<span class="chat-module-complete-sparkle"><span class="i i-spark" aria-hidden="true"></span></span>' +
                 '</div>' +
                 '<div class="chat-module-complete-old"></div>' +
                 '<div class="chat-module-complete-arrow">↓</div>' +
@@ -1716,7 +1811,7 @@
                 '</div>';
             overlay.innerHTML = `
                 <div class="course-complete-card" role="dialog" aria-labelledby="course-complete-title" aria-modal="true">
-                    <span class="course-complete-emoji">🎉</span>
+                    <span class="course-complete-emoji"><span class="i i-party" aria-hidden="true"></span></span>
                     <h2 id="course-complete-title">Course Complete!</h2>
                     <p>Beautiful work making it all the way through.</p>
                     ${statsHtml}

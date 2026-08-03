@@ -21,11 +21,17 @@ async function safeFetch(url, options = {}) {
     try {
         const res = await fetch(url, options);
         if (!res.ok && res.status >= 500) {
-            showToast(`Server error (${res.status}): ${url.split('?')[0]}`, 'error');
+            // Show the learner something they can act on, not our status code
+            // and internal path. The detail stays in the console.
+            console.error(`[safeFetch] ${res.status} ${res.statusText} — ${url}`);
+            showToast('Something went wrong on our side. Your work is saved — ' +
+                      'try that again in a moment.', 'error');
         }
         return res;
     } catch (e) {
-        showToast(`Network error: ${e.message || 'Connection failed'}`, 'error');
+        console.error(`[safeFetch] network failure — ${url}`, e);
+        showToast("Can't reach Helga right now. Check that the services are " +
+                  'running, then try again.', 'error');
         throw e;
     }
 }

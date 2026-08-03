@@ -209,7 +209,7 @@ function renderDetailCards() {
         const card = document.createElement('div');
         card.className = 'module-card';
         card.innerHTML = `
-            <h3 style="margin: 0 0 0.5rem 0; font-size: 1rem;">📦 ${escapeHtml(mod.title)}</h3>
+            <h3 style="margin: 0 0 0.5rem 0; font-size: 1rem;"><span class="i i-package" aria-hidden="true"></span> ${escapeHtml(mod.title)}</h3>
             ${mod.note ? `<p style="font-size: 0.8rem; color: var(--text-secondary); margin: 0 0 0.75rem 0;">Note: ${escapeHtml(mod.note)}</p>` : ''}
             <div class="concept-list" id="concepts-${idx}" style="margin-bottom: 0.75rem; display: flex; flex-wrap: wrap; gap: 0.4rem;">
                 ${conceptsHtml || '<span style="color: var(--text-secondary); font-size: 0.85rem;">Helga will generate all concepts for this module.</span>'}

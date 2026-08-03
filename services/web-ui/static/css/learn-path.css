@@ -1,0 +1,234 @@
+/* ============================================================================
+ * The learn path — the product's signature screen (A5.3).
+ *
+ * Loaded after learn.html's inline block so it refines rather than replaces.
+ * New path styling goes HERE, not back into the template: the inline block is
+ * the thing A5.3 is unwinding.
+ *
+ * Two problems this fixes, both seen on a live render rather than inferred:
+ *
+ *   1. NODES HAD NO LABELS. A concept's title existed only in a hover tooltip,
+ *      so twelve identical circles were the entire course map. The path could
+ *      not be scanned, skimmed, or used to decide what to study next — which
+ *      is what a learning path is for.
+ *
+ *   2. NODE STATE WAS NOT LEGIBLE AT A GLANCE. Locked and completed were
+ *      distinguishable, but "done and now due for review" — a state FSRS has
+ *      always been able to tell us — had no representation at all.
+ * ==========================================================================*/
+
+.path-container {
+    /* Tighter rhythm. At 84px gap plus 72px nodes, twelve concepts needed
+       three full screens of scrolling to see a course that fits on one. */
+    --path-node-size: 64px;
+    --path-node-gap: 68px;
+    --path-label-gap: var(--space-4);
+}
+
+/* --- Persistent labels ---------------------------------------------------- */
+
+.node-label {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    left: calc(100% + var(--path-label-gap));
+    width: max-content;
+    max-width: 16rem;
+    text-align: left;
+    pointer-events: none;
+
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.3;
+    color: var(--text-primary);
+
+    /* Two lines, then ellipsis. Concept titles in generated courses run long
+       ("Plug the Values Into a b Squared Plus c Equals d Equation"), and a
+       label that wraps to four lines pushes the next node off its own row. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* Nodes offset to the right of centre put their label on the left, or it runs
+   off the edge of the container. */
+.path-node.label-left .node-label {
+    left: auto;
+    right: calc(100% + var(--path-label-gap));
+    text-align: right;
+}
+
+.path-node.locked .node-label {
+    color: var(--text-secondary);
+    font-weight: var(--font-weight-normal);
+}
+
+.node-label-meta {
+    display: block;
+    margin-top: 2px;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-normal);
+    color: var(--text-secondary);
+}
+
+/* The tooltip was the ONLY place the title appeared. Now that labels are
+   permanent it would just duplicate them on hover. */
+.node-tooltip { display: none !important; }
+
+/* --- Needs-review ---------------------------------------------------------
+ * A concept that is completed but now due. Distinct from both "done" (gold)
+ * and "current" (blue): a ring rather than a fill, because the work is
+ * revisiting something owned, not learning something new.
+ */
+.path-node.needs-review .path-node-inner {
+    background: var(--bg-secondary);
+    border: 3px solid var(--status-warning);
+    color: var(--status-warning);
+    box-shadow: var(--shadow-2);
+}
+
+.path-node.needs-review .node-label-meta {
+    color: var(--status-warning);
+    font-weight: var(--font-weight-semibold);
+}
+
+/* --- Icons ----------------------------------------------------------------
+ * The lock was an emoji: different size, weight and colour on every platform,
+ * and unable to inherit the node's state colour. These are masks, so they take
+ * currentColor and stay inside the design system.
+ *
+ * Crucially the icon reflects the node's ROLE, not just whether it is locked.
+ * A path of twelve identical padlocks told the learner nothing about what was
+ * ahead; a Bloom-derived icon says what KIND of thinking each node will ask
+ * for, which is the one thing Helga genuinely ramps across a course.
+ */
+.path-node .node-icon {
+    display: block;
+    width: 26px;
+    height: 26px;
+    background-color: currentColor;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    transition: transform var(--dur-base) var(--ease-emphasized);
+}
+
+.path-node.role-recall     .node-icon { -webkit-mask-image: var(--icon-book);   mask-image: var(--icon-book); }
+.path-node.role-apply      .node-icon { -webkit-mask-image: var(--icon-target); mask-image: var(--icon-target); }
+.path-node.role-mastery    .node-icon { -webkit-mask-image: var(--icon-spark);  mask-image: var(--icon-spark); }
+.path-node.role-checkpoint .node-icon { -webkit-mask-image: var(--icon-flag);   mask-image: var(--icon-flag); }
+
+/* State wins over role where the state IS the message. */
+.path-node.completed .node-icon    { -webkit-mask-image: var(--icon-check);   mask-image: var(--icon-check); }
+.path-node.needs-review .node-icon { -webkit-mask-image: var(--icon-refresh); mask-image: var(--icon-refresh); }
+
+/* Locked keeps its role icon, dimmed, and gains a corner lock — so the path
+   can be read ahead instead of being a wall of padlocks. */
+.path-node.locked .path-node-inner::after {
+    content: "";
+    position: absolute;
+    right: -2px;
+    bottom: -2px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--bg-secondary) var(--icon-lock-small) center / 11px no-repeat;
+    border: 1.5px solid var(--border-color);
+    box-shadow: var(--shadow-1);
+}
+
+:root {
+    --icon-book: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 19.5A2.5 2.5 0 0 1 6.5 17H20'/%3E%3Cpath d='M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z'/%3E%3C/svg%3E");
+    --icon-target: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Ccircle cx='12' cy='12' r='5'/%3E%3Ccircle cx='12' cy='12' r='1.6' fill='%23000'/%3E%3C/svg%3E");
+    --icon-spark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23000'%3E%3Cpath d='M12 1.5l2.2 5.9 5.9 2.2-5.9 2.2L12 17.7l-2.2-5.9L3.9 9.6l5.9-2.2z'/%3E%3Cpath d='M18.5 15l1 2.6 2.6 1-2.6 1-1 2.6-1-2.6-2.6-1 2.6-1z'/%3E%3C/svg%3E");
+    --icon-flag: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 21V4'/%3E%3Cpath d='M5 4h11l-1.8 3.5L16 11H5z' fill='%23000' stroke='none'/%3E%3C/svg%3E");
+    --icon-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+    --icon-refresh: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 12a9 9 0 1 1-3-6.7'/%3E%3Cpath d='M21 3v6h-6'/%3E%3C/svg%3E");
+    --icon-lock-small: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7c6e' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='11' width='18' height='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E");
+}
+
+/* --- Completion moment ----------------------------------------------------
+ * The one celebratory animation in the product. Applied by JS when a node
+ * flips to completed, then removed — if it lived on the class it would replay
+ * on every re-render and stop meaning anything.
+ */
+.path-node.just-completed .path-node-inner {
+    animation: helga-node-complete var(--dur-slower) var(--ease-emphasized);
+}
+
+/* --- Legend --------------------------------------------------------------- */
+
+.path-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-4);
+    justify-content: center;
+    padding: var(--space-3) var(--space-4);
+    margin: 0 auto var(--space-4);
+    width: fit-content;
+    max-width: 100%;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    box-shadow: var(--shadow-1);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+}
+
+.path-legend-item { display: inline-flex; align-items: center; gap: var(--space-2); }
+
+.path-legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+}
+
+.path-legend-dot.is-current { background: var(--accent-primary); }
+.path-legend-dot.is-done { background: var(--status-warning); }
+.path-legend-dot.is-review {
+    background: var(--bg-secondary);
+    border: 2px solid var(--status-warning);
+}
+.path-legend-dot.is-locked { background: var(--bg-tertiary); border: 1px solid var(--border-color); }
+
+/* --- Narrow screens -------------------------------------------------------
+ * Side labels have nowhere to go under ~720px, so the path straightens and
+ * labels sit beneath their node. Mobile-first means the signature screen has
+ * to survive a phone, not just tolerate one.
+ */
+@media (max-width: 720px) {
+    .path-container {
+        --path-node-size: 56px;
+        --path-node-gap: 92px;
+    }
+
+    .path-node { --node-x-offset: 0 !important; transform: none !important; }
+
+    .node-label,
+    .path-node.label-left .node-label {
+        left: 50%;
+        right: auto;
+        top: calc(100% + var(--space-2));
+        transform: translateX(-50%);
+        text-align: center;
+        max-width: min(18rem, 80vw);
+    }
+}
+
+/* The legend lives above the scroll container, never inside it: #path-view is
+   a flex ROW, so a child there stretched to full height and pushed the entire
+   path sideways. */
+.path-legend-bar {
+    flex: 0 0 auto;
+    display: flex;
+    justify-content: center;
+    padding: var(--space-3) var(--space-4) 0;
+    background: var(--bg-primary);
+}
+
+.path-legend { margin: 0; }

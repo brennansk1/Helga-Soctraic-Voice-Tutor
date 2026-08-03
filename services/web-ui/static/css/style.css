@@ -238,7 +238,7 @@ body {
 
 /* Playful Logo Icon if needed, or just text */
 .logo a::before {
-    content: '🏔️';
+    content: '';
     font-size: 1.2em;
 }
 

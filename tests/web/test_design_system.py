@@ -188,3 +188,95 @@ class TestBrandMarkDegradesGracefully(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestNoEmojiInTheUI(unittest.TestCase):
+    """Emoji are not an icon system, and this product shipped 127 of them.
+
+    They render as a different typeface on every platform, so the product was
+    literally a different shape for different users — including the brand mark,
+    which was 🏔️ injected via `content:` and therefore drawn by the operating
+    system rather than by us. They also carry their own colour, so they ignore
+    the theme, and they sit on a different baseline than DM Sans.
+
+    Replaced by CSS masks in icons.css, which inherit currentColor and share
+    one 24px grid. This test stops them coming back one convenient shortcut at
+    a time.
+    """
+
+    # Pictographs only. Box-drawing, arrows and typographic marks are text.
+    EMOJI = re.compile("[\U0001F000-\U0001FAFF☀-➿️⬀-⯿]")
+
+    def _sources(self):
+        for sub in ('templates', 'static/js', 'static/css'):
+            base = os.path.join(_root, 'services/web-ui', sub)
+            for dirpath, _, names in os.walk(base):
+                for name in names:
+                    if not name.endswith(('.html', '.js', '.css')):
+                        continue
+                    if 'min.js' in name:
+                        continue        # vendored libraries are not ours
+                    yield os.path.join(dirpath, name)
+
+    def test_no_emoji_anywhere_in_the_frontend(self):
+        offenders = {}
+        for path in self._sources():
+            found = self.EMOJI.findall(_read(path))
+            if found:
+                offenders[os.path.relpath(path, _root)] = ''.join(sorted(set(found)))
+        self.assertEqual(
+            offenders, {},
+            "Emoji found in the UI. Use an icon from icons.css instead:\n"
+            + "\n".join(f"  {p}: {c}" for p, c in offenders.items())
+        )
+
+    def test_the_brand_mark_is_a_file_not_a_glyph(self):
+        self.assertTrue(
+            os.path.exists(os.path.join(_static, 'img/logo-helga.svg')),
+            "the logo is referenced by design-system.css and must exist"
+        )
+        ds = _read(os.path.join(_static, 'css/design-system.css'))
+        self.assertIn('logo-helga.svg', ds)
+
+    def test_favicon_is_not_an_emoji_data_uri(self):
+        base = _read(os.path.join(_templates, 'base.html'))
+        icon_lines = [l for l in base.splitlines() if 'rel="icon"' in l]
+        self.assertTrue(icon_lines)
+        for line in icon_lines:
+            self.assertNotIn('<text', line,
+                             "an emoji favicon is drawn by the OS, so the tab "
+                             "icon differed per platform")
+
+
+class TestIconSystemIsUsable(unittest.TestCase):
+
+    def test_every_icon_class_has_a_mask(self):
+        css = _read(os.path.join(_static, 'css/icons.css'))
+        classes = set(re.findall(r'\.i-([a-z-]+)\s*\{[^}]*mask-image', css))
+        declared = set(re.findall(r'--ic-([a-z-]+)\s*:', css))
+        missing = sorted(c for c in classes if c not in declared)
+        self.assertEqual(missing, [],
+                         f"icon classes with no --ic-* definition: {missing}")
+
+    def test_icons_inherit_currentcolor(self):
+        css = _read(os.path.join(_static, 'css/icons.css'))
+        self.assertIn('background-color: currentColor', css,
+                      "an icon that cannot take the theme's colour is an emoji "
+                      "with extra steps")
+
+    def test_no_markup_is_written_through_textcontent(self):
+        """Replacing an emoji with a <span> inside a `.textContent = '...'`
+        assignment prints the tags literally. That happened four times during
+        the migration and is invisible until you look at the page."""
+        offenders = []
+        for sub in ('templates', 'static/js'):
+            base = os.path.join(_root, 'services/web-ui', sub)
+            for dirpath, _, names in os.walk(base):
+                for name in names:
+                    if not name.endswith(('.html', '.js')) or 'min.js' in name:
+                        continue
+                    path = os.path.join(dirpath, name)
+                    for i, line in enumerate(_read(path).splitlines(), 1):
+                        if re.search(r'textContent\s*=\s*[\'"`]\s*<', line):
+                            offenders.append(f"{os.path.relpath(path, _root)}:{i}")
+        self.assertEqual(offenders, [], f"markup assigned to textContent: {offenders}")

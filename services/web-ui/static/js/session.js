@@ -744,16 +744,17 @@ function handleThinkingUpdate(data) {
         addProgressLog('Restarting services...');
     } else if (message === 'Course built successfully!' || message === 'Course ready to start!' || message === 'Course ready!') {
         updateProgressStep('complete', 100, 'Course is ready!');
-        addProgressLog('✅ Course built successfully!');
+        addProgressLog('<span class="i i-check" aria-hidden="true"></span> Course built successfully!');
         setTimeout(() => {
             hideCourseCreationModal();
             isCreatingCourse = false;
             enableCourseCreationButton();
         }, 2000); // Hide after 2 seconds
     } else if (message && (message.includes('Ingestion failed') || message.includes('Ingestion error') || message.includes('Service restart failed'))) {
-        creationStatus.textContent = '❌ ' + message;
+        creationStatus.innerHTML =
+            '<span class="i i-x i-danger" aria-hidden="true"></span> ' + escapeHtml(message);
         progressFill.style.width = '0%';
-        addProgressLog('❌ ' + message);
+        addProgressLog('<span class="i i-x" aria-hidden="true"></span> ' + message);
         setTimeout(() => {
             hideCourseCreationModal();
             isCreatingCourse = false;
@@ -851,7 +852,14 @@ function sendEvent(eventType, payload) {
                 }
             }
             if (typeof window.showToast === 'function') {
-                window.showToast('Server error: ' + (error.message || 'connection failed'), 'error');
+                // A learner is not debugging our stack. "Server returned 502:
+                // BAD GATEWAY" tells them nothing they can act on and reads as
+                // a crash; what they need to know is whether their work is
+                // safe and whether to retry. The raw status stays in the
+                // console for us.
+                window.showToast(
+                    "Helga's tutor service isn't responding. Your progress is " +
+                    "saved — try again in a moment.", 'error');
             }
         });
 }
@@ -1137,14 +1145,22 @@ function setupSocketListeners() {
         const inputStatus = data.input;
         const statusEmoji = document.getElementById('input-status-indicator');
         if (statusEmoji && inputStatus) {
+            // The colour WAS the message here (green / amber / red dots).
+            // One grey dot would lose it, so state rides on a class and the
+            // icon inherits currentColor.
+            const dot = '<span class="i i-dot" aria-hidden="true"></span>';
+            statusEmoji.classList.remove('is-online', 'is-degraded', 'is-offline');
             if (inputStatus.status === 'online') {
-                statusEmoji.textContent = '🟢';
+                statusEmoji.innerHTML = dot;
+                statusEmoji.classList.add('is-online');
                 statusEmoji.title = 'Input Service: Online (Lat: ' + inputStatus.latency + 'ms)';
             } else if (inputStatus.status === 'degraded') {
-                statusEmoji.textContent = '🟡';
+                statusEmoji.innerHTML = dot;
+                statusEmoji.classList.add('is-degraded');
                 statusEmoji.title = 'Input Service: Degraded (Model loading?)';
             } else {
-                statusEmoji.textContent = '🔴';
+                statusEmoji.innerHTML = dot;
+                statusEmoji.classList.add('is-offline');
                 statusEmoji.title = 'Input Service: Offline';
             }
         }

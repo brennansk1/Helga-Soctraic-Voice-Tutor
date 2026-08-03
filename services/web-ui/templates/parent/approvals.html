@@ -20,7 +20,7 @@ async function load() {
             <button class="btn btn-ghost" data-act="deny" data-id="${a.enrollment_id}">Deny</button>
           </div>
         </div>`).join('')
-        : '<p class="text-muted">Nothing waiting for you. 🎉</p>';
+        : '<p class="text-muted">Nothing waiting for you. <span class="i i-party" aria-hidden="true"></span></p>';
     el.querySelectorAll('button[data-act]').forEach(b => b.addEventListener('click', async () => {
         await fetch(`/parent/api/enrollments/${b.dataset.id}/${b.dataset.act}`, {
             method: 'POST', headers: {'X-CSRF-Token': window.CSRF_TOKEN}});

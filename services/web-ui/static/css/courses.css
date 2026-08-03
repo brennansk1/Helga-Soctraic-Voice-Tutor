@@ -146,7 +146,7 @@
 }
 
 .tree-node.module::before {
-    content: '📦 ';
+    content: ' ';
 }
 
 .tree-node.unit {
@@ -157,7 +157,7 @@
 }
 
 .tree-node.unit::before {
-    content: '📖 ';
+    content: ' ';
 }
 
 .tree-node.lesson {
@@ -167,7 +167,7 @@
 }
 
 .tree-node.lesson::before {
-    content: '📝 ';
+    content: ' ';
 }
 
 .tree-node.concept {

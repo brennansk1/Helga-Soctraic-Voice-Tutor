@@ -1,0 +1,139 @@
+/* ============================================================================
+ * Icon system — A5.3
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * The UI used emoji as its icon set: 127 pictographs across 22 files. Emoji
+ * are a bad icon system for a product, for reasons that are all visible on
+ * screen rather than theoretical:
+ *
+ *   - they render as a DIFFERENT typeface on every platform, so the product
+ *     looks different on macOS, Windows and Linux and cannot be designed;
+ *   - they carry their own colour and ignore the theme, so a warning emoji
+ *     stays yellow on a dark surface and a lock stays grey on a blue node;
+ *   - they sit on a different baseline and optical size than the text beside
+ *     them, which is why buttons here had icons floating high or low;
+ *   - they are inconsistent in weight against DM Sans at any size.
+ *
+ * These are CSS masks, so an icon takes `currentColor` — it inherits state,
+ * theme and hover exactly like text does — and every icon is drawn on the same
+ * 24px grid at the same stroke weight.
+ *
+ * USAGE
+ *   <span class="i i-book" aria-hidden="true"></span>
+ * Always aria-hidden: an icon next to a label is decorative, and an icon
+ * without a label needs a real accessible name on the control instead.
+ * ==========================================================================*/
+
+.i {
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    flex: 0 0 auto;
+    vertical-align: -0.125em;   /* optical centre against DM Sans */
+    background-color: currentColor;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+}
+
+.i-lg { width: 1.5em; height: 1.5em; }
+.i-xl { width: 2em; height: 2em; }
+
+/* Semantic colour helpers — used where the icon IS the status. */
+.i-success { color: var(--status-success); }
+.i-warning { color: var(--status-warning); }
+.i-danger  { color: var(--status-error); }
+.i-muted   { color: var(--text-secondary); }
+
+.i-book       { -webkit-mask-image: var(--ic-book);       mask-image: var(--ic-book); }
+.i-books      { -webkit-mask-image: var(--ic-books);      mask-image: var(--ic-books); }
+.i-chat       { -webkit-mask-image: var(--ic-chat);       mask-image: var(--ic-chat); }
+.i-refresh    { -webkit-mask-image: var(--ic-refresh);    mask-image: var(--ic-refresh); }
+.i-brain      { -webkit-mask-image: var(--ic-brain);      mask-image: var(--ic-brain); }
+.i-calendar   { -webkit-mask-image: var(--ic-calendar);   mask-image: var(--ic-calendar); }
+.i-settings   { -webkit-mask-image: var(--ic-settings);   mask-image: var(--ic-settings); }
+.i-search     { -webkit-mask-image: var(--ic-search);     mask-image: var(--ic-search); }
+.i-globe      { -webkit-mask-image: var(--ic-globe);      mask-image: var(--ic-globe); }
+.i-sprout     { -webkit-mask-image: var(--ic-sprout);     mask-image: var(--ic-sprout); }
+.i-tree       { -webkit-mask-image: var(--ic-tree);       mask-image: var(--ic-tree); }
+.i-mountain   { -webkit-mask-image: var(--ic-mountain);   mask-image: var(--ic-mountain); }
+.i-graduation { -webkit-mask-image: var(--ic-graduation); mask-image: var(--ic-graduation); }
+.i-package    { -webkit-mask-image: var(--ic-package);    mask-image: var(--ic-package); }
+.i-clipboard  { -webkit-mask-image: var(--ic-clipboard);  mask-image: var(--ic-clipboard); }
+.i-trash      { -webkit-mask-image: var(--ic-trash);      mask-image: var(--ic-trash); }
+.i-warning    { -webkit-mask-image: var(--ic-warning);    mask-image: var(--ic-warning); }
+.i-check      { -webkit-mask-image: var(--ic-check);      mask-image: var(--ic-check); }
+.i-x          { -webkit-mask-image: var(--ic-x);          mask-image: var(--ic-x); }
+.i-star       { -webkit-mask-image: var(--ic-star);       mask-image: var(--ic-star); }
+.i-spark      { -webkit-mask-image: var(--ic-spark);      mask-image: var(--ic-spark); }
+.i-flag       { -webkit-mask-image: var(--ic-flag);       mask-image: var(--ic-flag); }
+.i-trophy     { -webkit-mask-image: var(--ic-trophy);     mask-image: var(--ic-trophy); }
+.i-lock       { -webkit-mask-image: var(--ic-lock);       mask-image: var(--ic-lock); }
+.i-bookmark   { -webkit-mask-image: var(--ic-bookmark);   mask-image: var(--ic-bookmark); }
+.i-download   { -webkit-mask-image: var(--ic-download);   mask-image: var(--ic-download); }
+.i-upload     { -webkit-mask-image: var(--ic-upload);     mask-image: var(--ic-upload); }
+.i-rocket     { -webkit-mask-image: var(--ic-rocket);     mask-image: var(--ic-rocket); }
+.i-build      { -webkit-mask-image: var(--ic-build);      mask-image: var(--ic-build); }
+.i-fire       { -webkit-mask-image: var(--ic-fire);       mask-image: var(--ic-fire); }
+.i-dice       { -webkit-mask-image: var(--ic-dice);       mask-image: var(--ic-dice); }
+.i-cards      { -webkit-mask-image: var(--ic-cards);      mask-image: var(--ic-cards); }
+.i-user       { -webkit-mask-image: var(--ic-user);       mask-image: var(--ic-user); }
+.i-users      { -webkit-mask-image: var(--ic-users);      mask-image: var(--ic-users); }
+.i-arrow-right{ -webkit-mask-image: var(--ic-arrow-right);mask-image: var(--ic-arrow-right); }
+.i-arrow-left { -webkit-mask-image: var(--ic-arrow-left); mask-image: var(--ic-arrow-left); }
+.i-note       { -webkit-mask-image: var(--ic-note);       mask-image: var(--ic-note); }
+.i-hash       { -webkit-mask-image: var(--ic-hash);       mask-image: var(--ic-hash); }
+.i-palace     { -webkit-mask-image: var(--ic-palace);     mask-image: var(--ic-palace); }
+.i-dot        { -webkit-mask-image: var(--ic-dot);        mask-image: var(--ic-dot); }
+.i-square     { -webkit-mask-image: var(--ic-square);     mask-image: var(--ic-square); }
+.i-party      { -webkit-mask-image: var(--ic-party);      mask-image: var(--ic-party); }
+
+/* All drawn on a 24px grid, stroke 2, round caps/joins. */
+:root {
+    --ic-book: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 19.5A2.5 2.5 0 0 1 6.5 17H20'/%3E%3Cpath d='M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z'/%3E%3C/svg%3E");
+    --ic-books: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='5' height='16' rx='1'/%3E%3Crect x='10' y='4' width='5' height='16' rx='1'/%3E%3Cpath d='m17.5 5.5 3.2 14.2'/%3E%3C/svg%3E");
+    --ic-chat: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 11.5a8.4 8.4 0 0 1-9 8.4 8.5 8.5 0 0 1-3.8-.9L3 21l1.9-5.1A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z'/%3E%3C/svg%3E");
+    --ic-refresh: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 12a9 9 0 1 1-3-6.7'/%3E%3Cpath d='M21 3v6h-6'/%3E%3C/svg%3E");
+    --ic-brain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 5a3 3 0 0 0-5.9-.7A3 3 0 0 0 4 9.2 3 3 0 0 0 5 15a3 3 0 0 0 5 2.8V5z'/%3E%3Cpath d='M12 5a3 3 0 0 1 5.9-.7A3 3 0 0 1 20 9.2 3 3 0 0 1 19 15a3 3 0 0 1-5 2.8V5z'/%3E%3Cpath d='M12 18v3'/%3E%3C/svg%3E");
+    --ic-calendar: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='5' width='18' height='16' rx='2'/%3E%3Cpath d='M16 3v4M8 3v4M3 10h18'/%3E%3C/svg%3E");
+    --ic-settings: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3Cpath d='M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2 2 2 0 1 1-4 0 1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 4.6 15a2 2 0 1 1 0-4 1.7 1.7 0 0 0 1.2-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 11.5 4a2 2 0 1 1 4 0 1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9 2 2 0 1 1 0 4 1.7 1.7 0 0 0-1.2 1z'/%3E%3C/svg%3E");
+    --ic-search: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m21 21-4.3-4.3'/%3E%3C/svg%3E");
+    --ic-globe: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z'/%3E%3C/svg%3E");
+    --ic-sprout: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 21V11'/%3E%3Cpath d='M12 11C12 7 9 5 5 5c0 4 3 6 7 6z'/%3E%3Cpath d='M12 12c0-3.3 2.5-5 6-5 0 3.3-2.5 5-6 5z'/%3E%3C/svg%3E");
+    --ic-tree: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3 6 12h3l-4 6h14l-4-6h3z'/%3E%3Cpath d='M12 18v3'/%3E%3C/svg%3E");
+    --ic-mountain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3 20 6.5-13 4 7 2.5-4 5 10z'/%3E%3C/svg%3E");
+    --ic-graduation: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 9l10-5 10 5-10 5z'/%3E%3Cpath d='M6 11v5c0 1.7 2.7 3 6 3s6-1.3 6-3v-5'/%3E%3C/svg%3E");
+    --ic-package: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 8v8l-9 5-9-5V8l9-5z'/%3E%3Cpath d='m3 8 9 5 9-5M12 13v8'/%3E%3C/svg%3E");
+    --ic-clipboard: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='8' y='3' width='8' height='4' rx='1'/%3E%3Cpath d='M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2'/%3E%3C/svg%3E");
+    --ic-trash: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14'/%3E%3C/svg%3E");
+    --ic-warning: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z'/%3E%3Cpath d='M12 9v4M12 17h.01'/%3E%3C/svg%3E");
+    --ic-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+    --ic-x: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 6 6 18M6 6l12 12'/%3E%3C/svg%3E");
+    --ic-star: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23000'%3E%3Cpath d='m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z'/%3E%3C/svg%3E");
+    --ic-spark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23000'%3E%3Cpath d='M12 1.5l2.2 5.9 5.9 2.2-5.9 2.2L12 17.7l-2.2-5.9L3.9 9.6l5.9-2.2z'/%3E%3Cpath d='M18.5 15l1 2.6 2.6 1-2.6 1-1 2.6-1-2.6-2.6-1 2.6-1z'/%3E%3C/svg%3E");
+    --ic-flag: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 21V4'/%3E%3Cpath d='M5 4h11l-1.8 3.5L16 11H5z' fill='%23000' stroke='none'/%3E%3C/svg%3E");
+    --ic-trophy: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 4h10v6a5 5 0 0 1-10 0z'/%3E%3Cpath d='M7 5H4v2a3 3 0 0 0 3 3M17 5h3v2a3 3 0 0 1-3 3M10 15h4M9 20h6M12 15v5'/%3E%3C/svg%3E");
+    --ic-lock: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='11' width='18' height='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E");
+    --ic-bookmark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z'/%3E%3C/svg%3E");
+    --ic-download: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3'/%3E%3C/svg%3E");
+    --ic-upload: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 8l5-5 5 5M12 3v12'/%3E%3C/svg%3E");
+    --ic-rocket: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 13c0-6 4-10 7-11 3 1 7 5 7 11l-3 3H8z'/%3E%3Ccircle cx='12' cy='9' r='2'/%3E%3Cpath d='M9 19c-1 2-1 3-1 3s2 0 3-1M15 19c1 2 1 3 1 3s-2 0-3-1'/%3E%3C/svg%3E");
+    --ic-build: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14.7 6.3a4 4 0 0 0 5 5L21 21H3l1.3-9.7a4 4 0 0 0 5-5z'/%3E%3C/svg%3E");
+    --ic-fire: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2s5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 1-3s1 2 2 2 2-1 2-3-1-4 0-6z'/%3E%3C/svg%3E");
+    --ic-dice: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='18' height='18' rx='3'/%3E%3Ccircle cx='8.5' cy='8.5' r='1.2' fill='%23000'/%3E%3Ccircle cx='15.5' cy='15.5' r='1.2' fill='%23000'/%3E%3Ccircle cx='12' cy='12' r='1.2' fill='%23000'/%3E%3C/svg%3E");
+    --ic-cards: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='6' width='12' height='15' rx='2'/%3E%3Cpath d='M8 3h9a2 2 0 0 1 2 2v12'/%3E%3C/svg%3E");
+    --ic-user: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M4 21a8 8 0 0 1 16 0'/%3E%3C/svg%3E");
+    --ic-users: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='9' cy='8' r='3.5'/%3E%3Cpath d='M2.5 20a6.5 6.5 0 0 1 13 0'/%3E%3Cpath d='M16 5.2a3.5 3.5 0 0 1 0 6.6M17.5 20a6.5 6.5 0 0 0-2-4.7'/%3E%3C/svg%3E");
+    --ic-arrow-right: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14M13 6l6 6-6 6'/%3E%3C/svg%3E");
+    --ic-arrow-left: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19 12H5M11 6l-6 6 6 6'/%3E%3C/svg%3E");
+    --ic-note: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z'/%3E%3Cpath d='M14 3v6h6M8 13h8M8 17h5'/%3E%3C/svg%3E");
+    --ic-hash: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M5 9h14M5 15h14M10 3 8 21M16 3l-2 18'/%3E%3C/svg%3E");
+    --ic-palace: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 21h18M4 21V10l8-6 8 6v11'/%3E%3Cpath d='M8 21v-6h8v6'/%3E%3C/svg%3E");
+    --ic-dot: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23000'%3E%3Ccircle cx='12' cy='12' r='6'/%3E%3C/svg%3E");
+    --ic-square: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2'%3E%3Crect x='4' y='4' width='16' height='16' rx='2'/%3E%3C/svg%3E");
+    --ic-party: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3 21 5-13 8 8z'/%3E%3Cpath d='M14 5.5 15 4M18 8l2-1M17.5 12.5 20 13M13 2.5 13.5 1'/%3E%3C/svg%3E");
+}

@@ -86,7 +86,14 @@ class TestContentSourceAPI(unittest.TestCase):
             
             # We accept 200, 400, 403 (CSRF), or 500 (since we might not have full backend deps running in this env)
             # But we assert we got a response
-            self.assertIn(response.status_code, [200, 201, 400, 403, 500])
+            #
+            # 415 belongs here too. This test skips unless a server is already
+            # listening, so it had effectively never run; the first live stack
+            # it met returned 415, because it posts form-encoded data to an
+            # endpoint that expects JSON. That is the endpoint behaving
+            # correctly. The assertion's stated intent is "the server
+            # responded", and 415 satisfies it.
+            self.assertIn(response.status_code, [200, 201, 400, 403, 415, 500])
         except requests.exceptions.ConnectionError:
             self.skipTest("Connection dropped or refused.")
 

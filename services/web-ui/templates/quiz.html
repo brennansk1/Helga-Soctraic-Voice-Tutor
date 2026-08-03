@@ -8,7 +8,7 @@
     <div class="session-interface">
         <div class="ai-avatar-container">
             <div class="ai-avatar pulse" style="background-color: var(--accent-tertiary);">
-                <span style="font-size: 2rem;">📝</span>
+                <span style="font-size: 2rem;"><span class="i i-note" aria-hidden="true"></span></span>
             </div>
             <div class="status-indicator">Examiner Mode</div>
         </div>
@@ -24,7 +24,7 @@
         <div class="controls">
             <input type="text" id="test-input" placeholder="Type your answer..." class="text-input">
             <button id="test-send-btn" class="control-btn send-btn" title="Send" aria-label="Send"
-                style="background-color: var(--accent-tertiary);">➤</button>
+                style="background-color: var(--accent-tertiary);"><span class="i i-arrow-right" aria-hidden="true"></span></button>
         </div>
     </div>
 </div>
@@ -294,7 +294,7 @@
             div.className = 'message ai';
 
             const heading = document.createElement('p');
-            heading.innerHTML = '<strong>📝 Choose a course to test:</strong>';
+            heading.innerHTML = '<strong><span class="i i-note" aria-hidden="true"></span> Choose a course to test:</strong>';
             div.appendChild(heading);
 
             const grid = document.createElement('div');
@@ -306,7 +306,7 @@
             allBtn.className = 'select-btn';
             allBtn.style.cssText = 'padding:1rem; border-radius:12px; border:2px solid var(--border-color); background:var(--bg-primary); cursor:pointer; text-align:left; transition:var(--transition-base);';
             const allStrong = document.createElement('strong');
-            allStrong.textContent = '🎲 All Courses';
+            allStrong.innerHTML = '<span class="i i-dice" aria-hidden="true"></span> All Courses';
             allStrong.style.display = 'block';
             const allSpan = document.createElement('span');
             allSpan.textContent = 'Random mix of all topics';
@@ -500,7 +500,7 @@
 
             const isPass = data.grade === 'PASS';
             const gradeColor = isPass ? 'var(--status-success)' : 'var(--status-error)';
-            const emoji = isPass ? '✅' : '❌';
+            const emoji = isPass ? '<span class="i i-check" aria-hidden="true"></span>' : '<span class="i i-x" aria-hidden="true"></span>';
 
             // Track score
             score.total++;
@@ -515,7 +515,7 @@
 
             // Flashcard creation notification (Anki integration)
             const flashcardNote = data.cards_created && data.cards_created > 0
-                ? `<div style="margin-top:0.75rem; padding:0.5rem 0.75rem; background:rgba(99,102,241,0.1); border-radius:8px; font-size:0.85rem; color:var(--accent-tertiary);">🃏 ${data.cards_created} flashcard(s) added for review</div>`
+                ? `<div style="margin-top:0.75rem; padding:0.5rem 0.75rem; background:rgba(99,102,241,0.1); border-radius:8px; font-size:0.85rem; color:var(--accent-tertiary);"><span class="i i-cards" aria-hidden="true"></span> ${data.cards_created} flashcard(s) added for review</div>`
                 : '';
 
             const resultHtml = `

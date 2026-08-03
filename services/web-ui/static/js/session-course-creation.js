@@ -8,12 +8,12 @@ let courseModal, courseForm, courseTopicInput, creationProgress, creationStatus,
 let isCreatingCourse = false;
 let currentProgressStep = 0;
 const progressSteps = {
-    'Preparing database': { step: 'prepare', percent: 0, icon: '📥' },
-    'Scraping ZIM files': { step: 'scrape', percent: 20, icon: '📥' },
-    'Vectorizing content': { step: 'vectorize', percent: 40, icon: '🔢' },
-    'Building graph': { step: 'graph', percent: 60, icon: '🏗️' },
-    'Finalizing course': { step: 'finalize', percent: 80, icon: '✨' },
-    'Restarting services': { step: 'restart', percent: 100, icon: '🚀' }
+    'Preparing database': { step: 'prepare', percent: 0, icon: '<span class="i i-download" aria-hidden="true"></span>' },
+    'Scraping ZIM files': { step: 'scrape', percent: 20, icon: '<span class="i i-download" aria-hidden="true"></span>' },
+    'Vectorizing content': { step: 'vectorize', percent: 40, icon: '<span class="i i-hash" aria-hidden="true"></span>' },
+    'Building graph': { step: 'graph', percent: 60, icon: '<span class="i i-build" aria-hidden="true"></span>' },
+    'Finalizing course': { step: 'finalize', percent: 80, icon: '<span class="i i-spark" aria-hidden="true"></span>' },
+    'Restarting services': { step: 'restart', percent: 100, icon: '<span class="i i-rocket" aria-hidden="true"></span>' }
 };
 
 function updateProgressStep(stepId, percentage, detail) {

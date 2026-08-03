@@ -35,7 +35,7 @@
 </div>
 <script>
 const SID = {{ student.id | tojson }};
-const STATUS_ICON = {mastered: '✅', in_progress: '🔨', not_started: '⬜'};
+const STATUS_ICON = {mastered: '<span class="i i-check" aria-hidden="true"></span>', in_progress: '<span class="i i-build" aria-hidden="true"></span>', not_started: '<span class="i i-square" aria-hidden="true"></span>'};
 
 (async () => {
     const [stdRes, bloomRes, strugRes, courseRes, tlRes] = await Promise.all([
@@ -54,7 +54,7 @@ const STATUS_ICON = {mastered: '✅', in_progress: '🔨', not_started: '⬜'};
         const strands = Object.entries(s.strands).map(([strand, stds]) => `
             <h4 style="margin:.5rem 0 .25rem;">${strand}</h4>
             <ul style="list-style:none; padding:0; margin:0;">
-              ${stds.map(x => `<li>${STATUS_ICON[x.status]} <strong>${x.code}</strong>${x.is_enrichment ? ' ★' : ''} — ${x.text.slice(0,120)} <span class="text-muted">(${x.concepts} concepts)</span></li>`).join('')}
+              ${stds.map(x => `<li>${STATUS_ICON[x.status]} <strong>${x.code}</strong>${x.is_enrichment ? ' <span class="i i-star" aria-hidden="true"></span>' : ''} — ${x.text.slice(0,120)} <span class="text-muted">(${x.concepts} concepts)</span></li>`).join('')}
             </ul>`).join('');
         return `<details open><summary style="font-weight:700;">${subj} — ${s.coverage_pct}% mastered (${s.mastered}/${s.total})</summary>${strands}</details>`;
     }).join('') : '<p class="text-muted">No standards-tagged courses yet.</p>';
@@ -70,7 +70,7 @@ const STATUS_ICON = {mastered: '✅', in_progress: '🔨', not_started: '⬜'};
 
     const {struggles} = await strugRes.json();
     document.getElementById('struggles').innerHTML = struggles.length
-        ? '<ul>' + struggles.map(s => `<li>⚠️ <strong>${s.title}</strong> — ${s.low} low grades over ${s.attempts} tries</li>`).join('') + '</ul>'
+        ? '<ul>' + struggles.map(s => `<li><span class="i i-warning" aria-hidden="true"></span> <strong>${s.title}</strong> — ${s.low} low grades over ${s.attempts} tries</li>`).join('') + '</ul>'
         : '<p class="text-muted">Nothing flagged — smooth sailing.</p>';
 
     const {courses} = await courseRes.json();

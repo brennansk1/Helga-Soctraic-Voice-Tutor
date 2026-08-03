@@ -402,3 +402,268 @@
         -webkit-text-fill-color: currentColor;
     }
 }
+
+/* ---------------------------------------------------------------------------
+ * Toasts
+ *
+ * The container was pinned top-right — exactly where the navigation sits. A
+ * server error rendered a red slab straight over the nav links, so the first
+ * thing that happened when something went wrong was that the way out got
+ * covered. Notifications move to the bottom, out of the way of controls.
+ * ------------------------------------------------------------------------ */
+#toast-container {
+    top: auto;
+    bottom: var(--space-5);
+    right: var(--space-5);
+    max-width: min(26rem, calc(100vw - 2 * var(--space-5)));
+}
+
+.toast {
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--border-radius-sm);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.45;
+    box-shadow: var(--shadow-3);
+    transition: transform var(--dur-slow) var(--ease-decelerate),
+                opacity var(--dur-base) var(--ease-standard);
+}
+
+@media (max-width: 640px) {
+    #toast-container {
+        left: var(--space-4);
+        right: var(--space-4);
+        bottom: var(--space-4);
+        max-width: none;
+    }
+}
+
+/* ---------------------------------------------------------------------------
+ * Brand mark
+ *
+ * The logo was an emoji () injected via `.logo a::before { content: '' }`,
+ * so the brand mark was a DIFFERENT illustration on macOS, Windows, Android
+ * and Linux — not a logo at all, just a character the OS happened to draw.
+ *
+ * It is now a mask fed from one swappable SVG. Replacing the placeholder means
+ * replacing static/img/logo-helga.svg and nothing else.
+ * ------------------------------------------------------------------------ */
+.logo a::before {
+    content: "";
+    display: block;
+    width: 1.05em;
+    height: 1.05em;
+    flex: 0 0 auto;
+    background-color: currentColor;
+    -webkit-mask: url('/static/img/logo-helga.svg') center / contain no-repeat;
+    mask: url('/static/img/logo-helga.svg') center / contain no-repeat;
+}
+
+/* Service-status dot. The colour is the message; the icon only gives it a
+   shape. Previously three different emoji carried this, which meant the
+   status was rendered by the operating system rather than by us. */
+#input-status-indicator { color: var(--text-secondary); }
+#input-status-indicator.is-online { color: var(--status-success); }
+#input-status-indicator.is-degraded { color: var(--status-warning); }
+#input-status-indicator.is-offline { color: var(--status-error); }
+
+/* ============================================================================
+ * REFINEMENT PASS — from "playful app" toward "professional tool"
+ *
+ * The original styling optimised for friendliness: 14-20px radii, 2px borders
+ * ("thicker borders are friendlier" is a literal comment in style.css), 4px
+ * bottom-lip shadows on every button, 1.8em logo, pill-shaped nav links, and
+ * a 2.25rem page title. Individually harmless; together they read as a toy,
+ * and this is a tool people are meant to study with for hours.
+ *
+ * What changes here is restraint, not personality: tighter radii, hairline
+ * borders, flatter surfaces, a smaller and more deliberate type scale, and
+ * more content per screen. The alpine palette and the brand are untouched.
+ * ==========================================================================*/
+
+:root {
+    --border-radius: 10px;
+    --border-radius-sm: 6px;
+    --border-radius-lg: 14px;
+
+    /* A calmer scale. 2.25rem page titles were shouting at a learner who
+       already knows which page they clicked. */
+    --font-size-3xl: 1.6rem;
+    --font-size-2xl: 1.3rem;
+    --font-size-xl: 1.1rem;
+    --line-height: 1.5;
+}
+
+/* --- Header ---------------------------------------------------------------
+ * 72px tall with a 2px border and a 1.8em wordmark: the chrome was competing
+ * with the content. Chrome should be quiet.
+ */
+.app-header {
+    height: 58px;
+    padding: 0 var(--space-5);
+    border-bottom: 1px solid var(--border-color);
+    box-shadow: none;
+}
+
+.logo a {
+    font-size: 1.15rem;
+    font-weight: var(--font-weight-bold);
+    letter-spacing: -0.015em;
+    gap: var(--space-2);
+}
+
+/* Nav: a quiet underline instead of a filled pill. Pills read as buttons, and
+   six pills in a row read as a toolbar rather than a location. */
+.app-nav .nav-link {
+    margin-left: 0;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--border-radius-sm);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: 0;
+    text-transform: none;
+    border: 1px solid transparent;
+    position: relative;
+    transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.app-nav .nav-link:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.app-nav .nav-link.active {
+    background: transparent;
+    color: var(--accent-primary);
+    border-color: transparent;
+}
+
+.app-nav .nav-link.active::after {
+    content: "";
+    position: absolute;
+    left: var(--space-3);
+    right: var(--space-3);
+    bottom: -1px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--accent-primary);
+}
+
+/* --- Surfaces -------------------------------------------------------------
+ * Hairline borders and a single soft shadow. The old cards stacked a 2px
+ * border, a coloured top rule and a 16px shadow, which made every panel look
+ * like it was about to be dragged somewhere.
+ */
+.card,
+.stat-card,
+.settings-section,
+.progress-stat,
+.progress-course,
+.practice-card,
+.practice-day,
+.progress-gap {
+    border-width: 1px;
+    box-shadow: var(--shadow-1);
+}
+
+/* Buttons lose the 4px bottom lip. It is a game affordance — it makes a
+   control look like a key on a toy piano. */
+.btn,
+.control-btn,
+.primary-btn,
+.action-btn,
+.btn-alpine {
+    box-shadow: none;
+    border-radius: var(--border-radius-sm);
+    font-weight: var(--font-weight-semibold);
+}
+
+.btn:active,
+.control-btn:active,
+.primary-btn:active,
+.action-btn:active {
+    transform: translateY(1px);
+    box-shadow: none;
+}
+
+/* --- Density --------------------------------------------------------------
+ * Page shells were 62rem wide with 3rem of vertical padding around content
+ * that averaged four rows. Tighter margins put more on screen without
+ * crowding it.
+ */
+.practice-shell,
+.progress-shell {
+    max-width: 68rem;
+    padding: var(--space-5) var(--space-5) var(--space-8);
+}
+
+.practice-header,
+.progress-header {
+    margin-bottom: var(--space-5);
+    padding-bottom: var(--space-4);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.practice-title,
+.progress-title { letter-spacing: -0.015em; }
+
+.progress-totals { gap: var(--space-3); margin-bottom: var(--space-5); }
+.progress-stat { padding: var(--space-4); }
+.progress-stat-value { font-size: 1.75rem; }
+
+/* Numbers that change should not make the layout twitch. */
+.progress-stat-value,
+.practice-stat-value,
+.progress-course-meta,
+.practice-day-count,
+.progress-concept-meta { font-variant-numeric: tabular-nums; }
+
+/* Section headings get a rule, so a long page has structure rather than just
+   gaps. */
+.progress-section-title,
+.practice-section-title {
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-bold);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    padding-bottom: var(--space-2);
+    border-bottom: 1px solid var(--border-color);
+}
+
+/* --- Atmosphere -----------------------------------------------------------
+ * The illustration stays on Home, where it is doing brand work. On every
+ * working surface it is decoration behind data, so it goes.
+ */
+.page-progress .matterhorn-bg,
+.page-practice .matterhorn-bg,
+.page-learn .matterhorn-bg { opacity: 0.05; }
+
+[data-theme="dark"] .page-progress .matterhorn-bg,
+[data-theme="dark"] .page-practice .matterhorn-bg,
+[data-theme="dark"] .page-learn .matterhorn-bg { opacity: 0.06; }
+
+/* The old active state drew an inset 2px ring, so the current page looked like
+   a pressed button rather than a location. The underline above is the whole
+   indicator; this removes the ring it was fighting with. */
+.app-nav .nav-link.active {
+    background-color: transparent;
+    box-shadow: none;
+}
+
+/* Header layout: logo left, everything else right. The search and theme
+   controls were flex children with no alignment rule, so they drifted into
+   the middle of the bar and read as unrelated floating buttons. */
+.app-header > .logo { margin-right: auto; }
+
+.app-header > #gamification-bar,
+.app-header > .header-theme-toggle,
+.app-header > .search-trigger,
+.app-header > #search-trigger { margin-left: var(--space-2); }
+
+.app-header > nav.app-nav { margin-left: var(--space-4); gap: var(--space-1); display: flex; }
+
+/* Working surfaces carry no illustration at all. On Home it is brand; behind
+   a table of numbers it is noise. */
+.page-progress .matterhorn-bg,
+.page-practice .matterhorn-bg { display: none; }

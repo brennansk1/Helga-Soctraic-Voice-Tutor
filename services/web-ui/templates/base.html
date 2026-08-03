@@ -33,8 +33,10 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=1">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=5">
     <!-- Loaded after style.css: refines the palette it establishes. -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/icons.css') }}?v=1">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/design-system.css') }}?v=1">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/surfaces.css') }}?v=1">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/learn-path.css') }}?v=1">
     <script src="{{ url_for('static', filename='js/socket.io.min.js') }}"></script>
     <script>
         // CSRF helper: auto-attach token to fetch() and XMLHttpRequest
@@ -147,8 +149,10 @@
         [data-theme="dark"] .theme-icon-sun { display: block; }
         [data-theme="dark"] .theme-icon-moon { display: none; }
     </style>
-    <link rel="icon"
-        href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏔️</text></svg>">
+    <!-- Favicon is the logo file, not an emoji glyph: an emoji favicon is
+         rendered by the OS, so the tab icon differed per platform. -->
+    <link rel="icon" type="image/svg+xml"
+        href="{{ url_for('static', filename='img/logo-helga.svg') }}">
 </head>
 
 <body class="{% block body_class %}{% endblock %}">

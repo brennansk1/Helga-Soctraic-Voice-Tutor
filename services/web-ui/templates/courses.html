@@ -202,7 +202,7 @@ function submitImport() {
 
     <div id="courses-grid" class="course-card-grid">
         <div class="empty-state" id="courses-loading">
-            <div class="empty-icon">📚</div>
+            <div class="empty-icon"><span class="i i-books" aria-hidden="true"></span></div>
             <h3>Loading courses...</h3>
         </div>
     </div>
@@ -254,9 +254,9 @@ function submitImport() {
             <div class="form-group-alpine">
                 <label>Scope <span style="font-weight:var(--font-weight-normal);color:var(--text-secondary)">— how much territory</span></label>
                 <div class="depth-slider">
-                    <span>🔍</span>
+                    <span><span class="i i-search" aria-hidden="true"></span></span>
                     <input type="range" id="qc-scope" min="1" max="5" value="2">
-                    <span>🌍</span>
+                    <span><span class="i i-globe" aria-hidden="true"></span></span>
                 </div>
                 <div class="slider-labels">
                     <span>Focused</span>
@@ -269,9 +269,9 @@ function submitImport() {
             <div class="form-group-alpine">
                 <label>Mastery <span style="font-weight:var(--font-weight-normal);color:var(--text-secondary)">— how deep</span></label>
                 <div class="depth-slider">
-                    <span>🌱</span>
+                    <span><span class="i i-sprout" aria-hidden="true"></span></span>
                     <input type="range" id="qc-mastery" min="1" max="5" value="2">
-                    <span>🏔️</span>
+                    <span><span class="i i-mountain" aria-hidden="true"></span></span>
                 </div>
                 <div class="slider-labels">
                     <span>Awareness</span>
@@ -284,9 +284,9 @@ function submitImport() {
             <div class="form-group-alpine">
                 <label>Starting From <span style="font-weight:var(--font-weight-normal);color:var(--text-secondary)">— your background</span></label>
                 <div class="depth-slider">
-                    <span>👶</span>
+                    <span><span class="i i-user" aria-hidden="true"></span></span>
                     <input type="range" id="qc-start" min="1" max="5" value="1">
-                    <span>🎓</span>
+                    <span><span class="i i-graduation" aria-hidden="true"></span></span>
                 </div>
                 <div class="slider-labels">
                     <span>None</span>
@@ -364,7 +364,14 @@ function submitImport() {
         </div>
     </div>
 </div>
+{% endblock %}
 
+{#  page_scripts was opened INSIDE an unclosed content block, so Jinja emitted
+    it twice — once nested in content, once in the parent's slot. courses.js,
+    socket.io and progress-tree all loaded twice, and courses.js declares
+    `const ALPINE_COLORS`, so the second copy threw
+    "Identifier 'ALPINE_COLORS' has already been declared" and every listener
+    it registered after that line never attached. #}
 {% block page_scripts %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/courses.css') }}?v=6">
 <script src="{{ url_for('static', filename='js/socket.io.min.js') }}"></script>
@@ -494,5 +501,4 @@ function submitImport() {
     }
 })();
 </script>
-{% endblock %}
 {% endblock %}
