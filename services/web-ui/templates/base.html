@@ -163,21 +163,11 @@
             <div class="logo">
                 <a href="/">Helga</a>
             </div>
-            <div class="gamification-bar hidden" id="gamification-bar">
-                <span class="xp-badge" id="xp-counter">0 XP</span>
-                <span class="level-badge" id="level-badge">Lv 1</span>
-                <span class="streak-badge" id="streak-counter">&#128293; 0</span>
-                <span class="daily-goal-dots" id="daily-goal-dots" title="Daily goal progress"></span>
-            </div>
-            <button id="header-theme-toggle" class="header-theme-toggle" aria-label="Toggle light/dark theme" title="Toggle theme">
-                <!-- Moon: shown in light mode -->
-                <svg class="theme-icon theme-icon-moon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-                <!-- Sun: shown in dark mode -->
-                <svg class="theme-icon theme-icon-sun" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-            </button>
-            <button id="hamburger-btn" class="hamburger-btn" aria-label="Toggle navigation menu">
-                <span></span><span></span><span></span>
-            </button>
+            {#  Three zones: brand, primary navigation, utilities.
+                Previously the search and theme buttons sat BETWEEN the
+                wordmark and the nav, stranded in the middle of the bar
+                with ~700px of empty space to their left. Utilities belong
+                at the far edge; navigation belongs next to the brand. #}
             <nav class="app-nav" id="app-nav" role="navigation" aria-label="Main navigation">
                 <a href="/" class="nav-link {% if request.path == '/' %}active{% endif %}" {% if request.path=='/'
                     %}aria-current="page" {% endif %}>Home</a>
@@ -206,6 +196,23 @@
                 <a href="/settings" class="nav-link {% if request.path in ['/settings', '/status'] %}active{% endif %}" {% if
                     request.path in ['/settings', '/status'] %}aria-current="page" {% endif %}>Settings</a>
             </nav>
+            <div class="header-utils">
+            <div class="gamification-bar hidden" id="gamification-bar">
+                <span class="xp-badge" id="xp-counter">0 XP</span>
+                <span class="level-badge" id="level-badge">Lv 1</span>
+                <span class="streak-badge" id="streak-counter">&#128293; 0</span>
+                <span class="daily-goal-dots" id="daily-goal-dots" title="Daily goal progress"></span>
+            </div>
+            <button id="header-theme-toggle" class="header-theme-toggle" aria-label="Toggle light/dark theme" title="Toggle theme">
+                <!-- Moon: shown in light mode -->
+                <svg class="theme-icon theme-icon-moon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                <!-- Sun: shown in dark mode -->
+                <svg class="theme-icon theme-icon-sun" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+            </button>
+            </div>
+            <button id="hamburger-btn" class="hamburger-btn" aria-label="Toggle navigation menu">
+                <span></span><span></span><span></span>
+            </button>
         </header>
         <main class="app-content" id="main-content">
             {% block content %}{% endblock %}

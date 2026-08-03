@@ -250,9 +250,14 @@
         searchWrapper.appendChild(searchInput);
         searchWrapper.appendChild(searchPanel);
 
-        // Insert before the theme-toggle button in the header
+        // Search belongs in the utilities cluster at the far right, beside
+        // the theme toggle — not loose in the header, where it landed between
+        // the wordmark and the nav.
+        var utils = header.querySelector('.header-utils');
         var themeToggle = header.querySelector('#header-theme-toggle');
-        if (themeToggle) {
+        if (utils) {
+            utils.insertBefore(searchWrapper, utils.firstChild);
+        } else if (themeToggle) {
             header.insertBefore(searchWrapper, themeToggle);
         } else {
             // Fallback: append before hamburger or at end of header

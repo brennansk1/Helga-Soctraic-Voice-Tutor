@@ -323,3 +323,66 @@ class TestReferencedAssetsExist(unittest.TestCase):
             + "\n".join(f"  {a} <- {', '.join(sorted(set(u)))}"
                         for a, u in missing.items())
         )
+
+
+class TestNavigationBar(unittest.TestCase):
+    """The header is three zones: brand | navigation | utilities.
+
+    The search and theme buttons used to sit BETWEEN the wordmark and the nav,
+    stranded mid-bar with ~700px of empty space beside them, so the utilities
+    read as part of the navigation. They are now a `.header-utils` cluster at
+    the far edge.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.base = _read(os.path.join(_templates, 'base.html'))
+        cls.ds = _read(os.path.join(_static, 'css/design-system.css'))
+
+    def test_dom_order_is_brand_then_nav_then_utilities(self):
+        """Laying this out with CSS `order` would look right and tab in a
+        nonsense sequence — worse than the problem it solves. The DOM order is
+        the accessible order, so it has to be correct here."""
+        logo = self.base.index('<div class="logo">')
+        nav = self.base.index('<nav class="app-nav"')
+        utils = self.base.index('<div class="header-utils">')
+        self.assertLess(logo, nav, "the wordmark must precede the navigation")
+        self.assertLess(nav, utils, "utilities must come after the navigation")
+
+    def test_search_is_injected_into_the_utilities_cluster(self):
+        js = _read(os.path.join(_static, 'js/search.js'))
+        self.assertIn(".querySelector('.header-utils')", js,
+                      "search.js appended the widget loose in the header, "
+                      "which is how it ended up mid-bar")
+
+    def test_utilities_are_not_bordered_boxes(self):
+        """Two outlined squares beside six plain text links made the utilities
+        the heaviest thing in the bar."""
+        block = self.ds[self.ds.index('--- Utilities'):]
+        self.assertIn('border: none', block[:900])
+        self.assertIn('.header-utils', block[:400])
+
+    def test_mobile_nav_collapses_behind_the_hamburger(self):
+        """REGRESSION GUARD. design-system.css loads after style.css, so an
+        unconditional `.app-nav { display: flex }` here silently defeated the
+        mobile `display: none` — on a phone BOTH the hamburger and the full nav
+        rendered. A more specific selector (`.app-header > nav.app-nav`) beat
+        the media query outright, which is the subtler version of the same
+        mistake."""
+        mobile = re.search(r'@media \(max-width: 768px\) \{(.*?)\n\}',
+                           self.ds, re.S)
+        self.assertIsNotNone(mobile, "no 768px block re-asserting the collapse")
+        self.assertIn('display: none', mobile.group(1))
+        self.assertIn('.app-nav.nav-open', mobile.group(1))
+
+    def test_no_selector_outranks_the_mobile_collapse(self):
+        """Any `.app-nav` rule with a more specific selector than `.app-nav`
+        will win over the media query no matter where it sits in the file."""
+        offenders = [
+            line.strip() for line in self.ds.splitlines()
+            if re.search(r'^[^@/]*\b\w+\.app-nav\b|\.app-header\s*>\s*nav', line)
+            and 'display' in line
+        ]
+        self.assertEqual(
+            offenders, [],
+            f"these outrank the mobile collapse rule: {offenders}")

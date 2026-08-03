@@ -654,14 +654,16 @@
 /* Header layout: logo left, everything else right. The search and theme
    controls were flex children with no alignment rule, so they drifted into
    the middle of the bar and read as unrelated floating buttons. */
-.app-header > .logo { margin-right: auto; }
+/* .logo margin is set in the NAVIGATION BAR section; `margin-right: auto`
+   here would push the nav to the far right again. */
 
-.app-header > #gamification-bar,
-.app-header > .header-theme-toggle,
-.app-header > .search-trigger,
-.app-header > #search-trigger { margin-left: var(--space-2); }
+/* (stale after the three-zone restructure: the utilities are now nested in
+   .header-utils, so these direct-child selectors no longer match anything.
+   Their replacement lives in the NAVIGATION BAR section below.) */
 
-.app-header > nav.app-nav { margin-left: var(--space-4); gap: var(--space-1); display: flex; }
+/* (superseded by the NAVIGATION BAR section below. This selector was more
+   specific than the mobile `@media` rule that hides the nav, so it kept the
+   full nav rendered on phones ALONGSIDE the hamburger.) */
 
 /* Working surfaces carry no illustration at all. On Home it is brand; behind
    a table of numbers it is noise. */
@@ -952,3 +954,162 @@ label { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold)
  * Behind a settings form or a status table it is just a busy background.
  */
 body:not(.page-home) .matterhorn-bg { display: none; }
+
+/* ============================================================================
+ * NAVIGATION BAR
+ *
+ * Three zones: brand | primary navigation | utilities.
+ *
+ * Before: the wordmark sat alone on the left with ~700px of dead space, then
+ * the search and theme buttons appeared stranded mid-bar, then the nav ran to
+ * the right edge. Utilities read as part of the navigation because they were
+ * physically inside it, and the bar had no legible structure.
+ * ==========================================================================*/
+
+.app-header {
+    display: flex;
+    align-items: stretch;      /* so nav links can fill the full bar height */
+    gap: var(--space-4);
+    position: relative;
+}
+
+.app-header > .logo {
+    display: flex;
+    align-items: center;
+    margin-right: 0;           /* the nav no longer needs pushing away */
+}
+
+.app-nav {
+    display: flex;
+    align-items: stretch;
+    gap: var(--space-1);
+    margin-left: var(--space-3);
+    /* Utilities get pushed to the far edge, not the nav. */
+    margin-right: auto;
+}
+
+/* A hairline between brand and navigation. Without it the wordmark reads as
+   the first nav item. */
+.app-nav::before {
+    content: "";
+    align-self: center;
+    width: 1px;
+    height: 20px;
+    margin-right: var(--space-3);
+    background: var(--border-color);
+}
+
+.app-nav .nav-link {
+    display: flex;
+    align-items: center;
+    padding: 0 var(--space-3);
+    border-radius: 0;
+    color: var(--text-secondary);
+}
+
+/* The indicator sits ON the header's bottom border rather than floating just
+   above it, so the active tab reads as connected to the page below. */
+.app-nav .nav-link.active::after {
+    left: var(--space-3);
+    right: var(--space-3);
+    bottom: -1px;
+    height: 2px;
+}
+
+.app-nav .nav-link:hover {
+    background: transparent;
+    color: var(--text-primary);
+}
+
+/* --- Utilities ------------------------------------------------------------
+ * Icon buttons, not bordered boxes. Two outlined squares next to six plain
+ * text links made the utilities the heaviest thing in the bar.
+ */
+.header-utils {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin-left: auto;
+}
+
+.header-theme-toggle,
+.helga-search-btn,
+.header-utils button {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: var(--border-radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.header-theme-toggle:hover,
+.helga-search-btn:hover,
+.header-utils button:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border-color: transparent;
+}
+
+/* The gamification chips are a learner reward, not chrome — they sit with the
+   utilities, quieter than they were beside the wordmark. */
+.header-utils .gamification-bar { margin-left: var(--space-2); gap: var(--space-1); }
+
+.header-utils .xp-badge,
+.header-utils .level-badge,
+.header-utils .streak-badge {
+    font-size: 0.7rem;
+    font-weight: var(--font-weight-semibold);
+    padding: 2px var(--space-2);
+    font-variant-numeric: tabular-nums;
+}
+
+/* --- Narrow ---------------------------------------------------------------
+ * Under 900px six links plus utilities cannot share a row, so the nav becomes
+ * the hamburger sheet and only the utilities stay inline.
+ */
+@media (max-width: 900px) {
+    .app-nav { margin-left: 0; margin-right: 0; }
+    .app-nav::before { display: none; }
+    .header-utils { margin-left: auto; }
+}
+
+/* --- Mobile navigation ----------------------------------------------------
+ * style.css collapses .app-nav into a hamburger sheet below 768px with
+ * `display: none` / `.nav-open { display: flex }`. This file loads AFTER it,
+ * so the unconditional `.app-nav { display: flex }` above silently defeated
+ * that: on a phone BOTH the hamburger and the full nav rendered.
+ *
+ * Restated here inside the same breakpoint so the sheet works and the desktop
+ * layout keeps its flex row.
+ */
+@media (max-width: 768px) {
+    .app-nav {
+        display: none;
+        top: 58px;                    /* matches the shorter header */
+        border-bottom: 1px solid var(--border-color);
+        box-shadow: var(--shadow-3);
+        margin-left: 0;
+        margin-right: 0;
+    }
+
+    .app-nav.nav-open { display: flex; }
+
+    .app-nav::before { display: none; }   /* the brand divider */
+
+    .app-nav .nav-link { padding: var(--space-3) var(--space-4); }
+
+    /* The underline indicator is a horizontal-bar idea; in a vertical sheet
+       the active item gets a tinted row instead. */
+    .app-nav .nav-link.active::after { display: none; }
+    .app-nav .nav-link.active {
+        background: var(--bg-tertiary);
+        border-radius: var(--border-radius-sm);
+    }
+}
