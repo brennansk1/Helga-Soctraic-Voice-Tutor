@@ -382,16 +382,112 @@ Three of the seven done-criteria fail because a feature exists in the backend wi
 - Enable tutor tools (`HELGA_ENABLE_TUTOR_TOOLS`) behind a reliability gate — they're built and
   disabled; validate and turn on. Keep `run_python` off by default.
 - Layered learner memory; difficulty-calibrated question generation; wire FSRS ↔ Socratic loop so
-  review targets what the learner actually struggled with.
+  review targets what the learner actually struggled with. *(The FSRS half of this landed
+  2026-08-03: every graded Socratic answer now advances real FSRS memory state.)*
 - *Gate:* HelgaBench personalization score up materially vs A0 baseline; no regression in grading
   accuracy; tool-call failure rate below an agreed threshold.
 
+### A4.1 — "The best Socratic tutor this hardware can run" (planned 2026-08-03)
+
+#### The measurement that frames all of it
+
+**An interactive tutor turn takes 4.5 s, not 30 s.** The ~30 s figure quoted elsewhere in this
+document is *course generation* — 2000+ token calls. Measured on qwen3.5:9b, a tutor turn at
+`max_tokens=150` and at `max_tokens=1000` both returned in ~4.5 s, so the cost is model
+load, not output length.
+
+Two consequences, and they drive everything below:
+
+1. **There is budget to spend 2-3 LLM calls per turn** and still land under 15 s. Quality work
+   that costs an extra call is affordable; it was assumed not to be.
+2. **Latency is not the binding constraint on tutoring quality.** Engineering spent on
+   speculative decoding or KV-cache reuse buys less than engineering spent on what the model is
+   asked to do.
+
+#### The strategic frame: interactive and batch have OPPOSITE constraints
+
+Tutoring and course generation currently share one model and one budget. They should not.
+
+| | Interactive tutoring | Course generation |
+|---|---|---|
+| Latency | matters (4.5 s is felt) | irrelevant (runs overnight) |
+| Is 9B enough? | adequate | **no** — it is the documented weak point |
+| Measured state | adaptation **2.8/5** | **42%** syllabus coverage, false claims, ~half of concepts hollow |
+
+**Rule: anything that can move from the interactive path to the batch path, should.** That is how
+quality is bought on a 24 GB Mac Mini.
+
+#### Ranked by impact per unit of effort
+
+**A4.1a — A DIALOGUE CONTRACT.** *Cheap; targets the measured weakness head-on.*
+The depth contract worked for content because it was **enforceable structure with a named
+violation to regenerate against**, not prose in a prompt. Do the same for tutor turns:
+- ≤ 60 words (a long tutor turn IS a lecture)
+- must end with a question *(already implemented — `fsm_logic.py`)*
+- must reference or quote something the learner actually said
+- must not introduce more than one new idea
+Enforce in code; regenerate ONLY when a rule trips, so the common case still costs one call.
+This attacks exactly what the judge flags at 2.8: *lecturing instead of questioning* and
+*answering something other than what the student asked*.
+
+**A4.1b — FEED THE TUTOR THIS LEARNER'S OWN ERROR HISTORY.** *The thing no competitor can do.*
+This data only became real on 2026-08-03: `times_correct`, `lapses` and `stability` per concept,
+plus the persisted transcript. "This learner has missed this concept twice, both times confusing
+mediators with confounders" in the prompt is worth more than a larger model. ChatGPT cannot do
+it offline; fixed-curriculum platforms do it worse.
+
+**A4.1c — SPLIT THE MODELS: large for batch, 9B for interactive.**
+Generation is where quality is failing and where latency does not matter. A 4-bit 27B fits in
+24 GB and can run overnight at any speed. **Zero runtime cost if it works.**
+> **Gate this on the REAL builder prompt.** Ternary-Bonsai-27B at 1.7-bit collapsed into
+> repetition on the actual builder prompt (3/3) while producing clean output on a simplified
+> one (4/4). A candidate that looks fine on a toy prompt has not been tested.
+
+**A4.1d — PRE-GENERATE A QUESTION BANK AT BUILD TIME.**
+Move Socratic question generation off the interactive path entirely. Buys quality control,
+difficulty calibration, and removed run-to-run variance, paid for in batch time already spent.
+
+**A4.1e — FIX GROUNDING (SearXNG).** *Ops, not modelling — biggest content-accuracy lever.*
+Every concept currently ships at 0.40 confidence with a visible "Limited sources" marker,
+because `compute_confidence` cannot clear the 0.5 floor on Wikipedia + Crossref alone.
+
+**A4.1f — TWO-PASS GENERATION WITH A CRITIC.**
+Generate → critique → revise, overnight. Directly targets the hollow concepts and the
+verified-false claims on record. Doubles build time, which the batch path can absorb.
+
+#### Explicitly deprioritised — and why
+
+**Speculative decoding, prompt/KV caching, quantisation tuning.** All real wins. All aimed at
+latency, which is *not* the binding constraint at 4.5 s per turn. Revisit only if the dialogue
+contract pushes a turn past ~15 s.
+
+#### The honest ceiling
+
+A 9B model will not out-adapt a frontier model in conversation, and no amount of prompt
+engineering changes that. Helga can be genuinely best-in-class at the combination nobody else
+offers: **it remembers what you personally got wrong, it refuses to accept a bluff (94-100%
+measured), it schedules your review properly, and it works with no internet.** Aim there.
+Competing with ChatGPT on conversational polish is not winnable on this hardware and should not
+be a target.
+
+- *Gate for A4.1:* `adaptation` up materially against `helgabench_a1_calibrated.json` (≥ 0.4,
+  the measured 2-SE floor at n=15); no regression in `misconception_handling`; sycophancy and
+  persistence probes hold at their current 94-100%; median tutor turn stays under 15 s.
+
 **A5 — UX restructure & redesign** *(not polish — an information-architecture change)*
 
-> **Sequencing warning, stated up front.** This sprint optimises RETENTION. The tutor
-> currently scores **1.6/5 on misconception handling**. Adding a progress dashboard to a
-> product whose tutor accepts fluent nonsense optimises the wrong thing. A5 runs **after
-> A4**, or we accept explicitly that we are trading quality work for engagement work.
+> **Sequencing warning — SUPERSEDED 2026-08-03, kept for the record.** This warning read:
+> *"the tutor currently scores 1.6/5 on misconception handling... A5 runs after A4."*
+>
+> The 1.6 was substantially an INSTRUMENT DEFECT, not a tutor defect. Self-testing the
+> HelgaBench judge for the first time found a missing key being scored 1, no way for the rubric
+> to say "the student made no error", and ±2 swing on identical transcripts. Recalibrated it
+> reads **3.0**, over n=8 rather than n=15 — seven of fifteen dialogues had nothing to score and
+> had all been recorded as 1. See §4 of `docs/MODE_A_STATUS.md`.
+>
+> A5 therefore ran first, which was the right call on the corrected evidence. The warning's
+> *reasoning* still stands for A4.1: **adaptation is 2.8**, and retention work on a tutor that
+> lectures is still optimising the wrong thing.
 
 ### A5.1 — The information architecture problem
 
@@ -504,6 +600,37 @@ completes, no dead handlers.
 - **the app runs offline with no visual degradation** — no CDN fonts, icons or scripts;
 - every interactive surface has a designed empty / loading / error state;
 - no raw identifiers, placeholder copy, or debug output visible to a learner.
+
+### A5.5 — Document ingestion: EPUB and PDF (requested 2026-08-03)
+
+"Bring your own material" is arguably *the* personal-mode feature and is the one done-criterion
+still only half-real: extraction is verified (13 tests, synthetic EPUB, spine order, bad-zip,
+PDF honestly rejected) but **no real book has been taken through to a built course**.
+
+Scope:
+- **Finish EPUB ingestion** end to end — upload → extract → structure → hydrate → a course the
+  learner can actually walk.
+- **Add PDF ingestion.** Currently rejected with an honest message because no parser is
+  installed; that is correct behaviour for an unimplemented feature, not a resting state.
+- **Handle real books.** A textbook is 300-800 pages and will not fit any context window. The
+  build has to be strategic about what becomes a course rather than truncating at 400k chars
+  and calling it done:
+  - segment on the document's OWN structure (EPUB spine / PDF outline / heading hierarchy)
+    before falling back to length-based chunking;
+  - map the book's shape onto the course shape rather than flattening it — a chapter is not
+    automatically a module, and a 40-page chapter is not one concept;
+  - let the learner choose scope (whole book / selected chapters) instead of guessing;
+  - stay inside the depth contract and the syllabus-coverage check that already gate generated
+    courses, so an imported book is held to the same standard as a generated one.
+
+> **The failure mode to design against:** a 600-page textbook silently becoming a 12-concept
+> course that covers chapter 1. That is what naive truncation produces, and it would pass every
+> structural check we currently run — `path_audit` reported the 42%-coverage Pythagoras course
+> as clean. Criterion 6 (syllabus coverage) is the check that catches it.
+
+- *Gate:* a real multi-hundred-page book imported end to end; resulting course clears the same
+  conjunctive quality gate as a generated one; the learner is told what was covered and what was
+  left out, never silently truncated.
 
 ### Arc III — Make it last (A6–A7)
 
