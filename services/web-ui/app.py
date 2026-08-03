@@ -407,6 +407,22 @@ def progress_page():
     return render_template('progress.html')
 
 
+@app.route('/api/ask', methods=['POST'])
+def ask_proxy():
+    """A5.2 — Ask. Generation can take a while on a local model, so the timeout
+    is generous; a 5s default would turn every real answer into an error."""
+    try:
+        resp = requests.post(f'{SERVICES["rag"]}/api/ask',
+                             json=request.get_json(silent=True) or {},
+                             timeout=120)
+        return jsonify(resp.json()), resp.status_code
+    except requests.exceptions.Timeout:
+        return jsonify({'error': 'the tutor took too long to answer'}), 504
+    except Exception as e:
+        logger.error(f"ask proxy failed: {e}")
+        return jsonify({'error': 'could not reach the tutor service'}), 502
+
+
 @app.route('/api/progress/overview', methods=['GET'])
 def progress_overview():
     """Backs the Progress surface. Reads local storage directly, like

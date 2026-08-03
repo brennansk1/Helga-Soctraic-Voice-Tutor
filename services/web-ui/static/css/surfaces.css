@@ -457,3 +457,154 @@
 @media (max-width: 640px) {
     .learn-mode-link span:last-child { display: none; }
 }
+
+/* --- Ask (A5.2) -----------------------------------------------------------
+ * A slide-over, not a page. Socratic dialogue only ever existed inside a
+ * concept node; there was no way to ask a question that spanned courses, which
+ * is the largest gap versus simply using a chatbot.
+ */
+.ask-open-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: 32px;
+    padding: 0 var(--space-3);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    cursor: pointer;
+    transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.ask-open-btn:hover { color: var(--accent-primary); border-color: var(--accent-primary); }
+
+.ask-panel { position: fixed; inset: 0; z-index: 900; }
+.ask-panel[hidden] { display: none; }
+
+.ask-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(20, 28, 24, 0.38);
+    animation: helga-fade-in var(--dur-base) var(--ease-standard);
+}
+
+.ask-sheet {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(30rem, 100vw);
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-secondary);
+    border-left: 1px solid var(--border-color);
+    box-shadow: var(--shadow-4);
+    animation: ask-slide-in var(--dur-slow) var(--ease-decelerate);
+}
+
+@keyframes ask-slide-in {
+    from { transform: translateX(16px); opacity: 0; }
+    to   { transform: none; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ask-sheet { animation: helga-fade-in 0.01ms both; }
+}
+
+.ask-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-4) var(--space-5);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.ask-title { margin: 0; font-size: var(--font-size-lg); color: var(--text-primary); }
+
+.ask-close {
+    width: 32px; height: 32px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: none; background: transparent; border-radius: var(--border-radius-sm);
+    color: var(--text-secondary); cursor: pointer;
+}
+.ask-close:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+
+.ask-body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: var(--space-5);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+}
+
+.ask-hint { margin: 0; color: var(--text-secondary); font-size: var(--font-size-sm); }
+
+.ask-turn { animation: helga-rise-in var(--dur-slow) var(--ease-decelerate) both; }
+.ask-turn p { margin: 0; }
+
+.ask-turn-you p {
+    background: var(--bg-tertiary);
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--border-radius);
+    color: var(--text-primary);
+    font-weight: var(--font-weight-medium);
+}
+
+.ask-answer { color: var(--text-primary); line-height: 1.6; }
+.ask-skeleton { height: 4.5rem; }
+.ask-turn.is-error p { color: var(--status-error); }
+
+.ask-sources {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    align-items: center;
+    margin-top: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border-color);
+}
+
+.ask-sources-label {
+    font-size: var(--font-size-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+}
+
+.ask-source {
+    font-size: var(--font-size-xs);
+    padding: 2px var(--space-2);
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    color: var(--accent-primary);
+    text-decoration: none;
+}
+.ask-source:hover { border-color: var(--accent-primary); }
+
+/* An answer Helga could not ground in the learner's material says so. Blurring
+   that line is what makes a tutor indistinguishable from a chatbot. */
+.ask-ungrounded {
+    margin-top: var(--space-3);
+    font-size: var(--font-size-xs);
+    color: var(--status-warning);
+}
+
+.ask-form {
+    display: flex;
+    gap: var(--space-2);
+    padding: var(--space-4) var(--space-5);
+    border-top: 1px solid var(--border-color);
+}
+
+.ask-input { flex: 1 1 auto; }
+
+@media (max-width: 640px) {
+    .ask-sheet { width: 100vw; border-left: none; }
+    .ask-open-label { display: none; }
+    .ask-open-btn { padding: 0; width: 32px; justify-content: center; }
+}

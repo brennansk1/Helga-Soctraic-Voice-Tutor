@@ -197,6 +197,15 @@
                     request.path in ['/settings', '/status'] %}aria-current="page" {% endif %}>Settings</a>
             </nav>
             <div class="header-utils">
+                {#  A5.2 — Ask is a persistent affordance, not a tab. A question
+                    is something you have while in the middle of something else;
+                    making it a destination means leaving the thing that
+                    prompted it. Cmd/Ctrl-K opens it too. #}
+                <button id="ask-open-btn" class="ask-open-btn" type="button"
+                        aria-label="Ask Helga a question" title="Ask Helga  (\u2318K)">
+                    <span class="i i-chat" aria-hidden="true"></span>
+                    <span class="ask-open-label">Ask</span>
+                </button>
             <div class="gamification-bar hidden" id="gamification-bar">
                 <span class="xp-badge" id="xp-counter">0 XP</span>
                 <span class="level-badge" id="level-badge">Lv 1</span>
@@ -222,6 +231,7 @@
     <script src="{{ url_for('static', filename='js/settings.js') }}?v=4"></script>
 
     <script src="{{ url_for('static', filename='js/search.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/ask.js') }}?v=1"></script>
     {% block page_scripts %}{% endblock %}
 
     <!-- Toast Container -->

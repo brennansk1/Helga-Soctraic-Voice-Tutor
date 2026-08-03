@@ -264,6 +264,49 @@ class TestLearnPath:
             "Palace must open the course you are in, not whatever the FSM saw last"
 
 
+# --- ask --------------------------------------------------------------------
+
+class TestAsk:
+    """A5.2 — Socratic dialogue existed ONLY inside a concept node; there was no
+    free-chat endpoint anywhere. A learner could not ask a question spanning
+    their courses, which is the largest gap versus just using a chatbot."""
+
+    def test_ask_is_reachable_from_every_page(self, page: Page, base_url):
+        for path in ("/", "/courses", "/progress", "/practice", "/settings"):
+            page.goto(base_url + path)
+            expect(page.locator("#ask-open-btn")).to_be_visible()
+
+    def test_the_panel_opens_and_traps_focus(self, page: Page, base_url):
+        page.goto(base_url + "/progress")
+        page.locator("#ask-open-btn").click()
+        expect(page.locator("#ask-panel")).to_be_visible()
+        assert page.evaluate(
+            "document.activeElement && document.activeElement.id") == "ask-input", \
+            "opening a dialog without moving focus into it strands keyboard users"
+
+    def test_escape_closes_and_restores_focus(self, page: Page, base_url):
+        page.goto(base_url + "/progress")
+        page.locator("#ask-open-btn").click()
+        expect(page.locator("#ask-panel")).to_be_visible()
+        page.keyboard.press("Escape")
+        expect(page.locator("#ask-panel")).to_be_hidden()
+        assert page.evaluate(
+            "document.activeElement && document.activeElement.id") == "ask-open-btn", \
+            "focus must return to whatever opened the dialog"
+
+    def test_keyboard_shortcut_opens_it(self, page: Page, base_url):
+        page.goto(base_url + "/progress")
+        page.keyboard.press("ControlOrMeta+k")
+        expect(page.locator("#ask-panel")).to_be_visible()
+
+    def test_an_empty_question_does_nothing(self, page: Page, base_url):
+        page.goto(base_url + "/progress")
+        page.locator("#ask-open-btn").click()
+        page.locator("#ask-form button[type=submit]").click()
+        page.wait_for_timeout(400)
+        expect(page.locator(".ask-turn")).to_have_count(0)
+
+
 # --- settings ---------------------------------------------------------------
 
 class TestSettings:

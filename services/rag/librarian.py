@@ -1631,6 +1631,93 @@ def _get_anchor_for_locus(course_uid: str, locus_uid: str) -> dict:
 
 # --- VG-02: Due Concepts API ---
 
+# --- A5.2: ASK — free-form questions across everything the learner has -------
+#
+# Socratic dialogue existed ONLY inside a concept node; there was no free-chat
+# endpoint anywhere in the system. A learner could not ask a question that
+# spanned their courses, which is the single largest gap versus just using a
+# chatbot — and the FSM already does the hard part, so what was missing was an
+# entry point that is not a lesson.
+#
+# The differentiator is that this answers FROM THE LEARNER'S OWN MATERIAL and
+# says which concepts it used. When retrieval finds nothing it says so instead
+# of free-associating: a tutor that invents an answer outside the syllabus is
+# just a chatbot with extra steps, and the learner cannot tell the difference.
+
+ASK_SYSTEM = """You are Helga, a tutor answering a learner's question using \
+THEIR OWN course material, which is supplied below.
+
+Rules:
+- Answer from the supplied material. It is what this learner has actually studied.
+- If the material does not contain the answer, say so plainly in one sentence
+  and then answer briefly from general knowledge, clearly marked as such.
+  Never blur the two.
+- Be direct. This is a question, not a Socratic lesson — do not answer with a
+  question.
+- Refer to concepts by name when you use them.
+- 120 words or fewer unless the question genuinely needs more."""
+
+ASK_MAX_CONTEXT = 4
+
+
+@app.route("/api/ask", methods=["POST"])
+def ask_endpoint():
+    data = request.get_json(silent=True) or {}
+    question = (data.get("question") or "").strip()
+    course_uid = data.get("course_uid") or None
+
+    if not question:
+        return jsonify({"error": "question required"}), 400
+    if len(question) > 1000:
+        return jsonify({"error": "question too long"}), 400
+
+    # Retrieve across the learner's courses (or scope to one when asked from
+    # inside it).
+    try:
+        rows = storage.search.search(question, course_uid=course_uid, limit=8) or []
+    except Exception as e:
+        logger.warning(f"ask: retrieval failed: {e}")
+        rows = []
+
+    sources, context = [], []
+    for row in rows[:ASK_MAX_CONTEXT]:
+        body = (row.get("content") or "").strip()
+        if not body:
+            continue
+        title = row.get("title") or row.get("concept_uid")
+        sources.append({
+            "concept_uid": row.get("concept_uid"),
+            "course_uid": row.get("course_uid"),
+            "title": title,
+        })
+        context.append(f"### {title}\n{body[:1200]}")
+
+    grounded = bool(context)
+    material = ("\n\n".join(context) if grounded
+                else "(No matching material was found in this learner's courses.)")
+
+    try:
+        from services.common.llm_utils import llm_generate
+        answer = llm_generate(
+            prompt=f"Course material:\n{material}\n\nQuestion: {question}",
+            sys_prompt=ASK_SYSTEM,
+            max_tokens=500,
+        )
+    except Exception as e:
+        logger.error(f"ask: generation failed: {e}", exc_info=True)
+        # Never fabricate an answer to hide an outage.
+        return jsonify({"error": "the tutor service is not responding"}), 502
+
+    if not answer or not answer.strip():
+        return jsonify({"error": "the tutor returned an empty answer"}), 502
+
+    return jsonify({
+        "answer": answer.strip(),
+        "sources": sources,
+        "grounded": grounded,
+    })
+
+
 @app.route("/api/due_concepts", methods=["GET"])
 def due_concepts_endpoint():
     """Return concepts due for spaced repetition review.
