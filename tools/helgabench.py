@@ -122,18 +122,126 @@ Score each dimension 1-5 (5 = excellent, 1 = poor):
   behaviour, rather than following a script?
 - accuracy: Was everything the tutor said factually correct? Any incorrect
   statement caps this at 2.
-- misconception_handling: Did the tutor notice and address wrong or empty
-  answers? Accepting a confident bluff, or praising an incorrect answer,
-  scores 1.
 - progression: Did the dialogue actually move forward? Repeating the same
   question or looping scores low.
 
 Return STRICT JSON only:
-{"socratic": n, "adaptation": n, "accuracy": n, "misconception_handling": n,
+{"socratic": n, "adaptation": n, "accuracy": n,
  "progression": n, "worst_moment": "<one sentence naming the weakest tutor turn>"}"""
+
+
+# --- misconception handling: judged separately, on purpose -------------------
+# Asking for this INSIDE the main rubric blob does not work on a 9B judge. It
+# has to distinguish "the student made no error, so there is nothing to score"
+# from "the student erred and the tutor let it pass", and buried in a five-key
+# JSON object it collapses the two. Measured, with the distinction spelled out
+# explicitly in the rubric: a tutor that PRAISED a misconception still scored
+# null, while worst_moment correctly described the failure. The judge saw it and
+# still could not place it.
+#
+# So the question is split in two and the verdict is computed in code, which is
+# the same fix that corrected the syllabus checker. Call 1 asks only about the
+# STUDENT; call 2 runs only if there was an error to handle.
+
+ERRED_PROMPT = """Look ONLY at the STUDENT's turns in this dialogue. Ignore the tutor entirely.
+
+Did the student say anything WRONG, EMPTY, or PARTIALLY WRONG at any point?
+
+Answer about the student only. Do not consider whether the tutor responded well.
+
+Return STRICT JSON: {"student_erred": true|false, "quote": "<the student's wrong words, or empty>"}"""
+
+HANDLING_PROMPT = """A student made an error in this dialogue. Score ONLY how the TUTOR handled it, 1-5.
+
+The student's error: {error}
+
+5 = every wrong or half-wrong answer challenged, and for partial answers the
+    tutor named which part was right and which was not
+4 = challenged the errors that mattered; minor imprecision only
+3 = challenged some, let others stand
+2 = mostly let errors stand, or affirmed globally without correcting
+1 = accepted a confident bluff, or praised an incorrect answer
+
+Correcting the student is the DESIRED behaviour, not the baseline: a tutor that
+corrects clearly and firmly scores 4-5. Do not lower the score because the tutor
+changed topic or moved too fast -- that is measured elsewhere.
+
+Return STRICT JSON: {{"score": n, "why": "<one sentence>"}}"""
+
+
+def _json_of(raw):
+    try:
+        return json.loads(raw[raw.find("{"):raw.rfind("}") + 1])
+    except Exception:
+        return {}
+
+
+def score_misconception_handling(client, convo, samples_n=3):
+    """Return 1-5, or None when the student never erred (not scoreable)."""
+    erred = _json_of(_chat(client, ERRED_PROMPT, convo,
+                           max_tokens=250, temperature=0.0))
+    if not erred.get("student_erred"):
+        return None, ""
+    quote = str(erred.get("quote") or "an error in the dialogue")[:300]
+
+    vals, why = [], ""
+    for _ in range(max(1, samples_n)):
+        d = _json_of(_chat(client, HANDLING_PROMPT.format(error=quote), convo,
+                           max_tokens=250, temperature=0.2))
+        v = d.get("score")
+        try:
+            vals.append(max(1, min(5, int(v))))
+            why = why or str(d.get("why") or "")[:200]
+        except (TypeError, ValueError):
+            continue
+    return (statistics.median(vals) if vals else None), why
 
 DIMENSIONS = ["socratic", "adaptation", "accuracy",
               "misconception_handling", "progression"]
+
+
+def judge_self_test(model=None, url=None):
+    """Validate the JUDGE before trusting its scores.
+
+    Every other instrument in this repo self-tests; this one did not, and it
+    was the only measurement disagreeing with four targeted probes. It was
+    miscalibrated: a tutor that clearly and firmly corrected a misconception
+    twice scored 3/5, so the dimension was compressed at the bottom and the
+    1.6 average overstated the problem.
+    """
+    c = _client(model or DEFAULT_MODEL, url or DEFAULT_OLLAMA_URL)
+    topic = TOPICS[0]
+    accepting = [
+        {"role": "tutor", "text": "What might make coffee drinkers seem more awake?"},
+        {"role": "student", "text": "A confounder is anything on the causal path, so controlling for it removes bias."},
+        {"role": "tutor", "text": "Exactly right! That's a perfect definition. Let's move on."},
+        {"role": "student", "text": "So I should control for mediators too."},
+        {"role": "tutor", "text": "Precisely. Great work — you've got it. Next topic."},
+    ]
+    correcting = [
+        {"role": "tutor", "text": "What might make coffee drinkers seem more awake?"},
+        {"role": "student", "text": "A confounder is anything on the causal path, so controlling for it removes bias."},
+        {"role": "tutor", "text": "Careful — that describes a MEDIATOR, not a confounder. A confounder causes both. If you control for something on the path, what happens to the effect you are trying to measure?"},
+        {"role": "student", "text": "So I should control for mediators too."},
+        {"role": "tutor", "text": "No — that would remove part of the very effect you want. Why might blocking the pathway hide the answer?"},
+    ]
+    clean = [
+        {"role": "tutor", "text": "What might make coffee drinkers seem more awake?"},
+        {"role": "student", "text": "A confounder causes both the treatment and the outcome, so it creates a spurious association."},
+        {"role": "tutor", "text": "Right. So what would happen if you adjusted for something that sits ON the causal path instead?"},
+        {"role": "student", "text": "You'd remove part of the real effect, because that's a mediator."},
+        {"role": "tutor", "text": "Good. Can you name a confounder in the coffee example?"},
+    ]
+    lo = judge(c, "misconception_holder", topic, accepting).get("misconception_handling")
+    hi = judge(c, "misconception_holder", topic, correcting).get("misconception_handling")
+    na = judge(c, "fast_learner", topic, clean).get("misconception_handling")
+    print(f"  tutor ACCEPTS a misconception -> {lo}    (must be <= 2)")
+    print(f"  tutor CORRECTS clearly        -> {hi}    (must be >= 4)")
+    print(f"  student MAKES NO ERROR        -> {na}  (must be None = not scored)")
+    ok = (lo is not None and hi is not None and lo <= 2 and hi >= 4 and na is None)
+    print("\n  " + ("Judge is calibrated." if ok else
+                    "JUDGE MISCALIBRATED — its scores cannot be trusted."))
+    return ok
 
 
 def _client(model, url):
@@ -232,7 +340,7 @@ def run_dialogue(client, profile_key, topic, turns, verbose=False,
     return {"transcript": transcript}
 
 
-def judge(client, profile_key, topic, transcript):
+def judge(client, profile_key, topic, transcript, samples_n=3):
     """Independent rubric scoring of the tutor's conduct."""
     convo = "\n".join(
         f"{t['role'].upper()}: {t['text']}" for t in transcript if t.get("text"))
@@ -240,19 +348,48 @@ def judge(client, profile_key, topic, transcript):
             f"Student profile: {PROFILES[profile_key]['label']} — "
             f"{PROFILES[profile_key]['persona'][:160]}\n\n"
             f"Dialogue:\n{convo}")
-    raw = _chat(client, JUDGE_RUBRIC, user, max_tokens=500, temperature=0.2)
-    try:
-        s = raw[raw.find("{"):raw.rfind("}") + 1]
-        data = json.loads(s)
-    except Exception:
-        return {"error": "judge returned unparseable JSON", "raw": raw[:300]}
-    out = {}
-    for d in DIMENSIONS:
+    samples, worst = [], ""
+    for _ in range(max(1, samples_n)):
+        raw = _chat(client, JUDGE_RUBRIC, user, max_tokens=500, temperature=0.2)
         try:
-            out[d] = max(1, min(5, int(data.get(d, 0))))
-        except (TypeError, ValueError):
-            out[d] = None
-    out["worst_moment"] = str(data.get("worst_moment", ""))[:300]
+            data = json.loads(raw[raw.find("{"):raw.rfind("}") + 1])
+        except Exception:
+            continue
+        if not isinstance(data, dict):
+            continue
+        samples.append(data)
+        worst = worst or str(data.get("worst_moment") or "")[:300]
+
+    if not samples:
+        return {"error": "judge returned unparseable JSON"}
+
+    out = {}
+    for d in [x for x in DIMENSIONS if x != "misconception_handling"]:
+        vals = []
+        for data in samples:
+            v = data.get(d, None)
+            # A MISSING OR null KEY IS NOT A ZERO. The old code did
+            # max(1, min(5, int(data.get(d, 0)))), so an absent key became 0 and
+            # was clamped to 1 -- the worst possible score, manufactured from
+            # silence. Combined with the rubric having no N/A option, that alone
+            # dragged misconception_handling toward the floor.
+            if v is None or (isinstance(v, str) and not v.strip().isdigit()):
+                continue
+            try:
+                vals.append(max(1, min(5, int(v))))
+            except (TypeError, ValueError):
+                continue
+        # Median over samples: one judge call on this rubric swings +/-2 on an
+        # IDENTICAL transcript (measured 5,3,3,5). A single call cannot gate.
+        out[d] = statistics.median(vals) if vals else None
+    mh, why = score_misconception_handling(client, user, samples_n)
+    out["misconception_handling"] = mh
+    if mh is None:
+        out["_mh_note"] = "student made no error; not scoreable"
+    elif why:
+        out["_mh_why"] = why
+    out["worst_moment"] = worst
+    out["_judge_samples"] = len(samples)
     return out
 
 
@@ -269,6 +406,8 @@ def main():
     p.add_argument("--out", help="write full results JSON here")
     p.add_argument("--compare", help="baseline JSON to diff against")
     p.add_argument("--verbose", action="store_true")
+    p.add_argument("--self-test", action="store_true",
+                   help="validate the judge before trusting any score")
     p.add_argument("--repeat", type=int, default=3,
                    help="repeats per profile/topic (default 3). MEASURED: at "
                         "1 repeat the run-to-run noise on this benchmark is up "
@@ -276,6 +415,10 @@ def main():
                         "scored misconception_handling 1.4 and 2.8. A single "
                         "run CANNOT gate a sprint.")
     args = p.parse_args()
+
+    if args.self_test:
+        print("HelgaBench judge self-test\n")
+        return 0 if judge_self_test(args.model, args.url) else 1
 
     keys = (list(PROFILES) if args.profiles == "all"
             else [k.strip() for k in args.profiles.split(",") if k.strip()])
