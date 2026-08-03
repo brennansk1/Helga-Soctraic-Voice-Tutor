@@ -49,11 +49,29 @@ def build_search_queries(title: str, module_title: str, mastery: int = 1):
     return queries
 
 
-def compute_confidence(has_wikipedia: bool, web_source_count: int) -> float:
-    """Heuristic confidence in [0, 1]: Wikipedia worth 0.4, web sources 0.2 each
-    (capped at 0.6)."""
+def compute_confidence(has_wikipedia: bool, web_source_count: int,
+                       primary_source_count: int = 0) -> float:
+    """Heuristic grounding confidence in [0, 1].
+
+    Weights reflect evidence strength, strongest first:
+        primary literature (DOI / arXiv)  0.25 each
+        secondary web sources             0.20 each
+        Wikipedia (tertiary)              0.40 once
+
+    PRIMARY SOURCES WERE NOT COUNTED AT ALL. The caller filtered
+    `[s for s in sources if s["type"] == "web"]`, and Crossref/arXiv results
+    carry type "journal"/"preprint" — so a concept grounded in Wikipedia plus
+    two peer-reviewed papers scored 0.40, identical to Wikipedia alone. With
+    SearXNG down that capped EVERY concept at 0.4 against a 0.5 floor, so every
+    concept in every course shipped with a "Limited sources" marker and no
+    course could clear the grounding criterion.
+
+    Peer-reviewed literature is stronger evidence than an arbitrary web page,
+    so it is weighted above it rather than merely included.
+    """
     confidence = 0.4 if has_wikipedia else 0.0
     confidence += min(web_source_count * 0.2, 0.6)
+    confidence += min(primary_source_count * 0.25, 0.5)
     return round(min(confidence, 1.0), 2)
 
 

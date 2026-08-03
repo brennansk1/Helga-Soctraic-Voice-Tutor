@@ -311,11 +311,19 @@ async def _research_concept_async(title, module_title, course_title, mastery=1):
     #     a primary source at mastery >= 4; without this the Advanced
     #     Undergraduate and Graduate presets promise a level the system cannot
     #     deliver, because Wikipedia correctly does not count.
-    if (mastery or 1) >= 4:
+    # Fetched at EVERY level, not just >=4. Two different things were being
+    # conflated: the depth contract REQUIRES a primary citation only at
+    # mastery >= 4, but the grounding confidence floor (0.5) applies to every
+    # level. Gating the lookup on mastery meant a beginner course could reach
+    # 0.4 at best and every one of its concepts shipped marked "Limited
+    # sources". Corroboration is worth having at any level; only the
+    # REQUIREMENT is level-dependent.
+    _n_primary = 2 if (mastery or 1) >= 4 else 1
+    if True:
         # Query the SUBJECT, not the pedagogical task title — "Identify the
         # Right Angle" matches no literature.
         subject = (module_title or course_title or title)
-        for ps in primary_source_lookup(subject):
+        for ps in primary_source_lookup(subject, limit=_n_primary):
             sources.append(ps)
             combined_parts.append(
                 f"## Source: {ps['type']} - {ps['title']}\n{ps['url']}")
@@ -357,7 +365,11 @@ async def _research_concept_async(title, module_title, course_title, mastery=1):
 
     # Confidence: based on source count and quality
     web_sources = [s for s in sources if s["type"] == "web"]
-    confidence = compute_confidence(bool(wikipedia_data), len(web_sources))
+    # Primary literature must count toward confidence — see compute_confidence.
+    primary_sources = [s for s in sources
+                       if s.get("type") in ("journal", "preprint")]
+    confidence = compute_confidence(bool(wikipedia_data), len(web_sources),
+                                    len(primary_sources))
 
     return {
         "sources": sources,
