@@ -1321,15 +1321,66 @@ class ProgressStore:
         return [dict(r) for r in rows]
 
     def get_due_reviews(self, target_date: str = None, student_id: str = None) -> List[dict]:
-        """Get concepts due for review on or before target_date."""
+        """Concepts due for review on or before target_date.
+
+        THIS USED TO ALWAYS RETURN NOTHING. It read only
+        `user_progress.next_review_date`, and no code path in the system ever
+        writes that column — reviews are scheduled into `scheduled_reviews` by
+        ScheduleStore.schedule_concept_review(). The column stayed NULL, and
+        `NULL <= '<date>'` is NULL in SQL, so every row was filtered out.
+        Verified against a real DB: two scheduled reviews present, zero due
+        reported, even with target_date set to 2099.
+
+        The visible effect was that the FSM's spoken review mode answered "No
+        cards due for review right now" no matter how much the learner had
+        studied, and the parent dashboard reported a permanent zero. The web
+        review page was unaffected because librarian's /api/due_concepts
+        already unions both sources — this brings the storage layer in line
+        with the behaviour that endpoint had to implement for itself.
+
+        Both sources are returned, deduped on concept_uid, progress rows first
+        (they carry grade/bloom history that a bare schedule row does not).
+        """
         if not target_date:
             target_date = date.today().isoformat()
         conn = self._get_db()
-        rows = conn.execute(
-            "SELECT * FROM user_progress WHERE next_review_date <= ? AND status != 'locked' AND student_id = ?",
-            (target_date, _sid(student_id))
-        ).fetchall()
-        return [dict(r) for r in rows]
+        sid = _sid(student_id)
+
+        out, seen = [], set()
+        for r in conn.execute(
+            "SELECT * FROM user_progress WHERE next_review_date IS NOT NULL "
+            "AND next_review_date <= ? AND status != 'locked' AND student_id = ?",
+            (target_date, sid)
+        ).fetchall():
+            d = dict(r)
+            if d.get("concept_uid") and d["concept_uid"] not in seen:
+                seen.add(d["concept_uid"])
+                out.append(d)
+
+        # scheduled_reviews stores the concept uid in `unit_uid` — the table
+        # predates concept-level scheduling and was reused rather than renamed.
+        for r in conn.execute(
+            "SELECT * FROM scheduled_reviews WHERE scheduled_date <= ? "
+            "AND COALESCE(status, 'pending') != 'completed' AND student_id = ? "
+            # Earliest first, so a concept with several pending reviews is
+            # surfaced at its most overdue date rather than an arbitrary one.
+            "ORDER BY scheduled_date ASC, review_number ASC",
+            (target_date, sid)
+        ).fetchall():
+            d = dict(r)
+            uid = d.get("unit_uid")
+            if not uid or uid in seen:
+                continue
+            seen.add(uid)
+            out.append({
+                "concept_uid": uid,
+                "course_uid": d.get("course_uid"),
+                "title": d.get("unit_title", ""),
+                "next_review_date": d.get("scheduled_date"),
+                "status": d.get("status") or "pending",
+                "source": "scheduled_review",
+            })
+        return out
 
     def get_completion_percentage(self, course_uid: str, total_concepts: int, student_id: str = None) -> float:
         """Calculate completion percentage for a course."""
