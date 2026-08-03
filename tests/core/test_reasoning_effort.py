@@ -96,21 +96,16 @@ class TestLlmClientReasoningEffort(unittest.TestCase):
     def _capture(self, **kwargs):
         """Capture the outgoing payload.
 
-        We assert on the REQUEST, so response handling is irrelevant here — and
-        it must be tolerated: tests/integration/test_full_e2e.py replaces
-        sys.modules['requests'] with a MagicMock and never restores it, so in a
-        full-suite run llm_client's response parsing can raise on mock data.
-        That pollution is a separate pre-existing defect; it must not be able to
-        mask this regression.
+        No try/except around the call: the sys.modules['requests'] pollution
+        from tests/integration/test_full_e2e.py that once made this necessary
+        is fixed at its source, so a raise here now means a real defect and
+        should fail loudly rather than be swallowed.
         """
         from services.core import llm_client
         c = self._client()
         with patch.object(llm_client.requests, 'post',
                           return_value=self._post_mock()) as post:
-            try:
-                c.chat("sys", "user", **kwargs)
-            except Exception:
-                pass
+            c.chat("sys", "user", **kwargs)
         return _captured_payload(post)
 
     def test_chat_defaults_to_no_reasoning(self):

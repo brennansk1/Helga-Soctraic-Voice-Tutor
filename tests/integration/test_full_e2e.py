@@ -22,12 +22,41 @@ import os
 
 import pytest
 
-# Mock requests for testing
 from unittest.mock import MagicMock, patch
-sys.modules['requests'] = MagicMock()
-requests = sys.modules['requests']
-requests.post.return_value.status_code = 200
-requests.get.return_value.status_code = 200
+
+# This module used to do `sys.modules['requests'] = MagicMock()` at IMPORT
+# time and never restore it. That is process-global: every test collected
+# afterwards in the same session got a MagicMock in place of `requests`,
+# corrupting their response parsing and masking real failures. It cost real
+# debugging time — a genuine regression test appeared to fail for unrelated
+# reasons purely because of collection order.
+#
+# The mock is now installed per-module by an autouse fixture and removed
+# afterwards, so the blast radius ends with this file.
+_REAL_REQUESTS = requests
+
+
+@pytest.fixture(autouse=True)
+def _mock_requests_module():
+    """Swap in a mocked `requests` for this module only, then restore."""
+    mock = MagicMock()
+    mock.post.return_value.status_code = 200
+    mock.get.return_value.status_code = 200
+    # Preserve the real exception classes: `except requests.exceptions.X`
+    # needs actual exception types, not MagicMock attributes.
+    mock.exceptions = _REAL_REQUESTS.exceptions
+
+    saved = sys.modules.get('requests')
+    sys.modules['requests'] = mock
+    globals()['requests'] = mock
+    try:
+        yield mock
+    finally:
+        if saved is not None:
+            sys.modules['requests'] = saved
+        else:
+            sys.modules.pop('requests', None)
+        globals()['requests'] = _REAL_REQUESTS
 
 # Configuration
 DEV_MODE = os.getenv('DEV_MODE', 'False').lower() == 'true'

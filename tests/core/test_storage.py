@@ -10,7 +10,7 @@ from datetime import date, timedelta
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 
-from services.common.storage import StorageManager, DEFAULT_STUDENT_ID
+from services.common.storage import utc_today, StorageManager, DEFAULT_STUDENT_ID
 
 
 @pytest.fixture
@@ -140,6 +140,10 @@ class TestProgressStore:
 
 
 class TestActivityStreak:
+    # Anchored on UTC, not local: get_streak compares against
+    # DATE(created_at), which SQLite evaluates in UTC. Using date.today()
+    # here made these tests fail for the hours between UTC midnight and
+    # local midnight — the same mismatch that was breaking real streaks.
     @staticmethod
     def _add_activity_on(storage, day):
         conn = storage.activity._get_db()
@@ -154,28 +158,28 @@ class TestActivityStreak:
         assert storage.activity.get_streak() == 0
 
     def test_today_only(self, storage):
-        self._add_activity_on(storage, date.today())
+        self._add_activity_on(storage, utc_today())
         assert storage.activity.get_streak() == 1
 
     def test_consecutive_days(self, storage):
         for d in range(3):
-            self._add_activity_on(storage, date.today() - timedelta(days=d))
+            self._add_activity_on(storage, utc_today() - timedelta(days=d))
         assert storage.activity.get_streak() == 3
 
     def test_yesterday_only_today_not_logged(self, storage):
-        self._add_activity_on(storage, date.today() - timedelta(days=1))
+        self._add_activity_on(storage, utc_today() - timedelta(days=1))
         assert storage.activity.get_streak() == 1
 
     def test_gap_breaks_streak(self, storage):
         # Today + 2-days-ago, but NOT yesterday -> streak is 1, not 2.
         # (The old logic over-counted across the gap and returned 2.)
-        self._add_activity_on(storage, date.today())
-        self._add_activity_on(storage, date.today() - timedelta(days=2))
+        self._add_activity_on(storage, utc_today())
+        self._add_activity_on(storage, utc_today() - timedelta(days=2))
         assert storage.activity.get_streak() == 1
 
     def test_stale_activity_zero(self, storage):
         # Most recent activity is older than yesterday -> streak broken.
-        self._add_activity_on(storage, date.today() - timedelta(days=3))
+        self._add_activity_on(storage, utc_today() - timedelta(days=3))
         assert storage.activity.get_streak() == 0
 
 

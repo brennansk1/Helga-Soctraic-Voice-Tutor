@@ -15,7 +15,20 @@ import logging
 import uuid
 import shutil
 import threading
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
+
+
+def utc_today() -> date:
+    """Today's date in UTC.
+
+    Use this — NOT date.today() — whenever comparing against a column written
+    by SQLite's CURRENT_TIMESTAMP / datetime('now'), both of which are UTC.
+    Mixing a UTC-stored day with a local Python day silently breaks for the
+    window between UTC midnight and local midnight (6 hours a day in MDT, more
+    elsewhere). That bug made get_streak() return 0 for active users every
+    evening; see its comment for the observed reproduction.
+    """
+    return datetime.now(timezone.utc).date()
 from typing import Callable, List, Dict, Optional, Any
 
 logger = logging.getLogger(__name__)
@@ -1583,7 +1596,10 @@ class ActivityStore:
 
     def get_daily_summary(self, target_date: str = None, student_id: str = None) -> dict:
         if not target_date:
-            target_date = date.today().isoformat()
+            # Matches DATE(created_at) below, which SQLite evaluates in UTC.
+            # See utc_today() — a local date here loses or double-counts the
+            # activity logged between UTC midnight and local midnight.
+            target_date = utc_today().isoformat()
         conn = self._get_db()
         rows = conn.execute(
             "SELECT activity_type, COUNT(*) as cnt, SUM(duration_seconds) as total_time "
@@ -1609,7 +1625,14 @@ class ActivityStore:
         days = [date.fromisoformat(r["day"]) for r in rows if r["day"]]
         if not days:
             return 0
-        today = date.today()
+        # created_at defaults to SQLite CURRENT_TIMESTAMP, which is UTC, so the
+        # anchor must be UTC too. Comparing UTC-stored days against a LOCAL
+        # date.today() silently broke every user's streak for the window
+        # between UTC midnight and local midnight — 6 hours a day in MDT, and
+        # up to 12+ in other zones. Verified: at 18:06 MDT SQLite reports
+        # 2026-08-03 while date.today() reports 2026-08-02, so the most recent
+        # activity looked like it was in the future and the streak returned 0.
+        today = utc_today()
         if days[0] == today:
             anchor = today
         elif days[0] == today - timedelta(days=1):
