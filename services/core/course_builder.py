@@ -2519,7 +2519,8 @@ class ContentHydrator:
         may keep claiming this level.
         """
         ok, problems, detail = validate_concept(
-            structured_md, self.mastery_level, course_title, self.topic_domain)
+            structured_md, self.mastery_level, course_title, self.topic_domain,
+            sources=research_sources)
         if ok:
             return structured_md, {"ok": True, "problems": [], **detail}
 
@@ -2552,7 +2553,8 @@ class ContentHydrator:
             if not candidate or "[Hydration failed]" in candidate:
                 break
             c_ok, c_problems, c_detail = validate_concept(
-                candidate, self.mastery_level, course_title, self.topic_domain)
+                candidate, self.mastery_level, course_title, self.topic_domain,
+                sources=research_sources)
             if c_ok:
                 logger.info(f"  [DEPTH] '{title}' met contract on retry {attempt + 1}")
                 return candidate, {"ok": True, "problems": [], **c_detail}
@@ -2724,7 +2726,11 @@ Grade 3 requires: [Write one sentence describing the specific threshold for THIS
 [3-5 bullet points of verified facts. Use the KEY FACTS input if available, otherwise use your knowledge.]
 
 ## Real-World Examples
-[1-2 concrete examples with specific names/dates/places. Use EXAMPLES input if available.]
+[ONE WORKED example, carried through to a result — not a description of where
+this gets used. State concrete values and show the steps: "Step 1: let a = 3,
+b = 4. Step 2: we compute a² + b² = 9 + 16 = 25. Step 3: c = 5." Naming a field
+where the idea applies is NOT a worked example and will be rejected. Then, if
+useful, one short real-world context sentence.]
 
 ## Misconceptions
 - **Belief**: [A common misconception about this concept]
