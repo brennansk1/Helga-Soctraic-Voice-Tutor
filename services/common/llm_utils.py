@@ -365,10 +365,22 @@ def llm_generate_json(
       3. retry, escalating to constrained JSON mode if the first attempt failed
     """
     for attempt in range(retries):
-        # Ask for constrained output. If a schema was supplied use it; failing
-        # that, escalate to generic JSON mode after the first parse failure
-        # rather than re-rolling the same unconstrained prompt.
-        fmt = schema if schema else ("json" if attempt > 0 else None)
+        # Constrain ONLY with a caller-supplied schema.
+        #
+        # An earlier version escalated to Ollama's generic `format:"json"` on
+        # retry. That is actively harmful: generic JSON mode does not just make
+        # the output parseable, it changes the SHAPE the model chooses. Measured
+        # on the module-generation prompt:
+        #     no format   -> [{"title":"...","level":1}]                (208 ch)
+        #     format=json -> [{"module_1":{"title":...,"content":[...]}}] (1630 ch)
+        # Both are valid JSON; only the first matches what the builder consumes.
+        # It broke course creation outright — "LLM consistently failed to
+        # generate 3 modules after 3 attempts".
+        #
+        # A schema constrains shape as well as syntax, so it is safe. Generic
+        # JSON mode is not, and repair_json() already covers plain syntax
+        # errors on the unconstrained path.
+        fmt = schema if schema else None
         raw = llm_generate(
             prompt,
             sys_prompt=sys_prompt,

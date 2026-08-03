@@ -11,7 +11,7 @@ Defence in depth, strongest first:
   1. grammar-constrained decoding (Ollama `format`) so invalid JSON cannot be
      generated -- see llm_generate(json_format=...)
   2. repair_json() for unconstrained output
-  3. retry, escalating to constrained JSON mode
+  3. retry (NEVER escalating to generic JSON mode -- it changes output SHAPE)
 """
 
 import os
@@ -106,13 +106,23 @@ class TestConstrainedDecodingIsWired(unittest.TestCase):
                       "llm_generate_json must constrain generation, not only "
                       "validate afterwards")
 
-    def test_retry_escalates_to_constrained_mode(self):
+    def test_never_escalates_to_generic_json_mode(self):
+        """Generic format:"json" changes the output SHAPE, not just its syntax.
+
+        Measured on the real module-generation prompt:
+            no format   -> [{"title":"...","level":1}]                 (208 ch)
+            format=json -> [{"module_1":{"title":...,"content":[...]}}] (1630 ch)
+        Both valid JSON; only the first is what the builder consumes. Escalating
+        to generic JSON mode broke course creation outright. A schema is safe
+        because it constrains shape; generic JSON mode is not.
+        """
         import inspect
         from services.common import llm_utils
         src = inspect.getsource(llm_utils.llm_generate_json)
-        self.assertIn('"json"', src,
-                      "a failed parse should retry in JSON mode rather than "
-                      "re-rolling the same unconstrained prompt")
+        code = "\n".join(l for l in src.splitlines()
+                         if not l.strip().startswith("#"))
+        self.assertNotIn('"json"', code,
+                         "must not fall back to generic JSON mode")
 
 
 if __name__ == '__main__':
