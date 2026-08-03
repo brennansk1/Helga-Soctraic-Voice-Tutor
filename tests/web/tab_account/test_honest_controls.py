@@ -96,5 +96,31 @@ class TestNoVestigialToggleEvents(unittest.TestCase):
         )
 
 
+
+
+class TestNoFeatureReachableOnlyByUrl(unittest.TestCase):
+    """An advertised feature with no way in is a broken promise.
+
+    Memory Palace shipped this way twice: first the route redirected to home
+    while the FSM kept the full MEMORY_PALACE state, then the page was restored
+    but never linked, so it was reachable only by typing the URL. A5's gate
+    forbids a recurrence, so it is asserted rather than remembered.
+    """
+
+    ADVERTISED_PAGES = ['/courses', '/learn', '/review', '/schedule', '/palace']
+
+    def test_every_advertised_page_is_linked_from_the_nav(self):
+        html = app.test_client().get('/').data.decode()
+        nav = html.split('app-nav', 1)[-1].split('</nav>', 1)[0]
+        for path in self.ADVERTISED_PAGES:
+            self.assertIn(f'href="{path}"', nav,
+                          f"{path} is advertised but not reachable from the nav")
+
+    def test_advertised_pages_actually_render(self):
+        for path in self.ADVERTISED_PAGES:
+            rv = app.test_client().get(path)
+            self.assertIn(rv.status_code, (200, 302),
+                          f"{path} is linked but returns {rv.status_code}")
+
 if __name__ == '__main__':
     unittest.main()

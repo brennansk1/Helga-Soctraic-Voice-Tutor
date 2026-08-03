@@ -386,12 +386,96 @@ Three of the seven done-criteria fail because a feature exists in the backend wi
 - *Gate:* HelgaBench personalization score up materially vs A0 baseline; no regression in grading
   accuracy; tool-call failure rate below an agreed threshold.
 
-**A5 — UX polish & the learn loop**
-- Reconcile the April orphaned UI work (`wip/april-2026-orphaned-work`: `learn-chat.css` 1138 lines,
-  `progress-tree.js`, avatars) — cherry-pick what's still wanted onto the current trunk.
-- Learn-tab path visualization, session continuity, transcript persistence across restarts.
-- Accessibility pass.
-- *Gate:* e2e suite green on a live stack; accessibility pass; no dead UI or orphaned handlers.
+**A5 — UX restructure & redesign** *(not polish — an information-architecture change)*
+
+> **Sequencing warning, stated up front.** This sprint optimises RETENTION. The tutor
+> currently scores **1.6/5 on misconception handling**. Adding a progress dashboard to a
+> product whose tutor accepts fluent nonsense optimises the wrong thing. A5 runs **after
+> A4**, or we accept explicitly that we are trading quality work for engagement work.
+
+### A5.1 — The information architecture problem
+
+Personal mode has **eight top-level tabs**, and the count is not the real issue — the
+grouping is:
+
+- **Quiz, Review and Schedule are the same activity** at three different moments
+  (on-demand, due-now, calendar). A learner must understand our FSRS model to choose
+  correctly between three tabs that all mean "test me".
+- **Status is an operator tool**, not a learner tool. On a single-user appliance it is a
+  Settings panel.
+- **Memory Palace** — one of three ADVERTISED learning modes — was reachable only by
+  typing the URL. It operates on the same course as Learn and belongs inside it.
+- **Two things a competitor has and we do not** have no home at all (A5.2).
+
+Target shape, **six tabs, net zero added**:
+
+```
+Home · Courses · Learn · Progress · Practice · Settings
+```
+
+| Change | Rationale |
+|---|---|
+| Quiz + Review + Schedule → **Practice** | one surface, three states (due / on-demand / upcoming) |
+| Status → inside Settings | operator tool, not a learner tool |
+| Palace → a **mode inside Learn** | same course, same path; not a separate destination |
+| **+ Progress** | see A5.2 |
+| **+ Ask** as a persistent affordance, not a tab | see A5.2 |
+
+### A5.2 — The two missing surfaces (competitive gap)
+
+Against alternatives — Duolingo (fixed courses), Anki (no generation), ChatGPT (no
+structure or retention), NotebookLM (documents but no path or SRS), Coursera (fixed, cloud)
+— Helga's unique claim is *a rigor-verified course on any topic, offline, grounded, with
+spaced repetition*. **"Verified" and "grounded" are things no competitor attempts, and
+neither is currently visible to the learner.**
+
+**PROGRESS / MASTERY — the highest-value missing surface, and nearly free.**
+Every field it needs is already stored and unsurfaced: `user_progress` carries `status`,
+`grade`, `bloom_level`, `times_reviewed`, `times_correct`, `easiness_factor`,
+`interval_days`, `next_review_date`, plus `activity_log`, `flashcards` and
+`scheduled_reviews`. Today a learner cannot answer *"what do I actually know?"* Visible
+progress — not content — is what brings people back; it is Duolingo's entire retention
+model and we already have the data.
+Must show: mastery per concept, Bloom level reached, FSRS decay/due state, and **gaps**.
+
+**ASK — what makes it a tutor rather than a textbook.**
+Socratic dialogue exists ONLY inside a concept node; there is no free-chat endpoint at
+all. A learner cannot ask a question spanning their courses. That is the single largest
+gap versus simply using a chatbot, and the FSM already does the hard part — it needs an
+entry point that is not a lesson.
+
+**TRUST SURFACE (inside Learn, not a tab).**
+We now record citations, `source_confidence` and `level_verified` per course, and we
+demonstrated that generated content *can* contain confidently-stated false claims. Showing
+a learner what a lesson rests on — and marking thin sourcing — is a differentiator nobody
+else ships. It belongs beside the concept, not in its own destination.
+
+**Explicitly NOT in scope:** a notes/journal feature. Real demand, but nothing exists and
+it is scope creep against a product with four unverified done-criteria.
+
+### A5.3 — Visual redesign
+- One design system: spacing, type scale, colour roles, focus states. Today each template
+  carries its own inline `<style>` block.
+- Light/dark parity — verify both, do not assume.
+- The **learn path** is the product's signature screen and should look like it: node
+  states (locked / current / done / needs-review) legible at a glance, mobile-first.
+- Reconcile the April orphaned UI work (`wip/april-2026-orphaned-work`: `learn-chat.css`
+  1138 lines, `progress-tree.js`, avatars) — cherry-pick what survives into the new system
+  rather than porting it wholesale.
+
+### A5.4 — Learn-loop correctness
+Session continuity, transcript persistence across restarts, path re-render after a concept
+completes, no dead handlers.
+
+### Gate
+- Six tabs; **no advertised feature reachable only by URL** (the Palace failure must not
+  recur — assert it in a test);
+- Progress answers "what do I know / what is due / where are my gaps" without a page reload;
+- Ask reachable from anywhere and answers across courses;
+- every concept view shows its sources and confidence;
+- e2e green on a live stack; accessibility pass (keyboard, contrast, focus order);
+- light and dark both verified;
+- no orphaned CSS or handlers left from the restructure.
 
 ### Arc III — Make it last (A6–A7)
 

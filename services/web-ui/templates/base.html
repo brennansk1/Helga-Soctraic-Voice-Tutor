@@ -179,6 +179,14 @@
                     request.path=='/review' %}aria-current="page" {% endif %}>Review</a>
                 <a href="/schedule" class="nav-link {% if request.path == '/schedule' %}active{% endif %}" {% if
                     request.path=='/schedule' %}aria-current="page" {% endif %}>Schedule</a>
+                {# Memory Palace is one of three ADVERTISED learning modes. The page
+                   was restored but never linked, so it was reachable only by typing
+                   the URL — an advertised feature with no way in, which is the same
+                   half-present defect in a new form. A5 relocates it to a mode
+                   inside Learn (it operates on the same course); this link exists so
+                   the promise is not broken in the meantime. #}
+                <a href="/palace" class="nav-link {% if request.path == '/palace' %}active{% endif %}" {% if
+                    request.path=='/palace' %}aria-current="page" {% endif %}>Palace</a>
                 <a href="/status" class="nav-link {% if request.path == '/status' %}active{% endif %}" {% if
                     request.path=='/status' %}aria-current="page" {% endif %}>Status</a>
                 <a href="/settings" class="settings-btn" title="Settings" aria-label="Open settings">⚙️</a>
