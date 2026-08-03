@@ -1750,6 +1750,9 @@ class ContentHydrator:
         self.fact_check_enabled = os.getenv(
             "HELGA_FACT_CHECK", "1").lower() not in ("0", "false", "no")
         self._fact_failures = []
+        # Gate criterion 2. Costs one LLM call per sampled concept.
+        self.level_calibration_enabled = os.getenv(
+            "HELGA_LEVEL_CALIBRATION", "1").lower() not in ("0", "false", "no")
 
         if storage:
             self.storage = storage
@@ -2213,6 +2216,36 @@ class ContentHydrator:
                 if self.status_callback:
                     self.status_callback(
                         f"STRUCT:WARN:FACT_SUMMARY:{bad}/{total_concepts}")
+
+        # Gate criterion 2: does the course READ at the level it claims?
+        # The depth contract checks markers, the fact-checker checks truth;
+        # neither asks whether the material is actually pitched where it was
+        # sold. Judged blind — level hints are stripped first.
+        if total_concepts > 0 and self.level_calibration_enabled:
+            try:
+                from services.common.level_calibration import calibrate
+                bodies = []
+                for c in concept_list:
+                    try:
+                        b = self.storage.courses.get_concept_content(
+                            course_uid, c[0] if isinstance(c, (list, tuple)) else c)
+                        if b:
+                            bodies.append(b)
+                    except Exception:
+                        continue
+                verdict = calibrate(bodies, self.mastery_level)
+                if verdict:
+                    course["level_calibration"] = verdict
+                    if not verdict["calibrated"]:
+                        logger.warning(
+                            f"[LEVEL] course reads at {verdict['judged']} but "
+                            f"claims {verdict['claimed']} "
+                            f"(gap {verdict['gap']:+})")
+                        if self.status_callback:
+                            self.status_callback(
+                                f"STRUCT:WARN:LEVEL_GAP:{verdict['gap']:+}")
+            except Exception as e:
+                logger.warning(f"level calibration failed: {e}")
 
         # A2: course-level grounding verdict, so thin sourcing is visible at a
         # glance instead of only per-concept.
