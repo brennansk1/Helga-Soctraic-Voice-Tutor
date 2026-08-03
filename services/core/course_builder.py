@@ -2774,8 +2774,24 @@ Generate ONLY the sections below. Do NOT generate Metadata, Learning Objectives,
                     max_tokens=2500,
                     progress_callback=self.status_callback,
                 )
-                if llm_output and ("## Mastery Criteria" in llm_output or "## Core" in llm_output):
-                    # Prepend static header to LLM-generated sections
+                # Accept any substantive response and let the validator repair
+                # gaps, rather than discarding it wholesale.
+                #
+                # This previously required the literal "## Mastery Criteria" or
+                # "## Core" and threw everything else away — silently, with no
+                # log line. Two of nine concepts in a real run produced usable
+                # prose that simply lacked those exact headings and were
+                # replaced by a 154-word stub, which was then the ONLY thing
+                # failing the quality gate. _validate_markdown_structure already
+                # injects missing sections, so throwing the draft away discarded
+                # work the repair path was built to handle.
+                if llm_output and len(llm_output.split()) >= 40:
+                    if not ("## Mastery Criteria" in llm_output
+                            or "## Core" in llm_output):
+                        logger.warning(
+                            f"  [MARKDOWN] {title}: response lacked expected "
+                            f"headings; repairing rather than discarding "
+                            f"({len(llm_output.split())} words)")
                     full_md = static_header + "\n" + llm_output
                     return self._validate_markdown_structure(
                         full_md,
@@ -2786,6 +2802,9 @@ Generate ONLY the sections below. Do NOT generate Metadata, Learning Objectives,
                         raw_text,
                         context_path,
                     )
+                logger.warning(
+                    f"  [MARKDOWN] {title} (att {attempt + 1}): unusable output "
+                    f"({len((llm_output or '').split())} words)")
             except Exception as e:
                 logger.warning(f"  [MARKDOWN] Failed {title} (att {attempt + 1}): {e}")
 
