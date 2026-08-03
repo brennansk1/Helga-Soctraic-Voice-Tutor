@@ -2766,7 +2766,12 @@ class MnemosyneFSM:
                 course_uid=self.active_course_uid,
                 activity_type="palace_anchor",
             )
-            for act in reversed(activities):
+            # get_activities is newest-first, so take the FIRST match. This
+            # iterated reversed(activities) and so spoke the oldest anchor ever
+            # placed here — the learner heard their discarded first image back,
+            # not the one they replaced it with. Same defect as librarian's
+            # _get_anchor_for_locus; both halves of the palace had it.
+            for act in activities:
                 details = act.get("details", {})
                 if isinstance(details, str):
                     import json as _json

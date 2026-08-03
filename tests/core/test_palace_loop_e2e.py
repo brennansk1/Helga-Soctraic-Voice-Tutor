@@ -217,5 +217,36 @@ class TestAnchoringRoundTrip(PalaceLoopCase):
                             for d in details))
 
 
+class TestBothAnchorLookupsAgree(unittest.TestCase):
+    """The palace has TWO anchor lookups — librarian's for the web page and the
+    FSM's `inspect_anchor` for the spoken mode — and both had the same defect:
+    iterating reversed() over a newest-first list, which returns the OLDEST
+    anchor. Fixing one and leaving the other would mean the page and the voice
+    disagree about what you placed.
+    """
+
+    def _source(self, path):
+        with open(os.path.join(_root, path)) as f:
+            return f.read()
+
+    def test_neither_lookup_iterates_reversed_activities(self):
+        for path, fn in (("services/rag/librarian.py", "_get_anchor_for_locus"),
+                         ("services/core/fsm_logic.py", "inspect_anchor")):
+            src = self._source(path)
+            body = src[src.index(f"def {fn}"):][:2000]
+            self.assertNotIn(
+                "for act in reversed(activities)", body,
+                f"{path}:{fn} is back to returning the oldest anchor; "
+                f"get_activities() is newest-first"
+            )
+
+    def test_both_take_the_first_match(self):
+        for path, fn in (("services/rag/librarian.py", "_get_anchor_for_locus"),
+                         ("services/core/fsm_logic.py", "inspect_anchor")):
+            src = self._source(path)
+            body = src[src.index(f"def {fn}"):][:2000]
+            self.assertIn("for act in activities:", body)
+
+
 if __name__ == "__main__":
     unittest.main()
