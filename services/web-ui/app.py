@@ -1366,6 +1366,24 @@ def health_all():
 
 
 # --- VG-01: Proxy /api/create_course to core-logic ---
+@app.route('/api/course_presets', methods=['GET'])
+def course_presets():
+    """Named starting points for course creation.
+
+    Served from the SAME definitions the builder uses, so the UI cannot drift
+    from what actually gets enforced — the `requires` list is the depth
+    contract for that mastery level, not marketing copy.
+    """
+    try:
+        from services.core.course_builder import list_presets
+        return jsonify({"presets": list_presets()}), 200
+    except Exception as e:
+        logger.error(f"preset listing failed: {e}")
+        # Empty rather than invented: a fabricated preset would promise a level
+        # nothing enforces.
+        return jsonify({"presets": [], "error": str(e)}), 200
+
+
 @app.route('/api/create_course', methods=['POST'])
 def proxy_create_course():
     try:

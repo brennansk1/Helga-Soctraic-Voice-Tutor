@@ -172,9 +172,45 @@ def evaluate_course(uid):
             "monotonic_nondecreasing": blooms == sorted(blooms) if blooms else None,
             "span": bloom_span,
         },
-        # A1: the builder's own verdict on whether the course met the level it
-        # claims. Absent on courses built before enforcement existed.
-        "depth_contract": s.get("depth_contract"),
+        # A1: the depth verdict. RECOMPUTED from the content against the
+        # CURRENT contract rather than trusting the value recorded at build
+        # time — a stored verdict goes stale the moment the contract changes,
+        # and reporting a stale number as today's quality is exactly the kind
+        # of dishonest artifact this harness exists to catch. The builder's
+        # own recorded verdict is kept alongside for comparison.
+        "depth_contract": _recompute_depth(cdir, s),
+        "depth_contract_recorded": s.get("depth_contract"),
+    }
+
+
+def _recompute_depth(cdir, structure):
+    """Score the course's content against the CURRENT depth contract."""
+    try:
+        sys.path.insert(0, _ROOT)
+        from services.core.depth_contract import validate_course
+    except Exception:
+        return structure.get("depth_contract")
+    mastery = structure.get("mastery")
+    if not mastery:
+        return structure.get("depth_contract")
+    pairs = []
+    cdir_content = os.path.join(cdir, "content")
+    if not os.path.isdir(cdir_content):
+        return structure.get("depth_contract")
+    for fn in sorted(os.listdir(cdir_content)):
+        if fn.endswith(".md"):
+            with open(os.path.join(cdir_content, fn)) as f:
+                pairs.append((fn[:-3], f.read()))
+    if not pairs:
+        return structure.get("depth_contract")
+    r = validate_course(pairs, mastery, structure.get("title") or "")
+    return {
+        "mastery": mastery,
+        "concepts_total": r["total"],
+        "concepts_missing_contract": r["failing"],
+        "met_pct": r["pass_rate"],
+        "level_verified": r["pass_rate"] >= 80.0,
+        "source": "recomputed",
     }
 
 

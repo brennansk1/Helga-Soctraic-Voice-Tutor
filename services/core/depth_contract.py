@@ -117,41 +117,46 @@ def _has(element, body):
 # that contains no notation, no derivation and no primary source is not
 # expert-level material no matter how long it is.
 
-# CALIBRATION NOTE — the bands must be ACHIEVABLE given the fixed template.
+# CALIBRATION NOTE — length is a WEAK discriminator here; elements are the real one.
 #
-# The original low-level bands were set in the abstract and were arithmetically
-# impossible: a concept document has NINE mandatory sections (Mastery Criteria,
-# Core Explanation, Key Facts, Real-World Examples, Misconceptions, Edge Cases,
-# Socratic Hooks, Analogies, plus headers). At even 60 words each that is ~540,
-# against a mastery-2 maximum of 550. A measured run came in at 641-802 words
-# for 9 of 12 concepts and was marked "too long" — the contract, not the
-# content, was wrong.
+# Measured, over three full builds: a concept document has NINE mandatory
+# sections, so its length is dominated by template overhead rather than by the
+# requested level. The observed natural distribution at mastery 2 was
+# 698-1242 words. Any max drawn through the middle of that fails roughly half
+# the course for no pedagogical reason — an early 550 cap failed 9 of 12, and a
+# later 850 cap still failed 4 of 12, purely on length.
 #
-# Upper bounds now reflect the template's floor plus real headroom. The band
-# still DISCRIMINATES between levels (that is its job); it just no longer fails
-# every document for being a document.
+# So the bands are deliberately WIDE and overlapping. They exist to catch
+# genuine outliers — a 120-word stub, or a padded essay — not to encode the
+# level. THE REQUIRED ELEMENTS DO THAT: a level-5 concept must show notation, a
+# derivation, an exercise and primary literature; a level-1 concept need only be
+# grounded. That was the design argument from the start ("length is the wrong
+# proxy"), and enforcing level via word count contradicted it.
+#
+# If length is ever to discriminate again, the fix is a leaner template at low
+# levels, not a tighter cap on a nine-section document.
 DEPTH_CONTRACTS = {
     1: {
         "label": "Awareness",
-        "word_min": 120, "word_max": 700,
+        "word_min": 120, "word_max": 1000,
         "required": ["any_source"],
         "forbidden": [],
     },
     2: {
         "label": "Understanding",
-        "word_min": 200, "word_max": 850,
+        "word_min": 200, "word_max": 1300,
         "required": ["worked_example", "any_source"],
         "forbidden": [],
     },
     3: {
         "label": "Application",
-        "word_min": 320, "word_max": 1000,
+        "word_min": 320, "word_max": 1500,
         "required": ["formal_definition", "worked_example", "any_source"],
         "forbidden": [],
     },
     4: {
         "label": "Proficiency",
-        "word_min": 500, "word_max": 1100,
+        "word_min": 500, "word_max": 1800,
         "required": [
             "formal_definition", "worked_example", "named_result",
             "derivation_or_proof", "primary_source",
@@ -160,14 +165,32 @@ DEPTH_CONTRACTS = {
     },
     5: {
         "label": "Expertise",
-        "word_min": 700, "word_max": 1600,
+        "word_min": 700, "word_max": 2200,
         "required": [
-            "formal_definition", "formal_notation", "named_result",
-            "derivation_or_proof", "exercise", "primary_source",
+            # worked_example is retained from level 4 — see the monotonicity
+            # note below. An earlier version dropped it here, which meant
+            # "Expertise" could legitimately omit something "Proficiency"
+            # required. A higher level meaning less rigorous in some dimension
+            # is incoherent, and it was caught by a preset test asserting that
+            # College-and-above demand real rigor.
+            "formal_definition", "worked_example", "formal_notation",
+            "named_result", "derivation_or_proof", "exercise",
+            "primary_source",
         ],
         "forbidden": [],
     },
 }
+
+# INVARIANT: requirements are MONOTONIC — level N+1 requires everything level N
+# does, plus more. Without this, "advance the slider" can silently relax a
+# requirement, and the level names stop meaning anything. Enforced by
+# tests/core/test_depth_contract.py and tests/core/test_presets.py.
+for _lvl in sorted(DEPTH_CONTRACTS)[1:]:
+    _lower = set(DEPTH_CONTRACTS[_lvl - 1]["required"])
+    _here = DEPTH_CONTRACTS[_lvl]["required"]
+    for _missing in _lower - set(_here):
+        _here.append(_missing)
+del _lvl, _lower, _here
 
 # Domains where symbolic notation is not a meaningful rigor signal. Requiring
 # equations in a history course would push the generator to fake them, which is

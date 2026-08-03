@@ -180,6 +180,24 @@ function submitImport() {
     overflow:hidden; margin-top:.9rem; }
 #import-bar-fill { height:100%; width:0; background:var(--accent,#6c8cff);
     transition:width .2s ease; }
+/* Course-creation presets */
+.preset-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr));
+    gap:.5rem; margin-top:.4rem; }
+.preset-card { display:flex; flex-direction:column; gap:.15rem; text-align:left;
+    padding:.55rem .7rem; border-radius:10px; cursor:pointer; font:inherit;
+    background:var(--card-bg,rgba(127,127,127,.08));
+    border:1px solid var(--border-color,rgba(127,127,127,.25)); color:inherit;
+    transition:border-color .15s ease, background .15s ease; }
+.preset-card:hover { border-color:var(--accent,#6c8cff); }
+.preset-card.selected { border-color:var(--accent,#6c8cff);
+    background:color-mix(in srgb, var(--accent,#6c8cff) 12%, transparent); }
+.preset-name { font-weight:600; font-size:.9rem; }
+.preset-cost { font-size:.75rem; opacity:.7; }
+.preset-loading { font-size:.85rem; opacity:.6; }
+.preset-detail { margin-top:.6rem; font-size:.87rem; line-height:1.5;
+    padding:.6rem .75rem; border-radius:8px;
+    background:var(--card-bg,rgba(127,127,127,.06)); }
+.preset-meta { opacity:.75; }
 </style>
 
     <div id="courses-grid" class="course-card-grid">
@@ -222,6 +240,17 @@ function submitImport() {
                 <input type="text" id="qc-topic" placeholder="e.g. Classical Mechanics, Machine Learning..." autofocus>
                 <small id="qc-topic-error" style="color: var(--status-error); display: none;"></small>
             </div>
+            <!-- Presets. These SET the sliders rather than hiding them, so
+                 picking one teaches what the dials mean instead of becoming a
+                 second, opaque path to a course. -->
+            <div class="form-group-alpine">
+                <label>Start from a preset <span style="font-weight:var(--font-weight-normal);color:var(--text-secondary)">— or set the dials yourself below</span></label>
+                <div id="qc-presets" class="preset-grid">
+                    <div class="preset-loading">Loading presets…</div>
+                </div>
+                <p id="qc-preset-detail" class="preset-detail" hidden></p>
+            </div>
+
             <div class="form-group-alpine">
                 <label>Scope <span style="font-weight:var(--font-weight-normal);color:var(--text-secondary)">— how much territory</span></label>
                 <div class="depth-slider">
@@ -380,9 +409,82 @@ function submitImport() {
     function wireQcPreview() {
         ['qc-scope', 'qc-mastery', 'qc-start'].forEach(function (id) {
             var el = document.getElementById(id);
-            if (el) el.addEventListener('input', updateQcPreview);
+            if (el) el.addEventListener('input', function () {
+                // Touching a dial clears the preset highlight — the course is
+                // no longer "College Course", it is whatever you just built.
+                clearPresetSelection();
+                updateQcPreview();
+            });
         });
         updateQcPreview();
+        loadPresets();
+    }
+
+    var ELEMENT_LABELS = {
+        any_source: 'a cited source',
+        primary_source: 'primary literature',
+        worked_example: 'a worked example',
+        formal_definition: 'a formal definition',
+        formal_notation: 'mathematical notation',
+        derivation_or_proof: 'a derivation',
+        named_result: 'a named theorem/law',
+        exercise: 'an exercise'
+    };
+
+    function clearPresetSelection() {
+        document.querySelectorAll('#qc-presets .preset-card.selected')
+            .forEach(function (c) { c.classList.remove('selected'); });
+    }
+
+    function applyPreset(p, card) {
+        document.getElementById('qc-scope').value   = p.scope;
+        document.getElementById('qc-mastery').value = p.mastery;
+        document.getElementById('qc-start').value   = p.starting_from;
+        clearPresetSelection();
+        if (card) card.classList.add('selected');
+
+        // State plainly what the level actually guarantees. These are the
+        // depth-contract requirements enforced per concept, not copy — a
+        // course that cannot produce them is marked level_unverified.
+        var reqs = (p.requires || []).map(function (r) {
+            return ELEMENT_LABELS[r] || r.replace(/_/g, ' ');
+        });
+        var mins = p.est_minutes >= 90
+            ? (p.est_minutes / 60).toFixed(1) + ' hours'
+            : p.est_minutes + ' min';
+        var d = document.getElementById('qc-preset-detail');
+        d.innerHTML = '<strong>' + p.label + '</strong> — ' + p.blurb +
+            '<br><span class="preset-meta">~' + p.concepts + ' concepts · ' +
+            'about ' + mins + ' to build · every concept must contain ' +
+            (reqs.length ? reqs.join(', ') : 'a source') + '.</span>';
+        d.hidden = false;
+        updateQcPreview();
+    }
+
+    function loadPresets() {
+        var box = document.getElementById('qc-presets');
+        if (!box) return;
+        fetch('/api/course_presets')
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                var list = (data && data.presets) || [];
+                if (!list.length) { box.innerHTML = ''; return; }
+                box.innerHTML = '';
+                list.forEach(function (p) {
+                    var card = document.createElement('button');
+                    card.type = 'button';
+                    card.className = 'preset-card';
+                    var mins = p.est_minutes >= 90
+                        ? (p.est_minutes / 60).toFixed(1) + 'h'
+                        : p.est_minutes + 'm';
+                    card.innerHTML = '<span class="preset-name">' + p.label +
+                        '</span><span class="preset-cost">' + p.concepts +
+                        ' concepts · ~' + mins + '</span>';
+                    card.addEventListener('click', function () { applyPreset(p, card); });
+                    box.appendChild(card);
+                });
+            })
+            .catch(function () { box.innerHTML = ''; });
     }
 
     if (document.readyState === 'loading') {

@@ -216,6 +216,110 @@ def progressive_bloom(index: int, total: int, floor: int, ceiling: int) -> int:
     return max(floor, min(ceiling, floor + round(progress * (ceiling - floor))))
 
 
+# --- Presets -----------------------------------------------------------------
+# Named starting points so a learner picks a recognisable KIND of course
+# instead of reasoning about three abstract 1-5 dials. Each is just a
+# (scope, mastery, starting_from) triple — nothing here is a new mechanism, so
+# a preset and a hand-tuned course go through exactly the same pipeline and the
+# same quality gate.
+#
+# `minutes` is a MEASURED estimate, not a guess: full-pipeline builds on this
+# hardware (Ollama + qwen3.5:9b, depth contract + fact-check + calibration
+# enabled) ran ~2 minutes per concept. It is surfaced because the difference
+# between presets is 20 minutes and 3+ hours, and a learner should not discover
+# that by waiting.
+
+_MINUTES_PER_CONCEPT = 2.0
+
+COURSE_PRESETS = {
+    "overview": {
+        "label": "Quick Overview",
+        "blurb": "The shape of the subject in an evening. Plain language, no prerequisites.",
+        "scope": 2, "mastery": 1, "starting_from": 1,
+    },
+    "high_school": {
+        "label": "High School",
+        "blurb": "Solid grounding with worked examples. Assumes no background.",
+        "scope": 3, "mastery": 2, "starting_from": 1,
+    },
+    "college": {
+        "label": "College Course",
+        "blurb": "An undergraduate treatment: formal definitions, worked problems, "
+                 "real sources. Assumes you know the field exists.",
+        "scope": 3, "mastery": 3, "starting_from": 2,
+    },
+    "college_advanced": {
+        "label": "Advanced Undergraduate",
+        "blurb": "Upper-division depth — named results, derivations and primary "
+                 "literature. Assumes the basics.",
+        "scope": 3, "mastery": 4, "starting_from": 3,
+    },
+    "graduate": {
+        "label": "Graduate Seminar",
+        "blurb": "Narrow and deep. Formal notation, proofs, exercises, research "
+                 "sources. Expert-to-expert register.",
+        "scope": 2, "mastery": 5, "starting_from": 4,
+    },
+    "survey": {
+        "label": "Full Discipline Survey",
+        "blurb": "Breadth over depth — the whole field, undergraduate level. "
+                 "This is a long build.",
+        "scope": 5, "mastery": 3, "starting_from": 1,
+    },
+    "refresher": {
+        "label": "Refresher",
+        "blurb": "You learned this once. Skips the introductions and restarts at "
+                 "application level.",
+        "scope": 3, "mastery": 3, "starting_from": 4,
+    },
+    "deep_dive": {
+        "label": "Deep Dive",
+        "blurb": "One narrow topic, taken as far as it goes.",
+        "scope": 1, "mastery": 5, "starting_from": 3,
+    },
+}
+
+
+def preset_summary(key):
+    """Resolve a preset to its parameters plus what the learner actually gets.
+
+    Returns None for an unknown key so callers can fall back to explicit
+    sliders rather than silently substituting a default course.
+    """
+    p = COURSE_PRESETS.get(key)
+    if not p:
+        return None
+    params = compute_course_params(p["scope"], p["mastery"], p["starting_from"])
+    concepts = params["total_concepts_approx"]
+    try:
+        from services.core.depth_contract import DEPTH_CONTRACTS
+        required = DEPTH_CONTRACTS.get(p["mastery"], {}).get("required", [])
+    except Exception:
+        required = []
+    return {
+        "key": key,
+        "label": p["label"],
+        "blurb": p["blurb"],
+        "scope": p["scope"],
+        "mastery": p["mastery"],
+        "starting_from": p["starting_from"],
+        "modules": params["modules"],
+        "concepts": concepts,
+        "bloom_floor": params["bloom_floor"],
+        "bloom_ceiling": params["bloom_ceiling"],
+        # What the depth contract will REQUIRE of every concept at this level —
+        # the honest description of what "college" or "graduate" buys you.
+        "requires": required,
+        "est_minutes": int(round(concepts * _MINUTES_PER_CONCEPT)),
+    }
+
+
+def list_presets():
+    """All presets, resolved. Ordered from lightest to heaviest build."""
+    out = [preset_summary(k) for k in COURSE_PRESETS]
+    return sorted([p for p in out if p], key=lambda p: p["est_minutes"])
+
+
 def compute_course_params(scope=2, mastery=2, starting_from=1):
     """Compute course structure parameters from three sliders."""
     s = SCOPE_PROFILES.get(scope, SCOPE_PROFILES[2])
