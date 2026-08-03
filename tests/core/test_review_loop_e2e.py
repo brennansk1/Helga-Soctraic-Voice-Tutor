@@ -343,6 +343,26 @@ class TestConceptSchedulingIsFSRS(_DBCase):
             "the calendar and the engine must not disagree about the date"
         )
 
+    def test_accuracy_is_recorded(self):
+        """times_correct answers "what do I actually know?" and was NEVER
+        written — the only code computing it lived in the SM-2 module, which
+        has zero callers. Any progress surface built on it would have shown a
+        flat zero for every learner."""
+        for rating in (4, 3, 1, 3, 2):
+            st = self._review(rating=rating)
+            self._return_after_the_gap(st)
+        st = self._state()
+        self.assertEqual(st["times_reviewed"], 5)
+        self.assertEqual(st["times_correct"], 3, "ratings 4, 3, 3 count as correct")
+
+    def test_a_wrong_answer_does_not_count_as_correct(self):
+        st = self._review(rating=1)
+        self.assertEqual(st["times_reviewed"], 1)
+        self.assertEqual(st["times_correct"], 0)
+
+    def test_a_correct_first_answer_counts(self):
+        self.assertEqual(self._review(rating=3)["times_correct"], 1)
+
     def test_review_count_increments(self):
         self.assertEqual(self._review()["times_reviewed"], 1)
         st = self._state()

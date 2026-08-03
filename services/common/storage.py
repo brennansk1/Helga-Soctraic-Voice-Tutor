@@ -1853,8 +1853,9 @@ class ScheduleStore:
                     "INSERT INTO user_progress "
                     "(student_id, concept_uid, course_uid, status, grade, "
                     " stability, difficulty, lapses, last_review_date, "
-                    " next_review_date, interval_days, times_reviewed) "
-                    "VALUES (?, ?, ?, 'reviewed', ?, ?, ?, ?, ?, ?, ?, 1) "
+                    " next_review_date, interval_days, times_reviewed, "
+                    " times_correct) "
+                    "VALUES (?, ?, ?, 'reviewed', ?, ?, ?, ?, ?, ?, ?, 1, ?) "
                     "ON CONFLICT(student_id, concept_uid) DO UPDATE SET "
                     "  stability = excluded.stability, "
                     "  difficulty = excluded.difficulty, "
@@ -1864,11 +1865,19 @@ class ScheduleStore:
                     "  next_review_date = excluded.next_review_date, "
                     "  interval_days = excluded.interval_days, "
                     "  times_reviewed = COALESCE(user_progress.times_reviewed, 0) + 1, "
+                    # Accuracy — the field that answers "what do I actually
+                    # know?". It was never written by anything: the only code
+                    # computing it lived in the SM-2 module, which has zero
+                    # callers, so it read 0 forever and any progress surface
+                    # built on it would have shown a flat zero.
+                    "  times_correct = COALESCE(user_progress.times_correct, 0) + ?, "
                     "  updated_at = CURRENT_TIMESTAMP",
                     (sid, concept_uid, course_uid, rating,
                      stability, difficulty, lapses,
                      date.today().isoformat(),
-                     (date.today() + timedelta(days=days)).isoformat(), days)
+                     (date.today() + timedelta(days=days)).isoformat(), days,
+                     1 if rating >= 3 else 0,
+                     1 if rating >= 3 else 0)
                 )
 
             base = date.today()

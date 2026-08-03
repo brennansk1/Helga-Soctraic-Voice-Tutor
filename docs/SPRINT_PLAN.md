@@ -430,10 +430,23 @@ spaced repetition*. **"Verified" and "grounded" are things no competitor attempt
 neither is currently visible to the learner.**
 
 **PROGRESS / MASTERY — the highest-value missing surface, and nearly free.**
-Every field it needs is already stored and unsurfaced: `user_progress` carries `status`,
-`grade`, `bloom_level`, `times_reviewed`, `times_correct`, `easiness_factor`,
-`interval_days`, `next_review_date`, plus `activity_log`, `flashcards` and
-`scheduled_reviews`. Today a learner cannot answer *"what do I actually know?"* Visible
+Most of what it needs is already stored and unsurfaced: `user_progress` carries `status`,
+`grade`, `bloom_level`, `times_reviewed`, `times_correct`, `interval_days`,
+`next_review_date`, `stability`, `difficulty` and `lapses`, plus `activity_log`,
+`flashcards` and `scheduled_reviews`.
+
+> **"Nearly free" was checked, not assumed, and was not free.** Measured 2026-08-03:
+> `times_correct` — accuracy, the literal answer to "what do I know?" — was **never
+> written by anything**; the only code computing it lived in the SM-2 module, which has
+> zero callers. It read 0 forever, so this surface would have shipped a flat zero for
+> every learner. Now written on each graded answer.
+>
+> `easiness_factor` and `repetitions` are **struck from this list**: they are SM-2
+> vestiges, superseded by FSRS `stability`/`difficulty` since schema v10. They should be
+> removed, not populated.
+>
+> The rest only became real on the same day — before it, `get_due_reviews()` always
+> returned empty and `update_progress` wiped every column the caller did not pass. Today a learner cannot answer *"what do I actually know?"* Visible
 progress — not content — is what brings people back; it is Duolingo's entire retention
 model and we already have the data.
 Must show: mastery per concept, Bloom level reached, FSRS decay/due state, and **gaps**.
