@@ -299,12 +299,16 @@ produce college rigor — the contract has to be specified and enforced.
   check on "is this really college level."
 - Fix degenerate structure (7/21 lessons with ≤1 concept — the harness gates on >20%).
 - Fix domain drift (the epidemiology-framing bug in the weakest concept).
-- *Gate:* the golden matrix shows **depth responds to the sliders** — scope=5/mastery=5 produces
-  measurably more and deeper material than scope=2/mastery=2 on the *same topic* (word stdev
-  across levels must rise well above the current 57.7, and required elements must be present at
-  high levels and absent at low). Plus: a blind independent reviewer, shown a generated
+- *Gate:* **§4.10, the course quality gate, passes on every course in the golden matrix** — all
+  six criteria, not a subset. Plus depth must **respond to the sliders**: scope=5/mastery=5
+  produces measurably more and deeper material than scope=2/mastery=2 on the *same topic*
+  (word stdev across levels well above the current 57.7; required elements present at high
+  levels and absent at low). Plus a blind independent reviewer, shown a generated
   college-level course and a real one, cannot dismiss the generated one as obviously not
   college-level.
+- *Precondition:* generate at least one course end-to-end with enforcement ON and measure it.
+  Nothing in this sprint may be called done on the strength of code that has never produced
+  a measured artifact.
 
 **A2 — Make grounding load-bearing** *(re-scoped — citations already exist)*
 - **Make `source_confidence` act.** It is currently computed, displayed, and ignored: 24 of 36
@@ -385,6 +389,79 @@ Two standing rules while parked:
 2. **Curriculum sourcing has long lead time.** It is off the engineering schedule, not off the
    calendar — begin rights/sourcing conversations whenever convenient, since that clock runs
    independently of sprint velocity.
+
+---
+
+## 4.10 THE COURSE QUALITY GATE (hard, non-negotiable)
+
+**Every course Helga generates must be verified to be at the level it claims, before
+the learner ever sees that label.** Not a sample. Not the golden matrix. Every course.
+This gate blocks: a course that fails it may not be presented at its requested level.
+
+### Why one measure is not enough — measured, not assumed
+
+Two instruments disagree about the same course, and the disagreement is the whole point:
+
+| Instrument | Measures | Result on `course_10e8a4de` (claims mastery 4) |
+|---|---|---|
+| `depth_contract.py` | pedagogical apparatus (form) | **0/36 pass** — 0 worked examples, 1 theorem, notation in 2 |
+| `level_audit.py` | topical sophistication (substance), judge blind to claim | **3.83 vs 4.0** — calibrated |
+
+Reconciliation: the content **reads at graduate level but does not function as a graduate
+course**. Correct prerequisites and vocabulary; no derivations, no worked examples, no
+exercises. An encyclopedia at graduate level, not a course at graduate level. A gate using
+either instrument alone would have passed it or failed it for the wrong reason.
+
+Each instrument is also individually defeatable — verified empirically:
+- marker-stuffed nonsense **passes** the depth contract at mastery 5 (1020 words, nothing missing)
+- genuine graduate prose **fails** it (5 elements "missing")
+
+So the gate is a **conjunction**, and no single number may stand in for it.
+
+### The gate
+
+A course may claim level *L* only if ALL of the following hold:
+
+1. **Apparatus** — ≥80% of concepts satisfy the `depth_contract` for *L*
+   (`depth_contract.level_verified`).
+2. **Calibration** — blind `level_audit` judged level is within **1.0** of *L*, judged with
+   level hints stripped, ≥6 concepts × ≥2 repeats. Below *L* − 1 is a hard fail;
+   materially above *L* + 1 is also a fail (inaccessible to the intended learner).
+3. **Substance spot-check** — for a sample of concepts, an independent judge confirms the
+   derivations/worked examples are *correct and non-trivial*, not merely present. This is
+   what stops marker-stuffing from satisfying (1).
+4. **Structure** — <20% degenerate lessons (≤1 concept).
+5. **Grounding** — 100% of concepts carry ≥1 resolvable source; none below the confidence
+   floor without a visible marker.
+6. **Syllabus realism** — for each supported subject, the generated syllabus is compared
+   against a real published university syllabus at that level for topic coverage and
+   sequencing. Divergence must be explainable, not accidental.
+
+### Enforcement, not reporting
+
+- The gate runs **at generation time**, not as an afterthought. `ContentHydrator` already
+  records `depth_contract.level_verified`; that verdict must be joined by the calibration
+  and substance results and stored on the course.
+- **A course failing the gate is not labelled at the requested level.** It is either
+  regenerated, or presented honestly at the level it actually achieved, or marked
+  `level_unverified` in the UI. Silently shipping a course under a level it does not meet
+  is the exact defect this plan exists to remove.
+- The gate is **not** satisfied by passing on the golden matrix. Golden courses detect
+  drift; the per-course gate is what protects an individual learner.
+
+### Noise discipline applies here too
+Both instruments are LLM-judged. Single-run numbers are not evidence (§5). Calibration uses
+repeats and reports dispersion; gaps below ~0.5 are inconclusive and must not be reported
+as a pass or a fail.
+
+### Not yet done (honest status)
+- (1), (4), (5) are implemented and enforced at generation time.
+- (2) exists as `tools/level_audit.py` but is **not yet wired into generation**.
+- (3) and (6) are **not built**. Until they are, the gate is partial and must be described
+  that way — a partially-implemented gate reported as "quality verified" would itself be
+  the dishonest-artifact problem this plan is about.
+- **No course has yet been generated end-to-end with enforcement on and then measured.**
+  That is the first thing A1 must produce.
 
 ---
 
