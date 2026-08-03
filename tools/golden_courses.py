@@ -267,9 +267,16 @@ def cmd_evaluate(args):
     return 0
 
 
-def _build(topic, scope, mastery, starting_from, style=""):
+def _build(topic, scope, mastery, starting_from, style="", hydrate=True):
+    """Build a course skeleton and (by default) hydrate its content.
+
+    Hydration is where the A1 depth contract and A2 grounding actually run, so
+    skipping it produces a course with no content files and nothing to measure
+    — an earlier version of this harness did exactly that and reported a
+    "course" whose 15 concepts were all missing.
+    """
     from services.common.storage import StorageManager
-    from services.core.course_builder import SkeletonBuilder
+    from services.core.course_builder import SkeletonBuilder, ContentHydrator
 
     storage = StorageManager(data_dir=DATA_DIR)
 
@@ -285,7 +292,24 @@ def _build(topic, scope, mastery, starting_from, style=""):
         teaching_style=style,
     )
     t0 = time.time()
-    uid = sb.build(topic)
+    try:
+        uid = sb.build(topic)
+    finally:
+        sb.close()
+    if not uid or not hydrate:
+        return uid, time.time() - t0
+
+    print(f"    [hydrate] starting for {uid} (depth contract enforced)")
+    hy = ContentHydrator(
+        storage=storage,
+        status_callback=status,
+        course_depth=mastery,
+        mastery=mastery,
+    )
+    try:
+        hy.hydrate(uid)
+    finally:
+        hy.close()
     return uid, time.time() - t0
 
 
@@ -293,7 +317,8 @@ def cmd_generate(args):
     print(f"Generating: {args.topic!r} scope={args.scope} mastery={args.mastery} "
           f"start={args.starting_from}")
     uid, secs = _build(args.topic, args.scope, args.mastery,
-                       args.starting_from, args.style)
+                       args.starting_from, args.style,
+                       hydrate=not getattr(args, "no_hydrate", False))
     if not uid:
         print("BUILD FAILED — returned no course uid")
         return 1
@@ -350,6 +375,8 @@ def main():
     ge.add_argument("--mastery", type=int, default=3)
     ge.add_argument("--starting-from", type=int, default=1, dest="starting_from")
     ge.add_argument("--style", default="")
+    ge.add_argument("--no-hydrate", action="store_true",
+                    help="skeleton only; skips the depth contract and grounding")
     ge.set_defaults(func=cmd_generate)
 
     mx = sub.add_parser("matrix", help="build the full comparison matrix")
