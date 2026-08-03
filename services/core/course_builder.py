@@ -1310,7 +1310,7 @@ class SkeletonBuilder:
             units_data = llm_generate_json(
                 units_prompt,
                 sys_prompt=sys_msg,
-                max_tokens=600,
+                max_tokens=1200,
                 expected_type="list",
                 progress_callback=self.status_callback,
             )
@@ -1412,7 +1412,7 @@ class SkeletonBuilder:
                 lessons_data = llm_generate_json(
                     lessons_prompt,
                     sys_prompt=lessons_sys,
-                    max_tokens=500,
+                    max_tokens=1200,
                     expected_type="list",
                     progress_callback=self.status_callback,
                 )
@@ -1533,7 +1533,7 @@ class SkeletonBuilder:
                     concepts_data = llm_generate_json(
                         concepts_prompt,
                         sys_prompt=concepts_sys,
-                        max_tokens=600,
+                        max_tokens=1200,
                         expected_type="list",
                         progress_callback=self.status_callback,
                     )
@@ -1643,7 +1643,13 @@ class SkeletonBuilder:
             f"Create {num_units} Units. JSON Array: [{{'title': '...', 'description': '...'}}]"
         )
         sys_u = f"Expert {self.academic_context} curriculum designer."
-        units_list = llm_generate_json(u_prompt, sys_prompt=sys_u, max_tokens=400) or []
+        # Raised: list-of-objects responses were TRUNCATED mid-string at the
+        # old limit, so extract_python_list failed on valid-looking JSON and
+        # the builder fell back to hardcoded concepts. Observed live:
+        #   'Failed to extract list from: [{"title": "Identify Sharp Corners"...'
+        # three attempts in a row, then a fallback concept. Output budget is
+        # cheap; a fabricated placeholder concept is not.
+        units_list = llm_generate_json(u_prompt, sys_prompt=sys_u, max_tokens=1200) or []
         # WIZ-3: Track fallback usage in preview
         preview_fallback_count = 0
         units_used_fallback = False
@@ -1664,7 +1670,7 @@ class SkeletonBuilder:
             u_title = unit.get("title", "Unit").strip()
             l_prompt = f"Topic: {topic}\nModule: {m_title}\nUnit: {u_title}\nCreate {num_lessons} Lessons. JSON Array: [{{'title': '...'}}]"
             lessons_list = (
-                llm_generate_json(l_prompt, sys_prompt=sys_u, max_tokens=400) or []
+                llm_generate_json(l_prompt, sys_prompt=sys_u, max_tokens=1200) or []
             )
             lessons_used_fallback = False
             if not lessons_list:
