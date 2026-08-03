@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Progress — Helga{% endblock %}
+
+{#  A5.2 — the highest-value missing surface.
+
+    Until now a learner could not answer "what do I actually know?". Every
+    number here is derived from stored review history; nothing is estimated.
+
+    The distinction the page is built around: a concept never studied is UNSEEN,
+    not a zero score. "Not yet reached" and "studied and forgotten" are
+    different answers to "where are my gaps?", and a dashboard that collapses
+    them is a dashboard that lies.
+#}
+
+{% block body_class %}page-progress{% endblock %}
+
+{% block content %}
+<div class="page-progress progress-shell">
+
+    <header class="progress-header u-animate-rise">
+        <h1 class="progress-title">Progress</h1>
+        <p class="progress-subtitle">What you know, what is fading, and where the gaps are.</p>
+    </header>
+
+    <section class="progress-totals u-stagger" id="progress-totals" aria-live="polite">
+        <div class="u-skeleton progress-stat-skeleton"></div>
+        <div class="u-skeleton progress-stat-skeleton"></div>
+        <div class="u-skeleton progress-stat-skeleton"></div>
+        <div class="u-skeleton progress-stat-skeleton"></div>
+    </section>
+
+    <section class="progress-section" id="progress-gaps-section" hidden>
+        <h2 class="progress-section-title">
+            Worth your attention
+            <span class="progress-section-hint">answered wrong, lapsed, or fading</span>
+        </h2>
+        <div class="progress-gaps u-stagger" id="progress-gaps"></div>
+    </section>
+
+    <section class="progress-section">
+        <h2 class="progress-section-title">Courses</h2>
+        <div class="progress-courses" id="progress-courses"></div>
+    </section>
+
+    <section class="progress-empty" id="progress-empty" hidden>
+        <h2>Nothing to show yet</h2>
+        <p>Study a concept and this page fills in — mastery, recall strength and
+           gaps are all derived from your actual answers.</p>
+        <a class="btn btn-primary" href="/courses">Go to courses</a>
+    </section>
+
+    <p class="progress-error" id="progress-error" hidden>
+        Could not load progress. This page shows nothing rather than guessing.
+    </p>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{{ url_for('static', filename='js/progress.js') }}?v=1"></script>
+{% endblock %}

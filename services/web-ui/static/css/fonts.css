@@ -1,0 +1,70 @@
+/* Self-hosted type — Helga is an OFFLINE appliance.
+ *
+ * base.html previously pulled DM Sans and JetBrains Mono from
+ * fonts.googleapis.com with no local copies. On the Mac Mini this product
+ * actually ships on there is no internet, so the entire type system silently
+ * fell back to system defaults and every page load paid a DNS/connect timeout
+ * first. A brand that only renders when online is not a brand.
+ *
+ * Latin subsets only: 7 files, ~264 KB total, which is a rounding error next
+ * to the 8.8 MB background image already in static/img.
+ *
+ * font-display: swap keeps first paint immediate; since the files are local
+ * the swap is imperceptible.
+ */
+
+@font-face {
+    font-family: 'DM Sans';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../fonts/dmsans-400.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'DM Sans';
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url('../fonts/dmsans-500.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'DM Sans';
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url('../fonts/dmsans-600.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'DM Sans';
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url('../fonts/dmsans-700.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'DM Sans';
+    font-style: normal;
+    font-weight: 800;
+    font-display: swap;
+    src: url('../fonts/dmsans-800.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'JetBrains Mono';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../fonts/jetbrainsmono-400.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'JetBrains Mono';
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url('../fonts/jetbrainsmono-600.woff2') format('woff2');
+}

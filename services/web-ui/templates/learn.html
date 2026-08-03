@@ -10,6 +10,8 @@
 <script src="{{ url_for('static', filename='js/session.js') }}?v=8"></script>
 {% endblock %}
 
+{% block body_class %}page-learn{% endblock %}
+
 {% block content %}
 <div class="learn-wrapper theme-learn">
     <!-- Top Bar (visible only in path view — session view owns its own topbar) -->
@@ -18,6 +20,20 @@
             <h2 id="course-title-display" class="course-title">Loading course…</h2>
         </div>
         <div class="header-right">
+            {#  A5.1 — Memory Palace is a MODE of this course, not a
+                destination. It walks the same concepts in the same order, so a
+                top-level tab for it asked the learner to leave the course to
+                study the course.
+
+                This link is also the only way in now that Palace is out of the
+                nav. It has been reachable-by-URL-only twice before; the
+                honest-controls test asserts an entry point exists precisely so
+                that cannot happen a third time. #}
+            <a id="palace-mode-link" class="learn-mode-link" href="/palace"
+               title="Walk this course as a memory palace">
+                <span aria-hidden="true">🏛</span>
+                <span>Memory Palace</span>
+            </a>
             <!-- session-header kept as empty placeholder so legacy JS that
                  toggles it doesn't throw. The real mode badge now lives
                  inside the chatbox topbar. -->
@@ -776,6 +792,14 @@
         if (!courseUid) {
             window.location.href = '/courses';
             return;
+        }
+
+        // Palace walks THIS course; without the uid it would open whatever the
+        // FSM last had in context, which is how "same course, different mode"
+        // turns into "wrong course, no warning".
+        const palaceLink = document.getElementById('palace-mode-link');
+        if (palaceLink) {
+            palaceLink.href = '/palace?course_uid=' + encodeURIComponent(courseUid);
         }
 
         // Render a clear error + retry/back actions when the course fails

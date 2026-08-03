@@ -6,6 +6,7 @@ FSM event that returns success for a state change that never happened.
 """
 
 import os
+import re
 import sys
 import unittest
 from unittest.mock import MagicMock, patch
@@ -107,20 +108,74 @@ class TestNoFeatureReachableOnlyByUrl(unittest.TestCase):
     forbids a recurrence, so it is asserted rather than remembered.
     """
 
-    ADVERTISED_PAGES = ['/courses', '/learn', '/review', '/schedule', '/palace']
+    # A5.1 cut the nav from nine destinations to six. The rule is unchanged —
+    # every advertised feature needs a way in that is not typing a URL — but
+    # "the nav" is no longer the only legitimate entry point, because some
+    # features are now modes of a parent surface rather than destinations.
+    NAV_PAGES = ['/courses', '/learn', '/progress', '/practice', '/settings']
 
-    def test_every_advertised_page_is_linked_from_the_nav(self):
+    # feature -> the page that must link to it
+    NESTED_ENTRY_POINTS = {
+        '/palace': '/learn',    # a mode of the open course, not a destination
+        '/status': '/settings',  # an operator tool, not a learner tool
+    }
+
+    ADVERTISED_PAGES = NAV_PAGES + list(NESTED_ENTRY_POINTS)
+
+    def test_every_nav_page_is_linked_from_the_nav(self):
         html = app.test_client().get('/').data.decode()
         nav = html.split('app-nav', 1)[-1].split('</nav>', 1)[0]
-        for path in self.ADVERTISED_PAGES:
+        for path in self.NAV_PAGES:
             self.assertIn(f'href="{path}"', nav,
                           f"{path} is advertised but not reachable from the nav")
+
+    def test_nested_features_are_linked_from_their_parent(self):
+        """Removing something from the nav is only safe if it gained a home.
+
+        Memory Palace has shipped reachable-by-URL-only TWICE. Taking it out of
+        the nav without an entry point inside Learn would be the third time, so
+        the parent link is asserted rather than trusted.
+        """
+        client = app.test_client()
+        for feature, parent in self.NESTED_ENTRY_POINTS.items():
+            page = client.get(parent)
+            body = page.data.decode()
+            self.assertIn(
+                f'href="{feature}', body,
+                f"{feature} was removed from the nav and {parent} does not "
+                f"link to it — that is an advertised feature with no way in"
+            )
 
     def test_advertised_pages_actually_render(self):
         for path in self.ADVERTISED_PAGES:
             rv = app.test_client().get(path)
             self.assertIn(rv.status_code, (200, 302),
                           f"{path} is linked but returns {rv.status_code}")
+
+    def test_retired_tabs_still_resolve(self):
+        """Quiz/Review/Schedule are bookmarked and linked from other pages.
+        Folding them into Practice must not produce a 404."""
+        client = app.test_client()
+        for old, tab in (('/quiz', 'quiz'), ('/review', 'due'),
+                         ('/schedule', 'upcoming')):
+            rv = client.get(old)
+            self.assertEqual(rv.status_code, 302,
+                             f"{old} should redirect into Practice")
+            self.assertIn('/practice', rv.headers.get('Location', ''))
+            self.assertIn(f'tab={tab}', rv.headers.get('Location', ''),
+                          f"{old} must land on the matching Practice state")
+
+    def test_the_nav_stays_at_six_destinations(self):
+        """The A5.1 target shape. Nine links wrapped onto a second row at
+        1280px and orphaned the settings icon; this is the regression guard."""
+        html = app.test_client().get('/').data.decode()
+        nav = html.split('app-nav', 1)[-1].split('</nav>', 1)[0]
+        links = re.findall(r'class="nav-link[^"]*"', nav)
+        self.assertEqual(
+            len(links), 6,
+            f"nav has {len(links)} destinations; A5.1 fixed it at six "
+            f"(Home, Courses, Learn, Progress, Practice, Settings)"
+        )
 
 if __name__ == '__main__':
     unittest.main()

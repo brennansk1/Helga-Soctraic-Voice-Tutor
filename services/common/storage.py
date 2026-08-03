@@ -620,6 +620,153 @@ class StorageManager:
         finally:
             conn.close()
 
+    def mastery_overview(self, course_uid: str = None, student_id: str = None) -> dict:
+        """Answer "what do I actually know?" — the A5.2 Progress surface.
+
+        Lives on the facade because it is the one query that needs BOTH halves:
+        the memory state in SQLite and the concept titles in the course JSON. A
+        progress page listing `con_4f2a91bc` instead of "Confounding variables"
+        is not a progress page.
+
+        Everything here is derived from stored state; nothing is estimated. A
+        concept the learner has never answered is reported as `unseen` rather
+        than given a zero score, because "not yet studied" and "studied and
+        forgotten" are different answers to "where are my gaps?" and collapsing
+        them is how a dashboard starts lying.
+        """
+        try:
+            from services.core.fsrs_engine import FSRSEngine
+            engine = FSRSEngine()
+        except Exception:
+            engine = None
+
+        rows = {}
+        conn = self.progress._get_db()
+        query = "SELECT * FROM user_progress WHERE student_id = ?"
+        params = [_sid(student_id)]
+        if course_uid:
+            query += " AND course_uid = ?"
+            params.append(course_uid)
+        for r in conn.execute(query, params).fetchall():
+            rows[r["concept_uid"]] = dict(r)
+
+        course_uids = ([course_uid] if course_uid
+                       else [c.get("uid") for c in (self.courses.list_courses() or [])])
+
+        today = date.today()
+        courses, concepts = [], []
+
+        for cuid in [c for c in course_uids if c]:
+            try:
+                meta = self.courses.get_course(cuid) or {}
+                flat = self.courses.get_flat_concepts(cuid) or []
+            except Exception as e:
+                logger.warning(f"mastery_overview: skipping {cuid}: {e}")
+                continue
+
+            seen = reviewed = correct = 0
+            bloom_sum = bloom_n = 0
+
+            for con in flat:
+                p = rows.get(con.get("uid")) or {}
+                tr = p.get("times_reviewed") or 0
+                tc = p.get("times_correct") or 0
+                stability = p.get("stability")
+
+                retention = None
+                if engine is not None and stability:
+                    elapsed = 0
+                    if p.get("last_review_date"):
+                        try:
+                            elapsed = max(0, (today - date.fromisoformat(
+                                p["last_review_date"])).days)
+                        except (ValueError, TypeError):
+                            elapsed = 0
+                    try:
+                        retention = round(engine.get_retention(stability, elapsed), 3)
+                    except Exception:
+                        retention = None
+
+                state = "unseen"
+                if p.get("status") == "completed":
+                    state = "known"
+                elif tr:
+                    state = "learning"
+
+                if state != "unseen":
+                    seen += 1
+                    reviewed += tr
+                    correct += tc
+                    if p.get("bloom_level"):
+                        bloom_sum += p["bloom_level"]
+                        bloom_n += 1
+
+                concepts.append({
+                    "concept_uid": con.get("uid"),
+                    "course_uid": cuid,
+                    "title": con.get("title"),
+                    "module": con.get("module_title"),
+                    "state": state,
+                    "bloom_level": p.get("bloom_level") or con.get("bloom_level"),
+                    "times_reviewed": tr,
+                    "times_correct": tc,
+                    "accuracy": round(tc / tr, 3) if tr else None,
+                    "lapses": p.get("lapses") or 0,
+                    "stability_days": round(stability, 1) if stability else None,
+                    "retention": retention,
+                    "next_review_date": p.get("next_review_date"),
+                })
+
+            total = len(flat)
+            if not total:
+                # A course row with no concepts is a failed or half-built
+                # generation, not something a learner has progress in. Listing
+                # it would print a raw uid ("course_c6620699") next to
+                # "0 / 0 known", which reads as a rendering bug.
+                continue
+            courses.append({
+                "course_uid": cuid,
+                "title": meta.get("title") or cuid,
+                "total_concepts": total,
+                "started": seen,
+                "known": sum(1 for c in concepts
+                             if c["course_uid"] == cuid and c["state"] == "known"),
+                "coverage": round(seen / total, 3) if total else 0.0,
+                "accuracy": round(correct / reviewed, 3) if reviewed else None,
+                "avg_bloom": round(bloom_sum / bloom_n, 1) if bloom_n else None,
+            })
+
+        # Gaps, ranked by what most deserves attention: anything answered wrong
+        # more than it was answered right, then anything decayed below 0.7
+        # recall. Unseen concepts are excluded — that is a backlog, not a gap.
+        gaps = [c for c in concepts if c["state"] != "unseen" and (
+            (c["accuracy"] is not None and c["accuracy"] < 0.5)
+            or c["lapses"] > 0
+            or (c["retention"] is not None and c["retention"] < 0.7))]
+        gaps.sort(key=lambda c: (c["accuracy"] if c["accuracy"] is not None else 1.0,
+                                 -c["lapses"]))
+
+        started = [c for c in concepts if c["state"] != "unseen"]
+        total_reviewed = sum(c["times_reviewed"] for c in started)
+        total_correct = sum(c["times_correct"] for c in started)
+
+        return {
+            "courses": courses,
+            "concepts": concepts,
+            "gaps": gaps[:20],
+            "totals": {
+                "courses": len(courses),
+                "concepts": len(concepts),
+                "started": len(started),
+                "known": sum(1 for c in concepts if c["state"] == "known"),
+                "accuracy": (round(total_correct / total_reviewed, 3)
+                             if total_reviewed else None),
+                "due_today": sum(
+                    1 for c in concepts
+                    if c["next_review_date"] and c["next_review_date"] <= today.isoformat()),
+            },
+        }
+
     def reset(self):
         """Delete all data — equivalent to clean_slate."""
         if os.path.exists(self.db_path):

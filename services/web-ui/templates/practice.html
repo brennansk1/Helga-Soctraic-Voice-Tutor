@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Practice — Helga{% endblock %}
+
+{#  A5.1 — Practice replaces the Quiz / Review / Schedule tabs.
+
+    Those were three top-level destinations for one activity at three moments:
+    what is due now, test me on demand, and what is coming up. Picking between
+    them required the learner to understand our FSRS model. Here they are three
+    states of one surface, and "Due" is the default because that is the answer
+    to "what should I do right now?" — the question the learner actually has.
+#}
+
+{% block body_class %}page-practice{% endblock %}
+
+{% block content %}
+<div class="page-practice practice-shell">
+
+    <header class="practice-header u-animate-rise">
+        <div>
+            <h1 class="practice-title">Practice</h1>
+            <p class="practice-subtitle">Retrieval beats rereading. Answer first, check second.</p>
+        </div>
+        <div class="practice-summary" id="practice-summary" aria-live="polite">
+            <div class="practice-stat">
+                <span class="practice-stat-value" id="stat-due">–</span>
+                <span class="practice-stat-label">due now</span>
+            </div>
+            <div class="practice-stat">
+                <span class="practice-stat-value" id="stat-week">–</span>
+                <span class="practice-stat-label">this week</span>
+            </div>
+        </div>
+    </header>
+
+    <div class="practice-tabs" role="tablist" aria-label="Practice modes">
+        <button class="practice-tab" role="tab" id="tab-due" data-tab="due"
+                aria-controls="panel-due">
+            <span class="practice-tab-label">Due</span>
+            <span class="practice-tab-count" id="tab-due-count" hidden></span>
+        </button>
+        <button class="practice-tab" role="tab" id="tab-quiz" data-tab="quiz"
+                aria-controls="panel-quiz">
+            <span class="practice-tab-label">Quiz me</span>
+        </button>
+        <button class="practice-tab" role="tab" id="tab-upcoming" data-tab="upcoming"
+                aria-controls="panel-upcoming">
+            <span class="practice-tab-label">Upcoming</span>
+        </button>
+        <span class="practice-tab-indicator" aria-hidden="true"></span>
+    </div>
+
+    <section class="practice-panel" role="tabpanel" id="panel-due"
+             aria-labelledby="tab-due" tabindex="0">
+        <div id="due-loading" class="practice-loading">
+            <div class="u-skeleton practice-skeleton-row"></div>
+            <div class="u-skeleton practice-skeleton-row"></div>
+            <div class="u-skeleton practice-skeleton-row"></div>
+        </div>
+        <div id="due-list" class="practice-list u-stagger" hidden></div>
+        <div id="due-empty" class="practice-empty" hidden>
+            <div class="practice-empty-mark" aria-hidden="true">✓</div>
+            <h2>Nothing due right now</h2>
+            <p>That is the system working, not a gap. Reviews surface on the day
+               they are most likely to stick.</p>
+            <a class="btn btn-secondary" href="/practice?tab=quiz">Quiz me anyway</a>
+        </div>
+    </section>
+
+    <section class="practice-panel" role="tabpanel" id="panel-quiz"
+             aria-labelledby="tab-quiz" tabindex="0" hidden>
+        <div class="practice-quiz-intro">
+            <h2>Test yourself on demand</h2>
+            <p>Pick a course and Helga will ask about concepts you have already
+               met. This does not change your review schedule.</p>
+            <div class="practice-course-picker">
+                <label class="sr-only" for="quiz-course">Course</label>
+                <select id="quiz-course" class="form-select"></select>
+                <button class="btn btn-primary" id="quiz-start">Start</button>
+            </div>
+        </div>
+        <div id="quiz-area" class="practice-quiz-area" hidden></div>
+    </section>
+
+    <section class="practice-panel" role="tabpanel" id="panel-upcoming"
+             aria-labelledby="tab-upcoming" tabindex="0" hidden>
+        <div id="upcoming-list" class="practice-upcoming"></div>
+        <div id="upcoming-empty" class="practice-empty" hidden>
+            <h2>No reviews scheduled yet</h2>
+            <p>Study a concept and Helga will schedule its first review
+               automatically.</p>
+            <a class="btn btn-primary" href="/courses">Go to courses</a>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+    window.PRACTICE_ACTIVE_TAB = {{ active_tab | tojson }};
+</script>
+<script src="{{ url_for('static', filename='js/practice.js') }}?v=1"></script>
+{% endblock %}

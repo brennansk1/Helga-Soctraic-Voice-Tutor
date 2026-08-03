@@ -23,10 +23,18 @@
     <meta name="description" content="Helga — AI-powered Socratic voice tutor for self-directed learning">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{% block title %}Helga{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=4">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <!-- Type is self-hosted. Helga runs offline; fetching fonts from Google
+         meant the brand only rendered when the appliance had internet, and
+         every page paid a connect timeout first. -->
+    <link rel="preload" as="font" type="font/woff2" crossorigin
+          href="{{ url_for('static', filename='fonts/dmsans-400.woff2') }}">
+    <link rel="preload" as="font" type="font/woff2" crossorigin
+          href="{{ url_for('static', filename='fonts/dmsans-700.woff2') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=1">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=5">
+    <!-- Loaded after style.css: refines the palette it establishes. -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/design-system.css') }}?v=1">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/surfaces.css') }}?v=1">
     <script src="{{ url_for('static', filename='js/socket.io.min.js') }}"></script>
     <script>
         // CSRF helper: auto-attach token to fetch() and XMLHttpRequest
@@ -173,23 +181,26 @@
                     request.path=='/courses' %}aria-current="page" {% endif %}>Courses</a>
                 <a href="/learn" class="nav-link {% if request.path == '/learn' %}active{% endif %}" {% if
                     request.path=='/learn' %}aria-current="page" {% endif %}>Learn</a>
-                <a href="/quiz" class="nav-link {% if request.path in ['/quiz', '/test'] %}active{% endif %}" {% if
-                    request.path in ['/quiz', '/test'] %}aria-current="page" {% endif %}>Quiz</a>
-                <a href="/review" class="nav-link {% if request.path == '/review' %}active{% endif %}" {% if
-                    request.path=='/review' %}aria-current="page" {% endif %}>Review</a>
-                <a href="/schedule" class="nav-link {% if request.path == '/schedule' %}active{% endif %}" {% if
-                    request.path=='/schedule' %}aria-current="page" {% endif %}>Schedule</a>
-                {# Memory Palace is one of three ADVERTISED learning modes. The page
-                   was restored but never linked, so it was reachable only by typing
-                   the URL — an advertised feature with no way in, which is the same
-                   half-present defect in a new form. A5 relocates it to a mode
-                   inside Learn (it operates on the same course); this link exists so
-                   the promise is not broken in the meantime. #}
-                <a href="/palace" class="nav-link {% if request.path == '/palace' %}active{% endif %}" {% if
-                    request.path=='/palace' %}aria-current="page" {% endif %}>Palace</a>
-                <a href="/status" class="nav-link {% if request.path == '/status' %}active{% endif %}" {% if
-                    request.path=='/status' %}aria-current="page" {% endif %}>Status</a>
-                <a href="/settings" class="settings-btn" title="Settings" aria-label="Open settings">⚙️</a>
+                {# A5.1 — six destinations, down from nine.
+
+                   The count was not the problem; the grouping was. Quiz,
+                   Review and Schedule are the SAME activity at three different
+                   moments (on-demand, due-now, upcoming), so choosing between
+                   them required the learner to understand our FSRS model. They
+                   are now three states of Practice.
+
+                   Status is an operator tool, not a learner tool — it lives in
+                   Settings. Palace operates on the same course as Learn and is
+                   a mode inside it, not a separate destination.
+
+                   This also fixes a visible layout break: nine links wrapped
+                   onto a second row at 1280px, orphaning the settings icon. #}
+                <a href="/progress" class="nav-link {% if request.path == '/progress' %}active{% endif %}" {% if
+                    request.path=='/progress' %}aria-current="page" {% endif %}>Progress</a>
+                <a href="/practice" class="nav-link {% if request.path in ['/practice', '/quiz', '/test', '/review', '/schedule'] %}active{% endif %}" {% if
+                    request.path in ['/practice', '/quiz', '/test', '/review', '/schedule'] %}aria-current="page" {% endif %}>Practice</a>
+                <a href="/settings" class="nav-link {% if request.path in ['/settings', '/status'] %}active{% endif %}" {% if
+                    request.path in ['/settings', '/status'] %}aria-current="page" {% endif %}>Settings</a>
             </nav>
         </header>
         <main class="app-content" id="main-content">

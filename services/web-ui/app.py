@@ -4,7 +4,8 @@ if "pytest" not in _sys.modules:
     # threading/ssl after real threads exist and deadlock the suite.
     from gevent import monkey
     monkey.patch_all()
-from flask import Flask, render_template, request, jsonify, session, abort
+from flask import (Flask, render_template, request, jsonify, session, abort,
+                   redirect, url_for)
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import requests
 import time
@@ -374,14 +375,64 @@ def create_course_custom():
 def learn_page():
     return render_template('learn.html')
 
+# --- A5.1: Practice — one surface, three states -----------------------------
+# Quiz, Review and Schedule were three top-level tabs for the same activity at
+# three different moments. Choosing between them required the learner to
+# understand our FSRS model, which is our problem, not theirs.
+#
+# The old URLs are kept as redirects rather than deleted: they are bookmarked,
+# linked from other templates, and asserted in tests. A dead link is a worse
+# outcome than a redirect.
+
+PRACTICE_TABS = ('due', 'quiz', 'upcoming')
+
+
+@app.route('/practice')
+def practice_page():
+    tab = request.args.get('tab', 'due')
+    if tab not in PRACTICE_TABS:
+        tab = 'due'
+    return render_template('practice.html', active_tab=tab)
+
+
+@app.route('/progress')
+def progress_page():
+    """What do I actually know, what is due, and where are my gaps.
+
+    Every field behind this is already stored -- with one exception found when
+    it was checked rather than assumed: times_correct (accuracy) was never
+    written by anything, so this surface would have shown a flat zero for every
+    learner. Fixed at the scheduler before this page was built.
+    """
+    return render_template('progress.html')
+
+
+@app.route('/api/progress/overview', methods=['GET'])
+def progress_overview():
+    """Backs the Progress surface. Reads local storage directly, like
+    /api/schedule — this is derived state, not something RAG owns."""
+    try:
+        storage = _get_storage()
+        return jsonify(storage.mastery_overview(
+            course_uid=request.args.get('course_uid'),
+            student_id=current_student_id())), 200
+    except Exception as e:
+        logger.error(f"Progress overview failed: {e}", exc_info=True)
+        # An empty shape, not a fake one: the page renders its own "no data
+        # yet" state rather than showing invented zeros as though measured.
+        return jsonify({'error': str(e), 'courses': [], 'concepts': [],
+                        'gaps': [], 'totals': {}}), 502
+
+
 @app.route('/test')
 @app.route('/quiz')
 def test_page():
-    return render_template('quiz.html')
+    return redirect(url_for('practice_page', tab='quiz'))
+
 
 @app.route('/review')
 def review_page():
-    return render_template('review.html')
+    return redirect(url_for('practice_page', tab='due'))
 
 @app.route('/palace')
 def palace_page():
@@ -396,7 +447,7 @@ def palace_page():
 
 @app.route('/schedule')
 def schedule_page():
-    return render_template('schedule.html')
+    return redirect(url_for('practice_page', tab='upcoming'))
 
 # --- Schedule API (direct StorageManager access via shared data volume) ---
 def _get_storage():

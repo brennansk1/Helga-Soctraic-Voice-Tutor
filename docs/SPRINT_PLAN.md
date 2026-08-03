@@ -481,6 +481,18 @@ Session continuity, transcript persistence across restarts, path re-render after
 completes, no dead handlers.
 
 ### Gate
+
+> **The gate is a PROFESSIONAL-QUALITY FRONT END.** Not "the restructure landed" and not
+> "the tests pass" — the product must look and feel like something a stranger would trust
+> with their study time. Every item below is necessary; none of them is sufficient. If the
+> app is correct and still looks unfinished, A5 is not done.
+>
+> Concretely, that means: one coherent visual system rather than per-template inline
+> styles; type, spacing and colour that hold in **both** themes; motion that confirms
+> actions instead of decorating them; real empty, loading and error states on every
+> surface; and nothing on screen that reads as a placeholder or a rendering bug (raw
+> UIDs, orphaned icons, wrapped navigation, invisible focus rings).
+
 - Six tabs; **no advertised feature reachable only by URL** (the Palace failure must not
   recur — assert it in a test);
 - Progress answers "what do I know / what is due / where are my gaps" without a page reload;
@@ -488,7 +500,10 @@ completes, no dead handlers.
 - every concept view shows its sources and confidence;
 - e2e green on a live stack; accessibility pass (keyboard, contrast, focus order);
 - light and dark both verified;
-- no orphaned CSS or handlers left from the restructure.
+- no orphaned CSS or handlers left from the restructure;
+- **the app runs offline with no visual degradation** — no CDN fonts, icons or scripts;
+- every interactive surface has a designed empty / loading / error state;
+- no raw identifiers, placeholder copy, or debug output visible to a learner.
 
 ### Arc III — Make it last (A6–A7)
 

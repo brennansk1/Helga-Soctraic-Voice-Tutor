@@ -58,9 +58,15 @@ class TestPageRendering:
         ("/", 200, b"Helga"),
         ("/courses", 200, b"Courses"),
         ("/learn", 200, b"Learn"),
-        ("/test", 200, b"Test"),
-        ("/review", 200, b"Review"),
-        ("/schedule", 200, b"Schedule"),
+        # A5.1 folded Quiz / Review / Schedule into Practice — they were three
+        # top-level tabs for the same activity at three different moments. The
+        # old URLs redirect rather than 404: they are bookmarked and linked
+        # from other templates.
+        ("/practice", 200, b"Practice"),
+        ("/progress", 200, b"Progress"),
+        ("/test", 302, None),
+        ("/review", 302, None),
+        ("/schedule", 302, None),
         # A3: Memory Palace is reachable again. It previously redirected to
         # home while the FSM kept the full MEMORY_PALACE state and librarian
         # kept /palace/start, /locus/next and /anchor — one of three advertised

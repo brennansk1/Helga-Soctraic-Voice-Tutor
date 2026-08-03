@@ -1,0 +1,404 @@
+/* ============================================================================
+ * Helga design system — A5.3
+ *
+ * Loaded AFTER style.css, so it refines the existing Alpine palette rather
+ * than replacing it. style.css already had a sound foundation (spacing scale,
+ * type scale, semantic colour aliases); what it lacked was measured here on
+ * 2026-08-03 and is what this file supplies:
+ *
+ *   - 14 of 32 colour tokens NEVER flipped in dark mode, including
+ *     --focus-ring (a light-blue ring on a dark surface), --shadow-lg (a
+ *     light-mode shadow drawn over dark), and all six --bloom-* colours, which
+ *     paint the learn path — the product's signature screen.
+ *   - Motion was ad hoc: two duration tokens, six hand-written cubic-beziers,
+ *     no shared easing vocabulary.
+ *
+ * The rule for anything added here: a token must be defined for BOTH themes or
+ * it is not a token, it is a light-mode constant waiting to look broken.
+ * ==========================================================================*/
+
+:root {
+    /* --- Motion -----------------------------------------------------------
+     * Durations are short on purpose. This is a study tool used for hours at a
+     * time; animation should confirm that something happened, never make the
+     * learner wait for it. Anything above ~250ms starts to feel like latency.
+     */
+    --dur-instant: 80ms;
+    --dur-fast: 140ms;
+    --dur-base: 200ms;
+    --dur-slow: 320ms;
+    --dur-slower: 520ms;
+
+    /* Easings. `standard` for most state changes; `decelerate` for things
+     * entering the screen (fast in, gentle landing); `accelerate` for things
+     * leaving; `emphasized` for the one-per-screen moment worth noticing,
+     * like a concept node completing. */
+    --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+    --ease-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+    --ease-accelerate: cubic-bezier(0.3, 0, 1, 1);
+    --ease-emphasized: cubic-bezier(0.34, 1.4, 0.64, 1);
+
+    --transition-fast: var(--dur-fast) var(--ease-standard);
+    --transition-base: var(--dur-base) var(--ease-standard);
+
+    /* --- Elevation --------------------------------------------------------
+     * A ramp, not three unrelated shadows. Each step composes a tight contact
+     * shadow with a wider ambient one, which is what keeps a card from looking
+     * like it is floating in fog.
+     */
+    --shadow-1: 0 1px 2px rgba(45, 58, 46, 0.06), 0 1px 3px rgba(45, 58, 46, 0.05);
+    --shadow-2: 0 2px 4px rgba(45, 58, 46, 0.06), 0 4px 12px rgba(45, 58, 46, 0.07);
+    --shadow-3: 0 4px 8px rgba(45, 58, 46, 0.07), 0 12px 28px rgba(45, 58, 46, 0.10);
+    --shadow-4: 0 8px 16px rgba(45, 58, 46, 0.09), 0 24px 48px rgba(45, 58, 46, 0.14);
+
+    /* --- Focus ------------------------------------------------------------
+     * WCAG 2.2 wants a focus indicator that is actually visible against its
+     * background. A single ring cannot do that on both light and dark, so this
+     * is two rings: an inner halo in the surface colour and an outer ring in
+     * the accent. It reads on any background, including on top of a coloured
+     * button.
+     */
+    --focus-ring-color: var(--accent-primary);
+    --focus-ring: 0 0 0 2px var(--bg-secondary), 0 0 0 4px var(--focus-ring-color);
+
+    /* --- Brand ------------------------------------------------------------
+     * Helga is alpine: snow, stone, forest, and a Bavarian-sky blue. The
+     * gradient is the one place the brand gets to be expressive; everything
+     * else stays quiet so course content is what the eye lands on.
+     */
+    --brand-gradient: linear-gradient(135deg, #2e6b8a 0%, #4a8c6f 100%);
+    --brand-gradient-warm: linear-gradient(135deg, #c17f4a 0%, #d4a843 100%);
+    --surface-glass: rgba(255, 255, 255, 0.72);
+}
+
+[data-theme="dark"] {
+    /* Every token below was previously inherited from :root and rendered a
+     * light-mode value on a dark surface. */
+    --bloom-1: #8fc4e0;
+    --bloom-2: #6aacc6;
+    --bloom-3: #6aac8f;
+    --bloom-4: #d49a68;
+    --bloom-5: #b3805c;
+    --bloom-6: #e0bc63;
+
+    --status-success: #6aac8f;
+    --status-warning: #e0bc63;
+    --status-error: #e07d6a;
+
+    --xp-gold: #e0bc63;
+    --streak-fire: #f0946a;
+
+    /* White-on-dark inverted text is a light-mode assumption: "inverted"
+     * means "reads against the accent", and on dark surfaces that is a deep
+     * ink, not white. */
+    --text-inverted: #121a16;
+
+    --focus-ring-color: #7cc0e0;
+
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.30), 0 1px 3px rgba(0, 0, 0, 0.24);
+    --shadow-2: 0 2px 4px rgba(0, 0, 0, 0.32), 0 4px 12px rgba(0, 0, 0, 0.30);
+    --shadow-3: 0 4px 8px rgba(0, 0, 0, 0.36), 0 12px 28px rgba(0, 0, 0, 0.38);
+    --shadow-4: 0 8px 16px rgba(0, 0, 0, 0.40), 0 24px 48px rgba(0, 0, 0, 0.48);
+    --shadow-lg: var(--shadow-4);
+
+    --brand-gradient: linear-gradient(135deg, #3d7fa0 0%, #4f9578 100%);
+    --brand-gradient-warm: linear-gradient(135deg, #b3764a 0%, #c29a4a 100%);
+    --surface-glass: rgba(35, 46, 40, 0.72);
+}
+
+/* Keep the legacy aliases pointing at the new ramp so existing rules in
+ * style.css inherit the improvement instead of drifting from it. */
+:root {
+    --shadow-soft: var(--shadow-1);
+    --shadow-card: var(--shadow-2);
+    --shadow-lg: var(--shadow-4);
+}
+
+/* ---------------------------------------------------------------------------
+ * Focus visibility
+ * :focus-visible only, so a mouse click does not leave a ring behind, but
+ * keyboard and switch users always see where they are.
+ * ------------------------------------------------------------------------ */
+:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+    border-radius: var(--border-radius-sm);
+}
+
+/* ---------------------------------------------------------------------------
+ * Motion primitives
+ * Named so a component can say what KIND of movement it wants rather than
+ * restating a keyframe.
+ * ------------------------------------------------------------------------ */
+@keyframes helga-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+@keyframes helga-rise-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: none; }
+}
+
+@keyframes helga-pop-in {
+    0%   { opacity: 0; transform: scale(0.94); }
+    100% { opacity: 1; transform: scale(1); }
+}
+
+/* The one celebratory motion in the product: a concept node completing.
+ * Used sparingly — if everything pulses, nothing reads as an achievement. */
+@keyframes helga-node-complete {
+    0%   { transform: scale(1); }
+    45%  { transform: scale(1.14); }
+    100% { transform: scale(1); }
+}
+
+@keyframes helga-pulse-ring {
+    0%   { box-shadow: 0 0 0 0 var(--focus-ring-color); opacity: 0.55; }
+    100% { box-shadow: 0 0 0 14px transparent; opacity: 0; }
+}
+
+/* Indeterminate progress — a sweep, not a spinner. Reads as "working"
+ * without implying a percentage we do not know. */
+@keyframes helga-shimmer {
+    from { background-position: -200% 0; }
+    to   { background-position: 200% 0; }
+}
+
+.u-animate-fade { animation: helga-fade-in var(--dur-base) var(--ease-standard) both; }
+.u-animate-rise { animation: helga-rise-in var(--dur-slow) var(--ease-decelerate) both; }
+.u-animate-pop  { animation: helga-pop-in var(--dur-base) var(--ease-emphasized) both; }
+
+/* Stagger children so a list of course cards lands as a sequence rather than
+ * all at once. Capped at 8 — past that the last item feels late. */
+.u-stagger > * { animation: helga-rise-in var(--dur-slow) var(--ease-decelerate) both; }
+.u-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.u-stagger > *:nth-child(2) { animation-delay: 40ms; }
+.u-stagger > *:nth-child(3) { animation-delay: 80ms; }
+.u-stagger > *:nth-child(4) { animation-delay: 120ms; }
+.u-stagger > *:nth-child(5) { animation-delay: 160ms; }
+.u-stagger > *:nth-child(6) { animation-delay: 200ms; }
+.u-stagger > *:nth-child(7) { animation-delay: 240ms; }
+.u-stagger > *:nth-child(n+8) { animation-delay: 280ms; }
+
+.u-skeleton {
+    background: linear-gradient(90deg,
+        var(--bg-tertiary) 25%,
+        var(--bg-secondary) 50%,
+        var(--bg-tertiary) 75%);
+    background-size: 200% 100%;
+    animation: helga-shimmer 1.4s linear infinite;
+    border-radius: var(--border-radius-sm);
+}
+
+/* ---------------------------------------------------------------------------
+ * Reduced motion — a real setting, not a nicety.
+ *
+ * Vestibular disorders make the transform animations above genuinely
+ * unpleasant. Everything still CHANGES STATE; it just arrives instead of
+ * travelling. Opacity is left alone because a cross-fade does not trigger
+ * motion sensitivity and removing it would make state changes ambiguous.
+ * ------------------------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+
+    .u-animate-fade,
+    .u-animate-rise,
+    .u-animate-pop,
+    .u-stagger > * {
+        animation: helga-fade-in 0.01ms both;
+        transform: none !important;
+    }
+
+    .u-skeleton { animation: none; }
+}
+
+/* ---------------------------------------------------------------------------
+ * Atmosphere
+ *
+ * The alpine illustration was a full-bleed `cover` layer at 0.15 opacity
+ * behind every page. Even that faint, a high-contrast illustration stretched
+ * edge to edge competes with the content sitting on top of it — text landed
+ * over ridgelines and card edges dissolved into trees.
+ *
+ * It is now a HORIZON: anchored to the bottom, sized to the viewport width,
+ * and masked so it dissolves upward into flat background well before it
+ * reaches the reading column. The brand is still there when you look for it
+ * and gone when you are reading, which is what atmosphere is supposed to do.
+ *
+ * The asset was also 4000x2232 and 8.8 MB — for a decorative layer drawn at
+ * 15% opacity. Re-encoded to WebP at 2200px: 218 KB, a 40x reduction, on a
+ * machine whose whole premise is running locally.
+ * ------------------------------------------------------------------------ */
+.matterhorn-bg {
+    position: fixed;
+    inset: auto 0 0 0;
+    top: auto;
+    height: min(62vh, 620px);
+    background-image: image-set(
+        url('/static/img/matterhorn-bg.webp') type('image/webp'),
+        url('/static/img/matterhorn-bg.jpg') type('image/jpeg'));
+    background-image: -webkit-image-set(
+        url('/static/img/matterhorn-bg.webp') type('image/webp'),
+        url('/static/img/matterhorn-bg.jpg') type('image/jpeg'));
+    background-position: center bottom;
+    background-size: cover;
+    background-repeat: no-repeat;
+    opacity: 0.22;
+    /* Dissolve upward so nothing ever reads over a hard edge. */
+    -webkit-mask-image: linear-gradient(to top,
+        rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.55) 45%, rgba(0, 0, 0, 0) 100%);
+    mask-image: linear-gradient(to top,
+        rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.55) 45%, rgba(0, 0, 0, 0) 100%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* Home is the one page with room to show the brand off. */
+.page-home .matterhorn-bg {
+    height: min(78vh, 780px);
+    opacity: 0.34;
+}
+
+/* Reading-heavy surfaces keep it barely there. */
+.page-learn .matterhorn-bg,
+.page-progress .matterhorn-bg,
+.page-practice .matterhorn-bg {
+    opacity: 0.12;
+}
+
+[data-theme="dark"] .matterhorn-bg { opacity: 0.20; }
+[data-theme="dark"] .page-home .matterhorn-bg { opacity: 0.28; }
+[data-theme="dark"] .page-learn .matterhorn-bg,
+[data-theme="dark"] .page-progress .matterhorn-bg,
+[data-theme="dark"] .page-practice .matterhorn-bg { opacity: 0.10; }
+
+/* ---------------------------------------------------------------------------
+ * Buttons
+ *
+ * `.btn-primary` / `.btn-secondary` / `.btn-danger` did not exist in style.css.
+ * settings.html defined its own copies in an inline <style> block, so those
+ * class names worked on exactly one page and rendered as bare underlined links
+ * anywhere else. That is the fragmentation A5.3 exists to end: one definition,
+ * loaded for every page.
+ *
+ * `.btn` alone is deliberately unstyled-but-shaped, so a variant is always
+ * required and nobody ships a button with no visual weight by accident.
+ * ------------------------------------------------------------------------ */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-5);
+    border: 1px solid transparent;
+    border-radius: var(--border-radius-sm);
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.2;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+    box-shadow: none;
+    transition: background var(--transition-fast),
+                border-color var(--transition-fast),
+                color var(--transition-fast),
+                transform var(--transition-fast),
+                box-shadow var(--transition-fast);
+}
+
+.btn:active { transform: translateY(1px); }
+
+.btn[disabled],
+.btn[aria-disabled="true"] {
+    opacity: 0.55;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-primary {
+    background: var(--accent-primary);
+    color: var(--text-inverted);
+    box-shadow: var(--shadow-1);
+}
+
+.btn-primary:hover {
+    background: var(--accent-primary-dark);
+    box-shadow: var(--shadow-2);
+}
+
+.btn-secondary {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border-color: var(--border-color);
+}
+
+.btn-secondary:hover {
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+}
+
+.btn-ghost {
+    background: transparent;
+    color: var(--accent-primary);
+}
+
+.btn-ghost:hover { background: var(--bg-tertiary); }
+
+.btn-danger {
+    background: var(--status-error);
+    color: var(--text-inverted);
+}
+
+.btn-danger:hover { filter: brightness(0.94); }
+
+/* Inputs share the button's shape language so a form does not look assembled
+   from two different kits. */
+.form-input,
+.form-select {
+    width: 100%;
+    padding: var(--space-3) var(--space-4);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    font-family: inherit;
+    font-size: var(--font-size-base);
+    transition: border-color var(--transition-fast);
+}
+
+.form-input:hover,
+.form-select:hover { border-color: var(--accent-primary); }
+
+.form-select { cursor: pointer; }
+
+/* ---------------------------------------------------------------------------
+ * Brand mark
+ * ------------------------------------------------------------------------ */
+.brand-wordmark {
+    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-weight: var(--font-weight-bold);
+    letter-spacing: -0.02em;
+    background: var(--brand-gradient);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    /* Fallback for engines that ignore background-clip: text — without this
+     * the wordmark renders invisible rather than merely unstyled. */
+    -webkit-text-fill-color: transparent;
+}
+
+@supports not ((-webkit-background-clip: text) or (background-clip: text)) {
+    .brand-wordmark {
+        color: var(--accent-primary);
+        -webkit-text-fill-color: currentColor;
+    }
+}

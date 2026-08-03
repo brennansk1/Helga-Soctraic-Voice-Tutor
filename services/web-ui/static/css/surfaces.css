@@ -1,0 +1,459 @@
+/* ============================================================================
+ * Practice and Progress — the two surfaces A5 adds.
+ *
+ * Written against the design tokens only: no literal colours, no literal
+ * durations. That is the whole point of A5.3 — every other template in this
+ * project carries its own inline <style> block, which is why 14 colour tokens
+ * could sit un-themed for dark mode without anyone noticing.
+ * ==========================================================================*/
+
+.practice-shell,
+.progress-shell {
+    max-width: 62rem;
+    margin: 0 auto;
+    padding: var(--space-6) var(--space-5) var(--space-8);
+}
+
+/* --- shared page headers -------------------------------------------------- */
+
+.practice-header,
+.progress-header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-5);
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: var(--space-6);
+}
+
+.practice-title,
+.progress-title {
+    font-size: var(--font-size-3xl);
+    font-weight: var(--font-weight-bold);
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.practice-subtitle,
+.progress-subtitle {
+    color: var(--text-secondary);
+    margin: var(--space-1) 0 0;
+    font-size: var(--font-size-base);
+}
+
+.practice-summary { display: flex; gap: var(--space-5); }
+.practice-stat { text-align: right; }
+
+.practice-stat-value {
+    display: block;
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--accent-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+.practice-stat-label {
+    display: block;
+    font-size: var(--font-size-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
+}
+
+/* --- Practice tabs -------------------------------------------------------- */
+
+.practice-tabs {
+    position: relative;
+    display: flex;
+    gap: var(--space-1);
+    padding: var(--space-1);
+    background: var(--bg-tertiary);
+    border-radius: var(--border-radius);
+    margin-bottom: var(--space-5);
+    width: fit-content;
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+.practice-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--border-radius-sm);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.practice-tab:hover { color: var(--text-primary); }
+
+.practice-tab.is-active {
+    background: var(--bg-secondary);
+    color: var(--accent-primary);
+    box-shadow: var(--shadow-1);
+}
+
+.practice-tab-count {
+    min-width: 1.35rem;
+    padding: 0 var(--space-1);
+    border-radius: 999px;
+    background: var(--accent-primary);
+    color: var(--text-inverted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+}
+
+/* --- lists / cards -------------------------------------------------------- */
+
+.practice-list { display: grid; gap: var(--space-3); }
+
+.practice-card,
+.progress-gap {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-4) var(--space-5);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-1);
+    transition: box-shadow var(--transition-base), transform var(--transition-base);
+}
+
+.practice-card:hover,
+.progress-gap:hover {
+    box-shadow: var(--shadow-2);
+    transform: translateY(-1px);
+}
+
+.practice-card-body,
+.progress-gap-main { flex: 1 1 auto; min-width: 0; }
+
+.practice-card-title,
+.progress-gap-title {
+    margin: 0;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+}
+
+.practice-card-meta,
+.progress-gap-why {
+    margin: var(--space-1) 0 0;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
+
+.practice-card-action,
+.progress-gap-action { flex: 0 0 auto; }
+
+.practice-skeleton-row { height: 4.5rem; margin-bottom: var(--space-3); }
+
+/* --- empty states --------------------------------------------------------- */
+
+.practice-empty,
+.progress-empty {
+    text-align: center;
+    padding: var(--space-8) var(--space-5);
+    background: var(--bg-secondary);
+    border: 1px dashed var(--border-color);
+    border-radius: var(--border-radius-lg);
+}
+
+.practice-empty h2,
+.progress-empty h2 {
+    margin: 0 0 var(--space-2);
+    font-size: var(--font-size-xl);
+    color: var(--text-primary);
+}
+
+.practice-empty p,
+.progress-empty p {
+    margin: 0 auto var(--space-5);
+    max-width: 34rem;
+    color: var(--text-secondary);
+}
+
+/* An empty review queue is the system working. Say so with a check, not a
+   warning icon — the old Review page read as an error state when it was idle. */
+.practice-empty-mark {
+    width: 3rem;
+    height: 3rem;
+    margin: 0 auto var(--space-4);
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--bg-success);
+    color: var(--status-success);
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-bold);
+}
+
+.practice-error { color: var(--status-error); }
+
+/* --- upcoming ------------------------------------------------------------- */
+
+.practice-upcoming { display: grid; gap: var(--space-4); }
+
+.practice-day {
+    padding: var(--space-4) var(--space-5);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+}
+
+.practice-day-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0 0 var(--space-2);
+    font-size: var(--font-size-base);
+    color: var(--text-primary);
+}
+
+.practice-day-count {
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+.practice-day-items {
+    margin: 0;
+    padding-left: var(--space-5);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+.practice-question { padding: var(--space-5); }
+.practice-question-context {
+    margin: 0;
+    font-size: var(--font-size-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
+}
+.practice-question-text {
+    margin: var(--space-2) 0 var(--space-4);
+    font-size: var(--font-size-xl);
+    color: var(--text-primary);
+}
+.practice-course-picker { display: flex; gap: var(--space-3); margin-top: var(--space-4); }
+
+/* --- Progress ------------------------------------------------------------- */
+
+.progress-totals {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: var(--space-4);
+    margin-bottom: var(--space-6);
+}
+
+.progress-stat {
+    padding: var(--space-5);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-1);
+}
+
+.progress-stat-skeleton { height: 6.5rem; }
+
+.progress-stat-value {
+    display: block;
+    font-size: var(--font-size-3xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--accent-primary);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+}
+
+.progress-stat-label {
+    display: block;
+    margin-top: var(--space-2);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+}
+
+.progress-stat-sub {
+    display: block;
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+}
+
+.progress-section { margin-bottom: var(--space-6); }
+
+.progress-section-title {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+    font-size: var(--font-size-xl);
+    color: var(--text-primary);
+    margin: 0 0 var(--space-4);
+}
+
+.progress-section-hint {
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-normal);
+    color: var(--text-secondary);
+}
+
+.progress-gaps { display: grid; gap: var(--space-3); }
+.progress-gap { border-left: 3px solid var(--status-warning); }
+
+.progress-courses { display: grid; gap: var(--space-4); }
+
+.progress-course {
+    padding: var(--space-5);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-1);
+}
+
+.progress-course-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-4);
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: var(--space-3);
+}
+
+.progress-course-title { margin: 0; font-size: var(--font-size-lg); color: var(--text-primary); }
+.progress-course-meta { font-size: var(--font-size-sm); color: var(--text-secondary); }
+
+/* Three segments, not one: "started but shaky" must look different from
+   "known". A single completion bar hides exactly the thing this page exists
+   to show. */
+.progress-bar {
+    display: flex;
+    height: 0.6rem;
+    border-radius: 999px;
+    overflow: hidden;
+    background: var(--bg-tertiary);
+}
+
+.progress-bar > span {
+    transition: width var(--dur-slower) var(--ease-decelerate);
+}
+
+.progress-bar-known { background: var(--status-success); }
+.progress-bar-learning { background: var(--accent-primary); }
+.progress-bar-unseen { background: transparent; }
+
+.progress-course-detail { margin-top: var(--space-4); }
+
+.progress-course-detail > summary {
+    cursor: pointer;
+    color: var(--accent-primary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+}
+
+.progress-concepts {
+    list-style: none;
+    margin: var(--space-3) 0 0;
+    padding: 0;
+    display: grid;
+    gap: var(--space-1);
+}
+
+.progress-concept {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: var(--space-3);
+    align-items: center;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--border-radius-sm);
+    font-size: var(--font-size-sm);
+}
+
+.progress-concept:nth-child(odd) { background: var(--bg-primary); }
+.progress-concept-title { color: var(--text-primary); }
+.progress-concept-meta { color: var(--text-secondary); font-size: var(--font-size-xs); }
+
+.progress-strength {
+    padding: 2px var(--space-2);
+    border-radius: 999px;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    white-space: nowrap;
+}
+
+.progress-strength.is-strong { background: var(--bg-success); color: var(--status-success); }
+.progress-strength.is-fading { background: var(--bg-warning); color: var(--status-warning); }
+.progress-strength.is-weak { background: var(--bg-danger); color: var(--status-error); }
+.progress-strength.is-unknown { background: var(--bg-tertiary); color: var(--text-secondary); }
+
+/* An unseen concept is NOT a zero. It is reported as absent so a learner does
+   not read "not yet reached" as "failed". */
+.progress-concept-unseen {
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+    font-style: italic;
+}
+
+.progress-error { color: var(--status-error); }
+
+.sr-only {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+@media (max-width: 640px) {
+    .practice-header,
+    .progress-header { align-items: flex-start; }
+    .practice-card,
+    .progress-gap { flex-direction: column; align-items: stretch; }
+    .practice-concept,
+    .progress-concept { grid-template-columns: 1fr; }
+    .practice-course-picker { flex-direction: column; }
+}
+
+/* --- Learn: mode entry points --------------------------------------------
+ * Palace is a MODE of the open course, so its entry point lives in the course
+ * header rather than the global nav. Styled as a quiet secondary action: it is
+ * an alternative way to study, not the primary path.
+ */
+.learn-mode-link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    text-decoration: none;
+    white-space: nowrap;
+    transition: color var(--transition-fast),
+                border-color var(--transition-fast),
+                transform var(--transition-fast);
+}
+
+.learn-mode-link:hover {
+    color: var(--accent-primary);
+    border-color: var(--accent-primary);
+    transform: translateY(-1px);
+}
+
+@media (max-width: 640px) {
+    .learn-mode-link span:last-child { display: none; }
+}

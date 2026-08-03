@@ -1,0 +1,190 @@
+"""A5.3 — the design system must hold offline, in both themes.
+
+Two classes of defect this guards, both measured on 2026-08-03 rather than
+imagined:
+
+1. OFFLINE. base.html pulled DM Sans and JetBrains Mono from
+   fonts.googleapis.com with no local copies. Helga's entire premise is that it
+   runs on a Mac Mini with no internet, so the type system silently fell back
+   to system defaults and every page load paid a DNS/connect timeout first.
+
+2. THEME PARITY. 14 of 32 colour tokens were declared in :root and never
+   overridden for dark — including --focus-ring (a light-blue ring on a dark
+   surface), --shadow-lg (a light-mode shadow drawn over dark), and all six
+   --bloom-* colours, which paint the learn path, the product's signature
+   screen. "Light and dark both verified" is an A5 gate item; asserting it is
+   the only way it stays true.
+"""
+
+import os
+import re
+import sys
+import unittest
+
+_here = os.path.dirname(__file__)
+_root = os.path.abspath(os.path.join(_here, '../../'))
+_static = os.path.join(_root, 'services/web-ui/static')
+_templates = os.path.join(_root, 'services/web-ui/templates')
+
+
+def _read(path):
+    with open(path) as f:
+        return f.read()
+
+
+def _tokens(css, selector):
+    """Custom properties declared in the first matching block."""
+    m = re.search(re.escape(selector) + r'\s*\{(.*?)\n\}', css, re.S)
+    if not m:
+        return {}
+    return dict(re.findall(r'(--[\w-]+)\s*:\s*([^;]+);', m.group(1)))
+
+
+class TestNoExternalAssets(unittest.TestCase):
+    """An offline appliance may not depend on a CDN for how it looks."""
+
+    EXTERNAL = re.compile(r'(?:href|src)\s*=\s*["\']https?://', re.I)
+
+    def test_no_template_loads_a_remote_stylesheet_or_script(self):
+        offenders = []
+        for name in os.listdir(_templates):
+            if not name.endswith('.html'):
+                continue
+            for i, line in enumerate(_read(os.path.join(_templates, name)).splitlines(), 1):
+                if self.EXTERNAL.search(line):
+                    offenders.append(f"{name}:{i}")
+        self.assertEqual(
+            offenders, [],
+            "These load an asset over the network. Helga runs with no "
+            "internet, so the request cannot succeed — it can only stall the "
+            f"page: {offenders}"
+        )
+
+    def test_google_fonts_are_gone(self):
+        base = _read(os.path.join(_templates, 'base.html'))
+        self.assertNotIn('fonts.googleapis.com', base)
+        self.assertNotIn('fonts.gstatic.com', base)
+
+    def test_the_font_files_are_actually_present(self):
+        fonts = os.path.join(_static, 'fonts')
+        self.assertTrue(os.path.isdir(fonts), "no local fonts directory")
+        for weight in ('400', '500', '600', '700', '800'):
+            self.assertTrue(
+                os.path.exists(os.path.join(fonts, f'dmsans-{weight}.woff2')),
+                f"DM Sans {weight} is referenced by the design system but "
+                f"not vendored — the brand would fall back to a system font"
+            )
+        for weight in ('400', '600'):
+            self.assertTrue(os.path.exists(
+                os.path.join(fonts, f'jetbrainsmono-{weight}.woff2')))
+
+    def test_every_font_face_src_resolves_to_a_real_file(self):
+        css = _read(os.path.join(_static, 'css/fonts.css'))
+        refs = re.findall(r"url\(['\"]?\.\./fonts/([^'\")]+)", css)
+        self.assertTrue(refs, "fonts.css declares no @font-face src")
+        for ref in refs:
+            self.assertTrue(
+                os.path.exists(os.path.join(_static, 'fonts', ref)),
+                f"fonts.css points at {ref}, which does not exist"
+            )
+
+    def test_font_payload_stays_small(self):
+        """A design system is not a licence to ship megabytes."""
+        fonts = os.path.join(_static, 'fonts')
+        total = sum(os.path.getsize(os.path.join(fonts, f))
+                    for f in os.listdir(fonts))
+        self.assertLess(total, 600 * 1024,
+                        f"font payload is {total // 1024} KB; subset it")
+
+
+class TestThemeParity(unittest.TestCase):
+    """Any colour-valued token must be defined for BOTH themes."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.style = _read(os.path.join(_static, 'css/style.css'))
+        cls.ds = _read(os.path.join(_static, 'css/design-system.css'))
+        cls.light = {}
+        cls.light.update(_tokens(cls.style, ':root'))
+        cls.light.update(_tokens(cls.ds, ':root'))
+        cls.dark = {}
+        cls.dark.update(_tokens(cls.style, '[data-theme="dark"]'))
+        cls.dark.update(_tokens(cls.ds, '[data-theme="dark"]'))
+
+    def _colour_tokens(self):
+        return {k: v for k, v in self.light.items()
+                if re.search(r'#[0-9a-fA-F]{3,8}|rgba?\(', v)}
+
+    def test_every_colour_token_has_a_dark_value(self):
+        missing = sorted(set(self._colour_tokens()) - set(self.dark))
+        self.assertEqual(
+            missing, [],
+            "These render a light-mode colour on a dark surface. A token "
+            f"defined for only one theme is a constant, not a token: {missing}"
+        )
+
+    def test_bloom_colours_flip(self):
+        """They paint the learn path — the signature screen."""
+        for i in range(1, 7):
+            self.assertIn(f'--bloom-{i}', self.dark)
+
+    def test_focus_ring_is_theme_aware(self):
+        self.assertIn('--focus-ring-color', self.dark,
+                      "a light-blue focus ring on a dark surface fails contrast")
+
+    def test_shadows_flip(self):
+        """A light-mode shadow over a dark surface reads as a grey smear."""
+        for level in ('--shadow-1', '--shadow-2', '--shadow-3', '--shadow-4'):
+            self.assertIn(level, self.dark)
+
+    def test_inverted_text_flips(self):
+        """'Inverted' means 'reads against the accent'. On dark surfaces that
+        is deep ink, not white."""
+        self.assertIn('--text-inverted', self.dark)
+
+
+class TestMotionSystem(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ds = _read(os.path.join(_static, 'css/design-system.css'))
+
+    def test_durations_and_easings_are_tokens(self):
+        for token in ('--dur-fast', '--dur-base', '--dur-slow',
+                      '--ease-standard', '--ease-decelerate',
+                      '--ease-accelerate', '--ease-emphasized'):
+            self.assertIn(token, self.ds)
+
+    def test_reduced_motion_is_respected(self):
+        self.assertIn('prefers-reduced-motion: reduce', self.ds,
+                      "transform animations are genuinely unpleasant for "
+                      "people with vestibular disorders; this is a real "
+                      "setting, not a nicety")
+
+    def test_reduced_motion_still_changes_state(self):
+        """Suppressing motion must not suppress the state change itself —
+        otherwise the UI stops telling the user anything happened."""
+        block = self.ds[self.ds.index('prefers-reduced-motion'):]
+        self.assertIn('helga-fade-in', block,
+                      "a cross-fade does not trigger motion sensitivity and "
+                      "keeps state changes legible")
+
+    def test_animations_are_not_infinite_except_loaders(self):
+        infinite = re.findall(r'animation:[^;]*infinite[^;]*;', self.ds)
+        for decl in infinite:
+            self.assertIn(
+                'shimmer', decl,
+                f"only an indeterminate loader may loop forever: {decl}")
+
+
+class TestBrandMarkDegradesGracefully(unittest.TestCase):
+
+    def test_gradient_wordmark_has_a_solid_fallback(self):
+        ds = _read(os.path.join(_static, 'css/design-system.css'))
+        self.assertIn('@supports not', ds,
+                      "background-clip:text with transparent fill renders the "
+                      "wordmark INVISIBLE where unsupported, not merely plain")
+
+
+if __name__ == '__main__':
+    unittest.main()

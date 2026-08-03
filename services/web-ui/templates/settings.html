@@ -119,6 +119,20 @@
         </div>
     </section>
 
+    {#  A5.1 — Status was a top-level tab. It reports container health and
+        service latency: an operator tool, not a learner tool. On a
+        single-user appliance that belongs in Settings, and this link is the
+        only way in now that it is out of the nav. #}
+    <section class="settings-section" id="section-system">
+        <h2>System</h2>
+        <div class="setting-row">
+            <a href="/status" class="btn-secondary" role="button">Open System Status</a>
+            <p class="setting-hint">Service health, response times, and model
+               availability. Useful when something feels slow or a course will
+               not build.</p>
+        </div>
+    </section>
+
     <div id="settings-toast" class="toast hidden" role="status" aria-live="polite"></div>
 
     <!-- Reset confirmation modal — styled, consistent with the rest of the app -->
