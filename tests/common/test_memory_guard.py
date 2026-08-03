@@ -73,16 +73,27 @@ class TestPressureDetection(unittest.TestCase):
     def test_swap_heuristic_applies_only_without_kernel_signal(self):
         """On platforms with no pressure level, swap+low-free is our fallback."""
         with patch.object(mg, 'macos_pressure_level', return_value=None):
-            r = mg.pressure_reason(_snap(available_gb=4.0, swap_used_frac=0.89))
+            r = mg.pressure_reason(_snap(available_gb=2.0, swap_used_frac=0.89))
         self.assertIsNotNone(r)
         self.assertIn("swap", r)
 
-    def test_kernel_pressure_level_outranks_our_heuristics(self):
-        """The OS's own verdict is authoritative."""
+    def test_critical_pressure_stops_background_work(self):
         with patch.object(mg, 'macos_pressure_level', return_value=4):
             r = mg.pressure_reason(_snap(available_gb=20.0, swap_used_frac=0.0))
         self.assertIsNotNone(r)
-        self.assertIn("pressure level", r)
+        self.assertIn("CRITICAL", r)
+
+    def test_WARN_throttles_but_does_not_stop(self):
+        """macOS enters level 2 routinely under ordinary load — a browser, an
+        editor and a 6 GB resident model is enough. Treating WARN as stop
+        stalled a real course build on a healthy machine."""
+        with patch.object(mg, 'macos_pressure_level', return_value=2):
+            self.assertIsNone(mg.pressure_reason(_snap(available_gb=3.7)),
+                              "WARN must not stop background work")
+        with patch.object(mg, 'macos_pressure_level', return_value=2), \
+             patch.object(mg, 'snapshot', return_value=_snap(available_gb=3.7)):
+            self.assertEqual(mg.suggested_workers(default=3), 1,
+                             "WARN must throttle to one worker")
 
     def test_unreadable_memory_fails_open(self):
         """An unreadable memory subsystem must not wedge the pipeline."""

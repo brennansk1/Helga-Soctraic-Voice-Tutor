@@ -42,7 +42,10 @@ import time
 logger = logging.getLogger(__name__)
 
 # Below this much free RAM, background work stands down.
-MIN_FREE_GB = float(os.getenv("HELGA_MIN_FREE_GB", "3.0"))
+# 1.5 GB: a hard floor for "about to fail", not a comfort margin. The
+# earlier 3.0 GB was an arbitrary comfort number that blocked work while
+# the kernel reported the machine healthy.
+MIN_FREE_GB = float(os.getenv("HELGA_MIN_FREE_GB", "1.5"))
 # Above this fraction of swap consumed, the machine is already distressed.
 MAX_SWAP_USED_FRAC = float(os.getenv("HELGA_MAX_SWAP_FRAC", "0.80"))
 # Don't re-measure more often than this (vm_stat/psutil calls aren't free).
@@ -223,11 +226,16 @@ def pressure_reason(snap=None):
         # build at "swap 89% with only 5.9 GB free" — 0.1 GB under an arbitrary
         # corroboration threshold. macOS knows whether it is thrashing; we do
         # not, and second-guessing it costs real work.
-        if lvl >= 2:
-            return (f"macOS reports memory pressure level {lvl} "
-                    f"(2=warn, 4=critical)")
-        # Level 1 = normal. Still refuse only if free memory is critically low,
-        # which protects against the kernel lagging a sudden allocation.
+        # WARN (2) is advisory; CRITICAL (4) means stop.
+        #
+        # Third calibration pass, and the semantics matter: macOS enters level 2
+        # routinely under ordinary load — a browser, an editor and a 6 GB model
+        # resident is enough. Treating WARN as "stop all background work" stalled
+        # a course build indefinitely on a machine that was working fine.
+        # Level 2 is where we THROTTLE (see suggested_workers) and keep going;
+        # level 4 is where we stand down.
+        if lvl >= 4:
+            return f"macOS reports CRITICAL memory pressure (level {lvl})"
         if s.available_gb < MIN_FREE_GB:
             return (f"only {s.available_gb:.1f} GB free "
                     f"(floor {MIN_FREE_GB:.1f} GB)")
@@ -292,10 +300,18 @@ def wait_for_headroom(timeout_s=300.0, poll_s=10.0, on_wait=None):
 
 
 def suggested_workers(default=1, per_worker_gb=2.0):
-    """How many background workers current headroom supports."""
+    """How many background workers current headroom supports.
+
+    This is where kernel WARN (level 2) takes effect: throttle to a single
+    worker rather than stopping. Stopping at WARN stalled a real build on a
+    machine that was otherwise healthy.
+    """
     s = snapshot()
     if s.source == "unavailable":
         return default
+    lvl = macos_pressure_level()
+    if lvl is not None and lvl >= 2:
+        return 1
     usable = max(0.0, s.available_gb - MIN_FREE_GB)
     return max(1, min(default, int(usable // max(0.5, per_worker_gb)) or 1))
 
