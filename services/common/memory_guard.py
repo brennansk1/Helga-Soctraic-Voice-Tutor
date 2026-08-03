@@ -35,6 +35,7 @@ DESIGN
 import logging
 import os
 import subprocess
+import sys
 import threading
 import time
 
@@ -46,6 +47,20 @@ MIN_FREE_GB = float(os.getenv("HELGA_MIN_FREE_GB", "3.0"))
 MAX_SWAP_USED_FRAC = float(os.getenv("HELGA_MAX_SWAP_FRAC", "0.80"))
 # Don't re-measure more often than this (vm_stat/psutil calls aren't free).
 _CACHE_TTL_S = float(os.getenv("HELGA_MEM_POLL_S", "5"))
+
+# Master switch. Set HELGA_MEMORY_GUARD=0 to disable throttling entirely.
+# Automatically off under pytest: the guard is designed to BLOCK background
+# work for up to two minutes when the machine is genuinely short of memory,
+# which is right in production and disastrous in a test suite — it turned a
+# 40s run into 182s on a developer box that happened to be swapping.
+def _guard_enabled():
+    if os.getenv("HELGA_MEMORY_GUARD", "").lower() in ("0", "false", "no"):
+        return False
+    if os.getenv("PYTEST_CURRENT_TEST") or "pytest" in os.path.basename(
+            os.environ.get("_", "")):
+        return False
+    return "pytest" not in sys.modules
+
 
 _lock = threading.Lock()
 _cached = {"t": 0.0, "snap": None}
@@ -61,17 +76,38 @@ class MemorySnapshot(dict):
             raise AttributeError(k) from e
 
 
+def _num(v):
+    """Coerce to float, rejecting anything that isn't genuinely numeric.
+
+    A safety component must not trust its inputs. Besides guarding against a
+    misbehaving psutil in production, this matters in tests: eight modules in
+    this suite install `sys.modules['psutil'] = MagicMock()` at import time,
+    and a MagicMock attribute sails through arithmetic only to explode later on
+    a comparison. Rejecting it here makes the reader fall through to vm_stat
+    instead of producing nonsense thresholds.
+    """
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        raise TypeError(f"non-numeric memory value: {type(v).__name__}")
+    return float(v)
+
+
 def _read_psutil():
     import psutil
     vm = psutil.virtual_memory()
     sw = psutil.swap_memory()
+    total = _num(vm.total)
+    avail = _num(vm.available)
+    sw_total = _num(sw.total)
+    sw_used = _num(sw.used)
+    if total <= 0:
+        raise ValueError("psutil reported non-positive total memory")
     return MemorySnapshot(
-        total_gb=vm.total / 2**30,
-        available_gb=vm.available / 2**30,
-        used_pct=vm.percent,
-        swap_total_gb=sw.total / 2**30,
-        swap_used_gb=sw.used / 2**30,
-        swap_used_frac=(sw.used / sw.total) if sw.total else 0.0,
+        total_gb=total / 2**30,
+        available_gb=avail / 2**30,
+        used_pct=_num(vm.percent),
+        swap_total_gb=sw_total / 2**30,
+        swap_used_gb=sw_used / 2**30,
+        swap_used_frac=(sw_used / sw_total) if sw_total else 0.0,
         source="psutil",
     )
 
@@ -164,6 +200,8 @@ def allow_background(snap=None):
     Foreground work should NOT consult this — a student mid-lesson is not the
     thing to sacrifice.
     """
+    if not _guard_enabled():
+        return True
     return pressure_reason(snap) is None
 
 
@@ -175,6 +213,8 @@ def wait_for_headroom(timeout_s=300.0, poll_s=10.0, on_wait=None):
     poll so a pipeline can surface "paused: system memory low" to the user
     instead of appearing to freeze.
     """
+    if not _guard_enabled():
+        return True
     deadline = time.time() + timeout_s
     notified = False
     while time.time() < deadline:
