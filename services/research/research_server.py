@@ -43,6 +43,41 @@ def cache_key(prefix, text):
 
 
 # --- Wikipedia lookup ---
+def wiki_search_title(query):
+    """Resolve free text to a real article title via Wikipedia's search API.
+
+    wiki.page() is an EXACT title match, which fails on everything Helga
+    actually generates:
+        "Identify the Right Angle"                    -> no page (a task, not a topic)
+        "Right Triangle Components and Hypotenuse..." -> no page (invented phrase)
+        "the pythagorean theorem"                     -> no page (article + casing)
+    All three cascade levels missed, so every concept shipped ungrounded with
+    confidence 0.0. Search resolves phrasing to the real article
+    ("Pythagorean theorem"), which is what a human would do.
+    """
+    key = cache_key("wikisearch", query)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached or None
+    try:
+        r = requests.get(
+            "https://en.wikipedia.org/w/api.php",
+            params={"action": "opensearch", "search": query, "limit": 1,
+                    "namespace": 0, "format": "json"},
+            headers={"User-Agent": "Helga/1.0 (Socratic Tutor)"},
+            timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            if len(data) > 1 and data[1]:
+                title = data[1][0]
+                cache.set(key, title, expire=CACHE_TTL_SEARCH)
+                return title
+    except Exception as e:
+        logger.debug(f"wiki search failed for {query!r}: {e}")
+    cache.set(key, "", expire=CACHE_TTL_SEARCH)
+    return None
+
+
 def wiki_lookup(title):
     key = cache_key("wiki", title)
     cached = cache.get(key)
@@ -168,7 +203,22 @@ async def _research_concept_async(title, module_title, course_title, mastery=1):
     for candidate in (title, module_title, course_title):
         if not candidate:
             continue
+        # Exact page first (cheap, cached), then SEARCH — exact match fails on
+        # essentially everything this pipeline generates.
         wiki_result = wiki_lookup(candidate)
+        if not wiki_result:
+            resolved = wiki_search_title(candidate)
+            # Retry on ANY difference, including case only. An earlier guard
+            # skipped when resolved.lower() == candidate.lower(), which blocked
+            # precisely the common case: "the pythagorean theorem" resolves to
+            # "The Pythagorean theorem" — a real page with a 1587-char summary —
+            # and differs ONLY by capitalisation. Wikipedia titles are
+            # case-sensitive after the first letter, so a case-only difference
+            # is a real, resolvable difference.
+            if resolved and resolved != candidate:
+                wiki_result = wiki_lookup(resolved)
+                if wiki_result:
+                    logger.info(f"wiki: {candidate!r} -> {resolved!r}")
         if wiki_result:
             if candidate is not title:
                 logger.info(
