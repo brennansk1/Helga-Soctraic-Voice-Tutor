@@ -116,6 +116,33 @@ class GpuGate:
         ctx = ctx or LLMContext()
         timeout = timeout if timeout is not None else self.admit_timeout
 
+        # Memory safeguard. This gate limits CONCURRENCY, which does not stop a
+        # single background job from pushing an already-tight machine into swap
+        # — measured on this hardware: 24 GB total, 10.3 GB of 11.3 GB swap
+        # already consumed with Docker DOWN and only a browser open.
+        #
+        # Helga runs on the user's own computer, so batch work must yield when
+        # memory is scarce. FOREGROUND work is deliberately never blocked here:
+        # a student waiting mid-lesson is not the thing to sacrifice.
+        if getattr(ctx, "klass", None) == BACKGROUND:
+            try:
+                from services.common.memory_guard import (
+                    pressure_reason, wait_for_headroom,
+                )
+                reason = pressure_reason()
+                if reason:
+                    logger.warning(f"[MEM] background admit deferred — {reason}")
+                    if not wait_for_headroom(timeout_s=min(timeout, 120.0)):
+                        self.stats_overloads += 1
+                        raise GpuOverloaded(
+                            f"insufficient memory for background work — {reason}")
+            except GpuOverloaded:
+                raise
+            except Exception as e:
+                # Fail OPEN: an unreadable memory subsystem must never wedge
+                # the pipeline.
+                logger.debug(f"memory guard unavailable, allowing: {e}")
+
         with self._lock:
             if self._waiters >= self.max_queue:
                 self.stats_overloads += 1

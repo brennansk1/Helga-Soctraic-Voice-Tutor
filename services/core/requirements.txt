@@ -4,8 +4,12 @@ pyyaml==6.0.1
 psutil==5.9.8
 tiktoken==0.7.0
 tqdm==4.66.4
-sentence-transformers==2.7.0
-scikit-learn==1.5.1
+# sentence-transformers REMOVED: core never imported it. It was pulling the
+# entire PyTorch + transformers stack into the core image for nothing. Dense
+# embedding lives in the rag service, which imports it lazily and only for the
+# optional hybrid-search path (librarian.py). If core ever needs embeddings,
+# call rag rather than re-adding a multi-GB dependency here.
+scikit-learn==1.5.1  # safety.py: TfidfVectorizer + cosine_similarity (light)
 beautifulsoup4==4.12.3
 python-socketio==5.11.2
 fsrs==6.0.0
