@@ -21,3 +21,4 @@ _archive/Matterorn*
 !services/web-ui/static/img/*.svg
 *.db
 test_prompt_db
+.venv*/

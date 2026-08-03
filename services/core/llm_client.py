@@ -92,7 +92,18 @@ class LLMClient:
             # is what it honors, and only "none" takes effect ("low" still
             # returned 0 chars). Also ~4x faster (8.8s vs 34.4s).
             # Pass think=True where deliberation is worth the latency.
-            **({} if think else {"reasoning_effort": "none"}),
+            **({} if think else {
+                    # Two different servers, two different levers —
+                    # each ignores the other's field, so send both:
+                    #   Ollama /v1  : reasoning_effort="none"
+                    #   mlx_lm /v1  : chat_template_kwargs.enable_thinking
+                    # Measured on mlx_lm with the ternary 27B: thinking ON
+                    # returned 539 chars of reasoning and took 13s; OFF
+                    # returned the answer in 1s. Same trap as Ollama, and
+                    # the Ollama field alone does NOT disable it here.
+                    "reasoning_effort": "none",
+                    "chat_template_kwargs": {"enable_thinking": False},
+                }),
         }
         # Constrained decoding: a JSON schema forces schema-valid output; plain
         # json_mode only nudges toward JSON. Prefer the schema when given.

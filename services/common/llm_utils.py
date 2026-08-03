@@ -277,7 +277,18 @@ def llm_generate(
                 # So this is both the correctness fix and a ~4x speedup.
                 # Pass think=True to restore deliberation where it earns its
                 # latency; default off for build-time structured output.
-                **({} if think else {"reasoning_effort": "none"}),
+                **({} if think else {
+                    # Two different servers, two different levers —
+                    # each ignores the other's field, so send both:
+                    #   Ollama /v1  : reasoning_effort="none"
+                    #   mlx_lm /v1  : chat_template_kwargs.enable_thinking
+                    # Measured on mlx_lm with the ternary 27B: thinking ON
+                    # returned 539 chars of reasoning and took 13s; OFF
+                    # returned the answer in 1s. Same trap as Ollama, and
+                    # the Ollama field alone does NOT disable it here.
+                    "reasoning_effort": "none",
+                    "chat_template_kwargs": {"enable_thinking": False},
+                }),
                 # Grammar-constrained decoding. Smaller/quantised models emit
                 # malformed JSON often enough that post-hoc repair is a losing
                 # game — unescaped quotes inside string values are the common
