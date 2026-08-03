@@ -1833,10 +1833,27 @@ class ContentHydrator:
         _availability_marked = threading.Event()
         hydration_start_time = time.perf_counter()
 
-        # Phase 11A: Parallel concept hydration with ThreadPoolExecutor
+        # Phase 11A: Parallel concept hydration with ThreadPoolExecutor.
         # Each concept's research + LLM call + file save is independent.
-        # Cap workers at 3 to respect Jetson 8GB RAM constraint.
-        max_workers = min(3, len(concept_list))
+        #
+        # Worker count MUST NOT exceed the GPU gate's background capacity.
+        # Course building is classified as background work, and the gate
+        # reserves only `bg_slots` (default 1) concurrent slots for it while
+        # the hydrator used a hardcoded 3. Three workers contending for one
+        # slot means the third waits ~2x an LLM call; once that exceeds the
+        # 55s admit timeout the call raises GpuOverloaded. Measured call
+        # latency is 8-40s, so this failed routinely — observed as a hydration
+        # run stalling on repeated "admit wait exceeded 55.0s".
+        #
+        # (The old "cap at 3 for Jetson 8GB" rationale is also stale — this
+        # runs on a Mac Mini M4 Pro — but the gate, not RAM, is the real
+        # constraint.)
+        try:
+            from services.core.gpu_gate import get_gpu_gate
+            _bg_cap = max(1, getattr(get_gpu_gate(), "bg_slots", 1))
+        except Exception:
+            _bg_cap = 1
+        max_workers = max(1, min(_bg_cap, len(concept_list)))
         research_url = os.getenv("RESEARCH_URL", "http://helga-research:5006")
 
         def _hydrate_one(idx, uid, title, objectives, complexity_role, user_note,
