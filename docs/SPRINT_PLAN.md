@@ -394,6 +394,36 @@ Two standing rules while parked:
 
 ## 4.10 THE COURSE QUALITY GATE (hard, non-negotiable)
 
+### What "college-level quality" means here — and what it does NOT mean
+
+**Target: the Duolingo of a college course.** Helga delivers through a taxonomy of
+modules → units → lessons → concepts, consumed in short interactive bites. It is
+deliberately **not** organised like a traditional university course, and must not be
+judged as if it were.
+
+So the gate is about **equivalence of substance, not of format**:
+
+| Must match a real college course | Must NOT be imported from one |
+|---|---|
+| Conceptual depth and rigor | Lecture-length exposition |
+| Prerequisite chains and correct sequencing | 50-minute lecture blocks |
+| Technical correctness and precision | Semester/credit-hour structure |
+| Topic coverage of the real discipline | Long problem sets, term papers |
+| Genuine worked reasoning, not just assertion | Textbook chapter pacing |
+| Honest treatment of assumptions and failure modes | Formal assessment apparatus |
+
+A concept is allowed to be short. It is **not** allowed to be shallow. The failure mode
+we are gating against is not brevity — it is a well-written encyclopedia entry standing
+in for teaching: prose that *describes* a technique without ever deriving it, working an
+example, or engaging with when it breaks.
+
+Two consequences for the instruments below:
+- `level_audit` judges the sophistication of the *substance* and must not penalise the
+  micro-learning format. Its prompt says so explicitly.
+- Criterion 6 (syllabus realism) compares **coverage and sequencing** against a real
+  syllabus. It must not compare format, pacing, or assessment structure — a mismatch
+  there is the design working as intended.
+
 **Every course Helga generates must be verified to be at the level it claims, before
 the learner ever sees that label.** Not a sample. Not the golden matrix. Every course.
 This gate blocks: a course that fails it may not be presented at its requested level.
@@ -434,8 +464,11 @@ A course may claim level *L* only if ALL of the following hold:
 5. **Grounding** — 100% of concepts carry ≥1 resolvable source; none below the confidence
    floor without a visible marker.
 6. **Syllabus realism** — for each supported subject, the generated syllabus is compared
-   against a real published university syllabus at that level for topic coverage and
-   sequencing. Divergence must be explainable, not accidental.
+   against a real published university syllabus at that level for **topic coverage and
+   prerequisite sequencing only**. Differences in format, pacing, lesson length or
+   assessment structure are expected and are NOT failures — see the framing above.
+   What fails: a discipline's core topics missing, or concepts taught before their
+   prerequisites.
 
 ### Enforcement, not reporting
 

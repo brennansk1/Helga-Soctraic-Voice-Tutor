@@ -61,6 +61,13 @@ JUDGE = """You classify the academic level of teaching material. Be strict and
 concrete. Judge the SUBSTANCE, not the formatting — headings, bullet points,
 bold text and citation lists tell you nothing about level.
 
+IMPORTANT — this material is deliberately delivered in SHORT, self-contained
+micro-lessons, like a language-learning app's take on a university subject. A
+single lesson is meant to be small. Do NOT lower the level because the piece is
+brief, lacks lecture-style exposition, or does not look like a textbook chapter.
+Judge the sophistication of the ideas and the prerequisites a reader needs, as
+if asking: "at what level is the thinking here pitched?"
+
 Levels:
 1 = popular science / general audience explainer
 2 = high school
@@ -72,9 +79,10 @@ Ask yourself: what does the reader have to already know? Does it derive or
 merely assert? Does it handle edge cases, assumptions, failure modes? Is there
 anything a competent undergraduate would find new?
 
-Material that only describes a topic in careful prose — no derivation, no
-non-trivial worked example, no engagement with when the method fails — is
-level 3 at most, however polished it reads.
+Material that only DESCRIBES a topic — no derivation, no non-trivial worked
+example, no engagement with when the method fails — is level 3 at most, however
+advanced its vocabulary and however polished it reads. Sophisticated
+terminology is not sophistication.
 
 Return STRICT JSON only:
 {"level": n, "reason": "<one sentence>", "hardest_thing_required": "<the most

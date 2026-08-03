@@ -56,6 +56,51 @@ LLM_API_URL = os.getenv(
 )
 
 
+def _escape_inner_quotes(text: str) -> str:
+    """Escape unescaped double quotes inside JSON string values.
+
+    Walks the text tracking whether we are inside a string. Inside a string, a
+    `"` only genuinely terminates it when the next non-space character is one
+    of `, } ] :` or end-of-input; anything else means the model failed to
+    escape an inner quote, so we escape it.
+
+    Deliberately conservative: if the result still doesn't parse, the caller
+    falls back to its other strategies. Never raises.
+    """
+    if not text or '"' not in text:
+        return text
+    try:
+        out = []
+        in_string = False
+        i, n = 0, len(text)
+        while i < n:
+            ch = text[i]
+            if ch == "\\" and in_string and i + 1 < n:
+                out.append(text[i:i + 2])
+                i += 2
+                continue
+            if ch == '"':
+                if not in_string:
+                    in_string = True
+                    out.append(ch)
+                else:
+                    j = i + 1
+                    while j < n and text[j] in " \t\r\n":
+                        j += 1
+                    if j >= n or text[j] in ",}]:":
+                        in_string = False
+                        out.append(ch)
+                    else:
+                        out.append('\\"')  # inner quote the model didn't escape
+                i += 1
+                continue
+            out.append(ch)
+            i += 1
+        return "".join(out)
+    except Exception:
+        return text
+
+
 def repair_json(text: str) -> str:
     """LLM-1: Repair common JSON malformations from LLM output.
 
@@ -87,6 +132,16 @@ def repair_json(text: str) -> str:
     # Smart single-quote replacement: convert 'key': 'value' patterns
     text = re.sub(r"(?<=[\[{,\s])'([^']*?)'\s*:", r'"\1":', text)
     text = re.sub(r":\s*'([^']*?)'", r': "\1"', text)
+
+    # Unescaped double quotes INSIDE a string value. This is the single most
+    # common malformation from smaller/quantised models — they quote the
+    # student verbatim or use scare quotes and never escape them, e.g.
+    #     {"evidence": "the tutor said "excellent" here"}
+    # It is also the one failure repair used to give up on, so the whole
+    # response was discarded. json.loads cannot recover it, but the structure
+    # is predictable: a value run between the opening quote and the true
+    # closing quote (the one followed by , } ] or EOL).
+    text = _escape_inner_quotes(text)
 
     # Truncated JSON repair: close unclosed brackets/braces
     open_braces = text.count("{") - text.count("}")
@@ -151,6 +206,7 @@ def llm_generate(
     max_tokens: int = 800,
     progress_callback=None,
     think: bool = False,
+    json_format=None,
 ) -> str:
     """Call LLM with retry logic.
 
@@ -222,10 +278,19 @@ def llm_generate(
                 # Pass think=True to restore deliberation where it earns its
                 # latency; default off for build-time structured output.
                 **({} if think else {"reasoning_effort": "none"}),
+                # Grammar-constrained decoding. Smaller/quantised models emit
+                # malformed JSON often enough that post-hoc repair is a losing
+                # game — unescaped quotes inside string values are the common
+                # killer and are not reliably repairable. Passing a schema (or
+                # "json") makes Ollama constrain generation so invalid JSON
+                # cannot be produced in the first place. repair_json() stays as
+                # a backstop for callers that don't pass one.
+                **({"format": json_format} if json_format else {}),
             }
             logger.info(
                 f"[{req_id}] LLM Call (tokens:{max_tokens}, temp:{temp:.1f}, "
-                f"think={think}): sys='{sys_prompt[:60]}...'"
+                f"think={think}, constrained={bool(json_format)}): "
+                f"sys='{sys_prompt[:60]}...'"
             )
 
             # Start heartbeat if we have a callback
@@ -289,16 +354,28 @@ def llm_generate_json(
     """Wrapper that combines generation and JSON parsing with retries.
 
     Args:
-        schema: Optional schema dict for validation (LLM-2). See validate_schema().
+        schema: Optional schema dict. Used BOTH to grammar-constrain generation
+            (Ollama `format`) and to validate the parsed result (LLM-2).
         progress_callback: Optional callback for heartbeat updates during LLM calls.
+
+    Robustness ladder, strongest first — smaller/quantised models produce
+    malformed JSON often enough that relying on repair alone loses data:
+      1. constrained decoding, so invalid JSON cannot be generated
+      2. repair_json() for unconstrained output (trailing commas, quotes, ...)
+      3. retry, escalating to constrained JSON mode if the first attempt failed
     """
     for attempt in range(retries):
+        # Ask for constrained output. If a schema was supplied use it; failing
+        # that, escalate to generic JSON mode after the first parse failure
+        # rather than re-rolling the same unconstrained prompt.
+        fmt = schema if schema else ("json" if attempt > 0 else None)
         raw = llm_generate(
             prompt,
             sys_prompt=sys_prompt,
             retries=1,
             max_tokens=max_tokens,
             progress_callback=progress_callback,
+            json_format=fmt,
         )
         if not raw:
             continue
