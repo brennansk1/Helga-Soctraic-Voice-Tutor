@@ -2861,6 +2861,38 @@ Prior concepts: {prereq_str}
             f"rejected. Keep every section terse to stay inside it; do not pad."
         )
 
+        # Sections the DEPTH CONTRACT requires at higher levels but the base
+        # template never asked for.
+        #
+        # A tier probe showed mastery 4 failing on named_result and
+        # derivation_or_proof, and mastery 5 on exercise — not because the model
+        # could not produce them, but because nothing requested them. Exactly
+        # the bug already found with worked_example: the validator demanded an
+        # element the prompt never mentioned, so the level was unreachable by
+        # construction and its preset was advertising falsely.
+        #
+        # Kept OUT of the base template deliberately: a beginner lesson should
+        # not carry a proof and an exercise set. The sections appear only where
+        # the contract requires them.
+        advanced_sections = ""
+        if depth >= 4:
+            advanced_sections += """
+
+## Governing Result
+[Name the theorem, law, or principle this rests on, then STATE it precisely.
+Name it — "the spectral theorem", "Bayes' rule" — do not merely allude to it.]
+
+## Derivation
+[Derive the key result step by step from stated premises. Each step must follow
+from the one before. If a full proof does not fit, derive the central step and
+say what is being assumed.]"""
+        if depth >= 5:
+            advanced_sections += """
+
+## Exercise
+[One non-trivial problem the learner should attempt, with enough setup to be
+answerable. Do NOT include the solution.]"""
+
         # Build the LLM-generated section template
         section_template = f"""## Mastery Criteria
 At Bloom {bloom_level} ({bloom_label}), the student demonstrates mastery by:
@@ -2894,7 +2926,7 @@ useful, one short real-world context sentence.]
 
 ## Analogies
 - **Simple**: [An everyday analogy accessible to anyone]
-- **Technical**: [A domain-specific analogy for advanced learners]"""
+- **Technical**: [A domain-specific analogy for advanced learners]{advanced_sections}"""
 
         user_prompt = f"""Topic: {title} | Course: {course_title} | Depth: {depth}/5 ({depth_desc})
 {h_str}
@@ -2916,10 +2948,20 @@ Generate ONLY the sections below. Do NOT generate Metadata, Learning Objectives,
         max_retries = 3
         for attempt in range(max_retries):
             try:
+                # Scale the output budget with the TEMPLATE, not a constant.
+                # At mastery 5 the template carries 11 sections (Governing
+                # Result, Derivation and Exercise are added on top of the base
+                # nine); a flat 2500 truncated it so badly the model emitted
+                # only 4 headings and the rest were injected as stubs — which
+                # then failed the contract for `exercise`, blaming the model for
+                # our own ceiling. Same class as the reasoning-mode and
+                # concept-list truncation bugs found earlier.
+                _sections = section_template.count("\n## ") + 1
+                _budget = max(2500, 400 * _sections + int(_wmax * 1.6))
                 llm_output = llm_generate(
                     user_prompt,
                     sys_prompt=sys_prompt,
-                    max_tokens=2500,
+                    max_tokens=_budget,
                     progress_callback=self.status_callback,
                 )
                 # Accept any substantive response and let the validator repair

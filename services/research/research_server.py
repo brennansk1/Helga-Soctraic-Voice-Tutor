@@ -14,6 +14,7 @@ import time
 from urllib.parse import urlparse
 
 import aiohttp
+import re
 import requests
 import trafilatura
 import wikipediaapi
@@ -76,6 +77,77 @@ def wiki_search_title(query):
         logger.debug(f"wiki search failed for {query!r}: {e}")
     cache.set(key, "", expire=CACHE_TTL_SEARCH)
     return None
+
+
+def primary_source_lookup(query, limit=2):
+    """Find PRIMARY literature (DOI / arXiv) for a query.
+
+    The depth contract requires a primary source at mastery >= 4, on the
+    principle that an "advanced undergraduate" course citing only Wikipedia is
+    not advanced. But with SearXNG down, research returned Wikipedia and nothing
+    else, so `primary_source` was UNSATISFIABLE and the Advanced Undergraduate
+    and Graduate presets promised a level the system could not deliver.
+
+    Crossref and arXiv are free, keyless, and need no SearXNG. Crossref is
+    queried first because it spans every discipline — arXiv would silently
+    exclude the humanities.
+
+    Returns [] rather than raising: a missing primary source must degrade the
+    course's recorded grounding, never abort its creation.
+    """
+    key = cache_key("primary", f"{query}|{limit}")
+    cached = cache.get(key)
+    if cached is not None:
+        return cached or []
+
+    out = []
+    # 1. Crossref — all disciplines, returns a DOI.
+    try:
+        r = requests.get(
+            "https://api.crossref.org/works",
+            params={"query": query, "rows": limit,
+                    "select": "DOI,title,type,issued"},
+            headers={"User-Agent": "Helga/1.0 (Socratic Tutor; mailto:noreply@localhost)"},
+            timeout=15)
+        if r.status_code == 200:
+            for item in (r.json().get("message", {}).get("items") or [])[:limit]:
+                doi = item.get("DOI")
+                if not doi:
+                    continue
+                out.append({
+                    "url": f"https://doi.org/{doi}",
+                    "title": (item.get("title") or ["Untitled"])[0][:200],
+                    "type": "journal",
+                    "domain_tier": 1,
+                })
+    except Exception as e:
+        logger.debug(f"crossref lookup failed for {query!r}: {e}")
+
+    # 2. arXiv — preprints, STEM-leaning. HTTPS: the http endpoint 301s.
+    if len(out) < limit:
+        try:
+            r = requests.get(
+                "https://export.arxiv.org/api/query",
+                params={"search_query": f"all:{query}",
+                        "max_results": limit - len(out)},
+                headers={"User-Agent": "Helga/1.0 (Socratic Tutor)"},
+                timeout=15)
+            if r.status_code == 200:
+                ids = re.findall(r"<id>(http[^<]*abs[^<]*)</id>", r.text)
+                titles = re.findall(r"<title>([^<]*)</title>", r.text)
+                for i, url in enumerate(ids[:limit - len(out)]):
+                    out.append({
+                        "url": url,
+                        "title": (titles[i + 1] if len(titles) > i + 1
+                                  else "arXiv preprint")[:200].strip(),
+                        "type": "preprint",
+                        "domain_tier": 1,
+                    })
+        except Exception as e:
+            logger.debug(f"arxiv lookup failed for {query!r}: {e}")
+
+    cache.set(key, out, expire=CACHE_TTL_SEARCH)
+    return out
 
 
 def wiki_lookup(title):
@@ -235,7 +307,20 @@ async def _research_concept_async(title, module_title, course_title, mastery=1):
             "type": "wikipedia",
         })
 
-    # 2. Generate search queries (mastery-aware)
+    # 2a. PRIMARY LITERATURE for advanced levels. The depth contract requires
+    #     a primary source at mastery >= 4; without this the Advanced
+    #     Undergraduate and Graduate presets promise a level the system cannot
+    #     deliver, because Wikipedia correctly does not count.
+    if (mastery or 1) >= 4:
+        # Query the SUBJECT, not the pedagogical task title — "Identify the
+        # Right Angle" matches no literature.
+        subject = (module_title or course_title or title)
+        for ps in primary_source_lookup(subject):
+            sources.append(ps)
+            combined_parts.append(
+                f"## Source: {ps['type']} - {ps['title']}\n{ps['url']}")
+
+    # 2b. Generate search queries (mastery-aware)
     queries = build_search_queries(title, module_title, mastery)
 
     # 3. Search via SearXNG
