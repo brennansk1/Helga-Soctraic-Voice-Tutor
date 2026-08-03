@@ -457,9 +457,21 @@ A course may claim level *L* only if ALL of the following hold:
 2. **Calibration** — blind `level_audit` judged level is within **1.0** of *L*, judged with
    level hints stripped, ≥6 concepts × ≥2 repeats. Below *L* − 1 is a hard fail;
    materially above *L* + 1 is also a fail (inaccessible to the intended learner).
-3. **Substance spot-check** — for a sample of concepts, an independent judge confirms the
-   derivations/worked examples are *correct and non-trivial*, not merely present. This is
-   what stops marker-stuffing from satisfying (1).
+3. **Substance & factual correctness** — ≥80% of sampled concepts judged SUBSTANTIVE by
+   `tools/substance_check.py`: derivations actually derive, examples carry concrete values
+   to a result, and **every technical claim is true**. This is what stops marker-stuffing
+   from satisfying (1). The judge must pass its own `--self-test` before its verdicts are
+   trusted.
+
+   > **This criterion is currently the binding one.** Measured on `course_10e8a4de`:
+   > **3/6 SUBSTANTIVE (50%) — FAIL**, and the failures are *factual errors*, not missing
+   > rigor. Verified by hand: one concept teaches "a necessary and sufficient condition for
+   > endogeneity bias is the presence of a collider variable" — false in both directions.
+   > Meanwhile the same course passes level calibration, has 69 real citations, and reads
+   > well. **Every surface measure passes while the content states falsehoods.**
+   >
+   > Priority consequence: factual correctness outranks "add worked examples". Teaching a
+   > confident falsehood is worse than teaching thinly.
 4. **Structure** — <20% degenerate lessons (≤1 concept).
 5. **Grounding** — 100% of concepts carry ≥1 resolvable source; none below the confidence
    floor without a visible marker.
