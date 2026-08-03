@@ -76,12 +76,21 @@ def live_stack():
     if not (_free(WEB_PORT) and _free(RAG_PORT)):
         pytest.skip(f"ports {WEB_PORT}/{RAG_PORT} already in use")
 
-    # A throwaway data dir: e2e must never mutate the developer's real courses.
+    # A throwaway data dir: e2e must never mutate the developer's real data.
+    #
+    # BOTH halves have to come across. Course structure lives in
+    # data/courses/<uid>/structure.json, but the course LIST is served from
+    # SQLite — copying only the JSON produced a stack that rendered the empty
+    # state, and every learn-path test skipped with "no fully-built course on
+    # disk" while a perfectly good course sat in the directory.
     data_dir = tempfile.mkdtemp(prefix='helga-e2e-')
-    shutil.copytree(os.path.join(_ROOT, 'data', 'courses'),
-                    os.path.join(data_dir, 'courses'),
-                    dirs_exist_ok=True) if os.path.isdir(
-                        os.path.join(_ROOT, 'data', 'courses')) else None
+    src = os.path.join(_ROOT, 'data')
+    if os.path.isdir(os.path.join(src, 'courses')):
+        shutil.copytree(os.path.join(src, 'courses'),
+                        os.path.join(data_dir, 'courses'), dirs_exist_ok=True)
+    for name in ('helga.db', 'user_state.json'):
+        if os.path.exists(os.path.join(src, name)):
+            shutil.copy2(os.path.join(src, name), os.path.join(data_dir, name))
 
     env = dict(os.environ, DATA_ROOT=data_dir, HELGA_DATA_DIR=data_dir,
                PYTHONUNBUFFERED='1')

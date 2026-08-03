@@ -819,7 +819,12 @@
                                         encodeURIComponent(courseUid));
                 if (!res.ok) return;                 // path still renders
                 const data = await res.json();
-                (data.concepts || []).forEach(c => { reviewByUid[c.concept_uid] = c; });
+                // Rebuild rather than merge: on a refresh after a session a
+                // concept may no longer be due, and a merged map would keep
+                // showing "review due today" on something already answered.
+                const next = {};
+                (data.concepts || []).forEach(c => { next[c.concept_uid] = c; });
+                reviewByUid = next;
             } catch (e) {
                 console.warn('[learn] review state unavailable:', e);
             }
@@ -1472,7 +1477,64 @@
                 window._navGuardTimeout = null;
             }
 
-            window.location.href = '/course/view?uid=' + encodeURIComponent(courseUid);
+            // A5.4 — return to the PATH, in place.
+            //
+            // This used to `window.location.href = '/course/view?uid=...'`,
+            // so a button labelled "Back to course map" left the Learn tab
+            // entirely and landed on the structure page: different layout,
+            // different nav highlight, and the path the learner had just been
+            // walking was gone. The course map IS the path view.
+            //
+            // The structure is re-fetched rather than re-shown from cache,
+            // because the whole point of coming back is to see the concept you
+            // just finished marked as done — and review state may have moved
+            // too. A stale re-render is the bug this is meant to fix.
+            sessionView.classList.add('hidden');
+            pathView.classList.remove('hidden');
+            const learnHeaderEl = document.querySelector('.learn-header');
+            if (learnHeaderEl) learnHeaderEl.classList.remove('hidden');
+
+            // Drop concept_uid so a reload does not re-enter the session.
+            try {
+                const url = new URL(window.location.href);
+                url.searchParams.delete('concept_uid');
+                history.replaceState({}, '', url);
+            } catch (e) { /* non-fatal */ }
+
+            refreshPathAfterSession();
+
+            if (backBtn) {
+                backBtn.disabled = false;
+                backBtn.classList.remove('is-navigating');
+                backBtn.textContent = '\u2190 Back';
+            }
+
+            // Put focus back on the node they came from, so keyboard users are
+            // not dumped at the top of the document.
+            if (_lastEnteredNodeUid) {
+                const origin = document.querySelector(
+                    '.path-node[data-uid="' + _lastEnteredNodeUid + '"]');
+                if (origin) origin.focus({ preventScroll: false });
+            }
+        }
+
+        async function refreshPathAfterSession() {
+            try {
+                const [structRes] = await Promise.all([
+                    fetch('/api/course_structure?uid=' + encodeURIComponent(courseUid)),
+                    loadReviewState(),
+                ]);
+                if (!structRes.ok) return;              // keep the stale render
+                const data = await structRes.json();
+                if (data && data.structure) {
+                    cachedStructure = data.structure;
+                    renderStructure(data.structure);
+                }
+            } catch (e) {
+                // The path stays as it was. Showing the previous render is
+                // better than blanking the screen because a refresh failed.
+                console.warn('[learn] path refresh failed:', e);
+            }
         }
 
         document.getElementById('back-to-path-btn-session').addEventListener('click', exitToPathView);

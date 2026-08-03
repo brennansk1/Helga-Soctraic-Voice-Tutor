@@ -200,20 +200,34 @@ class TestCourses:
 
 class TestLearnPath:
 
-    def _open_a_built_course(self, page, base_url):
+    def _built_course_uid(self, page, base_url):
         page.goto(base_url + "/courses")
         page.wait_for_timeout(1200)
         ready = page.locator(".course-card:not(:has(.course-card-empty))")
         if ready.count() == 0:
             pytest.skip("no fully-built course on disk")
-        ready.first.locator(
-            "button:text-is('Start Learning'), button:text-is('Continue')"
-        ).first.click()
-        expect(page).to_have_url(re.compile(r".*/learn\?course_uid=.*"))
+        href = ready.first.locator("button[aria-label^='View structure']").get_attribute("onclick") or ""
+        m = re.search(r"uid=(course_[0-9a-f]+)", href)
+        if not m:
+            pytest.skip("could not determine a course uid from the card")
+        return m.group(1)
+
+    def _open_the_path(self, page, base_url):
+        """Land on the course MAP.
+
+        Clicking "Start Learning" on a card navigates straight into a concept
+        session (`&concept_uid=...`) — it resumes where you left off — which
+        hides the path view and the learn header. Tests about the path have to
+        ask for the path.
+        """
+        uid = self._built_course_uid(page, base_url)
+        page.goto(base_url + "/learn?course_uid=" + uid)
         page.wait_for_timeout(2800)
+        expect(page.locator("#path-view")).to_be_visible()
+        return uid
 
     def test_the_path_renders_labelled_nodes(self, page: Page, base_url):
-        self._open_a_built_course(page, base_url)
+        self._open_the_path(page, base_url)
         nodes = page.locator(".path-node")
         assert nodes.count() > 0, "the learn path rendered no nodes"
         labels = page.locator(".node-label")
@@ -221,9 +235,29 @@ class TestLearnPath:
             "every node needs a permanent label; titles used to be hover-only"
         assert labels.first.inner_text().strip(), "node label is empty"
 
+    def test_back_returns_to_the_path_in_place(self, page: Page, base_url):
+        """A5.4 — "Back to course map" used to `window.location` away to
+        /course/view, so it left the Learn tab entirely: different page,
+        different nav highlight, and the path the learner was walking was
+        gone. The course map IS the path view."""
+        self._open_the_path(page, base_url)
+        page.locator(".path-node:not(.locked)").first.click()
+        page.wait_for_timeout(2000)
+        expect(page.locator("#session-view")).to_be_visible()
+
+        page.locator("#back-to-path-btn-session").click()
+        page.wait_for_timeout(2000)
+
+        expect(page.locator("#path-view")).to_be_visible()
+        expect(page).to_have_url(re.compile(r".*/learn\?course_uid=.*"))
+        assert "concept_uid=" not in page.url, \
+            "leaving concept_uid in the URL re-enters the session on reload"
+        assert page.locator(".path-node").count() > 0, \
+            "the path did not re-render after the session"
+
     def test_memory_palace_is_reachable_from_learn(self, page: Page, base_url):
         """It has shipped reachable-by-URL-only twice."""
-        self._open_a_built_course(page, base_url)
+        self._open_the_path(page, base_url)
         link = page.locator("#palace-mode-link")
         expect(link).to_be_visible()
         assert "course_uid=" in (link.get_attribute("href") or ""), \
