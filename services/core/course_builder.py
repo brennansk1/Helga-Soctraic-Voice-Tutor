@@ -1744,6 +1744,12 @@ class ContentHydrator:
         # concepts are grounded in the user's OWN material rather than only in
         # web research. Previously uploaded files were never read at all.
         self.source_document = ""
+        # A1: fact-check pass. Disable with HELGA_FACT_CHECK=0 (it costs an
+        # extra LLM call per concept, plus a confirmation call per flagged
+        # claim).
+        self.fact_check_enabled = os.getenv(
+            "HELGA_FACT_CHECK", "1").lower() not in ("0", "false", "no")
+        self._fact_failures = []
 
         if storage:
             self.storage = storage
@@ -1771,6 +1777,7 @@ class ContentHydrator:
             self.topic_domain = infer_domain(course_title)
         self._contract_failures = []
         self._low_confidence_concepts = []
+        self._fact_failures = []
 
         # Build hierarchy context, concept list, and prerequisite map from JSON
         concept_list = []
@@ -2019,6 +2026,20 @@ class ContentHydrator:
                         "problems": contract_detail.get("problems", []),
                     })
 
+            # A1: fact-check. The depth contract checks that rigor is PRESENT;
+            # substance_check showed the real defect is that it can be WRONG —
+            # 50% of sampled concepts contained false technical claims that
+            # every other measure passed (right level, real citations, fluent
+            # prose). Fluency is not accuracy.
+            if not is_fallback and self.fact_check_enabled:
+                structured_md = self._apply_fact_check(
+                    structured_md, title, course_title, complexity_role,
+                    source_type, h_ctx, research_sources, research_confidence,
+                    user_note, bloom_level, learning_objectives_list,
+                    prerequisite_titles, research_structured, content_to_use,
+                    uid,
+                )
+
             # A2: an honest marker on thin content. Previously a 0.0-confidence
             # concept was visually identical to a well-sourced one.
             if low_confidence:
@@ -2175,6 +2196,24 @@ class ContentHydrator:
                         f"STRUCT:WARN:DEPTH_SUMMARY:{missed}/{total_concepts} "
                         f"concepts below level {self.mastery_level}")
 
+        # A1: course-level factual verdict. A course still carrying confirmed
+        # false claims must not be presented as verified at its level.
+        if self.fact_check_enabled and total_concepts > 0:
+            bad = len(self._fact_failures)
+            course["fact_check"] = {
+                "concepts_total": total_concepts,
+                "concepts_with_false_claims": bad,
+                "clean_pct": round(100 * (total_concepts - bad) / total_concepts, 1),
+                "failures": self._fact_failures[:25],
+            }
+            if bad:
+                logger.warning(
+                    f"[FACT] {bad}/{total_concepts} concepts still contain "
+                    f"confirmed-false claims after regeneration")
+                if self.status_callback:
+                    self.status_callback(
+                        f"STRUCT:WARN:FACT_SUMMARY:{bad}/{total_concepts}")
+
         # A2: course-level grounding verdict, so thin sourcing is visible at a
         # glance instead of only per-concept.
         if total_concepts > 0:
@@ -2253,6 +2292,79 @@ class ContentHydrator:
         result["edge_cases"] = " ".join(edges[:3])
         result["remainder"] = " ".join(other)[:1500]
         return result
+
+    def _apply_fact_check(self, structured_md, title, course_title,
+                          complexity_role, source_type, h_ctx, research_sources,
+                          research_confidence, user_note, bloom_level,
+                          learning_objectives, prerequisite_titles,
+                          research_structured, content_to_use, uid):
+        """Verify claims and regenerate around any that are confirmed false.
+
+        Only claims that fail an independent second check are acted on. The
+        first pass is primed with known failure modes, which makes it sensitive
+        but prone to crying wolf — in self-test it flagged the TRUE statement
+        "adjusting for a mediator removes part of the effect being estimated".
+        Regenerating CORRECT content is worse than missing an error, because it
+        invites the model to swap a true statement for a confident new one.
+        """
+        try:
+            from services.common.fact_check import check_content, correction_hint
+        except Exception as e:
+            logger.debug(f"fact-check unavailable: {e}")
+            return structured_md
+
+        result = check_content(structured_md, source_text=content_to_use or "",
+                               concept_title=title)
+        if not result.get("checked"):
+            return structured_md
+        false_claims = result.get("false") or []
+        if not false_claims:
+            return structured_md
+
+        logger.warning(
+            f"  [FACT] '{title}': {len(false_claims)} confirmed-false claim(s)")
+        for c in false_claims[:3]:
+            logger.warning(f"    - {str(c)[:160]}")
+        if self.status_callback:
+            self.status_callback(f"STRUCT:FACT_RETRY:{title}")
+
+        hint = correction_hint(false_claims)
+        try:
+            candidate = self._condense_and_structure_content(
+                title, content_to_use, course_title, self.mastery_level,
+                complexity_role, source_type,
+                hierarchy_context=h_ctx, previous_concepts=[],
+                module_concepts=[], research_sources=research_sources,
+                research_confidence=research_confidence,
+                user_note=(user_note + "\n\n" + hint).strip(),
+                bloom_level=bloom_level,
+                learning_objectives=learning_objectives,
+                prerequisite_titles=prerequisite_titles,
+                research_structured=research_structured,
+            )
+        except Exception as e:
+            logger.warning(f"  [FACT] regeneration failed for '{title}': {e}")
+            candidate = None
+
+        if candidate and "[Hydration failed]" not in candidate:
+            recheck = check_content(candidate, source_text=content_to_use or "",
+                                    concept_title=title)
+            if recheck.get("checked") and not recheck.get("false"):
+                logger.info(f"  [FACT] '{title}' corrected on retry")
+                return candidate
+            # Keep whichever draft carries fewer confirmed falsehoods.
+            if len(recheck.get("false") or []) < len(false_claims):
+                self._fact_failures.append(
+                    {"uid": uid, "title": title,
+                     "remaining": len(recheck.get("false") or [])})
+                return candidate
+
+        self._fact_failures.append(
+            {"uid": uid, "title": title, "remaining": len(false_claims),
+             "claims": [str(c)[:200] for c in false_claims[:3]]})
+        if self.status_callback:
+            self.status_callback(f"STRUCT:WARN:FACT_UNRESOLVED:{title}")
+        return structured_md
 
     def _excerpt_for_concept(self, document, title, hierarchy_ctx=None,
                              window=6000):

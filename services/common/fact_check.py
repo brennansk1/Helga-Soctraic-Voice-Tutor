@@ -90,6 +90,38 @@ Report at most 8 claims, prioritising the most load-bearing ones.
 Return STRICT JSON matching the schema."""
 
 
+def _field(d, *names, default=None):
+    """Read a field under any of several plausible key names.
+
+    Ollama's /v1 shim honours `format` enough to emit valid JSON but does NOT
+    reliably enforce the schema's KEY names: asked for {"verdict","why"} it
+    returned {"answer": "FALSE", "reasoning": "..."} — correct content, wrong
+    keys. Reading only the requested key silently discarded a correct verdict
+    and made the checker look broken when the model was right.
+
+    Smaller/quantised models do this often enough that alias-tolerant reads are
+    the norm here, not a workaround.
+    """
+    if not isinstance(d, dict):
+        return default
+    for n in names:
+        if n in d and d[n] is not None:
+            return d[n]
+    # Case-insensitive second pass.
+    low = {str(k).lower(): v for k, v in d.items()}
+    for n in names:
+        if n.lower() in low and low[n.lower()] is not None:
+            return low[n.lower()]
+    return default
+
+
+def _verdict_of(d):
+    """Normalise a verdict from any key/casing the model happened to use."""
+    v = _field(d, "verdict", "answer", "result", "label", "judgement",
+               "judgment", "decision", default="")
+    return str(v).strip().upper()
+
+
 def _post(messages, schema=None, max_tokens=900, model=None):
     """Single constrained call. Returns parsed dict or None."""
     import requests
@@ -145,17 +177,75 @@ def check_content(content, source_text="", concept_title=""):
     data = _post([{"role": "system", "content": _SYSTEM},
                   {"role": "user", "content": user}],
                  schema=_CLAIM_SCHEMA, model=model)
-    if not data or not isinstance(data.get("claims"), list):
+    # Read via _field: the model may return "items"/"results" instead of
+    # "claims" even with a schema (see _field's docstring).
+    if not data or not isinstance(
+            _field(data, "claims", "items", "results"), list):
         return {"claims": [], "false": [], "ok": True, "checked": False}
 
-    claims = [c for c in data["claims"] if isinstance(c, dict) and c.get("claim")]
-    false = [c for c in claims if str(c.get("verdict", "")).upper() == "FALSE"]
+    raw_claims = _field(data, "claims", "items", "results", default=[])
+    claims = [c for c in raw_claims
+              if isinstance(c, dict) and _field(c, "claim", "statement", "text")]
+    flagged = [c for c in claims if _verdict_of(c) == "FALSE"]
+
+    # Confirm every FALSE verdict independently before acting on it.
+    #
+    # The first pass is deliberately primed with known failure modes ("watch for
+    # mediator/confounder confusion"), which makes it sensitive but also prone
+    # to crying wolf: in self-test it flagged the TRUE statement "adjusting for
+    # a mediator removes part of the effect being estimated" — textbook
+    # over-adjustment bias — purely because the claim mentioned a mediator.
+    #
+    # That matters more than a miss. A false positive triggers regeneration of
+    # CORRECT content and invites the model to replace a true statement with a
+    # confident new error. So a claim is only reported false if an unprimed
+    # second look agrees.
+    false = [c for c in flagged
+             if _confirm_false(_field(c, "claim", "statement", "text"),
+                               concept_title)]
     return {
         "claims": claims,
+        "flagged": flagged,
         "false": false,
         "ok": len(false) <= MAX_FALSE_CLAIMS,
         "checked": True,
     }
+
+
+_CONFIRM_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "verdict": {"type": "string", "enum": ["TRUE", "FALSE", "UNSURE"]},
+        "why": {"type": "string"},
+    },
+    "required": ["verdict"],
+}
+
+_CONFIRM_SYSTEM = """Judge whether ONE statement is technically correct.
+
+Answer only about the statement as written. Do not look for errors that are not
+there — a correct statement about a subtle topic is still correct.
+
+TRUE   — correct as written
+FALSE  — incorrect, or reverses/overstates a real relationship
+UNSURE — genuinely ambiguous, or depends on unstated context
+
+If you are not confident it is wrong, answer TRUE or UNSURE, never FALSE.
+Return STRICT JSON."""
+
+
+def _confirm_false(claim, concept_title=""):
+    """Second, unprimed opinion. Only a confident FALSE counts."""
+    if not claim:
+        return False
+    ctx = f" (from teaching material on {concept_title})" if concept_title else ""
+    d = _post([{"role": "system", "content": _CONFIRM_SYSTEM},
+               {"role": "user", "content": f"Statement{ctx}:\n\n{claim}"}],
+              schema=_CONFIRM_SCHEMA, max_tokens=300)
+    if not d:
+        # Can't confirm -> don't act. Better to miss than to corrupt good content.
+        return False
+    return _verdict_of(d) == "FALSE"
 
 
 def correction_hint(false_claims):
@@ -164,8 +254,10 @@ def correction_hint(false_claims):
         return ""
     lines = []
     for c in false_claims[:5]:
-        why = c.get("why") or "this is incorrect"
-        lines.append(f'- "{str(c.get("claim"))[:180]}" — {str(why)[:180]}')
+        why = _field(c, "why", "reasoning", "explanation",
+                     default="this is incorrect")
+        claim = _field(c, "claim", "statement", "text", default="")
+        lines.append(f'- "{str(claim)[:180]}" — {str(why)[:180]}')
     return ("The previous draft contained factually INCORRECT statements. Rewrite "
             "so that none of the following errors appear, and do not replace them "
             "with equally confident new errors — if you are unsure of a technical "
@@ -203,11 +295,11 @@ def self_test(verbose=True):
         print(f"  known-FALSE content : {len(bad['false'])} false claim(s) "
               f"-> {'PASS' if caught else 'FAIL (missed the error)'}")
         for c in bad["false"][:3]:
-            print(f"      caught: {str(c.get('claim'))[:90]}")
+            print(f"      caught: {str(_field(c, 'claim', 'statement', 'text'))[:90]}")
         print(f"  known-TRUE content  : {len(good['false'])} false claim(s) "
               f"-> {'PASS' if quiet else 'FAIL (false positive)'}")
         for c in good["false"][:2]:
-            print(f"      wrongly flagged: {str(c.get('claim'))[:90]}")
+            print(f"      wrongly flagged: {str(_field(c, 'claim', 'statement', 'text'))[:90]}")
     return caught and quiet
 
 
