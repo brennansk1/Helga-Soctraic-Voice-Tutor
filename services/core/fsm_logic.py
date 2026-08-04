@@ -3798,6 +3798,11 @@ class MnemosyneFSM:
                 # filename and its contents were never read.
                 if source_text:
                     hydrator.source_document = source_text
+                    # B13.13: a book-sourced course illustrates itself. Handing
+                    # the file to the hydrator makes Phase 3 run in BOOK MODE —
+                    # figures come from this document and the external archives
+                    # are switched off entirely.
+                    hydrator.source_document_path = epub_filepath
                 try:
                     hydrator.hydrate(course_uid)
                 finally:

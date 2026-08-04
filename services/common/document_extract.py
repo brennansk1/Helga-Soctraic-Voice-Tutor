@@ -22,9 +22,16 @@ Stdlib `zipfile`/`xml` plus BeautifulSoup, which is already installed — no new
 dependency for an offline appliance. EPUB is a ZIP of XHTML, so this is
 tractable without `ebooklib`.
 
-PDF is deliberately NOT claimed. There is no PDF library available, and
-returning empty text for a PDF while reporting success would recreate exactly
-the bug this module fixes. `extract()` raises UnsupportedDocument instead.
+PDF IS NOW SUPPORTED (was advertised and unimplemented). `/library` accepted
+`.pdf` in its file input and its MIME whitelist while `extract()` raised
+UnsupportedDocument for it — the same "we appear to read your material and do
+not" bug this module was written to fix, reintroduced one layer up. It reads
+through `pypdf` (BSD-3-Clause, pure Python): no AGPL entanglement, and no
+native toolchain in the image.
+
+Text is returned page-delimited so a caller can map a passage back to a page —
+which is what `document_figures` needs to attach a figure to the prose that
+describes it.
 """
 
 import logging
@@ -39,8 +46,14 @@ _CONTAINER_NS = "{urn:oasis:names:tc:opendocument:xmlns:container}"
 
 TEXT_SUFFIXES = (".txt", ".md", ".markdown", ".rst")
 EPUB_SUFFIXES = (".epub",)
+PDF_SUFFIXES = (".pdf",)
 # Named so the error message can be specific about why.
-UNSUPPORTED_SUFFIXES = (".pdf", ".doc", ".docx", ".mobi", ".azw", ".azw3")
+UNSUPPORTED_SUFFIXES = (".doc", ".docx", ".mobi", ".azw", ".azw3")
+
+# A page marker kept in the extracted text. Cheap, greppable, and it survives
+# the chunking the hydrator does, so a figure on page 42 can still be tied to
+# the paragraph that discusses it.
+PAGE_MARKER = "\n\n[[page:{n}]]\n\n"
 
 
 class UnsupportedDocument(Exception):
@@ -131,6 +144,59 @@ def extract_epub(path, max_chars=None):
     return out[:max_chars] if max_chars else out
 
 
+def extract_pdf(path, max_chars=None, keep_page_markers=True):
+    """Extract text from a PDF, page by page.
+
+    Raises rather than returning a plausible-looking empty string: a scanned
+    PDF with no text layer produces nothing, and silently building a course
+    from nothing is precisely the failure this module exists to prevent. The
+    error names OCR as the fix, because that is what such a file actually
+    needs.
+    """
+    if not os.path.exists(path):
+        raise ExtractionFailed(f"file not found: {path}")
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        raise UnsupportedDocument(
+            "PDF support needs the 'pypdf' package, which is not installed")
+    try:
+        reader = PdfReader(path)
+        if getattr(reader, "is_encrypted", False):
+            try:
+                reader.decrypt("")          # many PDFs are "encrypted" with no password
+            except Exception:
+                raise ExtractionFailed("PDF is password-protected")
+        chunks, total, pages = [], 0, 0
+        for index, page in enumerate(reader.pages):
+            try:
+                text = (page.extract_text() or "").strip()
+            except Exception as e:
+                logger.warning(f"PDF: skipping page {index + 1}: {e}")
+                continue
+            if not text:
+                continue
+            pages += 1
+            if keep_page_markers:
+                chunks.append(PAGE_MARKER.format(n=index + 1))
+            chunks.append(text)
+            total += len(text)
+            if max_chars and total >= max_chars:
+                break
+    except ExtractionFailed:
+        raise
+    except Exception as e:
+        raise ExtractionFailed(f"could not read PDF: {e}")
+
+    out = "".join(chunks).strip()
+    if not out:
+        raise ExtractionFailed(
+            "PDF contained no extractable text — it is probably a scan, and "
+            "would need OCR before it can be taught from")
+    logger.info(f"PDF: extracted {len(out):,} chars from {pages} page(s)")
+    return out[:max_chars] if max_chars else out
+
+
 def extract_text_file(path, max_chars=None):
     if not os.path.exists(path):
         raise ExtractionFailed(f"file not found: {path}")
@@ -151,6 +217,8 @@ def extract(path, max_chars=400_000):
     lower = (path or "").lower()
     if lower.endswith(EPUB_SUFFIXES):
         return extract_epub(path, max_chars=max_chars)
+    if lower.endswith(PDF_SUFFIXES):
+        return extract_pdf(path, max_chars=max_chars)
     if lower.endswith(TEXT_SUFFIXES):
         return extract_text_file(path, max_chars=max_chars)
     if lower.endswith(UNSUPPORTED_SUFFIXES):

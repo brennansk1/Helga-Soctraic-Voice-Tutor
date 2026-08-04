@@ -31,7 +31,7 @@
 
         <form id="import-form" onsubmit="return false;">
             <label for="import-file">File</label>
-            <input type="file" id="import-file" accept=".epub,.md,.markdown,.txt">
+            <input type="file" id="import-file" accept=".epub,.pdf,.md,.markdown,.txt">
             <p id="import-file-info" class="modal-hint" hidden></p>
 
             <div id="import-progress" hidden>
@@ -55,7 +55,7 @@
 // Formats the backend can actually parse. PDF is deliberately excluded — no
 // parser is installed, and accepting it would produce a course that ignores
 // the file.
-var IMPORT_OK = ['.epub', '.md', '.markdown', '.txt'];
+var IMPORT_OK = ['.epub', '.pdf', '.md', '.markdown', '.txt'];
 var IMPORT_MAX_MB = 50;
 
 function openImportModal() {
@@ -95,9 +95,9 @@ document.addEventListener('DOMContentLoaded', function () {
         var okExt = IMPORT_OK.some(function (x) { return name.endsWith(x); });
         if (!okExt) {
             btn.disabled = true; info.hidden = true;
-            importError(name.endsWith('.pdf')
-                ? 'PDF is not supported yet — convert to EPUB, Markdown or text first.'
-                : 'Unsupported file type. Use .epub, .md or .txt.');
+            importError(/\.(docx?|mobi|azw3?)$/.test(name)
+                ? 'That format has no parser — convert to EPUB, PDF, Markdown or text first.'
+                : 'Unsupported file type. Use .epub, .pdf, .md or .txt.');
             return;
         }
         var mb = file.size / (1024 * 1024);

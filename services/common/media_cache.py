@@ -140,6 +140,50 @@ def cache_image(url, meta=None, timeout=FETCH_TIMEOUT):
     return record
 
 
+def cache_bytes(data, meta=None, key_hint=None):
+    """Store image bytes we already hold — a figure lifted out of an uploaded
+    EPUB or PDF, which has no URL to fetch.
+
+    Same store, same same-origin `/api/media/...` path, same magic-byte
+    validation. The difference is provenance: `meta` should name the book, and
+    the caller is responsible for keeping such a figure scoped to the course
+    built from that book (see asset_collector — book figures must never reach
+    the shared cross-course library, because the book is probably in copyright).
+    """
+    if not data:
+        return None
+    ext = _sniff_ext(data[:16])
+    if not ext:
+        logger.debug("cache_bytes: not a recognised image format")
+        return None
+    if len(data) > MAX_BYTES:
+        logger.info("cache_bytes: %d bytes exceeds the cap, skipping", len(data))
+        return None
+    key = hashlib.sha1(data if not key_hint else
+                       (str(key_hint).encode() + data[:4096])).hexdigest()[:16]
+    root = media_root()
+    try:
+        os.makedirs(root, exist_ok=True)
+    except OSError as e:
+        logger.warning("media cache unavailable (%s)", e)
+        return None
+    path = os.path.join(root, f"{key}.{ext}")
+    origin = (meta or {}).get("origin", "embedded in uploaded document")
+    if os.path.exists(path):
+        return _record(key, ext, origin, meta, os.path.getsize(path), cached=True)
+    try:
+        tmp = path + ".part"
+        with open(tmp, "wb") as fh:
+            fh.write(data)
+        os.replace(tmp, path)
+    except OSError as e:
+        logger.warning("could not write cached figure: %s", e)
+        return None
+    record = _record(key, ext, origin, meta, len(data))
+    _write_sidecar(root, key, record)
+    return record
+
+
 def _record(key, ext, url, meta, size, cached=False):
     meta = meta or {}
     return {

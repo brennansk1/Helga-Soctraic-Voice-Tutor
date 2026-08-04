@@ -1138,16 +1138,18 @@ def upload_epub():
     if file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
     
-    # EPUB-2/A3: accept exactly what services/common/document_extract.py can
-    # actually parse. PDF is rejected explicitly with a reason rather than
-    # accepted-then-ignored, which is how this feature used to behave.
+    # Accept exactly what services/common/document_extract.py can actually
+    # parse — no more, no less. PDF is now genuinely read (pypdf), so it moves
+    # from the refusal list to the accepted list; the formats still without a
+    # parser are refused with a reason rather than accepted-then-ignored, which
+    # is how this feature used to behave.
     name = file.filename.lower()
-    ACCEPTED = ('.epub', '.md', '.markdown', '.txt')
+    ACCEPTED = ('.epub', '.pdf', '.md', '.markdown', '.txt')
     if not name.endswith(ACCEPTED):
-        if name.endswith(('.pdf', '.doc', '.docx', '.mobi', '.azw', '.azw3')):
+        if name.endswith(('.doc', '.docx', '.mobi', '.azw', '.azw3')):
             return jsonify({'error':
                 f'{os.path.splitext(name)[1]} is not supported — no parser is '
-                f'installed for it. Convert to EPUB, Markdown or plain text first.'
+                f'installed for it. Convert to EPUB, PDF, Markdown or plain text first.'
             }), 400
         return jsonify({'error': f'Accepted formats: {", ".join(ACCEPTED)}'}), 400
     

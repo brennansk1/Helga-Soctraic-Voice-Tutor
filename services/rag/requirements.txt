@@ -18,3 +18,12 @@ python-socketio==5.11.2
 # must always resolve.
 json-repair==0.61.7
 fast-json-repair==0.2.2; python_version >= "3.11"
+
+# Reading uploaded books (wizard per-module source files). PDF was ADVERTISED in /library — accepted in
+# the file input and the MIME whitelist — while document_extract raised
+# UnsupportedDocument for it, so a user's PDF was silently never opened.
+# pypdf is BSD-3-Clause and pure Python: no AGPL entanglement (unlike PyMuPDF)
+# and no native toolchain in the image. Pillow reads figure dimensions for the
+# formats the header sniffer does not cover.
+pypdf==6.14.2
+pillow==12.3.0

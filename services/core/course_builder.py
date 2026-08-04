@@ -2698,8 +2698,12 @@ class ContentHydrator:
                 from services.core.asset_collector import AssetCollector
                 if self.status_callback:
                     self.status_callback("ASSET:PHASE:START")
-                collector = AssetCollector(self.storage,
-                                           status_callback=self.status_callback)
+                # A course built from an uploaded book uses that book's own
+                # figures and no external imagery — see asset_collector's
+                # book mode.
+                collector = AssetCollector(
+                    self.storage, status_callback=self.status_callback,
+                    document_path=getattr(self, "source_document_path", None))
                 asset_manifest = collector.collect(course_uid)
                 course["assets"] = {
                     "collected": True,

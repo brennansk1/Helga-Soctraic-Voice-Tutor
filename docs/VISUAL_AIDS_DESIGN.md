@@ -437,7 +437,88 @@ diagram stops being looked at.
 
 ---
 
-## 14. Files
+## 14. Book mode — EPUB and PDF
+
+When a course is built from an uploaded book, **the book's own figures are the
+only images it uses.** An author drew that diagram for that explanation; a stock
+photo fetched from an archive is at best a coincidence and at worst contradicts
+the text. External archives are therefore *hard-disabled* in book mode — not
+deprioritised, and not overridable by env.
+
+### PDF was advertised and unimplemented
+
+`/library` accepted `.pdf` in its file input and MIME whitelist while
+`document_extract.extract()` raised `UnsupportedDocument` for it — the same "we
+appear to read your material and do not" bug that module was written to fix, one
+layer up. PDF now reads through **pypdf** (BSD-3-Clause, pure Python: no AGPL
+entanglement unlike PyMuPDF, no native toolchain). Text comes back with
+`[[page:N]]` markers so a figure can be tied to the prose describing it.
+
+A scanned PDF with no text layer still raises, and the error names OCR as the
+fix — returning a plausible empty string is the failure being avoided.
+
+### Extract, then REVIEW
+
+Extraction is the easy half. **Most images embedded in a book are not figures**:
+publisher colophons, chapter rules, bullet glyphs, the same logo on 600 pages.
+Passing those to a learner is worse than having no images, because each one
+occupies the slot a real figure would have had.
+
+| Rejected for | Signal |
+|---|---|
+| page furniture | identical bytes appearing more than 3 times — needs the whole document to see |
+| rule or border | aspect ratio beyond 6:1 |
+| icon or glyph | below 120×100 |
+| unusable | unrecognised format (SVG excluded — executable markup from an untrusted upload) |
+
+Every rejection carries a reason, because a silent filter cannot be tuned: if a
+book yields no figures, the reasons are the only way to tell whether that
+verdict was right.
+
+> **Dimensions decide, not file size.** A byte threshold looked reasonable and
+> was actively wrong: a textbook figure is clean line art, which is the best
+> case for PNG compression, so a real 520×400 diagram came in at 2,939 bytes and
+> was filtered as "too small" while a decorative 200×200 gradient at 40 KB
+> survived. Filtering on bytes rejects the best figures and keeps the ornaments.
+> Bytes are now used only when dimensions cannot be read.
+
+### Captions are free alt-text
+
+`<figcaption>`, an `alt` attribute, or "Figure 3.2:" in the page text gives an
+accurate title and description in the author's own words — no LLM call, no
+hallucination risk. A caption is also the strongest positive signal that an
+image is a figure at all.
+
+### Copyright
+
+An uploaded book is very likely in copyright. Figures are scoped to the course
+built from that book, marked with the book as their source, and — enforced, not
+merely documented — **never written into the shared cross-course library**.
+Letting one user's textbook leak its plates into an unrelated course would be a
+genuine wrong, not a tidiness issue.
+
+Attribution also had to be made to survive persistence: `render_concept_aids`
+wrote only the provenance *tier*, silently dropping `source`, `license` and
+`url`, so a figure came back attributed to nobody. Attribution that does not
+survive a round-trip is not attribution.
+
+### Test cases
+
+Replaced the private 1,325-page file with **public books**, both chosen for
+having real captioned figures:
+
+- **PDF** — an OpenStax textbook (*Astronomy 2e*, *Biology 2e*). CC BY 4.0, so
+  it is legally clean to extract from and the figures stay usable downstream.
+- **EPUB** — a Project Gutenberg illustrated title (*On the Origin of Species*,
+  Gray's *Anatomy*). Public domain, genuine captioned plates.
+
+`tests/fixtures/make_book_fixtures.py` generates small offline stand-ins
+containing both real figures **and** the page furniture that must be rejected,
+so the suite never needs the network.
+
+---
+
+## 15. Files
 
 | File | Role |
 |---|---|
@@ -457,7 +538,11 @@ diagram stops being looked at.
 | `tests/core/test_visual_aids.py` | 66 tests |
 | `services/core/asset_collector.py` | Phase 3 — plan, draw, fetch, dedupe, manifest |
 | `tests/core/test_aid_policy.py` | 32 tests (policy, licence, media cache) |
-| `tests/core/test_asset_collector.py` | 17 tests (skip, reuse, retry, budget, library) |
+| `services/common/document_figures.py` | Extract + review figures from EPUB/PDF |
+| `services/common/document_extract.py` | PDF text extraction (pypdf) with page markers |
+| `tests/fixtures/make_book_fixtures.py` | Offline EPUB/PDF fixtures with real figures + furniture |
+| `tests/core/test_asset_collector.py` | 24 tests (skip, reuse, retry, budget, library, book mode) |
+| `tests/core/test_document_figures.py` | 15 tests (captions, review, PDF text) |
 
 `HELGA_ENABLE_VISUAL_AIDS` (default **on**) gates the whole feature, including
 whether the prompt grammar is spent at all. It is independent of

@@ -64,13 +64,20 @@ class TestImportUiPresent(unittest.TestCase):
         self.assertIn(b'openImportModal', rv.data)
         self.assertIn(b'/api/upload_epub', rv.data)
 
-    def test_import_ui_does_not_offer_pdf(self):
-        """Accepting PDF would produce a course that ignores the file."""
+    def test_import_ui_offers_only_what_can_be_parsed(self):
+        """The UI must advertise exactly what document_extract can read.
+
+        This test used to assert the OPPOSITE — that PDF was absent — because
+        no PDF parser existed and offering it would have produced a course that
+        ignored the file. pypdf is now installed and PDF is genuinely read, so
+        the honest UI is one that offers it. The invariant is unchanged: never
+        advertise a format we cannot parse."""
         rv = app.test_client().get('/courses')
         body = rv.data.decode()
         accept_line = [l for l in body.splitlines() if 'accept=' in l and 'import-file' in l]
         self.assertTrue(accept_line, "import file input should declare accepted types")
-        self.assertNotIn('.pdf', accept_line[0])
+        for unparseable in ('.docx', '.mobi', '.azw'):
+            self.assertNotIn(unparseable, accept_line[0])
 
 
 class TestUploadValidation(unittest.TestCase):
@@ -80,10 +87,18 @@ class TestUploadValidation(unittest.TestCase):
             data={'file': (io.BytesIO(data), filename)},
             content_type='multipart/form-data')
 
-    def test_pdf_is_rejected_with_a_reason(self):
+    def test_pdf_is_no_longer_rejected_for_its_type(self):
+        """PDF is now read for real, so it must not be refused as a format.
+        (A junk body may still fail extraction — that is a different error.)"""
         rv = self._post('book.pdf')
-        self.assertEqual(rv.status_code, 400)
-        self.assertIn('not supported', rv.get_json()['error'].lower())
+        if rv.status_code == 400:
+            self.assertNotIn('not supported', rv.get_json()['error'].lower())
+
+    def test_formats_without_a_parser_are_still_refused_with_a_reason(self):
+        for name in ('book.docx', 'book.mobi', 'book.azw3'):
+            rv = self._post(name)
+            self.assertEqual(rv.status_code, 400, name)
+            self.assertIn('not supported', rv.get_json()['error'].lower())
 
     def test_unknown_type_is_rejected(self):
         self.assertEqual(self._post('thing.xyz').status_code, 400)

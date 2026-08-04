@@ -1276,11 +1276,19 @@ def render_concept_aids(aids):
         return ""
     lines = ["## Visual Aids", ""]
     for slot, aid in sorted(aids.items()):
+        # The WHOLE provenance record round-trips, not just the tier. Writing
+        # only the tier silently dropped `source`, `license` and `url` — so a
+        # figure lifted from someone's book came back attributed to nobody.
+        # Attribution that does not survive persistence is not attribution.
+        prov = aid.get("provenance", {}) or {}
         payload = {"slot": slot, "kind": aid["kind"], "title": aid.get("title", ""),
                    "caption": aid.get("caption", ""), "alt": aid.get("alt", ""),
                    "reveal": aid.get("reveal", "tutor"),
-                   "tier": aid.get("provenance", {}).get("tier", "authored"),
+                   "tier": prov.get("tier", "authored"),
                    "spec": aid["spec"]}
+        for field in ("source", "license", "url"):
+            if prov.get(field):
+                payload[field] = prov[field]
         lines.append("```aid")
         lines.append(json.dumps(payload, separators=(",", ":")))
         lines.append("```")

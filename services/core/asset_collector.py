@@ -156,16 +156,31 @@ class AssetCollector:
     course; a build that died gathering them is not."""
 
     def __init__(self, storage, status_callback=None, enabled=None,
-                 images_enabled=None, budget=MAX_ASSETS_PER_COURSE):
+                 images_enabled=None, budget=MAX_ASSETS_PER_COURSE,
+                 document_path=None, document_title=""):
         self.storage = storage
         self.status_callback = status_callback
         self.budget = budget
+        # BOOK MODE. When a course was built from an uploaded EPUB or PDF, the
+        # book's own figures are the only images it may use. An author drew
+        # that diagram for that explanation; a stock photo from an archive is
+        # at best a coincidence and at worst contradicts the text.
+        self.document_path = document_path
+        self.document_title = document_title or (
+            os.path.splitext(os.path.basename(document_path))[0]
+            if document_path else "")
+        self._book_figures = None
         self.enabled = (
             os.getenv("HELGA_ASSET_PHASE", "true").lower() == "true"
             if enabled is None else enabled)
         self.images_enabled = (
             os.getenv("HELGA_ASSET_IMAGES", "true").lower() == "true"
             if images_enabled is None else images_enabled)
+        # Hard off in book mode — not a preference the env can override. The
+        # rule is "figures from the book only", so external archives must be
+        # unreachable rather than merely deprioritised.
+        if self.document_path:
+            self.images_enabled = False
         # Course-wide index: content hash -> aid. This is what stops the same
         # figure being drawn once per concept that mentions it.
         self._index = {}
@@ -205,7 +220,11 @@ class AssetCollector:
 
         total = len(concepts)
         self._say(f"ASSET:START:{total}")
-        logger.info(f"[ASSETS] Phase 3 starting for {total} concept(s)")
+        logger.info(f"[ASSETS] Phase 3 starting for {total} concept(s)"
+                    + (f" — BOOK MODE, figures from {self.document_title!r} only"
+                       if self.document_path else ""))
+        if self.document_path:
+            self._load_book_figures()
 
         # Images overlap the LLM work: Ollama is serialised on one GPU, network
         # I/O is not, so a download costs almost nothing in wall-clock terms.
@@ -229,8 +248,18 @@ class AssetCollector:
                 self.stats["concepts"] += 1
                 misconceptions = _extract_section(content, "Misconceptions")
 
-                # Queue the photo fetch first so it downloads while the LLM draws.
-                if self.images_enabled and wants_photograph(title, content):
+                # Book mode: the figure is already on disk, so there is nothing
+                # to overlap — attach it directly. External fetching is off.
+                if self.document_path:
+                    attached = self._attach_book_figure(course_uid, uid, title, content)
+                    if attached:
+                        manifest["concepts"].setdefault(uid, {})["figure"] = {
+                            k: v for k, v in attached.items() if k != "record"}
+                        self._attach_image(course_uid, uid, attached["record"],
+                                           label=attached.get("label"),
+                                           caption=attached.get("caption"))
+                # Otherwise queue the photo fetch so it downloads while the LLM draws.
+                elif self.images_enabled and wants_photograph(title, content):
                     pending_images[uid] = pool.submit(self._fetch_image, title, content)
 
                 aids = self._aids_for_concept(uid, title, content, misconceptions)
@@ -351,6 +380,13 @@ class AssetCollector:
         return out or None
 
     def _library_put(self, key, aids):
+        # COPYRIGHT CONTAINMENT. The shared library is machine-wide, so an entry
+        # written from one course is offered to every future course. An uploaded
+        # book is very likely still in copyright, and material derived from it
+        # must not leak into an unrelated course. In book mode nothing is
+        # shared, ever.
+        if self.document_path:
+            return
         try:
             library = self._library_load()
             library[self._library_key(key)] = {
@@ -480,6 +516,86 @@ RULES
 
 Return: {{"aids":[{{"slot":"...","kind":"...","title":"...","caption":"...","spec":{{...}}}}]}}"""
 
+    # -- book figures -------------------------------------------------------
+    def _load_book_figures(self):
+        """Extract and review the uploaded book's figures, once."""
+        if self._book_figures is not None:
+            return self._book_figures
+        self._book_figures = []
+        if not self.document_path or not os.path.exists(self.document_path):
+            return self._book_figures
+        try:
+            from services.common.document_figures import figures_from_document
+            kept, rejected = figures_from_document(self.document_path)
+        except Exception as e:
+            logger.warning(f"[ASSETS] figure extraction failed: {e}")
+            self._say(f"ASSET:FIGURES:ERROR:{str(e)[:100]}")
+            return self._book_figures
+        self._book_figures = kept
+        logger.info(f"[ASSETS] book figures: {len(kept)} usable, "
+                    f"{len(rejected)} rejected as page furniture")
+        self._say(f"ASSET:FIGURES:{len(kept)}:{len(rejected)}")
+        return self._book_figures
+
+    @staticmethod
+    def _tokens(text):
+        return {w for w in re.findall(r"[a-z]{4,}", (text or "").lower())}
+
+    def _figure_for_concept(self, title, content):
+        """Best unused figure for this concept, by word overlap with its caption.
+
+        Deliberately a keyword match, not an LLM call: this runs per concept in
+        a phase the learner is waiting on, and a wrong match is cheap — the
+        figure simply is not attached. A caption is short and specific, so
+        overlap works better here than it would on running prose.
+        """
+        figures = self._load_book_figures()
+        if not figures:
+            return None
+        want = self._tokens(title) | self._tokens(content[:600])
+        if not want:
+            return None
+        best, best_score = None, 0
+        for fig in figures:
+            if fig.get("_used"):
+                continue
+            have = self._tokens(fig.get("caption", "")) | self._tokens(fig.get("label", ""))
+            overlap = len(want & have)
+            if overlap > best_score:
+                best, best_score = fig, overlap
+        # Two shared content words is a weak but real signal; one is noise.
+        if best is None or best_score < 2:
+            return None
+        best["_used"] = True
+        return best
+
+    def _attach_book_figure(self, course_uid, uid, title, content):
+        """Cache one of the book's own figures and attach it to this concept."""
+        fig = self._figure_for_concept(title, content)
+        if not fig:
+            return None
+        try:
+            from services.common.media_cache import cache_bytes
+            record = cache_bytes(fig["data"], {
+                "source": self.document_title or "uploaded document",
+                # Honest about what this is. An uploaded book is very likely in
+                # copyright; nothing here claims otherwise, and the figure never
+                # leaves the course built from that book.
+                "license": "From your uploaded document — rights as the original",
+                "author": "", "title": fig.get("label") or "",
+                "origin": f"{os.path.basename(self.document_path)}#{fig['name']}",
+            }, key_hint=course_uid)
+        except Exception as e:
+            logger.warning(f"[ASSETS] could not cache book figure: {e}")
+            return None
+        if not record:
+            return None
+        self.stats["images"] += 1
+        return {"src": record["src"], "source": self.document_title,
+                "license": record["license"], "author": "",
+                "label": fig.get("label", ""), "caption": fig.get("caption", ""),
+                "record": record}
+
     # -- images -------------------------------------------------------------
     def _fetch_image(self, title, content):
         """Runs on the pool thread — network only, no LLM, no shared state."""
@@ -501,15 +617,20 @@ Return: {{"aids":[{{"slot":"...","kind":"...","title":"...","caption":"...","spe
             logger.warning(f"[ASSETS] image search failed for {title[:40]}: {e}")
         return None
 
-    def _attach_image(self, course_uid, uid, record):
-        """Add the cached photograph as an `image` aid in the concept."""
+    def _attach_image(self, course_uid, uid, record, label=None, caption=None):
+        """Add a cached image as an `image` aid in the concept.
+
+        For a book figure the author's own caption is used verbatim — it is
+        more accurate than anything a model would write about the picture, and
+        it costs nothing.
+        """
         try:
             content = self.storage.courses.get_concept_content(course_uid, uid) or ""
             existing = parse_concept_aids(content)
             aid, err = normalize_aid({
                 "kind": "image",
-                "title": record.get("title") or "",
-                "caption": "",
+                "title": label or record.get("title") or "",
+                "caption": caption or "",
                 "provenance": {"tier": "retrieved", "source": record.get("source", ""),
                                "license": record.get("license", ""),
                                "url": record.get("page", "")},
@@ -533,10 +654,17 @@ Return: {{"aids":[{{"slot":"...","kind":"...","title":"...","caption":"...","spe
         diagrams travel with the content they belong to and no schema migrates.
         """
         try:
+            # Re-read from disk rather than trusting the caller's `content`.
+            # That string was captured at the top of the concept loop, before
+            # the book figure was attached — merging from it silently dropped
+            # the figure when the diagrams were written a moment later.
+            # Whoever writes last must merge against what is actually there.
+            current = self.storage.courses.get_concept_content(course_uid, uid) or content
             if merge:
-                merged = parse_concept_aids(content)
+                merged = parse_concept_aids(current)
                 merged.update(aids)
                 aids = merged
+            content = current
             body = re.sub(r"\n##+\s*Visual Aids\s*\n.*?(?=\n##\s|\Z)", "\n",
                           content, flags=re.DOTALL | re.IGNORECASE).rstrip()
             section = render_concept_aids(aids)

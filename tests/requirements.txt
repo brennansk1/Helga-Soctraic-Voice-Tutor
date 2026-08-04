@@ -3,3 +3,6 @@ evdev
 python-socketio
 psutil
 requests
+# Book fixtures: reportlab generates a PDF with real embedded figures so the
+# extractor is tested against something shaped like a book, offline.
+reportlab

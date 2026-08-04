@@ -214,3 +214,88 @@ class TestSharedLibrary(_Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------- book mode (EPUB/PDF sourced)
+class TestBookMode(_Base):
+    """A course built from an uploaded book uses that book's figures and
+    nothing else."""
+
+    @classmethod
+    def setUpClass(cls):
+        import tempfile
+        from tests.fixtures.make_book_fixtures import build
+        cls.books = build(tempfile.mkdtemp(prefix="helga_bookmode_"))
+
+    def _collect(self, uid, concepts, **kw):
+        self._course(uid, concepts)
+        with patch("services.common.llm_utils.llm_generate_json", side_effect=self._reply):
+            collector = AssetCollector(
+                self.st, document_path=self.books["epub"],
+                document_title="Elements of Geometry", **kw)
+            manifest = collector.collect(uid)
+        return collector, manifest
+
+    def test_external_archives_are_hard_disabled(self):
+        """Not a preference — 'figures from the book only' means the external
+        sources must be unreachable, not merely deprioritised."""
+        collector = AssetCollector(self.st, document_path=self.books["epub"],
+                                   images_enabled=True)
+        self.assertFalse(collector.images_enabled)
+
+    def test_book_figures_are_attached_with_the_authors_caption(self):
+        from services.common.visual_aids import parse_concept_aids
+        _, manifest = self._collect(
+            "bk1", [("con_a", "Right triangles",
+                     "## Metadata\nA right triangle has legs and a hypotenuse, 3 and 4 units.\n")])
+        aids = parse_concept_aids(self.st.courses.get_concept_content("bk1", "con_a"))
+        self.assertIn("photo", aids)
+        photo = aids["photo"]
+        self.assertEqual(photo["kind"], "image")
+        self.assertEqual(photo["title"], "Figure 1.1")
+        self.assertIn("right triangle", photo["caption"].lower())
+        self.assertIn("figure", manifest["concepts"]["con_a"])
+
+    def test_attribution_survives_the_markdown_round_trip(self):
+        """Regression: render_concept_aids wrote only the tier, so source and
+        licence were lost and a figure came back attributed to nobody."""
+        from services.common.visual_aids import parse_concept_aids
+        self._collect("bk2", [("con_a", "Right triangles",
+                               "## Metadata\nA right triangle with legs 3 and 4 units.\n")])
+        photo = parse_concept_aids(
+            self.st.courses.get_concept_content("bk2", "con_a"))["photo"]
+        self.assertEqual(photo["provenance"]["source"], "Elements of Geometry")
+        self.assertIn("uploaded document", photo["provenance"]["license"])
+        self.assertEqual(photo["provenance"]["tier"], "retrieved")
+
+    def test_book_figures_never_enter_the_shared_library(self):
+        """COPYRIGHT CONTAINMENT. The library is machine-wide; an uploaded book
+        is very likely in copyright, and its plates must not be offered to an
+        unrelated course."""
+        collector, _ = self._collect(
+            "bk3", [("con_a", "Right triangles",
+                     "## Metadata\nA right triangle with legs 3 and 4 units.\n")])
+        self.assertFalse(os.path.exists(collector._library_path()))
+
+    def test_a_figure_is_used_by_at_most_one_concept(self):
+        _, manifest = self._collect("bk4", [
+            ("con_a", "Right triangles",
+             "## Metadata\nA right triangle has legs and a hypotenuse, 3 and 4 units.\n"),
+            ("con_b", "Circles: radius and circumference",
+             "## Metadata\nThe circumference of a circle relates to its radius.\n")])
+        used = [c["figure"]["src"] for c in manifest["concepts"].values() if "figure" in c]
+        self.assertEqual(len(used), len(set(used)))
+
+    def test_a_concept_the_book_does_not_illustrate_gets_no_figure(self):
+        _, manifest = self._collect("bk5", [
+            ("con_z", "Norse mythology", "## Metadata\nOdin, Thor and the nine realms.\n")])
+        self.assertNotIn("figure", manifest["concepts"].get("con_z", {}))
+
+    def test_diagrams_and_the_book_figure_coexist(self):
+        """The diagram write must not clobber the figure written moments before."""
+        from services.common.visual_aids import parse_concept_aids
+        self._collect("bk6", [("con_a", "Right triangles",
+                               "## Metadata\nA right triangle with legs 3 and 4 units.\n")])
+        aids = parse_concept_aids(self.st.courses.get_concept_content("bk6", "con_a"))
+        self.assertIn("photo", aids)
+        self.assertIn("opening", aids)

@@ -126,12 +126,21 @@ class TestPlainText(unittest.TestCase):
 
 
 class TestUnsupportedIsHonest(unittest.TestCase):
-    def test_pdf_raises_rather_than_pretending(self):
-        """No PDF parser is installed. Returning empty text while reporting
-        success is exactly the bug this module exists to fix."""
-        with self.assertRaises(UnsupportedDocument) as ctx:
-            extract("/tmp/whatever.pdf")
-        self.assertIn("pdf", str(ctx.exception).lower())
+    def test_pdf_is_now_read_rather_than_refused(self):
+        """PDF used to raise UnsupportedDocument while `/library` advertised it
+        in its file input and MIME whitelist — the same "we appear to read your
+        material and do not" bug this module was written to fix, one layer up.
+        A missing FILE must still fail loudly, but not for being a PDF."""
+        with self.assertRaises((ExtractionFailed, UnsupportedDocument)) as ctx:
+            extract("/tmp/definitely-not-here.pdf")
+        message = str(ctx.exception).lower()
+        self.assertIn("not found", message)
+        self.assertNotIn("not supported", message)
+
+    def test_formats_without_a_parser_still_raise(self):
+        for name in ("/tmp/thing.docx", "/tmp/thing.mobi", "/tmp/thing.azw3"):
+            with self.assertRaises(UnsupportedDocument):
+                extract(name)
 
     def test_unknown_type_raises(self):
         with self.assertRaises(UnsupportedDocument):
