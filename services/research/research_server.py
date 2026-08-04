@@ -79,6 +79,137 @@ def wiki_search_title(query):
     return None
 
 
+# --- Open textbook lookup (Wikibooks / Wikiversity) --------------------------
+#
+# WHY THESE AND NOT MORE PAPERS
+# -----------------------------
+# Crossref and arXiv were added to raise grounding confidence, and they do —
+# but they are the wrong shape for building a COURSE. A paper reports a result
+# at the frontier; a course needs the settled canon, explained. You do not
+# teach introductory biology from a 2024 Nature letter, you teach it from a
+# textbook, and no amount of primary literature substitutes for that.
+#
+# Wikibooks and Wikiversity are open textbooks and course materials: content
+# that has already done the work of selecting, sequencing and explaining. That
+# is exactly what a hydrator wants to assimilate.
+#
+# Both run MediaWiki, so this is the same client shape as the Wikipedia lookup
+# above — no new dependency, no key, no rate-limit tier, and it degrades to
+# nothing if a site is unreachable.
+#
+# Measured on "eigenvalues": Wikibooks returns 2,773 chars of
+# "Linear Algebra/Eigenvalues and Eigenvectors"; Wikiversity returns 5,020
+# chars written explicitly for physics and engineering students.
+
+TEXTBOOK_SITES = (
+    ("wikibooks", "https://en.wikibooks.org/w/api.php", "Wikibooks"),
+    ("wikiversity", "https://en.wikiversity.org/w/api.php", "Wikiversity"),
+)
+
+TEXTBOOK_MIN_CHARS = 400          # below this it is a stub, not teaching material
+
+
+def _mediawiki_extract(api, title, timeout=12):
+    """Plain-text extract of a page, or '' if unavailable."""
+    try:
+        r = requests.get(api, params={
+            "action": "query", "prop": "extracts", "explaintext": 1,
+            "redirects": 1, "titles": title, "format": "json",
+        }, headers={"User-Agent": "Helga/1.0 (Socratic Tutor)"}, timeout=timeout)
+        if r.status_code != 200:
+            return ""
+        pages = (r.json().get("query") or {}).get("pages") or {}
+        for page in pages.values():
+            return page.get("extract") or ""
+    except Exception as e:
+        logger.debug(f"mediawiki extract failed for {title!r}: {e}")
+    return ""
+
+
+# Wikibooks and Wikiversity host books ABOUT words as well as books about
+# subjects. Searching "Cell Biology" returned "Pinyin/Cell (biology)" — a
+# Chinese-language-learning page about the WORD "cell" — which would have been
+# cited to a learner as a biology textbook. Title matching alone cannot tell
+# those apart; the body can.
+_OFF_TOPIC_PREFIXES = ("pinyin/", "wikijunior:", "subject:", "shelf:",
+                       "wikibooks:", "wikiversity:", "portal:", "school:")
+
+
+def _is_relevant(query, title, text):
+    """Does this page actually teach the subject, or merely mention the word?"""
+    low_title = (title or "").lower()
+    if low_title.startswith(_OFF_TOPIC_PREFIXES):
+        return False
+
+    terms = {w for w in re.findall(r"[a-z]{4,}", (query or "").lower())}
+    if not terms:
+        return True                      # nothing to check against
+
+    body = (text or "").lower()
+    # A page that teaches the subject uses its vocabulary repeatedly, not once
+    # in a gloss. Require at least half the query's content words to appear,
+    # and the strongest one to appear more than in passing.
+    present = {t for t in terms if t in body}
+    if len(present) * 2 < len(terms):
+        return False
+    return max((body.count(t) for t in present), default=0) >= 3
+
+
+def textbook_lookup(query, limit=2):
+    """Open-textbook passages for a concept, newest-canon-first.
+
+    Returns [] on any failure — grounding degrades, it never raises.
+    """
+    # Version the key. When the extraction or filtering logic changes, entries
+    # cached under the old behaviour are wrong, not merely old — the relevance
+    # filter shipped and "Pinyin/Cell (biology)" kept being served from cache.
+    key = cache_key("textbook", f"v2|{query}|{limit}")
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+
+    out = []
+    for slug, api, label in TEXTBOOK_SITES:
+        if len(out) >= limit:
+            break
+        try:
+            r = requests.get(api, params={
+                "action": "query", "list": "search", "srsearch": query,
+                "srlimit": 2, "format": "json",
+            }, headers={"User-Agent": "Helga/1.0 (Socratic Tutor)"}, timeout=12)
+            if r.status_code != 200:
+                continue
+            hits = ((r.json().get("query") or {}).get("search") or [])
+        except Exception as e:
+            logger.debug(f"{label} search failed for {query!r}: {e}")
+            continue
+
+        for hit in hits:
+            if len(out) >= limit:
+                break
+            title = hit.get("title")
+            if not title:
+                continue
+            text = _mediawiki_extract(api, title)
+            # A one-line stub is worse than nothing: it adds a citation and a
+            # confidence point while teaching the learner nothing.
+            if len(text) < TEXTBOOK_MIN_CHARS:
+                continue
+            if not _is_relevant(query, title, text):
+                logger.debug(f"{label}: rejected {title!r} as off-topic")
+                continue
+            out.append({
+                "type": "textbook",
+                "title": title,
+                "url": f"https://en.{slug}.org/wiki/" + title.replace(" ", "_"),
+                "source": label,
+                "text": text[:6000],
+            })
+
+    cache.set(key, out, expire=CACHE_TTL_SEARCH)
+    return out
+
+
 def primary_source_lookup(query, limit=2):
     """Find PRIMARY literature (DOI / arXiv) for a query.
 
@@ -327,6 +458,27 @@ async def _research_concept_async(title, module_title, course_title, mastery=1):
             sources.append(ps)
             combined_parts.append(
                 f"## Source: {ps['type']} - {ps['title']}\n{ps['url']}")
+
+    # 2a-bis. OPEN TEXTBOOKS — the shape of source a COURSE actually wants.
+    #
+    # Papers report the frontier; a course teaches the canon. You do not build
+    # introductory biology from a 2024 Nature letter, you build it from a
+    # textbook. Wikibooks and Wikiversity are exactly that: content already
+    # selected, sequenced and explained for a learner.
+    #
+    # Queried on the SUBJECT for the same reason as the literature lookup —
+    # "Identify the Right Angle" is a task, not a topic.
+    _subject = (module_title or course_title or title)
+    for tb in textbook_lookup(_subject, limit=2):
+        sources.append({
+            "url": tb["url"],
+            "title": tb["title"],
+            "domain_tier": 1,
+            "type": "textbook",
+            "source": tb["source"],
+        })
+        combined_parts.append(
+            f"## Source: {tb['source']} - {tb['title']}\n{tb['text']}")
 
     # 2b. Generate search queries (mastery-aware)
     queries = build_search_queries(title, module_title, mastery)
