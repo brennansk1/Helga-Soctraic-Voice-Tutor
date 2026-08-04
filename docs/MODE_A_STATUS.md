@@ -5,8 +5,67 @@ either backed by a command you can re-run, or marked as unverified. Nothing here
 is a status someone typed in by hand and forgot to update — if a row claims
 VERIFIED, the command beside it produced that result.
 
-Last measured: 2026-08-03.
+Last measured: 2026-08-04.
 
+> ## What changed on 2026-08-04 — the grounding chain
+>
+> **The biggest finding: the research service had never started.** It was
+> diagnosed for weeks as "SearXNG is down". SearXNG was fine. The service's
+> Dockerfile copied ONE file, and when `ranking.py` was split out for
+> testability nothing added it to the image, so the container crash-looped on
+> `ModuleNotFoundError` — quietly, because `restart: unless-stopped` just
+> looped it. `docker ps` said "Restarting" and nobody read it.
+>
+> | | before | after |
+> |---|---|---|
+> | grounding confidence | **0.40** — below the 0.5 floor, always | **0.85** |
+> | "Limited sources" marker | on **every concept of every course** | cleared |
+>
+> **Research now runs in BOTH phases.** It used to run only during hydration,
+> so the most consequential decision in the pipeline — *what this course is
+> made of* — was taken with no evidence at all, from one LLM call. That is why
+> a Pythagoras course covered 42% of its own subject while passing every
+> structural detector: it was structurally clean and substantively hollow.
+>
+> ```
+> Phase 1  what should this course contain?   curriculum_research.py  (NEW)
+> Phase 2  what does this concept say?        research_server.py
+> ```
+>
+> **Sources are now the right SHAPE for a course.** Papers report the frontier;
+> a course teaches the canon, explained. Open textbooks (Wikibooks,
+> Wikiversity) are wired in and weighted highest. Domain-routed archives were
+> added for the subjects that genuinely need them — Met and Art Institute for
+> art, Library of Congress for history, Wikidata everywhere — and routed rather
+> than global, because an irrelevant hit costs latency *and* inflates
+> confidence while teaching nothing.
+>
+> **Three of the candidate public APIs do not work as published** and are
+> recorded in `domain_sources.py` so they are not re-added from a stale list:
+> Chronicling America's legacy API was retired in 2025; Open Library's
+> `search.json` hangs (the site itself answers in 0.18 s); Data USA 404s.
+>
+> **`compute_confidence` has now been the site of the same bug twice** — first
+> primary literature, then textbooks — where the caller filtered for source
+> kinds and silently dropped one, so the source kind a course most wants
+> counted for nothing. It is now weighted by kind, and full confidence must be
+> earned with a textbook or primary source rather than a pile of web pages.
+>
+> ### Frontend
+> - `/build` — live visualisation of a course build: stages, evidence found,
+>   the tree growing, the coverage verdict. Logs are translated out of our
+>   internals (`STRUCT:MODULE:x`) into what actually happened
+>   (`Found syllabus — Wikibooks: "Geometry" (31 chapters)`).
+> - `/library` — search public archives or upload EPUB/PDF/MD/TXT. Availability
+>   is three answers (full text / lending-only / metadata) and the UI refuses to
+>   collapse them.
+> - **Build state survives navigation and the UI locks while a build runs.**
+>   Progress used to live only in the page that started it, and the UI kept
+>   offering "Create course" during a build — rejecting it only *after* the
+>   learner filled in the form.
+>
+> ---
+>
 > **What changed on 2026-08-03.** Four criteria were marked BUILT-but-never-run.
 > Running three of them found a defect in each — all three at seams between
 > components, none visible to either side's unit tests:
@@ -75,10 +134,10 @@ A self-directed adult can, without hitting a dead end:
 |---|---|---|---|
 | 1 | Course at the **genuine depth requested** | **VERIFIED** | every tier observed reachable (`tier_probe`, ~80% first-attempt); a mastery-2 course scores 100% at L2 and **0% at L4/L5** |
 | 2 | Learn Socratically, **voice or text** | BUILT, unverified | `/api/stt` → `session.js`; no end-to-end voice run measured |
-| 3 | **See where content came from** | **VERIFIED** | 100% citation coverage on the passing course; primary literature via Crossref at mastery ≥4 |
+| 3 | **See where content came from** | **VERIFIED (and only now real)** | grounding confidence 0.40 → **0.85** once the research service was fixed; sources now span wikipedia + open textbooks + primary literature + web + domain archives. The concept VIEW still does not display them — see §4 |
 | 4 | **Reviewed on schedule** (FSRS) | **VERIFIED** | loop verified on a real DB (37 tests). FSRS now drives **both** flashcards and concepts — schema v10 persists stability/difficulty/lapses on `user_progress`; measured interval growth on repeated recall: **3 → 11 → 35 → 101 days** |
 | 5 | **All three learning modes** reachable | **VERIFIED** | Socratic ✅, Spaced Repetition ✅, Memory Palace walked end-to-end against real storage (17 tests) |
-| 6 | **Bring your own material** | PARTIAL | extraction verified (13 tests, synthetic EPUB, spine order, bad-zip, PDF honestly rejected); **no real book taken through to a built course** — needs a hydration run |
+| 6 | **Bring your own material** | PARTIAL | `/library` built: archive search with honest availability, EPUB/PDF/MD/TXT upload. Extraction verified (13 tests). **Still no real book taken through to a built course**, and no chunking strategy for a 1,325-page textbook — needs a hydration run |
 | 7 | **Every control does what it says** | **VERIFIED** | dead toggles removed, `/api/profile/reset` proxied, tests assert both |
 
 **5 of 7 verified, 1 partial, 1 unrun.** The earlier headline — "most remaining
@@ -153,6 +212,20 @@ asserted.
 
 Ranked by risk, not effort.
 
+0. **NOTHING HAS BEEN REBUILT SINCE THE GROUNDING CHAIN CHANGED.** This is the
+   single most important open item. Phase-1 research, textbook grounding,
+   domain sources and confidence reweighting are all verified to *fetch the
+   right evidence and be wired in* — but no course has been generated since.
+   The 42% coverage figure is from a course built by the OLD pipeline. Whether
+   any of this actually improves coverage is **unmeasured**.
+
+   *The run to do:* rebuild the Pythagoras course and re-run criterion 6
+   against the 42% baseline. ~40 minutes. Queue it overnight.
+
+0b. **`/build` and `/library` have never been seen in a browser.** Routes
+   return 200 and the JS parses, but no real build has driven the
+   visualisation and no book has been searched through the UI.
+
 1. **A4 — pedagogy. The target moved.** The old entry here read
    `misconception_handling` **1.6/5**. That number was largely an instrument
    defect, found by self-testing the HelgaBench judge for the first time —
@@ -185,7 +258,12 @@ Ranked by risk, not effort.
    questioning* and *ignoring what the student actually asked* — a different
    problem from the one 1.6 pointed at, and the one worth working on next.
 
-2. **Voice never exercised** — the last done-criterion with no end-to-end run.
+2. **The trust surface is still not on screen.** The A5 gate says "every
+   concept view shows its sources and confidence". The markdown carries a
+   Sources block and a confidence figure; the session view displays neither.
+   Now that confidence is real (0.85, not a flat 0.40) this is worth doing.
+
+3. **Voice never exercised** — the last done-criterion with no end-to-end run.
    Document import is verified as far as extraction; taking a real book through
    to a built course needs a hydration run.
 3. **A6 — optimization.** Ollama idle-eviction unbuilt (≈6 GB pinned when
@@ -209,11 +287,62 @@ Ranked by risk, not effort.
 - **~30s per LLM call** on qwen3.5:9b → ~2 min/concept → a 12-concept course
   takes ~40 min. This caps how much verification is affordable per concept and
   is why fact-check samples at 34%.
-- **SearXNG is down.** Grounding is Wikipedia + Crossref/arXiv only, so
-  `source_confidence` tops out at 0.4 — below the 0.5 floor, so every concept
-  carries a visible "Limited sources" marker. Correct behaviour, but it means
-  no course currently clears the floor.
+- ~~**SearXNG is down.**~~ **RESOLVED 2026-08-04 — and the diagnosis was
+  wrong.** SearXNG was always fine. The *research service* had never started:
+  its Dockerfile copied one file and omitted `ranking.py`, so it crash-looped
+  on ModuleNotFoundError under `restart: unless-stopped`. Grounding confidence
+  went 0.40 → 0.85 once fixed. A static test now checks every service's local
+  imports against what its Dockerfile copies.
+
+  The lesson worth keeping: a container in a restart loop looks like a running
+  system from every angle except the one nobody checked.
 - **The ternary 27B is not viable** for generation: it degenerates into
   repetition on the real builder prompt (3/3), while producing clean output on a
   simplified version (4/4). `qwen3.5:27b-mlx` is the next candidate and must be
   gated on the real prompt.
+
+---
+
+## 6. Handoff — where to pick this up
+
+**Do this first, and it needs no supervision:**
+
+```bash
+# 1. Bring the stack up (SearXNG + research are required for grounding now)
+docker compose up -d searxng research
+curl -s localhost:5006/health          # must be 200, not "Restarting"
+
+# 2. THE RUN THAT MATTERS — rebuild with the new grounding chain (~40 min)
+#    then compare coverage against the 42% baseline.
+python3 tools/syllabus_check.py --course <new_uid> --no-reference
+```
+
+If coverage moves meaningfully above 42%, Phase-1 research works and the
+biggest quality lever in the product is proven. If it does not, the grounding
+is being fetched but not *used*, and the next place to look is the module
+prompt in `course_builder._build_inner` — the brief is injected there.
+
+**Then, in order:**
+
+1. Watch a real build drive `/build`, and search a book through `/library`.
+   Both are built and route correctly; neither has been seen working.
+2. Put sources and confidence on the concept view (A5 gate item, now that
+   confidence is real).
+3. A5.5 — take a genuine book end to end. The test case is
+   `The_Manual_of_Harmonious_Rationality.pdf`: **1,325 pages, 780 outline
+   entries, ~950k characters**. It will break naive truncation, which is the
+   point of using it.
+4. A4.1a/b — the dialogue contract and learner-history personalisation, the
+   cheapest remaining tutor-quality wins.
+
+**Two things not to re-litigate** (both recorded with reasons in the code):
+
+- Papers are not the growth area for grounding. A course needs the canon
+  explained, not the frontier reported.
+- Universities List, Numbers API, PokeAPI and extra web-search engines were
+  evaluated and declined — see `docs/SPRINT_PLAN.md` §A5.6.
+
+**The failure mode this whole pipeline is built against:** a course that passes
+every structural check and is substantively hollow. `path_audit` reported the
+42%-coverage course as clean across all sixteen detectors. Criterion 6 is the
+only check that catches it, which is why it now runs on every build.
