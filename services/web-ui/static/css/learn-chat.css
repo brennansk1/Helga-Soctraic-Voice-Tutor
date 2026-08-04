@@ -563,9 +563,13 @@ pre.math-raw { display: block; margin: var(--space-2) 0; }
    The base border is transparent rather than absent so that a grade arriving
    after the optimistic bubble is rendered does not shift the layout. */
 .chat-msg.outgoing .chat-msg-body {
-    border: 1.5px solid transparent;
-    transition: border-color var(--dur-slow, 320ms) var(--ease-standard, ease);
+    border: 2.5px solid transparent;
+    transition: border-color var(--dur-slow, 320ms) var(--ease-standard, ease),
+                background var(--dur-slow, 320ms) var(--ease-standard, ease);
 }
+/* A graded answer clears to the plain surface and carries the verdict entirely
+   in a thick coloured edge — the colour reads at a glance without tinting the
+   learner's own words, which stay on a clean background. */
 .chat-msg.outgoing[data-grade] .chat-msg-body { background: var(--bg-secondary); }
 .chat-msg.outgoing[data-grade="1"] .chat-msg-body { border-color: var(--color-danger, #e07d6a); }
 .chat-msg.outgoing[data-grade="2"] .chat-msg-body { border-color: var(--color-warning, #e0bc63); }
@@ -574,13 +578,6 @@ pre.math-raw { display: block; margin: var(--space-2) 0; }
    Blue for good, green for excellent — a clear step, not a shade. */
 .chat-msg.outgoing[data-grade="3"] .chat-msg-body { border-color: var(--accent-primary, #2e6b8a); }
 .chat-msg.outgoing[data-grade="4"] .chat-msg-body { border-color: var(--color-success, #4a8c6f); }
-
-/* A faint wash of the same colour, so the verdict is legible at a glance
-   without the border having to shout. */
-.chat-msg.outgoing[data-grade="1"] .chat-msg-body { background: color-mix(in srgb, var(--color-danger, #e07d6a) 8%, var(--bg-secondary)); }
-.chat-msg.outgoing[data-grade="2"] .chat-msg-body { background: color-mix(in srgb, var(--color-warning, #e0bc63) 10%, var(--bg-secondary)); }
-.chat-msg.outgoing[data-grade="3"] .chat-msg-body { background: color-mix(in srgb, var(--accent-primary, #2e6b8a) 7%, var(--bg-secondary)); }
-.chat-msg.outgoing[data-grade="4"] .chat-msg-body { background: color-mix(in srgb, var(--color-success, #4a8c6f) 10%, var(--bg-secondary)); }
 
 /* The badge is for assistive tech only. `.sr-only` alone lost to the base
    badge rule on padding — same specificity, later stylesheet — leaving a 17px
