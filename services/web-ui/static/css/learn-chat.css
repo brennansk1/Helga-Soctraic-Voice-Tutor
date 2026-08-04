@@ -502,13 +502,14 @@ pre.math-raw { display: block; margin: var(--space-2) 0; }
    Fixes found by rendering the real session (2026-08-04).
    ========================================================================== */
 
-/* `.hidden` had no rule for four of the five elements that use it in this
-   shell. There is no global `.hidden { display: none }` anywhere in the
-   stylesheets — `.learn-chat-shell.hidden` is declared explicitly, which is
-   the pattern — so the progress pill, the Bloom badge, the mastery bar and the
-   hero all RENDERED while the markup said they were hidden. The hero was the
-   worst: display was never suppressed, so its `margin: space-8 auto space-6`
-   pushed ~90px of dead space above the first message of every session. */
+/* CORRECTION (verified 2026-08-04): these are REDUNDANT, not fixes.
+   learn.html carries `.hidden { display: none !important; }` in its inline
+   <style> block, so every element here was already hidden correctly. The
+   earlier claim that four of them rendered was a TEST-HARNESS artifact — the
+   harness loaded the external stylesheets but not the template's inline block.
+   Kept as belt-and-braces so the shell does not depend on an inline rule in
+   one template, but nothing here was broken. `tools/ui_audit.py` now checks
+   this per page, because an inline rule applies only to its own template. */
 .learn-chat-hero.hidden,
 .learn-chat-badge.hidden,
 .mastery-progress.hidden,
@@ -630,12 +631,19 @@ pre.math-raw { display: block; margin: var(--space-2) 0; }
 .learn-chat-send-btn { margin-left: 4px; }
 
 /* ---- Mic: recording and transcribing ------------------------------------
-   The mic had no visible active state. style.css styles `#mic-btn.recording`
-   with a filled danger background, but that rule dates from when this button
-   carried a border and a background of its own; after the composer restyle it
-   was reduced to a faint pulse ring on a transparent button, so recording
-   looked almost identical to idle. The state is defined here now, with the
-   composer it belongs to, and does not depend on winning a specificity race.
+   CORRECTION (verified 2026-08-04): recording was NOT invisible before this.
+   `#mic-btn.recording` in style.css already won on specificity (an id beats a
+   class) and rendered a filled danger circle with a white glyph. The earlier
+   claim otherwise came from reading getComputedStyle in the same tick as the
+   class change, before style recalculation had flushed — the numbers were
+   stale, and the screenshot disagreed with them.
+
+   What these rules genuinely ADD: a blinking level dot, a matching cue on the
+   whole field, and a transcribing state that is distinct rather than a dimmed
+   copy of recording. They also move the state next to the composer it belongs
+   to, so a future restyle of these buttons cannot quietly strand it in
+   style.css again — which is the failure mode that was actually worth
+   guarding against.
    -------------------------------------------------------------------------- */
 .learn-chat-action-btn.recording,
 .learn-chat-action-btn[data-recording="true"] {
