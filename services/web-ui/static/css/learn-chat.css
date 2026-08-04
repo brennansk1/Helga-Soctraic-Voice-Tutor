@@ -563,7 +563,7 @@ pre.math-raw { display: block; margin: var(--space-2) 0; }
    The base border is transparent rather than absent so that a grade arriving
    after the optimistic bubble is rendered does not shift the layout. */
 .chat-msg.outgoing .chat-msg-body {
-    border: 2.5px solid transparent;
+    border: 3.5px solid transparent;
     transition: border-color var(--dur-slow, 320ms) var(--ease-standard, ease),
                 background var(--dur-slow, 320ms) var(--ease-standard, ease);
 }
