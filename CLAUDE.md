@@ -29,6 +29,7 @@ Helga is an autonomous, fully-offline AI tutor that runs on a **Mac Mini M4 Pro 
 | `services/common/llm_utils.py` | LLM call wrappers with JSON repair + retry logic |
 | `services/common/spaced_repetition.py` | Legacy SM-2 engine (deprecated, kept for schedule generation) |
 | `services/common/prompts.py` | Centralized prompt templates |
+| `services/common/concept_doc.py` | Reads the concept `.md` — section parser + per-mode context packer (`tutor_context`, `index_text`). See `docs/HYDRATION_STORAGE_REVIEW.md` |
 | `services/web-ui/app.py` | Web UI Flask app — proxies to microservices |
 | `services/web-ui/static/js/session.js` | Socket.IO client, sendEvent(), audio, chat rendering |
 | `services/web-ui/templates/courses.html` | Course listing (logic moved to `static/js/courses.js` + `wizard.js`) |

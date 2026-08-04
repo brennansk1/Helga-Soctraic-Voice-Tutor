@@ -349,6 +349,26 @@ B13  Multimodal & Visuals .......................................... 🔨
 └─ B13.12 Phase 3 Asset Collection + session-start manifest ..... ✅ skip/reuse/overlap/budget;
                                                                      course locked until built
 ```
+
+### B15 — Hydration storage review (2026-08-04)
+
+Full findings in `docs/HYDRATION_STORAGE_REVIEW.md`. The `.md` files are not thin —
+a mastery-4 concept carries fifteen sections. The defect was delivery: the pipeline
+stored a great deal and passed very little of it to the models that teach.
+
+```
+├─ B15.1 Tutor context: delete-list → per-mode selection .......... ✅ concept_doc.tutor_context();
+│                                                                     the lecturer can now see the
+│                                                                     explanation it was told to invent
+├─ B15.2 Priority packing replaces the [:2000] head cut ........... ✅ Governing Result / Derivation /
+│                                                                     Exercise no longer cut first
+├─ B15.3 Dense index embeds content, not the Path: line ........... ✅ concept_doc.index_text()
+├─ B15.4 FTS index upserted on save; deletes cascade .............. ✅ +concept_vec, hydration_provenance
+├─ B15.5 source_confidence / llm_fallback reach the tutor ......... ✅ _queue_entry() + _grounding_note()
+├─ B15.6 Persist the fetched research material ..................... ⬜ build the reader first (see §A)
+├─ B15.7 Claim-level source attribution ............................ ⬜ prerequisite for real citations (B2.5)
+└─ B15.8 Sources as data, not re-parsed prose ...................... ⬜ hydration_provenance already has it
+```
 Principle: visuals are objects of inquiry, not decoration. Prefer verifiable diagram-as-code
 for technical content; reserve diffusion for non-factual illustration; pre-generate at
 course-creation time (never in the live dialogue turn). Runtime-validated on the M4/Ollama.

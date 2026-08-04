@@ -31,6 +31,8 @@ def utc_today() -> date:
     return datetime.now(timezone.utc).date()
 from typing import Callable, List, Dict, Optional, Any
 
+from services.common.concept_doc import index_text as concept_index_text
+
 logger = logging.getLogger(__name__)
 
 # B15 multi-tenancy: the isolation key for all per-user data. Until real auth
@@ -92,6 +94,16 @@ class StorageManager:
         self.settings = SettingsStore(self.db_path)
         self.flashcards = FlashcardStore(self.db_path)
         self.search = SearchStore(self.db_path, self.courses)
+        # Keep the full-text index honest on every write.
+        #
+        # The index was populated in exactly two places: lazily when it was
+        # found EMPTY, and by a full rebuild at the end of a course build. So a
+        # concept the tutor or the asset collector rewrote mid-session stayed
+        # searchable only by its stale text until the next course was built —
+        # and after a course was deleted its concepts kept answering searches
+        # for the same reason. One row upsert on save costs nothing and closes
+        # both.
+        self.courses.on_content_saved = self.search.index_concept
         # B15 tenancy stores
         self.accounts = AccountStore(self.db_path)
         self.enrollments = EnrollmentStore(self.db_path)
@@ -784,6 +796,9 @@ class CourseStore:
         self.courses_dir = courses_dir
         self.data_dir = data_dir
         self._cache = {}
+        # Set by StorageManager to the search index's upserter. Left None here
+        # so a CourseStore built standalone (tests, scripts) still works.
+        self.on_content_saved = None
 
     def create_course(self, course_dict: dict) -> str:
         """Write course structure.json and sync metadata to SQLite."""
@@ -966,6 +981,14 @@ class CourseStore:
                     ("flashcards", "course_uid"),
                     ("scheduled_reviews", "course_uid"),
                     ("activity_log", "course_uid"),
+                    # These three were missing from a list whose whole purpose
+                    # is that nothing is missing from it. concept_fts kept
+                    # answering searches with a deleted course's concepts;
+                    # hydration_provenance kept the licensing record of content
+                    # that no longer exists; concept_vec kept its embeddings.
+                    ("concept_fts", "course_uid"),
+                    ("concept_vec", "course_uid"),
+                    ("hydration_provenance", "course_uid"),
                 ]
                 total_rows = 0
                 for table, col in cascade_tables:
@@ -1013,6 +1036,15 @@ class CourseStore:
                             "bloom_level": concept.get("bloom_level"),
                             "complexity_role": concept.get("complexity_role", ""),
                             "module_bloom_target": module.get("bloom_target"),
+                            # Written into structure.json by the builder and the
+                            # hydrator, then dropped here — so the FSM had no way
+                            # to know a concept was a generated stub or that its
+                            # grounding pass came back nearly empty, and taught
+                            # it with exactly the same confidence as a
+                            # well-sourced one.
+                            "ordinal": concept.get("ordinal"),
+                            "llm_fallback": bool(concept.get("llm_fallback")),
+                            "source_confidence": concept.get("source_confidence"),
                             "text": "",  # Will be loaded from .md on demand
                         })
         return concepts
@@ -1061,6 +1093,16 @@ class CourseStore:
         path = os.path.join(content_dir, f"{concept_uid}.md")
         with open(path, "w") as f:
             f.write(markdown)
+        if self.on_content_saved:
+            # Best-effort: a search index that cannot be updated must never
+            # cost the caller their content write.
+            try:
+                concept = self.get_concept_by_uid(course_uid, concept_uid)
+                self.on_content_saved(
+                    course_uid, concept_uid,
+                    (concept or {}).get("title", ""), markdown)
+            except Exception as e:
+                logger.debug(f"search index update skipped for {concept_uid}: {e}")
         return path
 
     def get_unit_concepts(self, course_uid: str, unit_uid: str) -> List[dict]:
@@ -1157,6 +1199,45 @@ class SearchStore:
             row = conn.execute("SELECT COUNT(*) AS c FROM concept_fts").fetchone()
             return row["c"] if row else 0
         except sqlite3.OperationalError:
+            return 0
+
+    def index_concept(self, course_uid: str, concept_uid: str,
+                      title: str, content: str) -> bool:
+        """Insert or replace one concept's row. Called on every content save.
+
+        `concept_fts` is an FTS5 virtual table with no UNIQUE constraint, so
+        `INSERT OR REPLACE` would append a duplicate rather than replace —
+        the delete has to be explicit or a concept edited five times answers
+        the same query five times.
+        """
+        if not self.is_available() or not concept_uid:
+            return False
+        try:
+            conn = self._get_db()
+            conn.execute("DELETE FROM concept_fts WHERE concept_uid = ?", (concept_uid,))
+            conn.execute(
+                "INSERT INTO concept_fts (concept_uid, course_uid, title, content) "
+                "VALUES (?, ?, ?, ?)",
+                (concept_uid, course_uid, title or "", content or ""),
+            )
+            conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.debug(f"index_concept failed for {concept_uid}: {e}")
+            return False
+
+    def drop_course(self, course_uid: str) -> int:
+        """Remove a deleted course's concepts from the index."""
+        if not self.is_available() or not course_uid:
+            return 0
+        try:
+            conn = self._get_db()
+            cur = conn.execute(
+                "DELETE FROM concept_fts WHERE course_uid = ?", (course_uid,))
+            conn.commit()
+            return cur.rowcount or 0
+        except sqlite3.Error as e:
+            logger.debug(f"drop_course from index failed for {course_uid}: {e}")
             return 0
 
     def rebuild_search_index(self) -> int:
@@ -1284,7 +1365,16 @@ class SearchStore:
                 texts = []
                 for c in flat:
                     body = self.courses.get_concept_content(course_uid, c["uid"]) or ""
-                    texts.append(f"{c.get('title', '')} {body[:512]}")
+                    # Was `title + body[:512]`. Measured on a real concept
+                    # document, 512 characters reaches Metadata, Learning
+                    # Objectives and half of Prerequisites — not one word of the
+                    # explanation. Metadata also carries a
+                    # `- **Path**: Course > Module > Unit > Lesson` line, so
+                    # every concept in a course embedded to nearly the same
+                    # vector and dense search ranked by position in the tree
+                    # rather than by meaning. index_text() picks the sections
+                    # that say what the concept IS.
+                    texts.append(concept_index_text(body, c.get("title", "")))
 
                 vecs = np.array(embed_fn(texts), dtype="float32")
                 for concept, vec in zip(flat, vecs):

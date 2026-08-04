@@ -15,6 +15,8 @@ for whichever model is configured.
 import uuid
 import re
 
+from services.common.concept_doc import tutor_context
+
 # Generate a session-unique hash
 session_hash = str(uuid.uuid4())
 
@@ -652,7 +654,13 @@ def get_micro_lecture_prompt(topic, context_text, history=[], style_modifier="st
     Returns:
         list: Messages array for chat completions API
     """
-    context_safe = (context_text or "")[:2000]
+    # Was `context_text[:2000]` — a head cut, which on a mastery-4 or -5
+    # document removes Governing Result, Derivation and Exercise, because those
+    # are the sections appended LAST and are the only ones the higher mastery
+    # levels buy. Packing by priority spends the same budget on the sections a
+    # lecturer actually needs. Idempotent: re-packing an already packed
+    # document returns it unchanged.
+    context_safe = tutor_context(context_text or "", "lecture")
 
     # Build recent conversation context from history (last 2 exchanges)
     history_str = ""

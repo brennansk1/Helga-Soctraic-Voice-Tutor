@@ -13,6 +13,10 @@ import json
 import re
 from services.common.storage import StorageManager, DEFAULT_STUDENT_ID
 from services.common.visual_aids import AidStore, extract_aids, descriptor as aid_descriptor
+from services.common.concept_doc import (
+    tutor_context as build_tutor_context,
+    section as concept_section,
+)
 
 try:
     from gpu_gate import LLMContext, INTERACTIVE
@@ -1359,27 +1363,76 @@ class MnemosyneFSM:
         self.passed_question_types = set()
 
     def _redact_context_for_tutor(self, context_text):
-        """GAP 6: Strip answer-key sections from context to prevent LLM leakage.
-        Keep pedagogical sections (Mastery Criteria, Prerequisites, Misconceptions,
-        Edge Cases, Socratic Hooks, Analogies)."""
+        """GAP 6, as a section SELECTION for the questioner.
+
+        Superseded by `build_tutor_context(text, mode)`; kept because it is a
+        stable seam that tests and older call sites use. The behaviour changed
+        on purpose: the delete list also removed Core Explanation and Key Facts,
+        which are not spoilers — they are what stops the tutor teaching an
+        error. Only the worked example is withheld now.
+        """
         if not context_text:
             return context_text
-        import re as _re
-        text = context_text
-        for section in ("Core Definition", "Core Explanation", "Contextual Explanation",
-                        "Component Breakdown", "Key Facts", "Real-World Examples"):
-            text = _re.sub(
-                rf"## {section}\s*\n.*?(?=\n## |\Z)", "", text, flags=_re.DOTALL
-            )
-        return text.strip()
+        return build_tutor_context(context_text, "socratic")
+
+    @staticmethod
+    def _queue_entry(concept, content):
+        """One syllabus-queue entry from a flat concept + its markdown.
+
+        This field list was copy-pasted at four call sites (resume, navigate,
+        skip, advance). Adding a field meant editing four places and the fifth
+        site that got missed simply taught without it — which is how
+        `source_confidence` and `llm_fallback` came to be written by the
+        builder and read by nobody.
+        """
+        return {
+            "uid": concept["uid"],
+            "title": concept["title"],
+            "text": content or "",
+            "bloom_level": concept.get("bloom_level"),
+            "learning_objectives": concept.get("learning_objectives", []),
+            "complexity_role": concept.get("complexity_role", ""),
+            "module_bloom_target": concept.get("module_bloom_target"),
+            "source_confidence": concept.get("source_confidence"),
+            "llm_fallback": bool(concept.get("llm_fallback")),
+        }
+
+    def _grounding_note(self):
+        """Tell the tutor how well-sourced THIS concept actually is.
+
+        The build already knows. `source_confidence` is computed per concept by
+        the grounding pass (and re-tried once against a broadened query when it
+        comes back thin), and `llm_fallback` marks a concept whose title was
+        generated to pad an empty lesson. Both were written to structure.json
+        and then read by nobody: the tutor taught a 0.12-confidence concept in
+        exactly the same voice as a 0.9 one.
+
+        This does not hide the concept or refuse to teach it — it tells the
+        model to teach the shape of the idea and stop short of specifics it
+        cannot stand behind, which is what a careful human tutor does with a
+        topic they half-remember.
+        """
+        node = getattr(self, "current_lesson_node", None) or {}
+        if node.get("llm_fallback"):
+            return ("GROUNDING: this concept was generated to fill a gap in the "
+                    "syllabus and has no researched source material. Teach the "
+                    "general idea, keep to what is uncontroversial, and do not "
+                    "state specific figures, dates, names or results.")
+        confidence = node.get("source_confidence")
+        if confidence is not None and confidence < 0.5:
+            return (f"GROUNDING: the research pass found little corroborating "
+                    f"material for this concept (confidence {confidence:.2f}), "
+                    f"so the notes below lean on the model's own knowledge. "
+                    f"Stay with the core idea; do not assert specific figures, "
+                    f"dates or named results you are not sure of, and say plainly "
+                    f"when something is uncertain rather than guessing fluently.")
+        return ""
 
     def _extract_mastery_criteria(self, content):
         """Extract the Mastery Criteria section from concept markdown for grading."""
         if not content:
             return ""
-        import re as _re
-        match = _re.search(r"## Mastery Criteria\s*\n(.*?)(?=\n## |\Z)", content, _re.DOTALL)
-        return match.group(1).strip() if match else ""
+        return concept_section(content, "Mastery Criteria")
 
     def _extract_bloom_hook(self, content, bloom_level):
         """Extract the Socratic Hook matching the current Bloom band."""
@@ -1770,13 +1823,7 @@ class MnemosyneFSM:
             for c in concepts:
                 content = self.storage.courses.get_concept_content(uid, c["uid"])
                 if content and len(content.strip()) > 50:
-                    self.syllabus_queue.append({
-                        "uid": c["uid"], "title": c["title"], "text": content,
-                        "bloom_level": c.get("bloom_level"),
-                        "learning_objectives": c.get("learning_objectives", []),
-                        "complexity_role": c.get("complexity_role", ""),
-                        "module_bloom_target": c.get("module_bloom_target"),
-                    })
+                    self.syllabus_queue.append(self._queue_entry(c, content))
                 else:
                     skipped += 1
             if skipped > 0:
@@ -1843,13 +1890,7 @@ class MnemosyneFSM:
             self.syllabus_queue = []
             for c in concepts:
                 content = self.storage.courses.get_concept_content(target_uid, c["uid"])
-                self.syllabus_queue.append({
-                    "uid": c["uid"], "title": c["title"], "text": content,
-                    "bloom_level": c.get("bloom_level"),
-                    "learning_objectives": c.get("learning_objectives", []),
-                    "complexity_role": c.get("complexity_role", ""),
-                    "module_bloom_target": c.get("module_bloom_target"),
-                })
+                self.syllabus_queue.append(self._queue_entry(c, content))
 
             if not self.syllabus_queue:
                 self.syllabus_queue = [target_course]
@@ -2036,13 +2077,7 @@ class MnemosyneFSM:
                             content = self.storage.courses.get_concept_content(
                                 self.active_course_uid, c["uid"]
                             )
-                            self.syllabus_queue.append({
-                                "uid": c["uid"], "title": c["title"], "text": content or "",
-                                "bloom_level": c.get("bloom_level"),
-                                "learning_objectives": c.get("learning_objectives", []),
-                                "complexity_role": c.get("complexity_role", ""),
-                                "module_bloom_target": c.get("module_bloom_target"),
-                            })
+                            self.syllabus_queue.append(self._queue_entry(c, content))
                 except Exception as e:
                     logging.warning(f"Failed to auto-populate syllabus on skip: {e}")
 
@@ -2187,13 +2222,7 @@ class MnemosyneFSM:
                             content = self.storage.courses.get_concept_content(
                                 self.active_course_uid, c["uid"]
                             )
-                            self.syllabus_queue.append({
-                                "uid": c["uid"], "title": c["title"], "text": content or "",
-                                "bloom_level": c.get("bloom_level"),
-                                "learning_objectives": c.get("learning_objectives", []),
-                                "complexity_role": c.get("complexity_role", ""),
-                                "module_bloom_target": c.get("module_bloom_target"),
-                            })
+                            self.syllabus_queue.append(self._queue_entry(c, content))
                     if self.syllabus_queue:
                         logging.info(f"Auto-populated syllabus with {len(self.syllabus_queue)} remaining concepts")
                 except Exception as e:
@@ -2386,8 +2415,25 @@ class MnemosyneFSM:
             f"QTYPE:{current_q_type['key']}:{q_type_idx}:{len(SOCRATIC_QUESTION_TYPES)}"
         )
 
-        # GAP 6: Redact answer-key sections from tutor context to prevent leakage
-        redacted_context = self._redact_context_for_tutor(self.current_context)
+        # GAP 6 kept, but as a SELECTION rather than a delete list. See
+        # services/common/concept_doc.py: the old version stripped Core
+        # Explanation, Key Facts and Real-World Examples from BOTH modes, so
+        # the lecturer — whose only job is to explain — was handed hooks and
+        # misconceptions and then told to fill in the gaps from its own
+        # knowledge. The researched, depth-contracted, fact-checked substance
+        # never reached the model that teaches from it.
+        #
+        # Now each mode gets what it needs on the same token budget: the
+        # lecturer gets the explanation and the facts; the questioner gets the
+        # same ground truth MINUS the worked example, which is the one section
+        # that is genuinely a spoiler.
+        redacted_context = build_tutor_context(
+            self.current_context,
+            "lecture" if teaching_mode == "LECTURE" else "socratic",
+        )
+        grounding = self._grounding_note()
+        if grounding:
+            redacted_context = f"{grounding}\n\n{redacted_context}"
 
         # SELECT PROMPT BASED ON MODE
         if teaching_mode == "LECTURE":
