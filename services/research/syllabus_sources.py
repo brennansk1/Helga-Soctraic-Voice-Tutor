@@ -75,6 +75,11 @@ _NON_CONTENT_PATTERNS = (
     re.compile(r"^(test|sandbox|todo|draft)\b", re.I),
     re.compile(r"^(solutions?|answers?)\b", re.I),   # answer keys, not teaching
     re.compile(r"^(motivation|introduction)$", re.I),
+    # Wikibooks books carry editorial pages inside the chapter namespace:
+    # "How to edit this book" shipped into a cell-biology brief.
+    re.compile(r"^how to\b", re.I),
+    re.compile(r"\b(this book|this wikibook|editing)\b", re.I),
+    re.compile(r"^(authors?|editors?|planning|development stages?)\b", re.I),
 )
 
 

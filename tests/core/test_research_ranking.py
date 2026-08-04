@@ -38,8 +38,12 @@ def test_confidence_scoring():
     assert compute_confidence(False, 0) == 0.0
     assert compute_confidence(True, 0) == 0.4
     assert compute_confidence(True, 2) == 0.8       # 0.4 + 0.4
-    assert compute_confidence(True, 10) == 1.0      # capped (0.4 + 0.6)
-    assert compute_confidence(False, 5) == 0.6      # web cap only
+    # Web is capped at 0.4 (was 0.6). Full confidence must be EARNED with a
+    # textbook or a primary source: an arbitrary pile of web results is the
+    # evidence profile that looks strong and teaches badly.
+    assert compute_confidence(True, 10) == 0.8      # capped (0.4 + 0.4)
+    assert compute_confidence(True, 10, 0, 2) == 1.0  # textbooks lift it
+    assert compute_confidence(False, 5) == 0.4      # web cap only
 
 
 def test_dedup_by_url_is_stable():

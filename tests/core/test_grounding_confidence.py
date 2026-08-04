@@ -91,3 +91,51 @@ class TestHybridDegradationIsLoud(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestConfidenceWeightsBySourceKind(unittest.TestCase):
+    """A source kind the caller does not pass is a source kind that does not
+    exist. This function has now been the site of that bug TWICE:
+
+      1. primary literature — caller filtered only type == "web", so a concept
+         grounded in Wikipedia plus two peer-reviewed papers scored 0.40,
+         identical to Wikipedia alone;
+      2. open textbooks — added with type "textbook", caller still filtered
+         only "web"/"journal"/"preprint", so the source kind a COURSE most
+         wants counted for exactly nothing.
+    """
+
+    def test_textbooks_count_at_all(self):
+        from services.research.ranking import compute_confidence
+        self.assertGreater(compute_confidence(True, 0, 0, 1),
+                           compute_confidence(True, 0, 0, 0))
+
+    def test_a_textbook_outweighs_a_web_page(self):
+        """This score grades material for BUILDING A COURSE, not for advancing
+        a field. A textbook chapter is the settled canon, already sequenced and
+        explained; a web page is whatever ranked."""
+        from services.research.ranking import compute_confidence
+        self.assertGreater(compute_confidence(True, 0, 0, 1),
+                           compute_confidence(True, 1, 0, 0))
+
+    def test_web_pages_alone_cannot_reach_full_confidence(self):
+        """Otherwise the score rewards COUNT, and an arbitrary pile of web
+        results — the evidence profile that looks strong and teaches badly —
+        scores the same as a textbook."""
+        from services.research.ranking import compute_confidence
+        self.assertLess(compute_confidence(True, 20, 0, 0), 1.0)
+
+    def test_a_real_full_stack_reaches_high_confidence(self):
+        from services.research.ranking import compute_confidence
+        self.assertGreaterEqual(compute_confidence(True, 2, 1, 2), 0.9)
+
+    def test_the_caller_passes_every_kind_it_can_produce(self):
+        """The bug was never in this function — it was in the caller dropping
+        a kind on the floor. Guard the caller."""
+        import os
+        root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+        src = open(os.path.join(root, 'services/research/research_server.py')).read()
+        call = src[src.index('confidence = compute_confidence('):][:260]
+        self.assertIn('textbook_sources', call)
+        self.assertIn('primary_sources', call)
+        self.assertIn('web_sources', call)

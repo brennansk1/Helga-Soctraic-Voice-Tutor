@@ -50,28 +50,48 @@ def build_search_queries(title: str, module_title: str, mastery: int = 1):
 
 
 def compute_confidence(has_wikipedia: bool, web_source_count: int,
-                       primary_source_count: int = 0) -> float:
-    """Heuristic grounding confidence in [0, 1].
+                       primary_source_count: int = 0,
+                       textbook_count: int = 0) -> float:
+    """Heuristic grounding confidence in [0, 1], weighted BY KIND.
 
-    Weights reflect evidence strength, strongest first:
-        primary literature (DOI / arXiv)  0.25 each
-        secondary web sources             0.20 each
-        Wikipedia (tertiary)              0.40 once
+        open textbook (Wikibooks/Wikiversity)  0.30 each, cap 0.60
+        primary literature (DOI / arXiv)       0.25 each, cap 0.50
+        secondary web page                     0.20 each, cap 0.40
+        Wikipedia (tertiary)                   0.40 once
 
-    PRIMARY SOURCES WERE NOT COUNTED AT ALL. The caller filtered
-    `[s for s in sources if s["type"] == "web"]`, and Crossref/arXiv results
-    carry type "journal"/"preprint" — so a concept grounded in Wikipedia plus
-    two peer-reviewed papers scored 0.40, identical to Wikipedia alone. With
-    SearXNG down that capped EVERY concept at 0.4 against a 0.5 floor, so every
-    concept in every course shipped with a "Limited sources" marker and no
-    course could clear the grounding criterion.
+    THIS FUNCTION HAS NOW BEEN THE SITE OF THE SAME BUG TWICE, so the shape of
+    it is worth stating plainly: **a source kind the caller does not pass is a
+    source kind that does not exist.**
 
-    Peer-reviewed literature is stronger evidence than an arbitrary web page,
-    so it is weighted above it rather than merely included.
+    First time: primary literature. The caller filtered
+    `[s for s in sources if s["type"] == "web"]`, and Crossref/arXiv carry type
+    "journal"/"preprint", so a concept grounded in Wikipedia plus two
+    peer-reviewed papers scored 0.40 — identical to Wikipedia alone.
+
+    Second time: open textbooks, added 2026-08-04 and given type "textbook".
+    The caller still filtered only "web" and "journal"/"preprint", so the whole
+    point of the textbook work — the source kind a COURSE most wants — counted
+    for exactly nothing.
+
+    WHY TEXTBOOKS OUTWEIGH PAPERS HERE. This score grades material for building
+    a course, not for advancing a field. A textbook chapter is the settled
+    canon, already selected, sequenced and explained for a learner; a paper is
+    one result at the frontier. Both are good evidence, but only one is the
+    right shape for teaching, so the weighting says so.
+
+    The caps matter as much as the weights: without them this rewards COUNT,
+    and three mediocre web pages outscore one excellent textbook — which
+    manufactures confidence rather than measuring it.
+
+    The web cap is deliberately set so that Wikipedia plus any number of web
+    pages tops out at 0.80. FULL confidence has to be earned with a textbook or
+    primary source, because an arbitrary pile of web results is exactly the
+    evidence profile that looks strong and teaches badly.
     """
     confidence = 0.4 if has_wikipedia else 0.0
-    confidence += min(web_source_count * 0.2, 0.6)
+    confidence += min(textbook_count * 0.30, 0.6)
     confidence += min(primary_source_count * 0.25, 0.5)
+    confidence += min(web_source_count * 0.2, 0.4)
     return round(min(confidence, 1.0), 2)
 
 

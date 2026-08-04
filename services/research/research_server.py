@@ -516,12 +516,15 @@ async def _research_concept_async(title, module_title, course_title, mastery=1):
         combined_text = " ".join(words[:3000])
 
     # Confidence: based on source count and quality
-    web_sources = [s for s in sources if s["type"] == "web"]
-    # Primary literature must count toward confidence — see compute_confidence.
+    # EVERY kind the pipeline can produce must be passed. A kind that is not
+    # passed does not exist as far as the score is concerned — that has now
+    # been the bug here twice (primary literature, then textbooks).
+    web_sources = [s for s in sources if s.get("type") == "web"]
     primary_sources = [s for s in sources
                        if s.get("type") in ("journal", "preprint")]
+    textbook_sources = [s for s in sources if s.get("type") == "textbook"]
     confidence = compute_confidence(bool(wikipedia_data), len(web_sources),
-                                    len(primary_sources))
+                                    len(primary_sources), len(textbook_sources))
 
     return {
         "sources": sources,
