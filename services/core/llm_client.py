@@ -27,6 +27,11 @@ logger = logging.getLogger(__name__)
 
 OLLAMA_URL = os.environ.get('OLLAMA_URL', 'http://host.docker.internal:11434')
 OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'qwen3.5:9b')
+# How long Ollama should keep the weights resident after a request. "-1" pins
+# them indefinitely, which is what a single-user tutor on a dedicated machine
+# wants: the alternative is paying a multi-second cold load every time the
+# student pauses to think for five minutes.
+KEEP_ALIVE = os.environ.get('OLLAMA_KEEP_ALIVE', '-1')
 
 
 class LLMClient:
@@ -82,6 +87,17 @@ class LLMClient:
             "max_tokens": max_tokens,
             "temperature": temperature,
             "stream": False,
+            # Ask the server to keep the weights resident. Ollama unloads after
+            # five idle minutes by default, and a student reading a question
+            # and thinking about it routinely exceeds that — so the next answer
+            # pays a cold load of several seconds before generating a token.
+            #
+            # This is belt-and-braces, not the primary mechanism: the /v1
+            # OpenAI-compatible shim may ignore the field depending on the
+            # Ollama version, and it ignores unknown fields harmlessly either
+            # way. The reliable lever is OLLAMA_KEEP_ALIVE on the host, which
+            # `warn_if_not_pinned()` checks and complains about at startup.
+            "keep_alive": KEEP_ALIVE,
             # A1/A6: qwen3.5 is a reasoning model and this is Ollama's /v1
             # shim. With reasoning on, the thinking block consumes the whole
             # budget and `content` comes back EMPTY at these token counts —
@@ -235,7 +251,8 @@ class LLMClient:
         """Single chat round returning the full assistant MESSAGE dict (so callers
         can see tool_calls). Used by chat_with_tools."""
         payload = {"model": self.model, "messages": messages,
-                   "temperature": temperature, "stream": False}
+                   "temperature": temperature, "stream": False,
+                   "keep_alive": KEEP_ALIVE}
         if tools:
             payload["tools"] = tools
         with get_gpu_gate().admit(ctx):
@@ -309,6 +326,7 @@ class LLMClient:
             "max_tokens": max_tokens,
             "temperature": temperature,
             "stream": True,
+            "keep_alive": KEEP_ALIVE,      # see chat()
             # See chat(): reasoning must be off or the thinking block eats the
             # budget and the stream yields nothing usable. Streaming makes this
             # worse — the user watches an empty response arrive.
@@ -374,6 +392,64 @@ class LLMClient:
             logger.error(f"Streaming error: {e}")
         finally:
             slot.release()
+
+    def residency(self):
+        """Is the model actually RESIDENT, and for how much longer?
+
+        `health_check` reads /api/tags, which lists models that are INSTALLED —
+        it says nothing about whether the weights are in memory. The difference
+        is a cold load on the next request, which for a 9B is several seconds
+        and is paid by whoever is waiting: a student mid-lesson.
+
+        Ollama unloads after five idle minutes by default, and a student
+        reading a question and thinking about it routinely exceeds that. So
+        every answer after a pause pays the load, on top of the generation.
+
+        /api/ps is the endpoint that knows: it lists loaded models with an
+        `expires_at`. A far-future (or absent) expiry means keep-alive is
+        pinning the model; a few minutes out means it is not.
+
+        Returns {"loaded": bool, "expires_at": str|None, "pinned": bool|None}
+        or {"error": ...}. Never raises — this is diagnostics.
+        """
+        try:
+            resp = requests.get(f"{self.base_url}/api/ps", timeout=5)
+            if not resp.ok:
+                return {"error": f"HTTP {resp.status_code}"}
+            for entry in resp.json().get("models", []):
+                if self.model.split(":")[0] not in entry.get("name", ""):
+                    continue
+                expires = entry.get("expires_at")
+                pinned = None
+                if expires:
+                    try:
+                        from datetime import datetime, timezone
+                        when = datetime.fromisoformat(expires.replace("Z", "+00:00"))
+                        remaining = (when - datetime.now(timezone.utc)).total_seconds()
+                        # Ollama writes a year-out expiry for keep_alive=-1.
+                        pinned = remaining > 3600
+                    except (ValueError, TypeError):
+                        pinned = None
+                return {"loaded": True, "expires_at": expires, "pinned": pinned}
+            return {"loaded": False, "expires_at": None, "pinned": None}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def warn_if_not_pinned(self):
+        """Log the exact fix when the model will idle out from under us."""
+        state = self.residency()
+        if state.get("error"):
+            return state
+        if state.get("pinned") is False or not state.get("loaded"):
+            logger.warning(
+                "Ollama is not pinning %s in memory (loaded=%s, expires_at=%s). "
+                "Every request after an idle gap will pay a cold model load — "
+                "seconds of latency handed to whoever is waiting. Fix on the "
+                "HOST, where Ollama runs: "
+                "`launchctl setenv OLLAMA_KEEP_ALIVE -1` then restart "
+                "`ollama serve`.",
+                self.model, state.get("loaded"), state.get("expires_at"))
+        return state
 
     def health_check(self):
         """Check if Ollama is reachable and model is loaded."""

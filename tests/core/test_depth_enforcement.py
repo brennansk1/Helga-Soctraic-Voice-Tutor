@@ -81,14 +81,53 @@ class TestEnforcementFires(unittest.TestCase):
                                    "primary source", "notation")),
             f"hint did not name a concrete deficiency: {note!r}")
 
-    def test_gives_up_after_max_retries_and_reports_failure(self):
+    def test_gives_up_and_reports_failure(self):
         h = _hydrator()
         with patch.object(ContentHydrator, '_condense_and_structure_content',
                           return_value=THIN) as gen:
             md, detail = _call(h, THIN)
-        self.assertEqual(gen.call_count, h.max_depth_retries)
         self.assertFalse(detail["ok"], "a persistent miss must be reported, not hidden")
         self.assertTrue(detail["problems"])
+
+    def test_an_identical_failure_stops_the_loop(self):
+        """A retry that reproduces the same deficiencies has shown the next
+        attempt would be identical work.
+
+        The hint is derived from the problem set, so an unchanged problem set
+        means the following attempt sends a byte-identical prompt at the same
+        temperature and regenerates the whole ~900-token document again. The
+        problems that repeat are the ones the model structurally cannot fix
+        from here — "cite a primary source" when the research pass returned
+        none — not ones it randomly missed.
+
+        This is the same reasoning as
+        test_hydration_stub_is_not_regenerated_as_a_depth_miss below: stop
+        rather than burn every retry on a generator that has already shown you
+        what it produces. Measured on a 12-concept mastery-4 build where every
+        concept missed, this stage was 64% of the build and half of it was the
+        second identical attempt.
+        """
+        h = _hydrator()
+        h.max_depth_retries = 4
+        with patch.object(ContentHydrator, '_condense_and_structure_content',
+                          return_value=THIN) as gen:
+            _md, detail = _call(h, THIN)
+        self.assertEqual(gen.call_count, 1)
+        self.assertFalse(detail["ok"])
+
+    def test_a_retry_that_makes_progress_is_allowed_to_continue(self):
+        """Stopping early must not stop a loop that is actually converging."""
+        h = _hydrator()
+        h.max_depth_retries = 3
+        # RICH with the exercise removed: fixes almost everything THIN was
+        # missing, so the problem set genuinely shrinks and the loop must be
+        # allowed to keep going rather than reading "still failing" as "stuck".
+        partial = RICH.replace("Exercise: try it yourself for n = 3. ", "")
+        with patch.object(ContentHydrator, '_condense_and_structure_content',
+                          side_effect=[partial, RICH]) as gen:
+            _md, detail = _call(h, THIN)
+        self.assertEqual(gen.call_count, 2)
+        self.assertTrue(detail["ok"])
 
     def test_disabled_flag_skips_enforcement(self):
         h = _hydrator()

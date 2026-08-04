@@ -138,7 +138,24 @@ _SOCRATIC = {
     "Exercise":                 (10, 400),
 }
 
-MODES = {"lecture": _LECTURE, "socratic": _SOCRATIC}
+# Grading judges ONE answer to ONE question. It needs the standard to judge
+# against and the facts to check the answer's claims — not the pedagogy.
+#
+# The FSM passed `self.current_context` here: the whole document, up to the
+# 10,000-character slice taken when the concept loaded. Measured, that is
+# ~2,780 tokens of prefill on EVERY student answer, to produce a ~90-token
+# JSON verdict. Hooks, analogies and misconceptions cannot change a grade;
+# they were being re-read by the model on every turn for nothing.
+_GRADING = {
+    "Mastery Criteria":         (1, 600),
+    "Key Facts":                (2, 700),
+    "Core Explanation":         (3, 900),
+    "Real-World Examples":      (4, 600),   # the worked answer IS the rubric here
+    "Governing Result":         (5, 400),
+    "Edge Cases & Limitations": (6, 400),
+}
+
+MODES = {"lecture": _LECTURE, "socratic": _SOCRATIC, "grading": _GRADING}
 
 # Emission order — how the packed sections are laid out for the model, which is
 # not the order they were selected in. Selection order decides what SURVIVES;
@@ -150,7 +167,7 @@ _EMIT_ORDER = [
     "Mastery Criteria", "Exercise",
 ]
 
-DEFAULT_BUDGET = {"lecture": 2400, "socratic": 3600}
+DEFAULT_BUDGET = {"lecture": 2400, "socratic": 3600, "grading": 1600}
 
 # The preamble is normally one `# Title` line. The cap is there so a malformed
 # document with everything above the first heading cannot spend the whole

@@ -2474,9 +2474,19 @@ class ContentHydrator:
                 sources_md += f"\n*Source confidence: {research_confidence:.2f}*\n"
                 structured_md += sources_md
 
-            # Task #51: Store source_confidence
-            if uid in concept_ref_map:
-                concept_ref_map[uid]["source_confidence"] = round(research_confidence, 2)
+            # Task #51: Store source_confidence.
+            #
+            # Under _course_lock because this writes into the LIVE `course`
+            # dict that another worker may be handing to `update_course` at the
+            # same moment — which deepcopies it and json.dumps it. Adding a key
+            # can resize the concept dict mid-walk ("dictionary changed size
+            # during iteration"). Harmless while hydration ran one concept at a
+            # time; a real race now that background concurrency is the gate's
+            # capacity rather than 1.
+            with _course_lock:
+                if uid in concept_ref_map:
+                    concept_ref_map[uid]["source_confidence"] = round(
+                        research_confidence, 2)
 
             # Save to filesystem (thread-safe: each concept writes a different file)
             self.storage.courses.save_concept_content(course_uid, uid, structured_md)
@@ -2941,7 +2951,9 @@ class ContentHydrator:
             return structured_md, {"ok": True, "problems": [], **detail}
 
         best_md, best_problems, best_detail = structured_md, problems, detail
+        attempts_made = 0
         for attempt in range(self.max_depth_retries):
+            attempts_made = attempt + 1
             hint = regeneration_hint(best_problems)
             logger.info(
                 f"  [DEPTH] '{title}' missed contract "
@@ -2974,13 +2986,32 @@ class ContentHydrator:
             if c_ok:
                 logger.info(f"  [DEPTH] '{title}' met contract on retry {attempt + 1}")
                 return candidate, {"ok": True, "problems": [], **c_detail}
+            # An identical failure means the next attempt is identical work.
+            #
+            # `hint` comes from `best_problems`, so when a retry reproduces the
+            # same problem set the following attempt sends a byte-identical
+            # prompt at the same temperature and regenerates the whole ~900-token
+            # document again. The problems that repeat are the ones the model
+            # structurally CANNOT fix from here — "cite a primary source" when
+            # the research pass returned none — not ones it randomly missed.
+            #
+            # Measured: on a 12-concept mastery-4 build where every concept
+            # missed, the retry stage was 64% of the entire build. Half of that
+            # was this second identical attempt.
+            if set(c_problems) == set(best_problems):
+                logger.info(
+                    f"  [DEPTH] '{title}' retry {attempt + 1} reproduced the same "
+                    f"deficiencies; further attempts would send an identical "
+                    f"prompt — stopping")
+                break
             # Keep whichever attempt is closer to the contract.
             if len(c_problems) < len(best_problems):
                 best_md, best_problems, best_detail = candidate, c_problems, c_detail
 
         logger.warning(
             f"  [DEPTH] '{title}' still below contract after "
-            f"{self.max_depth_retries} retries: {'; '.join(best_problems)}")
+            f"{attempts_made} retr{'y' if attempts_made == 1 else 'ies'}: "
+            f"{'; '.join(best_problems)}")
         if self.status_callback:
             self.status_callback(f"STRUCT:WARN:DEPTH_MISS:{title}")
         return best_md, {"ok": False, "problems": best_problems, **best_detail}

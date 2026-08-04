@@ -369,6 +369,28 @@ stored a great deal and passed very little of it to the models that teach.
 ├─ B15.7 Claim-level source attribution ............................ ⬜ prerequisite for real citations (B2.5)
 └─ B15.8 Sources as data, not re-parsed prose ...................... ⬜ hydration_provenance already has it
 ```
+
+### B16 — Latency pass (2026-08-04)
+
+Full findings in `docs/PERFORMANCE_PASS.md`; reproduce with `tools/llm_profile.py`.
+Measured on a 12-concept mastery-4 build: decode is 93% of the wall clock, so the
+levers are fewer generated tokens, more of them at once, and never paying for a
+cold model.
+
+```
+├─ B16.1 Background concurrency = gate capacity - 1 ............... ✅ hydration ran 1 concept at a
+│                                                                     time against a 4-way server
+├─ B16.2 Stop a retry loop that reproduces its own failure ........ ✅ -12 calls, -469s per build
+├─ B16.3 keep_alive on requests + /api/ps residency warning ....... ✅ health_check read /api/tags,
+│                                                                     which does not know this
+├─ B16.4 Grading packs a rubric, not the whole document ........... ✅ was ~2,780 prefill tok/answer
+├─ B16.5 num_ctx may truncate mastery 4-5 output ................... ⬜ hypothesis, needs live Ollama
+├─ B16.6 Patch one section instead of regenerating the document ... ⬜ redesign of the retry loop
+└─ B16.7 Merge grade+respond into one call ........................ ⬜ costs streaming; prototype first
+```
+
+12-concept mastery-4 build: 70 calls / ~25 min serialised → 58 calls / ~7 min at
+three background slots.
 Principle: visuals are objects of inquiry, not decoration. Prefer verifiable diagram-as-code
 for technical content; reserve diffusion for non-factual illustration; pre-generate at
 course-creation time (never in the live dialogue turn). Runtime-validated on the M4/Ollama.

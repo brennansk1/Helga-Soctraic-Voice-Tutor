@@ -89,9 +89,28 @@ class _Slot:
 
 
 class GpuGate:
-    def __init__(self, num_parallel=None, bg_slots=1, busy_after_s=8.0,
+    def __init__(self, num_parallel=None, bg_slots=None, busy_after_s=8.0,
                  max_queue=256, admit_timeout_s=55.0):
         self.cap = int(num_parallel or os.getenv("OLLAMA_NUM_PARALLEL", "4"))
+        # Background gets every slot but one.
+        #
+        # This defaulted to 1, and the hydrator sizes its thread pool from it,
+        # so course building ran ONE concept at a time against a server able to
+        # decode four in parallel. Measured on a 12-concept mastery-4 build:
+        # 70 LLM calls, ~35,500 generated tokens, and decode is 93% of the wall
+        # clock — so the serialisation was costing roughly the whole build.
+        #
+        # Raising it does not put a student behind a course build. The reserved
+        # slot is what protects them: `_can_dispatch_now` refuses background
+        # beyond `bg_slots`, so with cap=4 at most three slots are background
+        # and an arriving interactive turn always finds the fourth free — it is
+        # dispatched immediately rather than queued behind a 30-second
+        # generation. `_dispatch_next` also drains interactive waiters first,
+        # and background is never granted while any interactive turn waits.
+        #
+        # Set HELGA_BG_SLOTS=1 to restore the old single-file behaviour.
+        if bg_slots is None:
+            bg_slots = int(os.getenv("HELGA_BG_SLOTS", "0")) or (self.cap - 1)
         self.bg_slots = max(1, min(bg_slots, self.cap - 1)) if self.cap > 1 else 1
         self.busy_after = busy_after_s
         self.max_queue = max_queue

@@ -194,6 +194,38 @@ class TestSocraticContext(unittest.TestCase):
         self.assertLessEqual(len(self.ctx), DEFAULT_BUDGET["socratic"])
 
 
+class TestGradingContext(unittest.TestCase):
+    """Grading judges one answer against one standard.
+
+    The FSM passed the whole concept document here — up to the 10,000-char
+    slice taken when the concept loaded — as "Source Truth Context". Measured,
+    that is ~2,780 prefill tokens on EVERY student answer to produce a ~90-token
+    JSON verdict.
+    """
+
+    def setUp(self):
+        self.ctx = tutor_context(DOC, "grading")
+
+    def test_carries_the_standard_to_judge_against(self):
+        self.assertIn("Mastery Criteria", heads(self.ctx))
+
+    def test_carries_the_facts_to_check_claims_against(self):
+        self.assertIn("Key Facts", heads(self.ctx))
+
+    def test_carries_the_worked_answer(self):
+        """Withheld from the questioner as a spoiler; here it IS the rubric."""
+        self.assertIn("Real-World Examples", heads(self.ctx))
+
+    def test_drops_pedagogy_that_cannot_change_a_grade(self):
+        for section in ("Socratic Hooks", "Analogies", "Misconceptions",
+                        "Metadata", "Sources"):
+            self.assertNotIn(section, heads(self.ctx))
+
+    def test_is_much_smaller_than_the_whole_document(self):
+        self.assertLess(len(self.ctx), len(DOC) * 0.75)
+        self.assertLessEqual(len(self.ctx), DEFAULT_BUDGET["grading"])
+
+
 class TestPacking(unittest.TestCase):
     def test_advanced_sections_are_not_the_first_casualties(self):
         """Governing Result / Derivation / Exercise are appended LAST and are
@@ -272,7 +304,7 @@ class TestPacking(unittest.TestCase):
         self.assertEqual(once, twice)
 
     def test_unknown_mode_passes_content_through_unchanged(self):
-        self.assertEqual(tutor_context(DOC, "grading"), DOC)
+        self.assertEqual(tutor_context(DOC, "flashcards"), DOC)
 
     def test_empty_input_does_not_raise(self):
         self.assertEqual(tutor_context("", "lecture"), "")

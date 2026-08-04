@@ -351,6 +351,14 @@ class MnemosyneFSM:
 
         # LLM client (Ollama)
         self.llm_client = get_llm_client()
+        # Say so at startup if the model will idle out between turns. A cold
+        # 9B load is several seconds paid by whoever is waiting, and the fix
+        # lives on the host — outside this repo — so silence here means nobody
+        # ever finds out why the first answer after a pause is slow.
+        try:
+            self.llm_client.warn_if_not_pinned()
+        except Exception as e:
+            logging.debug(f"residency probe skipped: {e}")
 
         # Service URLs
         self.rag_url = os.environ.get("RAG_URL", "http://rag-engine:5002" if not self.dev_mode else "http://localhost:5002")
@@ -2652,9 +2660,15 @@ class MnemosyneFSM:
             # unless HELGA_ENABLE_TUTOR_TOOLS=true; grounds the grade with a
             # deterministic computation rather than the model's arithmetic alone.
             tool_note = self._verify_answer_objectively(self.last_question, text)
-            grading_context = self.current_context
+            # Grading judges one answer against one standard. It was being
+            # handed `self.current_context` — the whole concept document, up to
+            # the 10,000-char slice taken when the concept loaded — as "Source
+            # Truth Context", which measured at ~2,780 prefill tokens on EVERY
+            # student answer to produce a ~90-token verdict. Socratic hooks and
+            # analogies cannot change a grade.
+            grading_context = build_tutor_context(self.current_context, "grading")
             if tool_note:
-                grading_context = f"{self.current_context}\n\n{tool_note}"
+                grading_context = f"{grading_context}\n\n{tool_note}"
                 logging.info(f"Objective tool-check appended to grading context: {tool_note[:120]}")
             # GAP 5: Pass Bloom level, objectives, and mastery criteria to grading
             prompt = get_socratic_grading_prompt(
