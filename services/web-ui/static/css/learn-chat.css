@@ -604,3 +604,93 @@ pre.math-raw { display: block; margin: var(--space-2) 0; }
     text-transform: uppercase;
     border-radius: 999px;
 }
+
+/* ---- Composer refinement + voice states ---------------------------------
+   The bar was crowded: four controls at 36-40px sitting shoulder to shoulder
+   with the text. More room around the text, a hairline separating the text
+   from the controls, and tighter spacing between the controls themselves so
+   they read as one group rather than three loose objects.
+   -------------------------------------------------------------------------- */
+.learn-chat-input-form {
+    padding: 6px 8px 6px 6px;
+    gap: 2px;
+}
+.learn-chat-input-wrapper { padding: 0 var(--space-3) 0 var(--space-3); }
+.learn-chat-input { padding: var(--space-2) 0; }
+
+/* The controls are a group; the divider says where typing ends and acting
+   begins, which is what was missing when everything sat in one flat row. */
+.learn-chat-input-form > .learn-chat-action-btn:first-of-type {
+    margin-left: 2px;
+    border-left: 1px solid var(--border-color);
+    border-radius: 0;
+    padding-left: 8px;
+    width: 42px;
+}
+.learn-chat-send-btn { margin-left: 4px; }
+
+/* ---- Mic: recording and transcribing ------------------------------------
+   The mic had no visible active state. style.css styles `#mic-btn.recording`
+   with a filled danger background, but that rule dates from when this button
+   carried a border and a background of its own; after the composer restyle it
+   was reduced to a faint pulse ring on a transparent button, so recording
+   looked almost identical to idle. The state is defined here now, with the
+   composer it belongs to, and does not depend on winning a specificity race.
+   -------------------------------------------------------------------------- */
+.learn-chat-action-btn.recording,
+.learn-chat-action-btn[data-recording="true"] {
+    background: var(--color-danger, #c45c4a);
+    color: #fff;
+    animation: mic-pulse-ring 1.6s ease-out infinite;
+}
+.learn-chat-action-btn.recording:hover,
+.learn-chat-action-btn[data-recording="true"]:hover {
+    background: var(--color-danger, #c45c4a);
+    color: #fff;
+}
+/* A live level dot, so "it is listening right now" is legible at a glance and
+   not only inferable from a colour change. */
+.learn-chat-action-btn.recording::after {
+    content: "";
+    position: absolute;
+    top: 4px; right: 4px;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #fff;
+    animation: mic-blink 1s steps(1, end) infinite;
+}
+.learn-chat-action-btn { position: relative; }
+
+@keyframes mic-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0.15; } }
+
+.learn-chat-action-btn.transcribing {
+    opacity: 0.85;
+    pointer-events: none;
+    background: var(--bg-tertiary);
+    color: var(--accent-primary);
+}
+.learn-chat-action-btn.transcribing svg { animation: voice-spin 0.9s linear infinite; }
+
+/* While recording, the whole field takes the same cue — the learner is
+   speaking to it, not typing into it. */
+.learn-chat-input-form:has(.recording) {
+    border-color: var(--color-danger, #c45c4a);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-danger, #c45c4a) 14%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .learn-chat-action-btn.recording,
+    .learn-chat-action-btn.recording::after,
+    .learn-chat-action-btn.transcribing svg { animation: none; }
+}
+
+/* Pause only ever acts on live TTS audio — its own handler returns early when
+   there is none. session.js has always toggled a `no-audio` class for exactly
+   this, but nothing styled it, so the button sat in the bar permanently doing
+   nothing. It is now genuinely conditional, which is most of what made the
+   composer feel crowded: at rest the bar is field · mic · send. */
+.learn-chat-action-btn.no-audio { display: none; }
+
+/* With pause gone at rest, the divider must follow whichever control is
+   actually first. */
+.learn-chat-input-form > .learn-chat-action-btn:first-of-type.no-audio + .learn-chat-send-btn { margin-left: 6px; }
