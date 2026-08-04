@@ -1,0 +1,14 @@
+# HOST path — the default deployment on Apple Silicon (TTS_BACKEND=mlx).
+#
+# The same Kokoro-82M model as the container fallback, run on MLX instead of
+# PyTorch: identical voices and quality, no torch dependency chain, and access
+# to the GPU — which a container on macOS does not have.
+#
+#     pip install -r services/tts/requirements-host.txt
+#     TTS_BACKEND=mlx TTS_PORT=5005 python services/tts/tts_server.py
+#
+# Or use scripts/host_services.sh, which starts this alongside STT.
+flask==3.0.0
+mlx-audio==0.4.7
+soundfile==0.12.1
+numpy==1.26.4

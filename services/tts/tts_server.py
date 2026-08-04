@@ -15,7 +15,17 @@ app = Flask(__name__)
 
 # Env-overridable; fall back to a temp dir so the module imports/runs outside the
 # container (and is testable) rather than crashing on a read-only /app at import.
-CACHE_DIR = os.environ.get("TTS_CACHE_DIR", "/app/data/tts_cache")
+# /app/data/tts_cache is the container path. Running on the host, that does
+# not exist, and the except-branch below used to drop the cache into a temp dir
+# — which works but is thrown away on every reboot, so every phrase the tutor
+# has ever spoken gets re-synthesised. Prefer the repo's data directory when it
+# is reachable.
+_DEFAULT_CACHE = "/app/data/tts_cache"
+if not os.path.isdir("/app"):
+    _DEFAULT_CACHE = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "data", "tts_cache")
+CACHE_DIR = os.environ.get("TTS_CACHE_DIR", _DEFAULT_CACHE)
 try:
     os.makedirs(CACHE_DIR, exist_ok=True)
 except (PermissionError, OSError):
@@ -150,5 +160,12 @@ def health():
 
 
 if __name__ == '__main__':
-    logger.info("Starting Kokoro TTS service on port 5005")
-    app.run(host='0.0.0.0', port=5005)
+    # Port is env-driven because this service now runs in two places: natively
+    # on the Apple-Silicon host (the default — MLX needs Metal, which a Linux
+    # container on macOS does not have) and in the portable fallback container.
+    # STT already worked this way; TTS had the port hardcoded, so the host
+    # deployment had no way to move off a clash.
+    port = int(os.environ.get("TTS_PORT", "5005"))
+    logger.info(f"Starting Kokoro TTS service on port {port} "
+                f"(backend={TTS_BACKEND})")
+    app.run(host='0.0.0.0', port=port)

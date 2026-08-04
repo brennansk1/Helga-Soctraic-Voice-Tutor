@@ -16,7 +16,9 @@ services:
       - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-}
       - CORE_LOGIC_URL=http://helga-core-logic:5003
       - RAG_URL=http://helga-rag-engine:5002
-      - TTS_URL=http://helga-tts:5005
+      # TTS runs natively on the host (Kokoro on MLX) by default, like Ollama
+      # and STT; `--profile portable` starts the containerised torch fallback.
+      - TTS_URL=${TTS_URL:-http://host.docker.internal:5005}
       # STT runs natively on the host (Nemotron-MLX/ANE) by default, like Ollama;
       # set STT_URL=http://helga-stt:5001 to use the containerized faster-whisper fallback.
       - STT_URL=${STT_URL:-http://host.docker.internal:5001}
@@ -48,8 +50,6 @@ services:
     depends_on:
       rag-engine:
         condition: service_healthy
-      tts:
-        condition: service_healthy
       research:
         condition: service_healthy
     extra_hosts:
@@ -64,7 +64,9 @@ services:
       - FSM_IDLE_TTL=${FSM_IDLE_TTL:-1800}
       - FSM_SWEEP_INTERVAL=${FSM_SWEEP_INTERVAL:-60}
       - RAG_URL=http://helga-rag-engine:5002
-      - TTS_URL=http://helga-tts:5005
+      # TTS runs natively on the host (Kokoro on MLX) by default, like Ollama
+      # and STT; `--profile portable` starts the containerised torch fallback.
+      - TTS_URL=${TTS_URL:-http://host.docker.internal:5005}
       - WEB_UI_URL=http://helga-web-ui:5000
       - RESEARCH_URL=http://helga-research:5006
       - FLASK_ENV=production
@@ -122,11 +124,27 @@ services:
     networks:
       - internal
 
+  # Kokoro TTS. PRIMARY deployment is NATIVE on the host, reached at
+  # host.docker.internal:5005 like Ollama and STT — see services/tts/README.md.
+  #
+  # This block is the PORTABLE FALLBACK and is behind a profile, so `docker
+  # compose up` neither builds nor starts it. It previously ran by default with
+  # mlx-audio in its requirements, which cannot work: MLX publishes a Linux
+  # wheel but there is no Metal inside a Linux container, and the `kokoro`
+  # torch fallback was commented out of requirements.txt — so the container had
+  # no working backend at all. The container path therefore uses torch Kokoro;
+  # MLX belongs on the host.
+  #
+  #   docker compose --profile portable up      # start the fallback
+  #   TTS_URL=http://helga-tts:5005             # ...and point the app at it
   tts:
     build: services/tts
+    profiles: ["portable"]
     container_name: helga-tts
     ports:
       - "5005:5005"
+    environment:
+      - TTS_BACKEND=torch
     volumes:
       - ./data/tts_cache:/app/data/tts_cache
     restart: unless-stopped

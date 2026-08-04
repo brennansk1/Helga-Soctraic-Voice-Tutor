@@ -55,6 +55,21 @@ LLM_API_URL = os.getenv(
     "LLM_API_URL", "http://host.docker.internal:11434/v1/chat/completions"
 )
 
+from services.common.model_roles import BUILD as ROLE_BUILD, resolve as _resolve_role
+
+
+def resolve_role(role):
+    """Endpoint + model for a role, honouring an explicit LLM_API_URL override.
+
+    LLM_API_URL predates the role seam and some deployments set it, so it still
+    wins when present — otherwise the role's own base URL is used, which is
+    what lets the build role point at a different server (mlx_lm.server) from
+    the tutor role.
+    """
+    base, model = _resolve_role(role or ROLE_BUILD)
+    explicit = os.getenv("LLM_API_URL")
+    return (explicit or base), model
+
 
 def _escape_inner_quotes(text: str) -> str:
     """Escape unescaped double quotes inside JSON string values.
@@ -373,8 +388,14 @@ def llm_generate(
     progress_callback=None,
     think: bool = False,
     json_format=None,
+    role: str = None,
 ) -> str:
     """Call LLM with retry logic.
+
+    `role` selects which model serves the call — "build" (the default for this
+    helper, whose callers are course_builder and asset_collector) or "tutor".
+    Unset role variables resolve both to OLLAMA_MODEL, so the default
+    configuration is unchanged. See services/common/model_roles.py.
 
     Adaptations for Ollama + Qwen3.5:
     - Standard temperature (0.7) with slight increase on retry
@@ -406,15 +427,19 @@ def llm_generate(
 
         try:
             req_id = f"req_{int(time.time())}_{attempt}"
+            _role_url, _role_model = resolve_role(role)
             temp = 0.7 + (
                 attempt * 0.1
             )  # Standard temperature, slight increase on retry
 
             data = {
-                # Unify on OLLAMA_MODEL (the canonical var the rest of the stack
-                # uses); LLM_MODEL still overrides if explicitly set. Default is
-                # the multimodal Qwen3.5-9B (was a stale qwen2.5:14b).
-                "model": os.getenv("LLM_MODEL") or os.getenv("OLLAMA_MODEL", "qwen3.5:9b"),
+                # Resolved per ROLE, not from one global variable. This helper
+                # is the build-time path (course_builder, asset_collector), and
+                # building has the opposite objective to tutoring: it is batch,
+                # so quality is worth latency. Unset role variables resolve to
+                # OLLAMA_MODEL, so the default configuration is unchanged.
+                # See services/common/model_roles.py.
+                "model": _role_model,
                 "messages": [
                     {"role": "system", "content": sys_prompt},
                     {"role": "user", "content": prompt},
@@ -493,7 +518,10 @@ def llm_generate(
                 hb_thread.start()
 
             with _admit_background():
-                resp = requests.post(LLM_API_URL, json=data, timeout=timeout)
+                resp = requests.post(
+                    _role_url.rstrip("/") + "/v1/chat/completions"
+                    if not _role_url.endswith("/chat/completions") else _role_url,
+                    json=data, timeout=timeout)
             heartbeat_stop.set()  # Stop heartbeat on response
             resp.raise_for_status()
             content = (
