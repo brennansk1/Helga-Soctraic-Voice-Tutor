@@ -50,6 +50,17 @@
         return n;
     }
 
+    /* An SVG whose viewBox was built at its intended DISPLAY size, so its text
+     * renders at the pixel size it was designed for. `width:auto` on inline SVG
+     * still resolves to 100% and would scale it back up, so the intrinsic size
+     * has to be stated as attributes; CSS then only ever shrinks it. */
+    function intrinsicSvg(W, H, cls) {
+        return svg('svg', {
+            viewBox: '0 0 ' + Math.round(W) + ' ' + Math.round(H),
+            width: Math.round(W), height: Math.round(H), role: 'presentation',
+        }, 'aid-svg aid-svg--intrinsic ' + (cls || ''));
+    }
+
     /* Linear map from data units to pixels. */
     function scale(d0, d1, p0, p1) {
         var span = (d1 - d0) || 1;
@@ -142,7 +153,9 @@
     };
 
     RENDER.geometry = function (s, stage) {
-        var W = 560, H = 360, PAD = 44;
+        // PAD only has to clear the vertex labels and the side labels drawn just
+        // outside the shape; 44 was framing, not clearance.
+        var W = 560, PAD = 30;
         var xs = [], ys = [];
         Object.keys(s.points).forEach(function (k) { xs.push(s.points[k][0]); ys.push(s.points[k][1]); });
         s.circles.forEach(function (c) {
@@ -151,15 +164,42 @@
         });
         var minX = Math.min.apply(null, xs), maxX = Math.max.apply(null, xs);
         var minY = Math.min.apply(null, ys), maxY = Math.max.apply(null, ys);
+        var spanX = (maxX - minX) || 1, spanY = (maxY - minY) || 1;
+
+        // The CANVAS follows the figure, and its SIZE follows the display size.
+        //
+        // Two bugs live here, and the second is the subtle one. A fixed 560x360
+        // box meant a 4:3 triangle filled 362x272 and floated in ~100px of dead
+        // margin. Fixing that by capping height in CSS then made it worse: the
+        // whole SVG scaled to 0.56x, so 13-unit labels rendered at 7px and the
+        // side lengths became unreadable. Text in an SVG scales with the
+        // viewBox, so a viewBox far larger than its display box silently
+        // shrinks every label.
+        //
+        // So the viewBox is built at roughly the size it will actually be
+        // drawn: 1 unit ≈ 1 CSS pixel, and the labels stay the size they were
+        // designed to be.
+        var TARGET_INNER_H = 185;
+        var aspect = spanX / spanY;
+        var innerH = TARGET_INNER_H;
+        var innerW = innerH * aspect;
+        var maxInnerW = W - 2 * PAD;
+        if (innerW > maxInnerW) {            // wide figure: fit the width instead
+            innerW = maxInnerW;
+            innerH = innerW / aspect;
+        }
+        innerW = Math.max(innerW, 150);
+        W = innerW + 2 * PAD;
+        var H = innerH + 2 * PAD;
+
         // Equal aspect: a right angle must look like a right angle and a circle
         // must be round, so both axes share one scale factor.
-        var spanX = (maxX - minX) || 1, spanY = (maxY - minY) || 1;
-        var k = Math.min((W - 2 * PAD) / spanX, (H - 2 * PAD) / spanY);
+        var k = Math.min(innerW / spanX, innerH / spanY);
         var cx = (W - k * spanX) / 2, cy = (H - k * spanY) / 2;
         var X = function (v) { return cx + (v - minX) * k; };
         var Y = function (v) { return H - cy - (v - minY) * k; };   // flip: SVG y grows down
 
-        var root = svg('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'presentation' }, 'aid-svg');
+        var root = intrinsicSvg(W, H);
 
         if (s.show_grid) {
             var g = svg('g', null, 'aid-grid');
@@ -538,8 +578,10 @@
     };
 
     RENDER.cycle = function (s, stage) {
-        var n = s.steps.length, W = 560, H = 420, cx = W / 2, cy = H / 2, R = 138;
-        var root = svg('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'presentation' }, 'aid-svg');
+        // Sized near its display size for the same reason as geometry: a large
+        // viewBox shrunk to fit would take the step labels with it.
+        var n = s.steps.length, W = 340, H = 320, cx = W / 2, cy = H / 2, R = 102;
+        var root = intrinsicSvg(W, H);
         var defs = svg('defs');
         var mk = svg('marker', { id: 'aid-cyc-arrow', viewBox: '0 0 10 10', refX: 8, refY: 5, markerWidth: 5, markerHeight: 5, orient: 'auto' });
         mk.appendChild(svg('path', { d: 'M0,0 L10,5 L0,10 z' }, 'aid-arrow-head'));
@@ -559,10 +601,12 @@
         s.steps.forEach(function (st, i) {
             var a = ang(i), x = cx + Math.cos(a) * R, y = cy + Math.sin(a) * R;
             var g = svg('g', null, 'aid-cycle-step ' + colorClass(st.color));
-            g.appendChild(svg('circle', { cx: x, cy: y, r: 46 }, 'aid-node-box'));
+            g.appendChild(svg('circle', { cx: x, cy: y, r: 43 }, 'aid-node-box'));
             // Smaller type and a wider box: cycle labels are single long words
             // ("Condensation", "Precipitation") far more often than node labels.
-            wrapText(g, st.label, x, y, 80, 3, 'aid-t-cycle', 5.4);
+            // 'Precipitation' is 13 characters and must fit: at 5.4px/char in a
+            // 70px box it truncated to 'Precipitati…'. Narrower metrics, wider box.
+            wrapText(g, st.label, x, y, 76, 3, 'aid-t-cycle', 4.9);
             if (st.detail) { var ti = svg('title'); ti.textContent = st.detail; g.appendChild(ti); }
             root.appendChild(stageClass(g, st.stage, stage));
         });

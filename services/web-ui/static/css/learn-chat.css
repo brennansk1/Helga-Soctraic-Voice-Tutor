@@ -443,3 +443,60 @@ pre.math-raw { display: block; margin: var(--space-2) 0; }
     .learn-chat-input-area { padding: var(--space-2) var(--space-3); }
     .learn-chat-action-btn { width: 40px; height: 40px; }
 }
+
+/* ==========================================================================
+   Fixes found by rendering the real session (2026-08-04).
+   ========================================================================== */
+
+/* `.hidden` had no rule for four of the five elements that use it in this
+   shell. There is no global `.hidden { display: none }` anywhere in the
+   stylesheets — `.learn-chat-shell.hidden` is declared explicitly, which is
+   the pattern — so the progress pill, the Bloom badge, the mastery bar and the
+   hero all RENDERED while the markup said they were hidden. The hero was the
+   worst: display was never suppressed, so its `margin: space-8 auto space-6`
+   pushed ~90px of dead space above the first message of every session. */
+.learn-chat-hero.hidden,
+.learn-chat-badge.hidden,
+.mastery-progress.hidden,
+#session-header.hidden { display: none; }
+
+/* Message actions sit OUTSIDE the bubble, so on a narrow screen they were
+   pushed past the right edge of the viewport — the tallest overflow was 35px
+   beyond the document. On small screens they move under the message instead,
+   and stay visible: a control you cannot hover for is a control that does not
+   exist on touch. */
+@media (max-width: 640px) {
+    .chat-msg-content { flex-wrap: wrap; }
+    /* avatar (36) + gap (12) = 48 exactly, so 100%-48 rounded over and bumped
+       the avatar onto its own line. `min-width: 0` is the load-bearing half: a
+       flex item will not shrink below its min-content width, and the aid
+       stack's negative margins made that wider than the space available. */
+    /* `flex: 1 1 0` is the load-bearing part. With the default basis of
+       `auto` the body asks for its max-content width first and only then gets
+       clamped, which was enough to bump the avatar onto its own line. A zero
+       basis makes it size from the space that is actually left. */
+    .chat-msg-body { flex: 1 1 0; min-width: 0; max-width: calc(100% - 56px); }
+    .chat-msg-actions-side { flex-basis: 100%; }
+    .chat-msg-body .aid-stack { margin-inline: calc(var(--space-3) * -1); }
+    .chat-msg-actions-side {
+        flex-direction: row;
+        opacity: 1;
+        width: 100%;
+        margin: var(--space-1) 0 0 48px;
+    }
+    .chat-msg.outgoing .chat-msg-actions-side { justify-content: flex-end; margin: var(--space-1) 48px 0 0; }
+    .learn-chat-input-form { gap: var(--space-1); }
+    .learn-chat-action-btn { width: 38px; height: 38px; }
+    .learn-chat-input-wrapper { padding-left: var(--space-3); min-width: 0; }
+}
+
+/* Touch devices have no hover, so the reveal-on-hover actions were unreachable
+   at any width. */
+@media (hover: none) {
+    .chat-msg-actions-side { opacity: 1; }
+}
+
+/* The grade badge took a whole line above the answer it was grading. Floating
+   it into the bubble's top corner keeps the verdict attached to the answer
+   without spending a line of vertical space on every graded turn. */
+.chat-msg-grade-badge { margin-bottom: var(--space-1); }
