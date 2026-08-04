@@ -618,15 +618,15 @@ pre.math-raw { display: block; margin: var(--space-2) 0; }
 .learn-chat-input-wrapper { padding: 0 var(--space-3) 0 var(--space-3); }
 .learn-chat-input { padding: var(--space-2) 0; }
 
-/* The controls are a group; the divider says where typing ends and acting
-   begins, which is what was missing when everything sat in one flat row. */
-.learn-chat-input-form > .learn-chat-action-btn:first-of-type {
-    margin-left: 2px;
-    border-left: 1px solid var(--border-color);
-    border-radius: 0;
-    padding-left: 8px;
-    width: 42px;
+/* The divider says where typing ends and acting begins. It lives on the TEXT
+   FIELD, not on the first button: putting it on the button meant squaring off
+   that button's corners, which turned the mic's recording fill into a
+   rounded rectangle instead of the circle it should be. */
+.learn-chat-input-wrapper {
+    border-right: 1px solid var(--border-color);
+    margin-right: 6px;
 }
+.learn-chat-action-btn { border-radius: 50%; }
 .learn-chat-send-btn { margin-left: 4px; }
 
 /* ---- Mic: recording and transcribing ------------------------------------
@@ -653,8 +653,9 @@ pre.math-raw { display: block; margin: var(--space-2) 0; }
 .learn-chat-action-btn.recording::after {
     content: "";
     position: absolute;
-    top: 4px; right: 4px;
+    top: 3px; right: 3px;
     width: 7px; height: 7px;
+    box-shadow: 0 0 0 1.5px var(--color-danger, #c45c4a);
     border-radius: 50%;
     background: #fff;
     animation: mic-blink 1s steps(1, end) infinite;
