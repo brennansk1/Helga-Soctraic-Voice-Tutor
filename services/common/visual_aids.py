@@ -1217,6 +1217,77 @@ def extract_aids(text, default_tier="authored", limit=MAX_AIDS_PER_MESSAGE):
     return clean, aids, errors
 
 
+# --- Course-built aids -------------------------------------------------------
+# Diagrams drawn during the ASSET GATHERING phase of course creation and stored
+# in the concept's markdown, alongside `## Misconceptions` and `## Analogies`,
+# which the FSM already parses the same way. No schema migration, and the aids
+# travel with the content they belong to.
+#
+# Why build time is the right place for the hard ones: a retry costs nothing
+# there, so geometry can be drawn, validated and regenerated against a named
+# failure — exactly how the depth contract already works. Runtime then SELECTS
+# rather than authors: no JSON-reliability risk, no latency, no variance.
+#
+#   ## Visual Aids
+#   ```aid
+#   {"slot": "opening", "kind": "geometry", ...}
+#   ```
+#   ```aid
+#   {"slot": "misconception:0", "kind": "number_line", ...}
+#   ```
+_AIDS_SECTION = re.compile(r"##+\s*Visual Aids\s*\n(.*?)(?=\n##\s|\Z)",
+                           re.DOTALL | re.IGNORECASE)
+
+
+def parse_concept_aids(markdown):
+    """Return {slot: aid} for a concept's pre-built diagrams.
+
+    Never raises and never partially fails a concept: a malformed block is
+    skipped and the rest are kept, because a missing diagram must never cost a
+    learner their lesson.
+    """
+    if not markdown or "Visual Aids" not in markdown:
+        return {}
+    section = _AIDS_SECTION.search(markdown)
+    if not section:
+        return {}
+    out = {}
+    for match in _FENCE.finditer(section.group(1)):
+        raw, _ = _repair_json_text(match.group(1).strip())
+        if raw is None:
+            continue
+        for item in (raw if isinstance(raw, list) else [raw]):
+            if not isinstance(item, dict):
+                continue
+            slot = _text(item.get("slot"), 40) or "opening"
+            aid, err = normalize_aid(item, default_tier=item.get("tier", "authored"))
+            if aid:
+                aid["slot"] = slot
+                out[slot] = aid
+            else:
+                logger.info("Pre-built aid in slot '%s' rejected: %s", slot, err)
+    return out
+
+
+def render_concept_aids(aids):
+    """Serialise pre-built aids into the `## Visual Aids` markdown section.
+    Inverse of parse_concept_aids; used by the asset-gathering phase."""
+    if not aids:
+        return ""
+    lines = ["## Visual Aids", ""]
+    for slot, aid in sorted(aids.items()):
+        payload = {"slot": slot, "kind": aid["kind"], "title": aid.get("title", ""),
+                   "caption": aid.get("caption", ""), "alt": aid.get("alt", ""),
+                   "reveal": aid.get("reveal", "tutor"),
+                   "tier": aid.get("provenance", {}).get("tier", "authored"),
+                   "spec": aid["spec"]}
+        lines.append("```aid")
+        lines.append(json.dumps(payload, separators=(",", ":")))
+        lines.append("```")
+        lines.append("")
+    return "\n".join(lines)
+
+
 # --- Store -------------------------------------------------------------------
 class AidStore:
     """Bounded, content-addressed store of aid specs for one session.

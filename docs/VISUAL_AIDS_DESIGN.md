@@ -289,7 +289,88 @@ existing tests across the three dependent suites still passing.
 
 ---
 
-## 11. Files
+## 11. When a diagram appears (B13.11)
+
+`services/common/aid_policy.py` — deterministic, no LLM call. At ~30 s per call,
+asking the model whether it would like to draw would cost more than the drawing
+saves, so this is a pure function of the moment, like `_detect_ignorance`.
+
+**Three outcomes, not two:**
+
+| Verdict | Meaning |
+|---|---|
+| `none` | most turns |
+| `reuse` | a diagram built at COURSE-CREATION time fits this moment |
+| `generate` | nothing precomputed fits; let the model draw |
+
+`reuse` is the preferred path. Course build already knows the concept and its
+misconceptions, and a retry there costs nothing — so the hard diagrams
+(geometry above all) are drawn, validated and regenerated against a named
+failure at build time, exactly as the depth contract already works. Runtime then
+**selects** rather than authors: no JSON-reliability risk, no latency, no
+variance. `generate` is the lower-trust fallback for what a build cannot
+anticipate.
+
+**Enforcement is at prompt construction, not output rejection.** On a `none` or
+`reuse` turn the aid grammar is left out of the prompt entirely — a model that
+was never taught the syntax cannot emit a diagram, and ~590 tokens are saved on
+every quiet turn.
+
+**Restraint mechanisms** (Mayer's coherence principle: extraneous visuals reduce
+learning, they do not merely fail to help):
+
+- **Cooldown** — no diagram within 2 turns of the last, *unless* the learner is
+  stuck. Stuck overrides, because that is exactly when waiting helps nobody.
+- **Per-concept budget** — 3 diagrams, 4 for K-2/3-5. The multimedia effect is
+  strongest for novices.
+- **Repeat suppression** — aid ids are content hashes, so an identical figure
+  re-emitted collapses to the same id and is dropped; the original card is still
+  on screen.
+- **Expertise reversal** — Bloom ≥ 4 scores *negative*. A diagram that helps a
+  novice can hinder someone already fluent.
+- **Don't interrupt** — a correct streak scores negative.
+
+**Triggers**: LECTURE mode is the strongest signal (+4) — it fires when the
+student said "I don't know", so prose has already been tried and failed.
+Then repeated misses (+3), concept opening (+3), a visually-routed subject (+2).
+
+**Subject routing** narrows the menu from eleven kinds to two or three, which
+measurably helps a 9B model choose. Keyword-based, not an LLM call; a mis-route
+is cheap because the model may still pick otherwise.
+
+---
+
+## 12. Photographs (B13.5)
+
+A concept map beats a photo of a leaf for photosynthesis. But where the
+*particular thing* is the content — a Vermeer, a basalt column, Saturn — a
+diagram would be a lie.
+
+**Licence: fail closed.** An unknown licence is a rejected licence. PD, CC0,
+CC BY and CC BY-SA are accepted; NC and ND are refused, because a teacher
+printing a worksheet is a derivative use and the restriction follows the image
+there. Attribution is captured at fetch time and travels with the bytes.
+
+**Fetch online, serve local.** Images are downloaded once at build time into
+`DATA_ROOT/media` and referenced same-origin. Being online makes courses
+*richer*; being offline never makes them *broken*. This also satisfies the
+`image` kind's same-origin rule, which refuses remote hosts by design.
+
+Sources, routed not global: Wikimedia Commons (`*` — the only true generalist,
+and the only one returning per-file licence metadata), Met + Art Institute
+(art), Library of Congress (history), NASA (science/geography).
+
+Bytes are trusted over headers (magic-byte sniffing), SVG is excluded as
+executable markup, oversize is caught mid-stream because servers lie about
+Content-Length, and filenames are whitelisted against traversal before the
+serving route touches disk.
+
+**Not verified live** — this sandbox's proxy blocks the archives, so the fetch
+path is tested against mocked responses only.
+
+---
+
+## 13. Files
 
 | File | Role |
 |---|---|
@@ -303,7 +384,11 @@ existing tests across the three dependent suites still passing.
 | `services/web-ui/static/css/aids.css` | Theme-aware colour slots, print, a11y |
 | `services/web-ui/static/js/session.js` | Attaches aids above message text; feeds TTS |
 | `tools/aid_probe.py` | Measures whether the live model can actually draw |
+| `services/common/aid_policy.py` | When a diagram appears; select-then-generate |
+| `services/research/image_sources.py` | Commons/Met/AIC/LoC/NASA + licence filter |
+| `services/common/media_cache.py` | Download once at build time, serve same-origin |
 | `tests/core/test_visual_aids.py` | 66 tests |
+| `tests/core/test_aid_policy.py` | 32 tests (policy, licence, media cache) |
 
 `HELGA_ENABLE_VISUAL_AIDS` (default **on**) gates the whole feature, including
 whether the prompt grammar is spent at all. It is independent of

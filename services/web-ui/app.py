@@ -5,7 +5,7 @@ if "pytest" not in _sys.modules:
     from gevent import monkey
     monkey.patch_all()
 from flask import (Flask, render_template, request, jsonify, session, abort,
-                   redirect, url_for)
+                   redirect, url_for, send_from_directory)
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import requests
 import time
@@ -869,6 +869,39 @@ def proxy_fsm_state():
         return jsonify(resp.json()), resp.status_code
     except Exception as e:
         return jsonify({'error': str(e)}), 502
+
+@app.route('/api/media/<name>', methods=['GET'])
+def serve_cached_media(name):
+    """Serve an image cached at course-build time (B13.5).
+
+    The filename comes from a URL, so it is validated against a whitelist of
+    exactly the pattern we ourselves write (16 hex chars + a known extension)
+    before touching the filesystem — that is what stops `../../helga.db`.
+    send_from_directory is given an absolute root for the same reason.
+
+    Served from here rather than /static so the path matches what
+    visual_aids._SAFE_SRC permits, and so attribution stays queryable alongside.
+    """
+    from services.common.media_cache import media_root, safe_media_name
+    if not safe_media_name(name):
+        return jsonify({'error': 'bad media name'}), 400
+    root = os.path.abspath(media_root())
+    if not os.path.exists(os.path.join(root, name)):
+        return jsonify({'error': 'not cached'}), 404
+    resp = send_from_directory(root, name)
+    # Content-addressed by URL hash, so the bytes for a given name never change.
+    resp.headers['Cache-Control'] = 'public, max-age=604800, immutable'
+    return resp
+
+
+@app.route('/api/media/<name>/attribution', methods=['GET'])
+def media_attribution(name):
+    """Who made this and under what licence. Kept queryable because CC BY
+    without the BY is infringement with extra steps."""
+    from services.common.media_cache import attribution
+    record = attribution(name)
+    return (jsonify(record), 200) if record else (jsonify({'error': 'unknown'}), 404)
+
 
 @app.route('/api/aid/<aid_id>', methods=['GET'])
 def proxy_visual_aid(aid_id):

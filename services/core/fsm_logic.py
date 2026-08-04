@@ -386,6 +386,14 @@ class MnemosyneFSM:
         # Aids produced by a TOOL call land here and attach to the next tutor
         # message, since the tool runs mid-generation, before the text exists.
         self._pending_aids = []
+        # Policy bookkeeping (B13.11). These are what stop a diagram appearing
+        # every turn and stop the same diagram appearing twice; they reset on
+        # every concept change, because a budget is per concept.
+        self._turns_since_aid = 99
+        self._aid_kinds_this_concept = []
+        self._aid_ids_this_concept = set()
+        self._concept_aids = {}          # slot -> aid, precomputed at build time
+        self._last_aid_decision = None
 
         # B15.6: the per-FSM timer thread and per-instance signal handlers are
         # gone — one registry-level sweeper calls tick(now) for every resident
@@ -725,6 +733,9 @@ class MnemosyneFSM:
                 logging.error(f"Aid extraction failed (message delivered without it): {e}")
                 aids = []
             aids = self._drain_pending_aids() + aids
+            # Never the same diagram twice in one concept (ids are content
+            # hashes, so an identical redraw collapses to the same id).
+            aids = self._drop_repeat_aids(aids)
 
         if record and text:
             node_title = (self.current_lesson_node.get("title")
@@ -747,7 +758,10 @@ class MnemosyneFSM:
             entry = {"sender": "helga", "text": text}
             if grade is not None:
                 entry["grade"] = grade
+            # Every recorded tutor message ages the cooldown by one turn.
+            self._turns_since_aid = getattr(self, "_turns_since_aid", 99) + 1
             if aids:
+                self._note_aids_shown(aids)
                 for aid in aids:
                     self.aid_store.put(aid)
                 # Only the slim descriptor rides in the transcript — the spec is
@@ -759,6 +773,119 @@ class MnemosyneFSM:
             if len(self.transcript) > 50:
                 self.transcript = self.transcript[-50:]
             logging.info(f"TRANSCRIPT (AI): {text[:80]}... (Size: {len(self.transcript)})")
+
+    # ------------------------------------------------------------------ #
+    # B13.11 — WHEN to show a diagram. The policy is deterministic and lives #
+    # in services/common/aid_policy.py; these methods only gather the moment #
+    # and act on the verdict.                                                #
+    # ------------------------------------------------------------------ #
+    def _reset_aid_budget(self):
+        """A new concept gets a fresh diagram budget and a clean slate of
+        already-shown kinds. Also loads whatever the course build drew for this
+        concept, so the policy can prefer a checked diagram over a fresh one."""
+        self._turns_since_aid = 99
+        self._aid_kinds_this_concept = []
+        self._aid_ids_this_concept = set()
+        self._concept_aids = {}
+        if not getattr(self, "_visual_aids_enabled", False):
+            return
+        try:
+            from services.common.visual_aids import parse_concept_aids
+            self._concept_aids = parse_concept_aids(self.current_context or "")
+            if self._concept_aids:
+                logging.info(f"Loaded {len(self._concept_aids)} pre-built visual aid(s): "
+                             f"{sorted(self._concept_aids)}")
+        except Exception as e:
+            logging.warning(f"Could not load pre-built aids for this concept: {e}")
+
+    def _aid_moment(self, teaching_mode):
+        """Snapshot the state the policy reasons about."""
+        from services.common.aid_policy import AidMoment
+        node = self.current_lesson_node or {}
+        # The misconception the student is currently displaying, if the FSM has
+        # identified one — a diagram drawn for THAT error beats a generic one.
+        active = getattr(self, "_active_misconception_index", None)
+        return AidMoment(
+            teaching_mode=teaching_mode,
+            is_concept_opening=(self.concept_question_count == 0),
+            last_grade=self._last_socratic_grade or 0,
+            retry_count=self.socratic_retry_count,
+            miss_streak=getattr(self, "concept_miss_streak", 0),
+            correct_streak=self.concept_correct_streak,
+            bloom_level=self.current_bloom_level,
+            question_count=self.concept_question_count,
+            grade_band=self.grade_band,
+            concept_title=node.get("title", ""),
+            concept_text=(self.current_context or "")[:4000],
+            turns_since_aid=self._turns_since_aid,
+            aids_shown_this_concept=len(self._aid_kinds_this_concept),
+            kinds_shown=tuple(self._aid_kinds_this_concept),
+            available_slots=tuple(k for k in self._concept_aids
+                                  if k not in self._aid_ids_this_concept),
+            active_misconception=active,
+            enabled=getattr(self, "_visual_aids_enabled", False),
+        )
+
+    def _decide_visual_aid(self, teaching_mode):
+        """Decide, and act on a `reuse` verdict immediately.
+
+        A reuse costs NO model involvement at all: the diagram was drawn and
+        checked at course-creation time, so it is queued straight onto the next
+        message. Only `generate` reaches the prompt.
+        """
+        if not getattr(self, "_visual_aids_enabled", False):
+            return None
+        try:
+            from services.common.aid_policy import decide
+            decision = decide(self._aid_moment(teaching_mode))
+        except Exception as e:
+            logging.warning(f"Aid policy unavailable this turn: {e}")
+            return None
+        self._last_aid_decision = decision
+        logging.info(f"AID POLICY: {decision.action} — {decision.reason}")
+
+        if decision.action == "reuse":
+            aid = self._concept_aids.get(decision.slot)
+            if aid:
+                self._aid_sink(dict(aid))
+                self._aid_ids_this_concept.add(decision.slot)
+            else:
+                logging.warning(f"Aid policy chose slot '{decision.slot}' but it "
+                                "is not loaded; falling back to no diagram")
+        return decision
+
+    def _note_aids_shown(self, aids):
+        """Record what went on screen so cooldown and budget mean something.
+        getattr throughout: bare FSM instances built via __new__ (tests,
+        recovery paths) never ran __init__, matching the convention above."""
+        self._turns_since_aid = 0
+        if not hasattr(self, "_aid_kinds_this_concept"):
+            self._aid_kinds_this_concept = []
+        if not hasattr(self, "_aid_ids_this_concept"):
+            self._aid_ids_this_concept = set()
+        for aid in aids:
+            self._aid_kinds_this_concept.append(aid.get("kind", "?"))
+            self._aid_ids_this_concept.add(aid["id"])
+
+    def _drop_repeat_aids(self, aids):
+        """Never show the same diagram twice in one concept.
+
+        Aid ids are content hashes, so an identical figure re-emitted by the
+        model collapses to the same id and is dropped here. The original card is
+        still on screen — redrawing it below a new message would just push the
+        conversation down and teach nothing.
+        """
+        shown = getattr(self, "_aid_ids_this_concept", None)
+        if shown is None:
+            return list(aids)
+        kept = []
+        for aid in aids:
+            if aid["id"] in shown:
+                logging.info(f"Dropping repeat visual aid {aid['id']} "
+                             f"({aid.get('kind')}) — already shown this concept")
+                continue
+            kept.append(aid)
+        return kept
 
     def _drain_pending_aids(self):
         """Take aids produced by tool calls during this turn. Tools run mid-
@@ -2097,6 +2224,7 @@ class MnemosyneFSM:
         self.concept_question_count = 0
         self.current_bloom_level = 1  # Reset Bloom's level for new concept
         self.bloom_correct_streak = 0
+        self._reset_aid_budget()
 
         # Broadcast concept progress to UI
         completed_count = len(self.completed_topics)
@@ -2162,6 +2290,11 @@ class MnemosyneFSM:
         logging.info(f"Teaching Mode Selected: {teaching_mode}")
         self.send_status_update(f"Mode: {teaching_mode}...", progress=70)
 
+        # B13.11: decide ONCE per turn whether a diagram belongs here. A `reuse`
+        # verdict queues a course-built diagram immediately and never reaches
+        # the model; only `generate` puts the aid grammar in the prompt.
+        aid_decision = self._decide_visual_aid(teaching_mode)
+
         # Build clean history list
         for h in self.conversation_history:
             u_text = h[0] if h[0] is not None else ""
@@ -2204,6 +2337,7 @@ class MnemosyneFSM:
                 bloom_level=self.current_bloom_level,
                 prior_concepts=self.prior_concepts_summary,
                 grade_band=self.grade_band,
+                aid_policy=aid_decision,
             )
         else:
             prompt = get_typed_socratic_prompt(
@@ -2219,6 +2353,7 @@ class MnemosyneFSM:
                 prior_concepts=self.prior_concepts_summary,
                 grade_band=self.grade_band,
                 health_strand6=self._current_concept_is_hd(),
+                aid_policy=aid_decision,
             )
         # Tune max_tokens: lectures need more room for explanations, questions are shorter
         token_limit = 500 if teaching_mode == "LECTURE" else 400

@@ -87,6 +87,26 @@ Three more worked shapes — copy these structures:
 ```"""
 
 
+def _aid_prompt_block(decision):
+    """The diagram grammar, included only when the policy asked for one.
+
+    `decision` is an aid_policy.AidDecision. Anything other than a `generate`
+    decision yields an empty string: on a `none` turn the model must not be
+    tempted, and on a `reuse` turn the diagram is attached directly from the
+    course build with no model involvement at all.
+
+    Passing None keeps the old always-on behaviour, so callers that have not
+    been taught about the policy (tests, tools) still work.
+    """
+    if decision is None:
+        return f"\n\n{VISUAL_AID_RULES}" if visual_aids_enabled() else ""
+    if not visual_aids_enabled() or getattr(decision, "action", "none") != "generate":
+        return ""
+    from services.common.aid_policy import prompt_nudge
+    nudge = prompt_nudge(decision)
+    return f"\n\n{VISUAL_AID_RULES}" + (f"\n\nTHIS TURN: {nudge}" if nudge else "")
+
+
 def visual_aids_enabled():
     """Whether to teach the model the diagram grammar this turn.
 
@@ -314,6 +334,7 @@ def get_band_profile(grade_band):
 
 
 def get_typed_socratic_prompt(question_type_key, context_text, conversation_history,
+                              aid_policy=None,
                                system_note=None, misconceptions=None, analogies=None,
                                style_modifier=None, user_profile=None, bloom_level=1,
                                prior_concepts=None, grade_band=None, health_strand6=False):
@@ -349,7 +370,7 @@ def get_typed_socratic_prompt(question_type_key, context_text, conversation_hist
     )
 
 
-def get_socratic_tutor_prompt(context_text, conversation_history, system_note=None, misconceptions=None, analogies=None, style_modifier=None, user_profile=None, bloom_level=1, prior_concepts=None, grade_band=None, health_strand6=False):
+def get_socratic_tutor_prompt(context_text, conversation_history, aid_policy=None, system_note=None, misconceptions=None, analogies=None, style_modifier=None, user_profile=None, bloom_level=1, prior_concepts=None, grade_band=None, health_strand6=False):
     """
     Generates a Socratic question or response as a messages array.
 
@@ -439,8 +460,11 @@ def get_socratic_tutor_prompt(context_text, conversation_history, system_note=No
         summaries = [f"{p.get('title', '?')} (Bloom {p.get('bloom_achieved', '?')})" for p in prior_concepts[-3:]]
         prior_str = f"\nPREVIOUS CONCEPTS COVERED: {', '.join(summaries)}. You may reference these to build connections."
 
-    # B13: only spend prompt tokens on the diagram grammar when aids are on.
-    aid_str = f"\n\n{VISUAL_AID_RULES}" if visual_aids_enabled() else ""
+    # B13: the diagram grammar is included ONLY when the policy has decided a
+    # diagram is warranted this turn. That is the enforcement mechanism — a
+    # model that has not been told the syntax cannot emit one — and it keeps
+    # ~400 tokens off every turn that does not want a picture.
+    aid_str = _aid_prompt_block(aid_policy)
 
     # Build system prompt
     system_content = f"""{SOCRATIC_SYSTEM_RULES}
@@ -615,7 +639,7 @@ Return ONLY the single word: LECTURE or QUESTION."""}]
 
 # --- MICRO-LECTURE PROMPTS ---
 
-def get_micro_lecture_prompt(topic, context_text, history=[], style_modifier="standard",
+def get_micro_lecture_prompt(topic, context_text, history=[], style_modifier="standard", aid_policy=None,
                              missing_concepts=None, next_question_type=None, bloom_level=1,
                              prior_concepts=None, grade_band=None):
     """
@@ -680,8 +704,8 @@ def get_micro_lecture_prompt(topic, context_text, history=[], style_modifier="st
 
     # B13: the lecture path is where a diagram earns the most — it fires exactly
     # when the student has said "I don't know", which is when a picture beats
-    # another paragraph of prose.
-    aid_str = f"\n\n{VISUAL_AID_RULES}" if visual_aids_enabled() else ""
+    # another paragraph of prose. Still policy-gated: budget and cooldown apply.
+    aid_str = _aid_prompt_block(aid_policy)
 
     return [{"role": "system", "content": f"""You are the LECTURER. The student is learning about '{topic}'.
 Teaching Style: {style_modifier}
