@@ -942,6 +942,24 @@ class SkeletonBuilder:
         Now writes to JSON structure instead of KuzuDB.
         Protected by _build_lock to prevent concurrent course builds.
         """
+        # Durable record so the UI survives navigation and can lock itself.
+        # Best-effort throughout: recording progress must never break a build.
+        try:
+            from services.common import build_state
+        except Exception:
+            build_state = None
+
+        if build_state:
+            build_state.start(topic, source=getattr(self, "build_source", "topic"))
+            # Every status event now also lands in the durable record.
+            _original_cb = self.status_callback
+
+            def _tee(message):
+                self._record_progress(message)
+                if _original_cb:
+                    _original_cb(message)
+            self.status_callback = _tee
+
         if not _build_lock.acquire(blocking=False):
             msg = "Another course is already being built. Please wait for it to finish."
             logger.warning(msg)
@@ -953,6 +971,25 @@ class SkeletonBuilder:
             return self._build_inner(topic, max_depth, module_depths)
         finally:
             _build_lock.release()
+            if build_state:
+                build_state.finish()
+
+    def _record_progress(self, message):
+        """Mirror a status event into the durable build record.
+
+        The Socket.IO stream only reaches a browser that is currently on the
+        page. A learner who navigates to Courses and back had no way to see
+        what happened while they were away, even though the same build was
+        still running server-side.
+        """
+        try:
+            from services.common import build_state
+            build_state.note(message)
+            if str(message).startswith("STRUCT:MODULE:"):
+                st = build_state.current() or {}
+                build_state.update(modules=(st.get("modules") or 0) + 1)
+        except Exception:
+            pass
 
     def _build_inner(
         self, topic: str, max_depth: int = 2, module_depths: Dict[str, int] = None
@@ -1357,7 +1394,22 @@ class SkeletonBuilder:
             + len(brief.get("canonical_texts", []))
         logger.info(f"[SKELETON] phase-1 research for {topic!r}: {n} chapters "
                     f"across {srcs} sources, level={brief['level']}")
+
+        # Name what was actually found. "12 sources" tells a learner nothing;
+        # "Wikibooks: Geometry (31 chapters)" tells them the course is being
+        # built from a real book they could go and read. This IS the product's
+        # claim, so it belongs on screen rather than only in a log file.
         if self.status_callback:
+            self.status_callback(f"RESEARCH:LEVEL:{brief['level']}")
+            for x in brief.get("syllabi", []):
+                self.status_callback(
+                    f"RESEARCH:SYLLABUS:{x['source']}|{x['book']}|{len(x['chapters'])}")
+            for c in brief.get("courses", []):
+                self.status_callback(
+                    f"RESEARCH:COURSE:Wikiversity|{c['course']}|{len(c['sections'])}")
+            for t in brief.get("canonical_texts", [])[:6]:
+                yr = f" ({t['year']})" if t.get("year") else ""
+                self.status_callback(f"RESEARCH:BOOK:{t['title']}{yr}")
             self.status_callback(
                 f"CHECK:SYLLABUS_EVIDENCE:{n} chapters / {srcs} sources")
         return format_brief(brief)
@@ -2241,6 +2293,17 @@ class ContentHydrator:
                     reference_material = research_data.get("combined_text", "")
                     research_sources = research_data.get("sources", [])
                     research_confidence = research_data.get("confidence", 0.0)
+                    # Name the sources that grounded this concept. "Hydrating
+                    # concept 7/12" says nothing about quality; "grounded in
+                    # Wikibooks + Crossref" is the product's actual claim.
+                    if self.status_callback and research_sources:
+                        kinds = {}
+                        for _s in research_sources:
+                            k = _s.get("type", "source")
+                            kinds[k] = kinds.get(k, 0) + 1
+                        summary = ", ".join(f"{v} {k}" for k, v in kinds.items())
+                        self.status_callback(
+                            f"HYDRATE:SOURCES:{title}|{summary}|{research_confidence:.2f}")
             except Exception as research_err:
                 logger.warning(f"  [RESEARCH] Unavailable for '{title}': {research_err}")
 

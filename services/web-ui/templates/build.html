@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Building your course — Helga{% endblock %}
+{% block body_class %}page-build{% endblock %}
+
+{#  Course-build visualisation.
+
+    Building a course takes tens of minutes on this hardware, and until now the
+    only feedback was a spinner and a line of free text. That is a long time to
+    stare at nothing while wondering whether it has hung — and the pipeline is
+    genuinely interesting: it researches real syllabi, reconciles them, checks
+    its own coverage, and grounds every concept in sources it names.
+
+    Showing that work is not decoration. It is the evidence that the course was
+    built from something, which is the product's whole claim.
+#}
+
+{% block content %}
+<div class="build-shell">
+
+  <header class="build-header u-animate-rise">
+    <div>
+      <h1 class="build-title" id="build-topic">Building your course</h1>
+      <p class="build-subtitle" id="build-sub">Researching how this subject is actually taught…</p>
+    </div>
+    <div class="build-elapsed" aria-live="off">
+      <span class="build-elapsed-value" id="build-elapsed">0:00</span>
+      <span class="build-elapsed-label">elapsed</span>
+    </div>
+  </header>
+
+  <ol class="build-stages" id="build-stages" aria-label="Build stages">
+    <li class="build-stage" data-stage="preflight">
+      <span class="build-stage-dot"></span>
+      <div><strong>Pre-flight</strong><span>Checking the model is reachable</span></div>
+    </li>
+    <li class="build-stage" data-stage="research">
+      <span class="build-stage-dot"></span>
+      <div><strong>Research</strong><span>Finding real syllabi for this subject</span></div>
+    </li>
+    <li class="build-stage" data-stage="skeleton">
+      <span class="build-stage-dot"></span>
+      <div><strong>Structure</strong><span>Synthesising modules, lessons and concepts</span></div>
+    </li>
+    <li class="build-stage" data-stage="coverage">
+      <span class="build-stage-dot"></span>
+      <div><strong>Coverage check</strong><span>Comparing against a real syllabus</span></div>
+    </li>
+    <li class="build-stage" data-stage="hydrate">
+      <span class="build-stage-dot"></span>
+      <div><strong>Writing content</strong><span>Grounding each concept in sources</span></div>
+    </li>
+  </ol>
+
+  <section class="build-panels">
+    <article class="build-panel">
+      <h2 class="build-panel-title">Evidence gathered</h2>
+      <div class="build-evidence" id="build-evidence">
+        <p class="build-empty">Nothing yet — research runs first.</p>
+      </div>
+    </article>
+
+    <article class="build-panel">
+      <h2 class="build-panel-title">
+        Course taking shape
+        <span class="build-count" id="build-count"></span>
+      </h2>
+      <div class="build-tree" id="build-tree">
+        <p class="build-empty">Modules will appear here as they are written.</p>
+      </div>
+    </article>
+  </section>
+
+  <section class="build-panel build-log-panel">
+    <h2 class="build-panel-title">
+      Activity
+      <button class="btn btn-ghost btn-small" id="build-log-toggle"
+              aria-expanded="false" aria-controls="build-log">Show detail</button>
+    </h2>
+    <ul class="build-log" id="build-log" hidden></ul>
+  </section>
+
+  <div class="build-done" id="build-done" hidden>
+    <h2 id="build-done-title">Course ready</h2>
+    <p id="build-done-sub"></p>
+    <a class="btn btn-primary" id="build-open" href="/courses">Open the course</a>
+  </div>
+
+  <p class="build-error" id="build-error" hidden></p>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{{ url_for('static', filename='js/build-view.js') }}?v=1"></script>
+{% endblock %}

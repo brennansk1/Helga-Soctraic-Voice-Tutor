@@ -480,6 +480,28 @@ async def _research_concept_async(title, module_title, course_title, mastery=1):
         combined_parts.append(
             f"## Source: {tb['source']} - {tb['title']}\n{tb['text']}")
 
+    # 2a-ter. DOMAIN-ROUTED ARCHIVES. Art history is taught from artefacts and
+    # history from primary documents; a biology concept has no use for either.
+    # Routed, never global — an irrelevant hit is not neutral, it costs latency
+    # AND inflates grounding confidence while teaching nothing.
+    try:
+        from domain_sources import classify_domains, fetch_domain_sources
+    except ImportError:
+        from services.research.domain_sources import (
+            classify_domains, fetch_domain_sources)
+    try:
+        _domains = classify_domains(title, module_title, course_title)
+        for ds in fetch_domain_sources(title or _subject, _domains):
+            sources.append({
+                "url": ds.get("url", ""), "title": ds["title"],
+                "domain_tier": 1, "type": ds["type"], "source": ds["source"],
+            })
+            if ds.get("text"):
+                combined_parts.append(
+                    f"## Source: {ds['source']} - {ds['title']}\n{ds['text']}")
+    except Exception as e:
+        logger.debug(f"domain sources failed: {e}")
+
     # 2b. Generate search queries (mastery-aware)
     queries = build_search_queries(title, module_title, mastery)
 

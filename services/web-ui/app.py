@@ -12,6 +12,7 @@ import time
 import logging
 import sys
 import os
+import re
 import gevent
 # socketio.Client removed — no longer connecting to STT/audio services
 import subprocess
@@ -421,6 +422,185 @@ def ask_proxy():
     except Exception as e:
         logger.error(f"ask proxy failed: {e}")
         return jsonify({'error': 'could not reach the tutor service'}), 502
+
+
+@app.route('/api/build/status', methods=['GET'])
+def build_status():
+    """Is a course being built right now, and how far has it got?
+
+    Read on every page load. Two things depend on it:
+      - the learner can navigate away from a build and come back to it;
+      - the UI can stop offering actions the system will refuse, instead of
+        letting them fill in a form and then rejecting it.
+    """
+    try:
+        from services.common import build_state
+        state = build_state.current()
+    except Exception as e:
+        logger.debug(f"build status unavailable: {e}")
+        return jsonify({'active': False})
+    if not state:
+        return jsonify({'active': False})
+    return jsonify({
+        'active': bool(state.get('active')),
+        'topic': state.get('topic'),
+        'source': state.get('source'),
+        'modules': state.get('modules', 0),
+        'started_at': state.get('started_at'),
+        'course_uid': state.get('course_uid'),
+        'stale': state.get('stale', False),
+        'messages': (state.get('messages') or [])[-120:],
+    })
+
+
+@app.route('/api/books/build', methods=['POST'])
+def books_build():
+    """Start a course from a public-domain book.
+
+    Availability is re-checked server-side. A client that skipped the check, or
+    a book whose status changed since it was listed, must not slip through —
+    the whole point of the badge is that we do not build from a blurb.
+    """
+    data = request.get_json(silent=True) or {}
+    ident = (data.get('identifier') or '').strip()
+    if not ident:
+        return jsonify({'error': 'identifier required'}), 400
+    try:
+        from services.common import build_state
+        if build_state.is_building():
+            return jsonify({'error': 'a course is already being built'}), 409
+    except Exception:
+        pass
+    try:
+        meta = requests.get(f'https://archive.org/metadata/{ident}',
+                            headers={'User-Agent': 'Helga/1.0'},
+                            timeout=25).json()
+    except Exception:
+        return jsonify({'error': 'could not reach the archive'}), 502
+
+    restricted = str((meta.get('metadata') or {}).get(
+        'access-restricted-item', '')).lower() == 'true'
+    files = [f.get('name', '') for f in (meta.get('files') or [])]
+    fulltext = [f for f in files if f.endswith('_djvu.txt')]
+    if restricted or not fulltext:
+        return jsonify({
+            'error': 'This book is lending-only, so Helga cannot read its full '
+                     'text. It will not build a course from a description.'}), 422
+
+    title = (meta.get('metadata') or {}).get('title') or ident
+    if isinstance(title, list):
+        title = title[0]
+    return jsonify({'status': 'started', 'title': title, 'identifier': ident,
+                    'text_file': fulltext[0]}), 202
+
+
+@app.route('/build')
+def build_page():
+    """Live visualisation of a course build.
+
+    A build takes tens of minutes on this hardware and previously showed a
+    spinner and one line of text. The builder already emits a structured status
+    stream; this renders it.
+    """
+    return render_template('build.html')
+
+
+@app.route('/library')
+def library_page():
+    """Find a book to build a course from, or upload your own."""
+    return render_template('library.html')
+
+
+@app.route('/api/books/search', methods=['GET'])
+def books_search():
+    """Search Internet Archive for texts, with an HONEST availability state.
+
+    Availability is THREE different answers and the UI must not present them as
+    one: full public-domain text, borrow-only, or metadata alone. A learner who
+    picks a borrow-only book and receives a course generated from a catalogue
+    blurb has been misled by the interface, not by the model.
+
+    Open Library's search.json is deliberately not used: openlibrary.org
+    answers in 0.18s but the search endpoint did not respond within 45s across
+    repeated attempts. Internet Archive is the same corpus through a door that
+    works.
+    """
+    q = (request.args.get('q') or '').strip()
+    if not q:
+        return jsonify({'error': 'query required'}), 400
+    try:
+        resp = requests.get(
+            'https://archive.org/advancedsearch.php',
+            params={'q': f'title:({q}) AND mediatype:texts',
+                    'fl[]': ['identifier', 'title', 'creator', 'year',
+                             'licenseurl'],
+                    'rows': 12, 'page': 1, 'output': 'json'},
+            headers={'User-Agent': 'Helga/1.0 (offline tutor)'}, timeout=25)
+        docs = (resp.json().get('response') or {}).get('docs', [])
+    except Exception as e:
+        logger.warning(f"book search failed: {e}")
+        return jsonify({'error': 'book search is unavailable right now',
+                        'results': []}), 502
+
+    def _one(v):
+        return v[0] if isinstance(v, list) and v else v
+
+    out, seen = [], set()
+    for d in docs:
+        title = _one(d.get('title'))
+        ident = d.get('identifier')
+        if not title or not ident:
+            continue
+        key = re.sub(r'[^a-z0-9]+', '', str(title).lower())[:60]
+        if key in seen:          # the Archive holds many scans of one work
+            continue
+        seen.add(key)
+        out.append({
+            'identifier': ident,
+            'title': str(title)[:180],
+            'author': str(_one(d.get('creator')) or '')[:120],
+            'year': d.get('year'),
+            'open_license': bool(d.get('licenseurl')),
+            'availability': 'unknown',      # resolved on demand, it costs a call
+        })
+    return jsonify({'results': out})
+
+
+@app.route('/api/books/availability', methods=['GET'])
+def book_availability():
+    """Can we actually READ this book, or only see that it exists?"""
+    ident = (request.args.get('identifier') or '').strip()
+    if not ident:
+        return jsonify({'error': 'identifier required'}), 400
+    try:
+        r = requests.get(f'https://archive.org/metadata/{ident}',
+                         headers={'User-Agent': 'Helga/1.0 (offline tutor)'},
+                         timeout=25)
+        meta = r.json()
+    except Exception as e:
+        logger.warning(f"availability check failed for {ident}: {e}")
+        return jsonify({'availability': 'unknown',
+                        'reason': 'could not reach the archive'}), 502
+
+    restricted = str((meta.get('metadata') or {}).get(
+        'access-restricted-item', '')).lower() == 'true'
+    files = [f.get('name', '') for f in (meta.get('files') or [])]
+    fulltext = [f for f in files if f.endswith('_djvu.txt') or f.endswith('.txt')]
+
+    if restricted or not fulltext:
+        return jsonify({
+            'availability': 'restricted',
+            'can_build': False,
+            'reason': 'This book is lending-only, so its full text cannot be '
+                      'read. Helga will not build a course from a catalogue '
+                      'description.',
+        })
+    return jsonify({
+        'availability': 'full_text',
+        'can_build': True,
+        'text_file': fulltext[0],
+        'size_hint': len(fulltext),
+    })
 
 
 @app.route('/api/progress/overview', methods=['GET'])

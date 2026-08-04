@@ -37,6 +37,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/design-system.css') }}?v=1">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/surfaces.css') }}?v=1">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/learn-path.css') }}?v=1">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/build.css') }}?v=1">
     <script src="{{ url_for('static', filename='js/socket.io.min.js') }}"></script>
     <script>
         // CSRF helper: auto-attach token to fetch() and XMLHttpRequest
@@ -232,6 +233,10 @@
 
     <script src="{{ url_for('static', filename='js/search.js') }}"></script>
     <script src="{{ url_for('static', filename='js/ask.js') }}?v=1"></script>
+    {#  Runs on every page: a build takes tens of minutes, so its progress must
+        survive navigation and the UI must stop offering actions the system
+        will refuse. #}
+    <script src="{{ url_for('static', filename='js/build-guard.js') }}?v=1"></script>
     {% block page_scripts %}{% endblock %}
 
     <!-- Toast Container -->

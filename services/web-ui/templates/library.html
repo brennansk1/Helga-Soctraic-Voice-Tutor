@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Library — Helga{% endblock %}
+{% block body_class %}page-library{% endblock %}
+
+{#  Find a book to build a course from, or bring your own.
+
+    The honest bit is the availability badge. "Available" is THREE different
+    answers — full public-domain text, lending-only, or metadata alone — and
+    presenting them as one is how a learner ends up with a 12-concept course
+    generated from a 200-word catalogue blurb. Every structural check we run
+    would pass that course.
+#}
+
+{% block content %}
+<div class="library-shell">
+
+  <header class="library-header u-animate-rise">
+    <div>
+      <h1 class="library-title">Library</h1>
+      <p class="library-subtitle">Build a course from a real book — search the
+        public archives, or upload your own.</p>
+    </div>
+  </header>
+
+  <div class="library-tabs" role="tablist" aria-label="Source of material">
+    <button class="library-tab is-active" role="tab" id="ltab-search"
+            data-panel="lpanel-search" aria-selected="true">Search books</button>
+    <button class="library-tab" role="tab" id="ltab-upload"
+            data-panel="lpanel-upload" aria-selected="false">Upload a file</button>
+  </div>
+
+  <section class="library-panel" id="lpanel-search" role="tabpanel"
+           aria-labelledby="ltab-search">
+    <form class="library-search" id="book-search-form">
+      <label class="sr-only" for="book-q">Book title</label>
+      <input id="book-q" class="form-input" autocomplete="off"
+             placeholder="e.g. cell biology, Euclid, statistics">
+      <button class="btn btn-primary" type="submit">Search</button>
+    </form>
+
+    <div id="book-results" class="library-results" aria-live="polite"></div>
+    <p class="library-note">
+      Searching the Internet Archive. Helga only builds from books whose full
+      text is actually readable — lending-only titles are shown, and clearly
+      marked, so you know they exist.
+    </p>
+  </section>
+
+  <section class="library-panel" id="lpanel-upload" role="tabpanel"
+           aria-labelledby="ltab-upload" hidden>
+    <div class="library-drop" id="library-drop">
+      <p class="library-drop-title">Drop a file here, or choose one</p>
+      <p class="library-drop-sub">EPUB, PDF, Markdown or plain text — up to 50&nbsp;MB</p>
+      <input type="file" id="library-file" accept=".epub,.pdf,.md,.markdown,.txt" hidden>
+      <button class="btn btn-secondary" type="button" id="library-choose">Choose a file</button>
+      <p class="library-file-info" id="library-file-info" hidden></p>
+    </div>
+
+    <div class="library-plan" id="library-plan" hidden>
+      <h2 class="library-plan-title">What Helga found in your file</h2>
+      <div id="library-plan-body"></div>
+      <button class="btn btn-primary" id="library-build" disabled>Build the course</button>
+    </div>
+
+    <p class="library-error" id="library-error" hidden></p>
+  </section>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{{ url_for('static', filename='js/library.js') }}?v=1"></script>
+{% endblock %}
