@@ -48,6 +48,55 @@ SOCRATIC_SYSTEM_RULES = """SOCRATIC PEDAGOGY RULES (non-negotiable):
 8. Promote metacognition: periodically ask the student to reflect on their reasoning process (e.g., "How did you arrive at that?", "What assumption are you making?")."""
 
 
+# B13 — visual teaching aids, offered through an inline fence rather than a tool
+# call. That choice is about latency: a fenced block rides in the SAME
+# generation as the message, so a diagram costs zero extra LLM round-trips on a
+# ~30 s/call budget, and it survives token streaming because the fence closes
+# before the message ends.
+#
+# The rules below are the pedagogy, not the syntax. A diagram that shows the
+# answer converts a Socratic turn into a lecture with pictures, so the default
+# posture is "draw the situation, withhold the result" — which is what `stage`
+# exists for.
+VISUAL_AID_RULES = """DRAWING A DIAGRAM (optional — most turns need none):
+If a picture would make your question askable in a way words cannot, include ONE fenced block anywhere in your reply:
+
+```aid
+{"kind":"geometry","title":"...","caption":"...","points":{"A":[0,0],"B":[4,0],"C":[0,3]},"segments":[{"from":"A","to":"B","label":"4"},{"from":"B","to":"C","label":"?","stage":1}],"polygons":[{"vertices":["A","B","C"]}],"angles":[{"at":"A","from":"B","to":"C","right":true}]}
+```
+
+The block is removed from your message and drawn above it. Write your message as if the student can already see the figure — do not describe it back to them. This fenced block is the ONE exception to any "no markdown" rule above: it never reaches the student as text.
+
+kind must be one of: number_line · geometry · plot · bars · graph (concept maps, flowcharts, causal chains) · timeline · table · venn · cycle · steps · fraction
+
+WHEN TO DRAW: a relationship the student must SEE to reason about — a shape whose proportions matter, a trend, how ideas connect, where a value sits relative to others, a part-whole.
+WHEN NOT TO: decoration; restating what you just wrote; anything that hands over the answer you are leading them toward. No diagram is better than a pointless one.
+
+HIDE THE ANSWER: give any element "stage": 1 and it stays invisible until the student has answered. Label the unknown side "?" at stage 0 and reveal its value at stage 1 — never draw the result you are asking them to find.
+ONE diagram per message, maximum. Plain JSON only, no comments or trailing commas.
+
+Three more worked shapes — copy these structures:
+```aid
+{"kind":"graph","title":"Photosynthesis","nodes":[{"id":"sun","label":"Sunlight"},{"id":"leaf","label":"Chloroplast"},{"id":"glu","label":"Glucose","stage":1}],"edges":[{"from":"sun","to":"leaf"},{"from":"leaf","to":"glu","label":"makes","stage":1}],"direction":"TB"}
+```
+```aid
+{"kind":"number_line","min":-3,"max":7,"marks":[{"at":2,"label":"2"},{"at":5,"label":"5"}],"intervals":[{"from":2,"to":5,"open_start":true,"label":"2 < x <= 5","stage":1}]}
+```
+```aid
+{"kind":"bars","title":"Rainfall","categories":["Mon","Tue","Wed"],"series":[{"values":[4,7,3]}],"y_label":"cm","highlight":[1]}
+```"""
+
+
+def visual_aids_enabled():
+    """Whether to teach the model the diagram grammar this turn.
+
+    Read at call time, not import time, so tests and a restarted container pick
+    up the flag without a module reload. Mirrors the FSM's own default (on).
+    """
+    import os
+    return os.getenv("HELGA_ENABLE_VISUAL_AIDS", "true").lower() == "true"
+
+
 def sanitize_untrusted(text, max_len: int = 2000) -> str:
     """Prepare untrusted text for safe interpolation into a prompt (B8.2).
 
@@ -390,6 +439,9 @@ def get_socratic_tutor_prompt(context_text, conversation_history, system_note=No
         summaries = [f"{p.get('title', '?')} (Bloom {p.get('bloom_achieved', '?')})" for p in prior_concepts[-3:]]
         prior_str = f"\nPREVIOUS CONCEPTS COVERED: {', '.join(summaries)}. You may reference these to build connections."
 
+    # B13: only spend prompt tokens on the diagram grammar when aids are on.
+    aid_str = f"\n\n{VISUAL_AID_RULES}" if visual_aids_enabled() else ""
+
     # Build system prompt
     system_content = f"""{SOCRATIC_SYSTEM_RULES}
 
@@ -429,7 +481,7 @@ STRICT OUTPUT RULES:
 - NEVER include meta-commentary ("Let's explore", "Great question", "That's interesting").
 - NEVER repeat the context material verbatim.
 - NEVER prefix your response with a role label like "Tutor:" or "Lecturer:".
-{band_register}{style_constraint}{profile_str}{misc_str}{analog_str}{bloom_str}{prior_str}{hook_str}{notes_str}
+{band_register}{style_constraint}{profile_str}{misc_str}{analog_str}{bloom_str}{prior_str}{hook_str}{notes_str}{aid_str}
 
 INSTRUCTOR NOTES (pedagogical guidance only — the student has NOT seen any of this material):
 "{context_text}" """
@@ -626,6 +678,11 @@ def get_micro_lecture_prompt(topic, context_text, history=[], style_modifier="st
     lecture_words = min(100, profile["max_words"] * 2)
     lecture_sentences = f"1-{profile['max_sentences']}"
 
+    # B13: the lecture path is where a diagram earns the most — it fires exactly
+    # when the student has said "I don't know", which is when a picture beats
+    # another paragraph of prose.
+    aid_str = f"\n\n{VISUAL_AID_RULES}" if visual_aids_enabled() else ""
+
     return [{"role": "system", "content": f"""You are the LECTURER. The student is learning about '{topic}'.
 Teaching Style: {style_modifier}
 GRADE REGISTER: {profile['register']}
@@ -647,7 +704,7 @@ FOLLOW-UP QUESTION (MANDATORY):
 After your explanation, you MUST end with exactly ONE engaging follow-up question.
 Question style for this turn: {question_style}
 The very last sentence of your entire response MUST be this question, ending with a question mark (?).
-Do NOT ask for a definition. Ask the student to think, reason, or apply."""}]
+Do NOT ask for a definition. Ask the student to think, reason, or apply.{aid_str}"""}]
 
 
 # --- BRIDGE PROMPTS (Transition between topics) ---

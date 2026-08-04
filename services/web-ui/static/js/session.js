@@ -460,6 +460,20 @@ function updateChatStream(transcript) {
         displayedMessagesCount = 0;
     }
 
+    // B13: keep already-rendered aid cards in step with the poll. updateChatStream
+    // only builds messages it has not seen, so a tutor-driven reveal — the FSM
+    // advancing an aid's stage after the learner answers — arrives as a change to
+    // an OLD transcript entry and would otherwise never reach the screen.
+    if (window.HelgaAids) {
+        try {
+            transcript.forEach(function (m) {
+                if (m && m.aids && m.aids.length) window.HelgaAids.syncStages(m.aids);
+            });
+        } catch (e) {
+            console.warn('[aids] stage sync failed:', e);
+        }
+    }
+
     // Add new messages
     const newMessages = transcript.slice(displayedMessagesCount);
     if (newMessages.length > 0) {
@@ -568,12 +582,31 @@ function updateChatStream(transcript) {
                 </div>
             `;
 
+            // B13: visual teaching aids render ABOVE the message text, inside
+            // the same bubble group. The transcript carries only descriptors;
+            // aids.js fetches each spec once and draws SVG.
+            if (isAI && message.aids && message.aids.length && window.HelgaAids) {
+                try {
+                    window.HelgaAids.attach(messageDiv, message.aids);
+                } catch (e) {
+                    console.warn('[aids] attach failed:', e);   // never blocks the message
+                }
+            }
+
             // Wire TTS button
             if (isAI) {
                 const ttsBtn = messageDiv.querySelector('.tts-play-btn');
                 if (ttsBtn) {
                     ttsBtn.addEventListener('click', function() {
-                        playMessageTTS(rawText, ttsBtn);
+                        // A learner working by ear must not simply lose the
+                        // diagram — the description is spoken after the message
+                        // (B13.9).
+                        let speech = rawText;
+                        if (message.aids && message.aids.length && window.HelgaAids) {
+                            const aidSpeech = window.HelgaAids.speechFor(message.aids);
+                            if (aidSpeech) speech = rawText + ' ' + aidSpeech;
+                        }
+                        playMessageTTS(speech, ttsBtn);
                     });
                 }
                 const copyBtn = messageDiv.querySelector('.copy-btn');

@@ -12,6 +12,7 @@ import threading
 import json
 import re
 from services.common.storage import StorageManager, DEFAULT_STUDENT_ID
+from services.common.visual_aids import AidStore, extract_aids, descriptor as aid_descriptor
 
 try:
     from gpu_gate import LLMContext, INTERACTIVE
@@ -375,6 +376,17 @@ class MnemosyneFSM:
         self._tutor_tools_enabled = os.getenv("HELGA_ENABLE_TUTOR_TOOLS", "false").lower() == "true"
         self._tutor_tools_registry = None
 
+        # B13: visual teaching aids. Independent of the tool flag on purpose —
+        # the inline ```aid fence needs no tool-calling support at all, so aids
+        # can ship while B14 tool reliability is still being validated. The
+        # store holds specs OUT of the transcript so the 2-second /state poll
+        # stays small; the transcript carries only ~200-byte descriptors.
+        self._visual_aids_enabled = os.getenv("HELGA_ENABLE_VISUAL_AIDS", "true").lower() == "true"
+        self.aid_store = AidStore(capacity=64)
+        # Aids produced by a TOOL call land here and attach to the next tutor
+        # message, since the tool runs mid-generation, before the text exists.
+        self._pending_aids = []
+
         # B15.6: the per-FSM timer thread and per-instance signal handlers are
         # gone — one registry-level sweeper calls tick(now) for every resident
         # FSM, and maintenance signals are process-level (module tail).
@@ -576,6 +588,12 @@ class MnemosyneFSM:
                 mastery_fn=self._tool_get_mastery,
                 wiki_fn=None,          # online lookups stay in the hydration pipeline
                 enable_code=False,     # code-exec never enabled in the live tutor
+                # Registers show_visual / visualize_function / visualize_data only
+                # when aids are on; otherwise the model never sees those tools.
+                # getattr, matching the other flags above: bare FSM instances
+                # built via __new__ (tests, recovery paths) have no __init__.
+                aid_sink=(self._aid_sink
+                          if getattr(self, "_visual_aids_enabled", False) else None),
             )
         except Exception as e:
             logging.warning(f"Tutor tool registry unavailable: {e}")
@@ -687,7 +705,27 @@ class MnemosyneFSM:
     def add_message(self, text, record=True, grade=None):
         """Add a tutor message to the transcript. B21.5: every tutor-visible
         message passes output moderation first — a flagged model response is
-        suppressed and replaced with a safe fallback, never delivered raw."""
+        suppressed and replaced with a safe fallback, never delivered raw.
+
+        B13: also the one choke point where visual aids are attached. Every
+        tutor message in the system arrives here, so aid handling lives here
+        rather than being duplicated across the socratic/lecture/review paths.
+        """
+        aids = []
+        if record and text and getattr(self, "_visual_aids_enabled", False):
+            # Lift ```aid fences out BEFORE moderation, for two reasons: the
+            # moderator should judge the prose a learner actually reads, not a
+            # JSON blob; and the JSON must never reach the chat even when the
+            # aid is rejected. extract_aids never raises.
+            try:
+                text, aids, aid_errors = extract_aids(text)
+                for err in aid_errors:
+                    logging.info(f"Visual aid rejected: {err}")
+            except Exception as e:
+                logging.error(f"Aid extraction failed (message delivered without it): {e}")
+                aids = []
+            aids = self._drain_pending_aids() + aids
+
         if record and text:
             node_title = (self.current_lesson_node.get("title")
                           if self.current_lesson_node else None)
@@ -699,16 +737,72 @@ class MnemosyneFSM:
                         f"(confidence={out.confidence:.2f}, len={len(text)})")
                     self._log_safety_incident("output_" + out.category, node_title)
                     text = out.message
+                    # A suppressed message keeps no diagram. The aid was drawn to
+                    # support prose that is no longer being delivered, and an
+                    # orphaned figure under a safety fallback is worse than none.
+                    aids = []
             except Exception as e:
                 logging.error(f"Output safety check failed open: {e}")
         if record:
             entry = {"sender": "helga", "text": text}
             if grade is not None:
                 entry["grade"] = grade
+            if aids:
+                for aid in aids:
+                    self.aid_store.put(aid)
+                # Only the slim descriptor rides in the transcript — the spec is
+                # fetched once from /api/aid/<id> and cached in the browser.
+                entry["aids"] = [aid_descriptor(a) for a in aids]
+                logging.info(f"Attached {len(aids)} visual aid(s): "
+                             f"{[a['kind'] for a in aids]}")
             self.transcript.append(entry)
             if len(self.transcript) > 50:
                 self.transcript = self.transcript[-50:]
             logging.info(f"TRANSCRIPT (AI): {text[:80]}... (Size: {len(self.transcript)})")
+
+    def _drain_pending_aids(self):
+        """Take aids produced by tool calls during this turn. Tools run mid-
+        generation, before the message text exists, so they queue here and are
+        claimed by the next message recorded."""
+        pending = getattr(self, "_pending_aids", [])
+        self._pending_aids = []
+        return pending
+
+    def _aid_sink(self, aid):
+        """Callback handed to the aid tools. Bounded so a model stuck in a loop
+        of show_visual calls cannot grow the queue without limit."""
+        if not hasattr(self, "_pending_aids"):
+            self._pending_aids = []
+        if len(self._pending_aids) < 4:
+            self._pending_aids.append(aid)
+        else:
+            logging.warning("Discarding visual aid — too many queued for one turn")
+
+    def reveal_aid(self, aid_id, stage=None):
+        """Advance a progressive aid to its next layer (B13).
+
+        The staged reveal is what keeps a diagram Socratic: the setup is shown,
+        the learner commits to an answer, and only then does the next layer
+        appear. Updates both the store (source of truth for the spec) and the
+        transcript descriptor (what the 2-second poll carries), or the browser
+        would re-render the old stage on its next poll and undo the reveal.
+        """
+        store = getattr(self, "aid_store", None)
+        item = store.get(aid_id) if (store and aid_id) else None
+        if item is None:
+            logging.info(f"REVEAL_AID: unknown aid '{aid_id}' (likely evicted)")
+            return False
+        target = item.get("stage", 0) + 1 if stage is None else int(stage)
+        updated = store.set_stage(aid_id, target)
+        if updated is None:
+            return False
+        for entry in self.transcript:
+            for desc in entry.get("aids", []) or []:
+                if desc.get("id") == aid_id:
+                    desc["stage"] = updated["stage"]
+        logging.info(f"REVEAL_AID: {aid_id} -> stage {updated['stage']}"
+                     f"/{updated.get('stages_total', 0)}")
+        return True
 
     def play_sound(self, sound_id):
         """No-op — sound effects removed in text-only mode."""
@@ -819,6 +913,13 @@ class MnemosyneFSM:
                     )
                 except Exception as e:
                     logging.warning(f"SET_CONTEXT meta load failed: {e}")
+            return
+        elif event_type == "REVEAL_AID":
+            # B13: uncover the next layer of a progressive diagram. Global, like
+            # NAVIGATE_TO_TOPIC — a learner may reveal a figure from any state,
+            # and it must never disturb the FSM's teaching state.
+            payload = event.get("payload", {}) or {}
+            self.reveal_aid(payload.get("aid_id"), payload.get("stage"))
             return
         elif event_type == "NAVIGATE_TO_TOPIC" and topic_uid:
             # ANTI-LEAK: allow the frontend to pin the course_uid in the same
@@ -3808,6 +3909,30 @@ def handle_event():
 @app.route("/state", methods=["GET"])
 def get_state():
     return registry.get(_student_id_from_request()).get_state()
+
+
+@app.route("/api/aid/<aid_id>", methods=["GET"])
+def get_visual_aid(aid_id):
+    """Full spec for one visual aid (B13).
+
+    Deliberately out of band from /state: the transcript carries a ~200-byte
+    descriptor and this is fetched once per aid and cached in the browser, so a
+    session full of diagrams does not re-send them on every 2-second poll.
+
+    Scoped to the requesting student's FSM — aid ids are content hashes, so
+    without this scoping one student could read another's diagram by guessing a
+    hash of the same spec. A 404 is normal (LRU eviction), and the client
+    already holds the alt-text to fall back on.
+    """
+    fsm = registry.get(_student_id_from_request())
+    aid = fsm.aid_store.get(aid_id)
+    if aid is None:
+        return jsonify({"error": "aid not found", "aid_id": aid_id}), 404
+    resp = jsonify(aid)
+    # Content-addressed and immutable apart from `stage`, which the client
+    # already knows from the transcript descriptor — safe to cache privately.
+    resp.headers["Cache-Control"] = "private, max-age=600"
+    return resp
 
 
 @app.route("/api/schedule/stats", methods=["GET"])

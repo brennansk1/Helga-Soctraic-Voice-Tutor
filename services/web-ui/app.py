@@ -870,6 +870,31 @@ def proxy_fsm_state():
     except Exception as e:
         return jsonify({'error': str(e)}), 502
 
+@app.route('/api/aid/<aid_id>', methods=['GET'])
+def proxy_visual_aid(aid_id):
+    """Full spec for one visual teaching aid (B13).
+
+    Deliberately NOT part of /api/fsm_state: the transcript carries a ~200-byte
+    descriptor per aid, and the spec is fetched once here and cached in the
+    browser. Folding specs into the state payload would put every diagram in the
+    session on a 2-second poll.
+
+    A 404 is an ordinary outcome — the core's aid store is a bounded LRU, so an
+    old diagram can be evicted while its message is still on screen. The client
+    falls back to the description it already holds.
+    """
+    try:
+        resp = requests.get(f'{SERVICES["core"]}/api/aid/{aid_id}',
+                            params={'student_id': current_student_id()}, timeout=5)
+        out = jsonify(resp.json())
+        if resp.status_code == 200:
+            out.headers['Cache-Control'] = 'private, max-age=600'
+        return out, resp.status_code
+    except Exception as e:
+        logger.warning(f"Visual aid proxy failed for {aid_id}: {e}")
+        return jsonify({'error': 'aid unavailable'}), 502
+
+
 @app.route('/api/stats', methods=['GET'])
 def proxy_stats():
     try:

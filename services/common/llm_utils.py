@@ -101,37 +101,192 @@ def _escape_inner_quotes(text: str) -> str:
         return text
 
 
+def _requote_strings(text: str) -> str:
+    """Convert single-quoted string literals to double-quoted ones, safely.
+
+    The regex pairs below only catch `'key':` and `: 'value'`. They miss single
+    quotes inside ARRAYS — `['Mon','Tue']` — which a small model produces
+    constantly, and which then fails to parse for want of two characters.
+
+    A global `'` -> `"` substitution is worse than useless: it destroys every
+    apostrophe ("Newton's law" becomes a syntax error). So this scans character
+    by character, tracks whether it is inside a double-quoted string, and only
+    treats `'` as a delimiter outside one. Returns the input unchanged if it
+    hits an unterminated quote, so a failed repair never makes things worse.
+    """
+    out, i, n, in_double = [], 0, len(text), False
+    while i < n:
+        ch = text[i]
+        if in_double:
+            out.append(ch)
+            if ch == "\\" and i + 1 < n:
+                out.append(text[i + 1])
+                i += 2
+                continue
+            if ch == '"':
+                in_double = False
+            i += 1
+            continue
+        if ch == '"':
+            in_double = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "'":
+            j, buf = i + 1, []
+            while j < n:
+                if text[j] == "\\" and j + 1 < n:
+                    buf.append(text[j + 1])
+                    j += 2
+                    continue
+                if text[j] == "'":
+                    break
+                buf.append(text[j])
+                j += 1
+            if j >= n:
+                return text                      # unterminated — leave it alone
+            out.append('"' + "".join(buf).replace('"', '\\"') + '"')
+            i = j + 1
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+# Curly quotes from models that "stylise" their output. json.loads sees these as
+# ordinary letters, so a single smart quote invalidates the whole response.
+_SMART_QUOTES = {
+    "“": '"', "”": '"', "„": '"', "‟": '"',
+    "‘": "'", "’": "'", "‚": "'", "‛": "'",
+    "«": '"', "»": '"', "′": "'", "″": '"',
+}
+
+
+def _try_libraries(text: str):
+    """Third-party repair, tried only after the stdlib passes have failed.
+
+    Backends in preference order — all optional, all the same call shape, so a
+    missing one costs nothing and the stdlib result stands:
+
+      1. `fast-json-repair` — Rust/PyO3 port of json_repair (MIT). Ships wheels
+         for linux x86-64/ARM64 and macOS x86-64/ARM64, so it covers both the
+         M4 host and the containers. CAVEAT: it requires **Python 3.11+**, while
+         this repo targets 3.10+. On 3.10 there is no wheel and pip would try to
+         build it from source (needs a Rust toolchain) — hence the guarded
+         import and the json_repair fallback rather than a hard dependency.
+         Its headline 10-30x speedup is real but irrelevant here: repair runs a
+         handful of times per ~30 s LLM call. The reason to prefer it is that it
+         is a maintained implementation, not the speed.
+      2. `json-repair` — pure Python, the reference implementation, no version
+         constraint. This is the one that actually has to work.
+      3. `json5` — JSON5 superset: comments, unquoted keys, trailing commas.
+      4. `ast.literal_eval` — stdlib, for models that emit repr() output.
+    """
+    for module_name in ("fast_json_repair", "json_repair"):
+        try:
+            module = __import__(module_name)
+            fixed = module.repair_json(text)
+            # Every backend signals total failure by returning an empty
+            # container; treat that as "no repair" rather than as valid output,
+            # or a broken response silently becomes {} downstream.
+            if fixed and fixed not in ("", '""', "{}", "[]"):
+                json.loads(fixed)
+                return fixed
+        except Exception:
+            continue
+    try:
+        import json5
+        return json.dumps(json5.loads(text))
+    except Exception:
+        pass
+    # Python dict/list literal — models sometimes emit repr() output wholesale.
+    try:
+        import ast
+        return json.dumps(ast.literal_eval(text))
+    except Exception:
+        pass
+    return None
+
+
 def repair_json(text: str) -> str:
     """LLM-1: Repair common JSON malformations from LLM output.
 
-    Fixes:
-    - Trailing commas before ] or }
-    - Single quotes -> double quotes
-    - Python literals (True/False/None) -> JSON equivalents
-    - Unquoted keys
+    Escalating repair — each stage is a strictly more aggressive rewrite, and
+    the FIRST candidate that actually parses is returned. That ordering matters:
+    the old version applied every transform unconditionally, so a late, blunt
+    pass could damage a string an earlier, gentler pass had already fixed.
+
+    Handles, in order of how often a quantised model trips on them:
+    - already-valid JSON (returned untouched — this must stay idempotent)
+    - markdown ```json fences wrapped around the object
+    - curly/smart quotes
+    - // and /* */ comments
+    - Python literals (True/False/None) and NaN/Infinity
+    - trailing commas before ] or }
+    - unquoted keys  ({key: 1} -> {"key": 1})
+    - single-quoted keys AND values, including inside arrays
+    - unescaped double quotes inside a string value
+    - truncated output — unclosed brackets are balanced
+    - finally: json-repair / json5 / ast.literal_eval, if installed
+
+    Always returns a string (never raises), so every existing caller keeps
+    working; callers still json.loads() the result themselves.
     """
     if not text:
         return text
 
-    # Replace Python literals with JSON equivalents
-    text = re.sub(r"\bTrue\b", "true", text)
-    text = re.sub(r"\bFalse\b", "false", text)
-    text = re.sub(r"\bNone\b", "null", text)
+    def _ok(candidate):
+        try:
+            json.loads(candidate)
+            return True
+        except (json.JSONDecodeError, ValueError, TypeError):
+            return False
 
-    # Remove trailing commas before ] or }
-    text = re.sub(r",\s*([\]\}])", r"\1", text)
+    if _ok(text):
+        return text                              # idempotent on valid input
 
-    # Replace single quotes with double quotes (careful with apostrophes)
-    # Only do this if the text doesn't already parse as valid JSON
-    try:
-        json.loads(text)
-        return text  # Already valid
-    except (json.JSONDecodeError, ValueError):
-        pass
+    work = text
 
-    # Smart single-quote replacement: convert 'key': 'value' patterns
-    text = re.sub(r"(?<=[\[{,\s])'([^']*?)'\s*:", r'"\1":', text)
-    text = re.sub(r":\s*'([^']*?)'", r': "\1"', text)
+    # Markdown fence around the payload.
+    fence = re.search(r"```(?:json|JSON)?\s*\n?(.*?)```", work, re.DOTALL)
+    if fence:
+        work = fence.group(1).strip()
+        if _ok(work):
+            return work
+
+    for bad, good in _SMART_QUOTES.items():
+        work = work.replace(bad, good)
+    if _ok(work):
+        return work
+
+    # Comments are invalid JSON but a model that has seen a lot of JS emits them.
+    work = re.sub(r"/\*.*?\*/", "", work, flags=re.DOTALL)
+    work = re.sub(r"(?m)//(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$).*$", "", work)
+
+    work = re.sub(r"\bTrue\b", "true", work)
+    work = re.sub(r"\bFalse\b", "false", work)
+    work = re.sub(r"\bNone\b", "null", work)
+    work = re.sub(r"\b(NaN|Infinity|-Infinity)\b", "null", work)
+    work = re.sub(r",\s*([\]\}])", r"\1", work)
+    if _ok(work):
+        return work
+
+    # Unquoted keys — claimed by the old docstring but never actually done.
+    work = re.sub(r"([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:", r'\1"\2":', work)
+    if _ok(work):
+        return work
+
+    # Targeted single-quote passes first (cheap, precise) …
+    work = re.sub(r"(?<=[\[{,\s])'([^']*?)'\s*:", r'"\1":', work)
+    work = re.sub(r":\s*'([^']*?)'", r': "\1"', work)
+    if _ok(work):
+        return work
+
+    # … then the general scanner, which also reaches inside arrays.
+    requoted = _requote_strings(work)
+    if _ok(requoted):
+        return requoted
+    work = requoted
 
     # Unescaped double quotes INSIDE a string value. This is the single most
     # common malformation from smaller/quantised models — they quote the
@@ -141,18 +296,29 @@ def repair_json(text: str) -> str:
     # response was discarded. json.loads cannot recover it, but the structure
     # is predictable: a value run between the opening quote and the true
     # closing quote (the one followed by , } ] or EOL).
-    text = _escape_inner_quotes(text)
+    work = _escape_inner_quotes(work)
+    if _ok(work):
+        return work
 
-    # Truncated JSON repair: close unclosed brackets/braces
-    open_braces = text.count("{") - text.count("}")
-    open_brackets = text.count("[") - text.count("]")
+    # Truncated JSON repair: close unclosed brackets/braces. This is what a
+    # max_tokens cut-off looks like, and it is very common on long generations.
+    open_braces = work.count("{") - work.count("}")
+    open_brackets = work.count("[") - work.count("]")
     if open_braces > 0 or open_brackets > 0:
-        # Strip trailing comma before closing
-        text = text.rstrip().rstrip(",")
-        text += "}" * max(0, open_braces)
-        text += "]" * max(0, open_brackets)
+        work = work.rstrip().rstrip(",")
+        work += "}" * max(0, open_braces)
+        work += "]" * max(0, open_brackets)
+        if _ok(work):
+            return work
 
-    return text
+    # Last resort: purpose-built libraries, on the ORIGINAL text so they are not
+    # handed the damage of a failed rewrite.
+    for candidate in (text, work):
+        salvaged = _try_libraries(candidate)
+        if salvaged and _ok(salvaged):
+            return salvaged
+
+    return work                                  # best effort; caller decides
 
 
 def validate_schema(data: Any, schema: dict) -> bool:

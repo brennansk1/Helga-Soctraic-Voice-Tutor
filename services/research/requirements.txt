@@ -4,3 +4,13 @@ wikipedia-api==0.6.0
 aiohttp==3.9.5
 diskcache==5.6.3
 requests==2.31.0
+
+# JSON repair for LLM output (services/common/llm_utils.repair_json). Both are
+# OPTIONAL — repair_json falls back to its stdlib passes if they are absent —
+# but declared here so the fallback is a safety net, not the normal path.
+# fast-json-repair is the Rust implementation; it needs Python 3.11+, which is
+# what every service image uses (python:3.11-slim). json-repair is the pure
+# Python reference and carries no version constraint, so it is the one that
+# must always resolve.
+json-repair==0.61.7
+fast-json-repair==0.2.2; python_version >= "3.11"

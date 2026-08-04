@@ -1,0 +1,311 @@
+# Visual teaching aids (B13) — design
+
+**What this is.** A diagram drawn above a tutor message: a number line, a labelled
+triangle, a concept map. Called by the model, mid-dialogue, when a picture makes a
+question askable that words cannot.
+
+**What it is not.** Decoration, and never the answer. An aid that shows the result
+converts a Socratic turn into a lecture with pictures.
+
+Status: built, unit-tested (66 tests), rendered and inspected in Chromium in both
+themes. **Never run against a live Ollama model** — see §9.
+
+---
+
+## 1. The decision everything else follows from
+
+**Aids are specs, not pixels.** The model emits `{"kind":"number_line","min":-5,…}`
+and the *browser* draws the SVG. Nothing server-side ever produces an image.
+
+Four constraints in this system force that, and any one of them alone would be
+enough:
+
+| Constraint | What pixels would cost |
+|---|---|
+| `/state` returns the whole transcript on a **2-second poll** | A base64 PNG is 40–200 KB. Fifty in a transcript is a multi-megabyte payload re-sent every two seconds. A spec is 0.3–2 KB — and even that leaves the poll (§3). |
+| Dark mode | A matplotlib PNG bakes a white canvas. SVG drawn from CSS custom properties re-themes for free. Verified in both themes. |
+| **~30 s per LLM call** | A spec rides in the *same* generation as the message. Zero extra round-trips. |
+| Testability | You can assert that a spec labelled the hypotenuse. You cannot assert that about a PNG. |
+
+A fifth benefit was not designed for but turned out to matter most: **11 of the 12
+kinds need no third-party Python at all**, because the browser does the drawing.
+That is why aids work in a container where `sympy`, `matplotlib`, `numpy`,
+`networkx` and `scipy` are all undeclared and every other viz tool fails closed
+(§10).
+
+The pre-existing pixel tools (`plot_function`, `plot_points`, `draw_graph`) are
+untouched. They feed the tutor's private grading reasoning, are never displayed,
+and are not part of this feature.
+
+---
+
+## 2. The twelve kinds
+
+| Kind | For | Model difficulty |
+|---|---|---|
+| `number_line` | inequalities, negatives, fractions, rounding | low |
+| `geometry` | shapes, proofs, labelled figures | **high** — coordinates + cross-refs |
+| `plot` | curves, functions, trends | medium |
+| `bars` | comparing quantities | low |
+| `graph` | concept maps, flowcharts, causal chains, taxonomies | low |
+| `timeline` | historical sequence | low |
+| `table` | structured comparison | low |
+| `venn` | overlap and contrast | low |
+| `cycle` | repeating processes | low |
+| `steps` | a procedure or worked method | low |
+| `fraction` | part-whole, equivalence | low |
+| `image` | a retrieved picture with callout pins | n/a — not model-authored |
+
+`table` and `steps` render as real `<table>` and `<ol>`, not SVG: they are prose,
+and semantic HTML gives wrapping and screen-reader structure SVG cannot.
+
+---
+
+## 3. Data flow
+
+```
+model emits ```aid {…}  OR calls show_visual(…)
+        │
+        ▼
+extract_aids() / aid_sink()        ← rails: JSON repair, aliases, verification
+        │
+        ▼
+normalize_aid()                    ← clamps, enums, bounds; NEVER raises
+        │
+        ├──► AidStore (per-FSM, LRU 64)      full spec
+        │
+        └──► transcript entry ["aids"]       ~200-byte descriptor
+                    │                        {id, kind, title, alt, stage, tier}
+                    ▼
+             GET /api/aid/<id>  ──► full spec, fetched once, cached, 404 = normal
+                    │
+                    ▼
+             aids.js draws SVG above the message text
+```
+
+**The descriptor/spec split is the load-bearing idea.** The transcript is polled
+in full every two seconds; the descriptor is what rides there. It carries `alt`
+deliberately, so the card renders its frame, its accessible description and its
+text-only fallback with **no fetch at all** — and so a 404 after LRU eviction is a
+non-event.
+
+Aid ids are content hashes: identical diagrams collapse to one store entry, and an
+id is stable across re-renders, so a pinned aid stays pinned.
+
+---
+
+## 4. Two production paths
+
+**Inline fence (default).** The model writes `` ```aid {…} `` inside its reply.
+The fence is lifted out before moderation, so the safety checker judges the prose
+a learner actually reads, and the JSON never reaches the chat even when rejected.
+Costs **zero extra LLM round-trips** and survives token streaming, because the
+fence closes before the message ends.
+
+**Tool call.** `show_visual(kind, spec)` plus two computed helpers. One tool with
+a `kind` discriminator, not eleven separate tools — a tier-2 9B model picks well
+from a short menu and badly from a 36-entry schema, and every tool description is
+prompt weight on a 30 s/call budget.
+
+- `visualize_function(expressions, …)` — the model supplies a formula, SymPy
+  supplies 200 samples. The model cannot produce accurate samples of `sin(x)/x`
+  itself; this is the difference between a curve a learner can trust and one they
+  cannot.
+- `visualize_data(values, labels, …)` — charts numbers the tutor already has.
+
+The tools return a ~20-token confirmation, not the spec echoed back.
+
+---
+
+## 5. Pedagogy: staged reveal
+
+Any element may carry `"stage": 1`. It is drawn but hidden, and revealed later —
+a class toggle on already-drawn elements, so nothing reflows and the learner's eye
+stays put.
+
+`reveal` decides who uncovers it, and **defaults to `tutor`**:
+
+- **`tutor`** — the FSM advances the stage after the learner answers. The reveal
+  is a consequence of thinking. The card says *"more once you answer"* and shows
+  no button.
+- **`learner`** — a button appears. For reference figures and worked examples,
+  where self-paced uncovering is the point.
+
+A "Show me" button on a Socratic diagram is a spoiler with a nice label. That is
+why the default is what it is.
+
+The canonical use: draw the triangle with legs 3 and 4 and the hypotenuse labelled
+`?` at stage 0; reveal `5` at stage 1. Never draw the result you are asking for.
+
+---
+
+## 6. Trust surface
+
+Every card carries a provenance chip, because a learner should be able to tell a
+computed figure from one the model drew from memory:
+
+| Tier | Chip | Meaning |
+|---|---|---|
+| `computed` | **Computed** | Drawn from exact values calculated here. |
+| `retrieved` | **From source** | From a cited source; carries attribution + licence. |
+| `authored` | **Sketch** | The model drew it. Not independently checked. |
+
+This is the §4.2 open item from `MODE_A_STATUS.md` ("the trust surface is still not
+on screen") answered at the level of one diagram.
+
+---
+
+## 7. Assistance rails
+
+The model is qwen3.5:9b (tier 2), asked for nested JSON with cross-references,
+inline in prose, **with no retry and no constrained decoding** — a fence in
+mid-prose cannot use Ollama's `format` schema the way the grading path does.
+
+The failure mode is therefore not a broken screen. A bad aid is dropped and the
+message is delivered intact. The failure mode is **the feature quietly never
+firing**, which is exactly the class of problem this repo keeps finding late.
+
+So: meet the model where it is.
+
+| # | Rail | Turns this into |
+|---|---|---|
+| 1 | JSON repair | `{'k': [1,2,],}`, truncated output, narrated JSON → parsed |
+| 2 | Kind synonyms | `flowchart`→`graph`, `pie`→`fraction`, `numberline`→`number_line` |
+| 3 | Field synonyms | `links`→`edges`, `labels`→`categories`; bare `["a","b"]` → objects |
+| 4 | Derived geometry | polygon vertices → the segments that draw its edges |
+| 5 | **Verified claims** | a right-angle marker whose coordinates are not 90° is **removed** |
+
+Rails 1–4 make a diagram appear. **Rail 5 stops a wrong one appearing** — and it
+is the one that matters. A right-angle square drawn on a 53° angle teaches an
+error with the full authority of a figure, and no prompt wording prevents it; only
+arithmetic does.
+
+The tolerant fence matcher accepts ```` ```json ```` and bare fences, but consumes
+them **only once they parse into a real aid**. An explicit ```` ```aid ```` fence is
+always removed, broken or not. This asymmetry is deliberate: a tutor teaching
+Python legitimately shows ```` ```python ```` blocks, and eating one would be far
+worse than missing a diagram.
+
+Rail 1 also drove an upgrade to the shared `repair_json()` — see §10.
+
+---
+
+## 8. UI/UX
+
+The card sits **above** the message text, inside the same bubble group: the
+learner meets the figure first and reads the question second, which is the order
+the tutor is teaching in.
+
+- **Describe (ⓘ)** — the written description is a first-class part of the card,
+  not a hidden attribute. It is what a screen reader announces, what TTS speaks
+  after the message, and what replaces the figure when rendering fails.
+  Generated deterministically from the spec — no LLM call, cannot hallucinate,
+  cannot drift from what is drawn. This closes **B13.9**.
+- **Pin (📌)** — a long dialogue scrolls the diagram off the top of the screen
+  exactly when you need it to answer. Pinning holds one aid in a sticky rail.
+- **Enlarge (⤢)** — lightbox with Esc, focus return, and *all* layers shown; it
+  is a reference view, not the dialogue.
+- **Failure** — a failed fetch, unknown kind or malformed spec degrades to
+  "Diagram unavailable — here it is in words:" plus the description. **There is no
+  broken-image state.** Aids are strictly additive.
+- **Print** — every layer shown, all controls hidden. A printed worksheet with an
+  invisible answer layer is just a broken diagram.
+- Responsive, `prefers-reduced-motion`, and `forced-colors` handled.
+
+### Security boundary
+
+The server preserves `<` and `>` in labels — stripping them turned `2 < x < 5`
+into `2 x 5`, destroying the inequality a number line exists to teach. The
+escaping obligation therefore moves to the render boundary and is absolute:
+**aids.js builds every label with `textContent`, never `innerHTML`.** Colour is an
+enum, never a CSS value from the model. `image.src` accepts only `data:` or
+same-origin paths — an offline-first tutor must not silently fetch from the
+internet.
+
+---
+
+## 9. What is NOT verified
+
+**No live model has ever been asked to draw one of these.** Everything here is
+verified against hand-written and adversarial specs, plus a Chromium render of all
+12 kinds in both themes. The emission rate — *does qwen3.5:9b actually reach for a
+diagram, and is its JSON valid?* — is **unmeasured**.
+
+Run `tools/aid_probe.py` against a live Ollama to find out. It reports, per kind:
+emission rate, validity rate, whether the right kind was chosen, and whether raw
+JSON ever leaked into the chat (which must be 0).
+
+```bash
+python3 tools/aid_probe.py --repeat 3            # the number that matters
+python3 tools/aid_probe.py --kind geometry       # the hard one
+python3 tools/aid_probe.py --mode tool           # tool-calling vs the fence
+```
+
+**The probe measures expression, not correctness.** A triangle can be valid JSON,
+pass every check, and still not be right-angled — rail 5 catches that one specific
+lie, and nothing catches the rest. Read a high score as "the model can express
+itself", never as "the diagrams are correct". Judging correctness needs a human or
+a vision pass over the rendered figure.
+
+Expected shape of the result: `steps`/`table`/`bars`/`graph` should score well;
+`geometry` is the one to watch, and the right response to a bad geometry score is
+to retire that kind from runtime authoring and pre-generate it at course-build
+time — not to abandon the feature.
+
+---
+
+## 10. Two defects found along the way
+
+**1. The entire B14 tool layer is dead in the container.** No requirements file
+declares `sympy`, `numpy`, `matplotlib`, `networkx`, `scipy`, `pint`,
+`periodictable`, `spacy` or `textstat`, yet 21 of the 25 registered tools import
+them. Because the executor is deliberately no-raise and the imports are lazy, each
+returns `{"ok": false, "error": "No module named …"}` rather than failing loudly.
+Masked today only because `HELGA_ENABLE_TUTOR_TOOLS` defaults off — flip it on and
+B14 fails closed while the build tree marks B14.5 ✅ "guarded lazy deps".
+
+Same shape as the research-service Dockerfile bug: the static check added there
+compares *local* imports against Dockerfile COPY; nothing compares *third-party*
+imports against requirements.txt. `sympy` is now declared (needed by
+`visualize_function`); the heavy cluster is left as a deliberate decision.
+
+**2. `repair_json()` only fixed single-quoted keys, not values.** `['Mon','Tue']`
+still failed to parse. It has been rewritten as an **escalating** repair that
+returns the first candidate which actually parses, rather than applying every
+transform blindly and letting a late blunt pass damage what an early gentle pass
+had fixed. It now also handles markdown fences, curly quotes, `//` and `/* */`
+comments, unquoted keys (claimed in the old docstring, never implemented),
+NaN/Infinity, and single quotes inside arrays — via a character scanner that
+tracks string state, because a global `'`→`"` substitution destroys apostrophes
+("Newton's law").
+
+Optional backends, in preference order: `fast-json-repair` (Rust/PyO3, MIT, wheels
+for linux+macOS ARM64, needs Python 3.11+ which every service image uses),
+`json-repair` (pure Python, the one that must always resolve), `json5`, and
+`ast.literal_eval`. All lazily imported — repair works without any of them.
+
+Recovery went from 9/16 to **16/16** on a malformed-JSON battery, with all 153
+existing tests across the three dependent suites still passing.
+
+---
+
+## 11. Files
+
+| File | Role |
+|---|---|
+| `services/common/visual_aids.py` | Spec model, validation, rails, descriptions, `AidStore` |
+| `services/common/tutor_tools.py` | `show_visual`, `visualize_function`, `visualize_data` |
+| `services/common/prompts.py` | `VISUAL_AID_RULES` + few-shot examples, flag-gated |
+| `services/common/llm_utils.py` | Upgraded `repair_json()` |
+| `services/core/fsm_logic.py` | Extraction in `add_message`, `REVEAL_AID`, `/api/aid/<id>` |
+| `services/web-ui/app.py` | `/api/aid/<id>` proxy |
+| `services/web-ui/static/js/aids.js` | 12 SVG renderers, card, lightbox, pin rail |
+| `services/web-ui/static/css/aids.css` | Theme-aware colour slots, print, a11y |
+| `services/web-ui/static/js/session.js` | Attaches aids above message text; feeds TTS |
+| `tools/aid_probe.py` | Measures whether the live model can actually draw |
+| `tests/core/test_visual_aids.py` | 66 tests |
+
+`HELGA_ENABLE_VISUAL_AIDS` (default **on**) gates the whole feature, including
+whether the prompt grammar is spent at all. It is independent of
+`HELGA_ENABLE_TUTOR_TOOLS` on purpose: the inline fence needs no tool-calling
+support, so aids can ship while B14 reliability is still being validated.

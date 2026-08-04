@@ -397,6 +397,174 @@ def _t_run_python(code: str):
     return {"stdout": proc.stdout[:2000], "stderr": proc.stderr[:1000], "returncode": proc.returncode}
 
 
+# --- Visual teaching aids (B13) ---------------------------------------------
+# These differ from every other tool in this file in one decisive way: their
+# output is SHOWN TO THE STUDENT. Everything else here feeds the tutor's private
+# reasoning. So they get their own rule, stated in the tool descriptions and
+# enforced by the `stage` mechanism: an aid must make the question askable, not
+# hand over the answer.
+#
+# They return SPECS, never images — see services/common/visual_aids.py for why
+# (2-second transcript polling, dark mode, and testability all forbid pixels).
+# The spec goes to the student via `aid_sink`; the model gets back only a short
+# confirmation, so a 1 KB diagram costs ~20 tokens of context instead of 1000.
+
+def _aid_confirmation(aid):
+    return {"shown_to_student": True, "aid_id": aid["id"], "kind": aid["kind"],
+            "what_they_see": aid["alt"][:300],
+            "reminder": ("The student can see this. Ask about it — do not "
+                         "describe it back to them or state what it proves.")}
+
+
+def _make_show_visual(aid_sink):
+    def _t_show_visual(kind, spec, title="", caption="", alt=""):
+        from services.common.visual_aids import normalize_aid
+        aid, err = normalize_aid(
+            {"kind": kind, "spec": spec, "title": title, "caption": caption, "alt": alt},
+            default_tier="authored")
+        if err:
+            # Returned to the MODEL, not the student — it can correct and retry.
+            return {"shown_to_student": False, "error": err}
+        aid_sink(aid)
+        return _aid_confirmation(aid)
+    return _t_show_visual
+
+
+def _make_visualize_function(aid_sink):
+    def _t_visualize_function(expressions, variable="x", start=-10, end=10,
+                              x_label="", y_label="", markers=None, title="", caption=""):
+        """Server-sampled function plot → 'computed' provenance.
+
+        This exists because the model cannot produce 200 accurate samples of
+        sin(x)/x by itself. It supplies the expression; SymPy supplies the
+        numbers. That is the difference between a diagram a learner can trust
+        and one they cannot.
+        """
+        import math
+        from sympy import lambdify, symbols, sympify
+        from services.common.visual_aids import normalize_aid
+
+        exprs = expressions if isinstance(expressions, list) else [expressions]
+        exprs = [str(e)[:200] for e in exprs[:4]]
+        var = symbols(str(variable)[:20] or "x")
+        lo, hi = float(start), float(end)
+        if hi <= lo:
+            lo, hi = hi, lo + 1.0
+        steps = 200
+        series = []
+        for idx, raw_expr in enumerate(exprs):
+            f = lambdify(var, sympify(raw_expr), "math")
+            pts = []
+            for i in range(steps + 1):
+                x = lo + (hi - lo) * i / steps
+                try:
+                    y = float(f(x))
+                except Exception:
+                    continue                 # domain hole (log of a negative)
+                if math.isfinite(y):
+                    pts.append([round(x, 6), round(y, 6)])
+            if pts:
+                series.append({"points": pts, "label": raw_expr,
+                               "color": f"c{idx + 1}", "style": "line"})
+        if not series:
+            return {"shown_to_student": False,
+                    "error": "the function produced no finite values on that range"}
+
+        # Clip a runaway vertical range (asymptotes) to the interquartile bulk so
+        # one pole near a discontinuity doesn't flatten the whole curve.
+        ys = sorted(y for s in series for _, y in s["points"])
+        if ys:
+            k = max(1, len(ys) // 20)
+            span_lo, span_hi = ys[k - 1], ys[-k]
+            if span_hi > span_lo:
+                pad = (span_hi - span_lo) * 0.1
+                y_range = [span_lo - pad, span_hi + pad]
+            else:
+                y_range = None
+        else:
+            y_range = None
+
+        spec = {"series": series, "x_range": [lo, hi], "y_range": y_range,
+                "x_label": x_label or str(variable), "y_label": y_label,
+                "markers": markers if isinstance(markers, list) else []}
+        aid, err = normalize_aid({"kind": "plot", "spec": spec, "title": title,
+                                  "caption": caption, "provenance": {"tier": "computed"}},
+                                 default_tier="computed")
+        if err:
+            return {"shown_to_student": False, "error": err}
+        aid_sink(aid)
+        return _aid_confirmation(aid)
+    return _t_visualize_function
+
+
+def _make_visualize_data(aid_sink):
+    def _t_visualize_data(values, labels=None, kind="bars", title="", caption="",
+                          y_label="", highlight=None):
+        """Chart a small dataset the tutor already has (survey results, a table
+        from the concept text). 'computed' — the numbers came in as numbers."""
+        from services.common.visual_aids import normalize_aid
+        nums = []
+        for v in (values or [])[:24]:
+            try:
+                nums.append(float(v))
+            except (TypeError, ValueError):
+                nums.append(0.0)
+        if not nums:
+            return {"shown_to_student": False, "error": "no numeric values given"}
+        cats = [str(l)[:40] for l in (labels or [])[:len(nums)]]
+        cats += [str(i + 1) for i in range(len(cats), len(nums))]
+
+        if str(kind).startswith("scatter") or str(kind).startswith("line"):
+            pts = [[i + 1, v] for i, v in enumerate(nums)]
+            spec = {"series": [{"points": pts, "label": title or "data",
+                                "style": "scatter" if str(kind).startswith("scatter") else "line"}],
+                    "y_label": y_label}
+            aid_kind = "plot"
+        else:
+            spec = {"categories": cats, "series": [{"values": nums, "label": ""}],
+                    "y_label": y_label,
+                    "highlight": highlight if isinstance(highlight, list) else []}
+            aid_kind = "bars"
+        aid, err = normalize_aid({"kind": aid_kind, "spec": spec, "title": title,
+                                  "caption": caption, "provenance": {"tier": "computed"}},
+                                 default_tier="computed")
+        if err:
+            return {"shown_to_student": False, "error": err}
+        aid_sink(aid)
+        return _aid_confirmation(aid)
+    return _t_visualize_data
+
+
+# One tool with a `kind` discriminator, not eleven separate ones. A tier-2 9B
+# model picks correctly from a short menu and poorly from a 36-entry schema, and
+# every extra tool description is prompt weight on a ~30 s/call budget.
+_SHOW_VISUAL_DESC = (
+    "Draw a diagram ABOVE your message for the student to look at and reason "
+    "about. Use it when a picture makes a question askable that words alone "
+    "cannot — never as decoration, and never to reveal the answer you are "
+    "leading them toward. Set `kind` and give `spec` for that kind:\n"
+    "• number_line {min,max,marks:[{at,label}],intervals:[{from,to,open_start}]} — "
+    "inequalities, negatives, fractions, rounding\n"
+    "• geometry {points:{A:[x,y]},segments:[{from,to,label}],polygons:[{vertices}],"
+    "angles:[{at,from,to,right}]} — shapes, proofs, labelled figures\n"
+    "• plot {series:[{points:[[x,y]],label,style}]} — a curve you have exact points for "
+    "(prefer visualize_function when you only have a formula)\n"
+    "• bars {categories:[],series:[{values:[]}]} — comparing quantities\n"
+    "• graph {nodes:[{id,label}],edges:[{from,to,label}],direction:'TB'|'LR'} — "
+    "concept maps, flowcharts, causal chains, taxonomies\n"
+    "• timeline {events:[{at,label}]} — historical sequence\n"
+    "• table {columns:[],rows:[[]]} — structured comparison\n"
+    "• venn {sets:[{label,items}],overlaps:[{sets:[0,1],items}]} — overlap and contrast\n"
+    "• cycle {steps:[{label}]} — repeating processes\n"
+    "• steps {steps:[{label,detail}]} — a procedure or worked method\n"
+    "• fraction {models:[{parts,shaded,label,shape}]} — part-whole, equivalence\n"
+    "PROGRESSIVE REVEAL: give any element \"stage\": 1 (or 2, 3…) to keep it hidden "
+    "until the student has committed to an answer. Use this to show the setup and "
+    "withhold the result — it is the single most useful thing you can do with a "
+    "diagram in a Socratic dialogue."
+)
+
+
 def _num_param(desc):
     return {"type": "number", "description": desc}
 
@@ -409,13 +577,19 @@ def build_default_registry(search_fn: Callable = None,
                            content_fn: Callable = None,
                            mastery_fn: Callable = None,
                            wiki_fn: Callable = None,
-                           enable_code: Optional[bool] = None) -> ToolRegistry:
+                           enable_code: Optional[bool] = None,
+                           aid_sink: Callable = None) -> ToolRegistry:
     """Build a registry with the safe compute tools, plus DATA-PULL tools bound to
     the caller's storage/RAG via injected callbacks (omit a callback to disable
     that data tool). `search_fn(query, course_uid)->list`, `content_fn(course_uid,
     concept_uid)->str`, `mastery_fn(concept_uid)->dict`, `wiki_fn(title)->dict`.
     `enable_code` registers the sandboxed run_python tool (tier-3/safety-3); defaults
-    to the HELGA_ENABLE_CODE_TOOL env flag (off)."""
+    to the HELGA_ENABLE_CODE_TOOL env flag (off).
+
+    `aid_sink(aid)` enables the VISUAL TEACHING AID tools (B13). Omit it and they
+    are not registered at all — a tool whose whole purpose is to put something on
+    the student's screen is meaningless without somewhere to put it, and an
+    unregistered tool is one the model cannot waste a turn calling."""
     import os
     if enable_code is None:
         enable_code = str(os.environ.get("HELGA_ENABLE_CODE_TOOL", "")).lower() in ("1", "true", "yes")
@@ -512,4 +686,45 @@ def build_default_registry(search_fn: Callable = None,
         r.register(Tool("wikipedia_lookup", "Look up a concise, grounded definition/summary of a term to ground a hint.",
                         {"type": "object", "properties": {"title": _str_param("term to look up", 120)}, "required": ["title"]},
                         lambda title: wiki_fn(title), safety=1, min_tier=1, category="data"))
+
+    # Visual teaching aids (safety=2 — produces something the student sees).
+    # min_tier=2: a ≤4B model does not reliably emit a well-formed nested spec,
+    # and a malformed diagram is worse than none.
+    if aid_sink:
+        r.register(Tool("show_visual", _SHOW_VISUAL_DESC,
+                        {"type": "object", "properties": {
+                            "kind": _str_param("one of: number_line, geometry, plot, bars, graph, "
+                                               "timeline, table, venn, cycle, steps, fraction", 20),
+                            "spec": {"type": "object", "description": "the fields for that kind"},
+                            "title": _str_param("short heading for the diagram", 120),
+                            "caption": _str_param("one line under it — usually the question it poses", 200),
+                            "alt": _str_param("description for a student using audio; auto-generated if omitted", 900),
+                        }, "required": ["kind", "spec"]},
+                        _make_show_visual(aid_sink), safety=2, min_tier=2, category="viz"))
+        r.register(Tool("visualize_function",
+                        "Plot one or more functions accurately over a range and show the student the "
+                        "graph. Prefer this over show_visual/plot whenever you have a FORMULA rather "
+                        "than exact points — the points are computed here, so the curve is correct.",
+                        {"type": "object", "properties": {
+                            "expressions": {"type": "array", "description": "formulas, e.g. ['x**2', '2*x+1']"},
+                            "variable": _str_param("independent variable", 20),
+                            "start": _num_param("range start"), "end": _num_param("range end"),
+                            "x_label": _str_param("x axis label", 40),
+                            "y_label": _str_param("y axis label", 40),
+                            "markers": {"type": "array", "description": "[{at:[x,y], label, stage}] points to call out"},
+                            "title": _str_param("heading", 120), "caption": _str_param("caption", 200),
+                        }, "required": ["expressions"]},
+                        _make_visualize_function(aid_sink), safety=2, min_tier=2, category="viz"))
+        r.register(Tool("visualize_data",
+                        "Chart a small set of numbers you already have (measurements, counts, survey "
+                        "results) as bars, a line or a scatter for the student to interpret.",
+                        {"type": "object", "properties": {
+                            "values": {"type": "array", "description": "the numbers"},
+                            "labels": {"type": "array", "description": "category label per value"},
+                            "kind": _str_param("bars|line|scatter", 10),
+                            "y_label": _str_param("what the values measure", 40),
+                            "highlight": {"type": "array", "description": "indices to emphasise"},
+                            "title": _str_param("heading", 120), "caption": _str_param("caption", 200),
+                        }, "required": ["values"]},
+                        _make_visualize_data(aid_sink), safety=2, min_tier=2, category="viz"))
     return r
