@@ -394,6 +394,12 @@ class MnemosyneFSM:
         self._aid_ids_this_concept = set()
         self._concept_aids = {}          # slot -> aid, precomputed at build time
         self._last_aid_decision = None
+        # Session scope — spans concepts, so the per-concept budget cannot see
+        # it. This is what stops an eight-concept session becoming a slideshow.
+        self._session_aids_shown = 0
+        self._session_recent_kinds = []
+        self._asset_manifest = None
+        self._asset_manifest_course = None
 
         # B15.6: the per-FSM timer thread and per-instance signal handlers are
         # gone — one registry-level sweeper calls tick(now) for every resident
@@ -779,6 +785,49 @@ class MnemosyneFSM:
     # in services/common/aid_policy.py; these methods only gather the moment #
     # and act on the verdict.                                                #
     # ------------------------------------------------------------------ #
+    def load_course_assets(self, course_uid):
+        """Session start: learn in ONE read what this course had built for it.
+
+        The manifest is written by Phase 3 (asset collection). Reading it here
+        rather than parsing every concept's markdown means a session knows its
+        asset coverage immediately, and the per-concept parse still happens
+        lazily in _reset_aid_budget when a concept is actually entered.
+
+        A course built before Phase 3 existed simply has no manifest — coverage
+        is reported as unknown and every diagram takes the generate path, which
+        is the pre-existing behaviour.
+        """
+        # getattr throughout: bare FSM instances built via __new__ (tests,
+        # recovery paths) never ran __init__ — the same convention the rest of
+        # the aid bookkeeping follows.
+        if not course_uid or course_uid == getattr(self, "_asset_manifest_course", None):
+            return getattr(self, "_asset_manifest", None)
+        self._asset_manifest = None
+        self._asset_manifest_course = course_uid
+        self._session_aids_shown = 0
+        self._session_recent_kinds = []
+        if not getattr(self, "_visual_aids_enabled", False):
+            return None
+        try:
+            from services.core.asset_collector import load_manifest
+            manifest = load_manifest(self.storage, course_uid)
+        except Exception as e:
+            logging.warning(f"Asset manifest unavailable for {course_uid}: {e}")
+            return None
+        if not manifest:
+            logging.info(f"No asset manifest for {course_uid} — diagrams will be "
+                         "generated live (course predates the asset phase)")
+            return None
+        self._asset_manifest = manifest
+        stats = manifest.get("stats", {})
+        covered = len(manifest.get("concepts", {}))
+        logging.info(
+            f"Assets for {course_uid}: {covered} concept(s) covered, "
+            f"{stats.get('generated', 0)} diagram(s), {stats.get('images', 0)} image(s)")
+        self.send_status_update(
+            f"ASSETS:READY:{covered}:{stats.get('generated', 0)}:{stats.get('images', 0)}")
+        return manifest
+
     def _reset_aid_budget(self):
         """A new concept gets a fresh diagram budget and a clean slate of
         already-shown kinds. Also loads whatever the course build drew for this
@@ -823,6 +872,8 @@ class MnemosyneFSM:
             available_slots=tuple(k for k in self._concept_aids
                                   if k not in self._aid_ids_this_concept),
             active_misconception=active,
+            session_aids_shown=getattr(self, "_session_aids_shown", 0),
+            recent_kinds=tuple(getattr(self, "_session_recent_kinds", [])),
             enabled=getattr(self, "_visual_aids_enabled", False),
         )
 
@@ -863,9 +914,16 @@ class MnemosyneFSM:
             self._aid_kinds_this_concept = []
         if not hasattr(self, "_aid_ids_this_concept"):
             self._aid_ids_this_concept = set()
+        if not hasattr(self, "_session_recent_kinds"):
+            self._session_recent_kinds = []
         for aid in aids:
-            self._aid_kinds_this_concept.append(aid.get("kind", "?"))
+            kind = aid.get("kind", "?")
+            self._aid_kinds_this_concept.append(kind)
             self._aid_ids_this_concept.add(aid["id"])
+            self._session_aids_shown = getattr(self, "_session_aids_shown", 0) + 1
+            # Most recent first; only the last few matter for variety.
+            self._session_recent_kinds.insert(0, kind)
+            del self._session_recent_kinds[6:]
 
     def _drop_repeat_aids(self, aids):
         """Never show the same diagram twice in one concept.
@@ -1040,6 +1098,9 @@ class MnemosyneFSM:
                     )
                 except Exception as e:
                     logging.warning(f"SET_CONTEXT meta load failed: {e}")
+                # B13.12: a session begins here — find out what this course had
+                # built for it before the first question is asked.
+                self.load_course_assets(uid)
             return
         elif event_type == "REVEAL_AID":
             # B13: uncover the next layer of a progressive diagram. Global, like
@@ -1061,6 +1122,7 @@ class MnemosyneFSM:
                     f"{self.active_course_uid} → {payload_course_uid}"
                 )
                 self.active_course_uid = payload_course_uid
+                self.load_course_assets(payload_course_uid)
                 self.transcript = []
                 self.conversation_history = []
                 self.syllabus_queue = []
@@ -1672,6 +1734,8 @@ class MnemosyneFSM:
 
         self.state = "SOCRATIC_LEARNING"
         self.active_course_uid = uid
+        # Resuming is a new session too — reload assets and reset session pacing.
+        self.load_course_assets(uid)
 
         # Fetch teaching_style from local storage for Dynamic Persona
         try:

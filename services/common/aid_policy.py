@@ -54,6 +54,12 @@ YOUNG_BANDS = ("K-2", "3-5")
 # single most important number here: it is what stops a picture every turn.
 COOLDOWN_TURNS = 2
 
+# A whole SESSION cap, on top of the per-concept budget. A learner working
+# through eight concepts could otherwise legitimately collect 24 diagrams and
+# experience the session as a slideshow, with every individual decision correct.
+# Restraint has to hold at both scales.
+MAX_AIDS_PER_SESSION = 10
+
 # Score at or above which a diagram is warranted. Tuned so that the ordinary
 # back-and-forth of a correct-ish dialogue scores below it, and genuine trouble
 # clears it comfortably.
@@ -131,6 +137,9 @@ class AidMoment:
     kinds_shown: tuple = ()
     available_slots: tuple = ()              # precomputed slots on this concept
     active_misconception: int = None         # index into the concept's list
+    # Session-scope, spanning concepts — the per-concept budget cannot see these.
+    session_aids_shown: int = 0
+    recent_kinds: tuple = ()                 # most recent first, across concepts
     enabled: bool = True
 
 
@@ -180,6 +189,8 @@ def _decide(m):
     budget = _budget(m.grade_band)
     if m.aids_shown_this_concept >= budget:
         return AidDecision(reason=f"concept budget spent ({budget})")
+    if m.session_aids_shown >= MAX_AIDS_PER_SESSION:
+        return AidDecision(reason=f"session budget spent ({MAX_AIDS_PER_SESSION})")
 
     stuck = _is_stuck(m)
     if m.turns_since_aid < COOLDOWN_TURNS and not stuck:
@@ -238,6 +249,16 @@ def _decide(m):
     if len(m.kinds_shown) >= 2:
         score -= 1
         why.append("already illustrated twice")
+
+    # Variety across CONCEPTS. Three number lines in a row are individually
+    # justified and collectively monotonous, and monotony is how a diagram stops
+    # being looked at. Nudge toward a kind the learner has not just seen.
+    recent = tuple(m.recent_kinds[:2])
+    if kinds and recent and all(k in recent for k in kinds[:1]):
+        score -= 1
+        why.append(f"just showed {recent[0]}")
+    if recent:
+        avoid = tuple(dict.fromkeys(avoid + recent))
 
     reason = "; ".join(why) or "nothing notable"
     if score < THRESHOLD:

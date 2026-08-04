@@ -2227,7 +2227,6 @@ class ContentHydrator:
         hydration_fallback_count = 0  # WIZ-3: Track hydration stub/fallback content
         _counter_lock = threading.Lock()
         _course_lock = threading.Lock()
-        _availability_marked = threading.Event()
         hydration_start_time = time.perf_counter()
 
         # Phase 11A: Parallel concept hydration with ThreadPoolExecutor.
@@ -2509,19 +2508,29 @@ class ContentHydrator:
                     hydration_fallback_count += 1
                 hydrated_count += 1
 
-                # Progressive availability: mark course available after first concept
-                if hydrated_count == 1 and not _availability_marked.is_set():
-                    _availability_marked.set()
+                # A course is NOT enterable until the whole build has run.
+                #
+                # This used to flip status to "available" after a single concept
+                # hydrated. That put a learner inside a course before ANY of the
+                # verification passes had happened: the depth contract, the fact
+                # check, level calibration, the grounding verdict and the
+                # syllabus-coverage gate all run after hydration finishes, and
+                # asset collection after that. "Available" meant "one concept
+                # exists", which is not the same claim at all — it is exactly the
+                # structurally-clean-but-substantively-hollow failure this
+                # pipeline is built against.
+                #
+                # Progress is still reported every concept; only the ENTRY gate
+                # moved to the end. Status becomes "ready" once, after the
+                # checks and the assets.
+                if hydrated_count == 1:
                     with _course_lock:
-                        course["status"] = "available"
                         course["hydrated_count"] = 1
                         self.storage.courses.update_course(course_uid, course)
-                    if self.status_callback:
-                        self.status_callback("COURSE_AVAILABLE")
                     logger.info(
-                        f"Course '{course_title}' now available (1 concept hydrated, "
-                        f"{len(concept_list)-1} remaining)"
-                    )
+                        f"Course '{course_title}' first concept hydrated "
+                        f"({len(concept_list)-1} remaining); not enterable until "
+                        "checks and assets complete")
 
         # Execute parallel hydration
         if max_workers > 1:
@@ -2674,6 +2683,39 @@ class ContentHydrator:
                 logger.warning(
                     f"[GROUNDING] {weak}/{total_concepts} concepts below "
                     f"confidence floor {self.confidence_floor}")
+
+        # ---- PHASE 3: ASSET COLLECTION -------------------------------------
+        # Runs after the content and its verdicts, before the course is
+        # enterable. Every diagram the course will use is drawn HERE, where a
+        # retry is free and generation can be grammar-constrained — neither of
+        # which is true inside a 30-second dialogue turn. A session then only
+        # selects from what this produced.
+        #
+        # Strictly degradable: a course with no pictures is a course, so any
+        # failure here is logged and the build continues.
+        if total_concepts > 0:
+            try:
+                from services.core.asset_collector import AssetCollector
+                if self.status_callback:
+                    self.status_callback("ASSET:PHASE:START")
+                collector = AssetCollector(self.storage,
+                                           status_callback=self.status_callback)
+                asset_manifest = collector.collect(course_uid)
+                course["assets"] = {
+                    "collected": True,
+                    "diagrams": collector.stats["generated"],
+                    "reused": collector.stats["reused"],
+                    "images": collector.stats["images"],
+                    "concepts_with_assets": len(asset_manifest.get("concepts", {})),
+                    "concepts_total": total_concepts,
+                    "seconds": collector.stats["seconds"],
+                }
+                logger.info(f"[TIMING] Asset collection: {collector.stats['seconds']}s")
+            except Exception as e:
+                logger.warning(f"Asset collection failed (course still usable): {e}")
+                course["assets"] = {"collected": False, "error": str(e)[:200]}
+                if self.status_callback:
+                    self.status_callback(f"ASSET:ERROR:{str(e)[:120]}")
 
         self.storage.courses.update_course(course_uid, course)
 

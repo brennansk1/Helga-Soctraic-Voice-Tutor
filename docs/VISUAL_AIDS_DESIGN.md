@@ -7,8 +7,8 @@ question askable that words cannot.
 **What it is not.** Decoration, and never the answer. An aid that shows the result
 converts a Socratic turn into a lecture with pictures.
 
-Status: built, unit-tested (66 tests), rendered and inspected in Chromium in both
-themes. **Never run against a live Ollama model** — see §9.
+Status: built, unit-tested (115 tests), rendered and inspected in Chromium in
+both themes. **Never run against a live Ollama model** — see §9.
 
 ---
 
@@ -370,7 +370,74 @@ path is tested against mocked responses only.
 
 ---
 
-## 13. Files
+## 13. Phase 3 — Asset Collection
+
+```
+Phase 1  what should this course contain?   curriculum_research
+Phase 2  what does each concept say?        ContentHydrator
+Phase 3  what does the learner LOOK at?     asset_collector    <- new
+```
+
+Runs after hydration and after the depth/fact/level/grounding verdicts, and
+**before the course is enterable**. Every diagram the course will use is drawn
+here; a session only selects from them.
+
+**Why its own phase, not part of hydration.** It needs the finished text. Only a
+whole-course pass can see that eight concepts all want the same water cycle —
+per-concept hydration structurally cannot dedupe across concepts, and duplicate
+figures are the most visible way this feature could go wrong. Its failure
+semantics differ (no pictures is degradable; no content is not), its resource
+profile differs (part LLM, part network, and the network half overlaps), and it
+is re-runnable alone.
+
+**Why build time.** A retry costs nothing here, so `geometry` — the kind a 9B
+model is least reliable at — is generated, validated, and regenerated against
+the *named* validation failure. Generation is also grammar-constrained
+(Ollama `format`), which an inline fence in mid-prose can never be.
+
+### The course is now locked until the build finishes
+
+`COURSE_AVAILABLE`-after-one-concept has been removed. It marked a course
+enterable before *any* verification had run — depth contract, fact check, level
+calibration, grounding and coverage all happen after hydration. "One concept
+exists" was never the same claim as "ready", and shipping it as one is precisely
+the structurally-clean-but-hollow failure this pipeline exists to prevent.
+
+### Wait time
+
+The cost is real now, so every lever is about doing less work, not deferring it:
+
+| Lever | Effect |
+|---|---|
+| **Skip** | a concept routing to no visual kind makes **no LLM call at all** |
+| **Reuse (course)** | duplicate subjects in one course are drawn once |
+| **Reuse (machine)** | a shared library means "the water cycle" is drawn once, ever — a second course in a related subject can cost nothing |
+| **One call** | all of a concept's slots in a single constrained request |
+| **Overlap** | image downloads run in a thread pool while the LLM works; Ollama is serialised on one GPU, network I/O is not |
+| **Budget** | a hard course-wide cap so a 120-concept course cannot become a two-hour build |
+
+Measured on a 4-concept fixture: **2 LLM calls** — one concept abstract (skipped),
+one a duplicate subject (reused). A second course sharing a concept: **0 calls**.
+
+### Session start
+
+Phase 3 writes `assets.json` beside the course. The FSM reads it once on
+SET_CONTEXT / RESUME_COURSE / course switch, so a session learns its coverage in
+one read instead of parsing every concept's markdown; the per-concept parse
+still happens lazily on entry. A course built before Phase 3 has no manifest and
+simply falls back to the `generate` path — the pre-existing behaviour.
+
+### Restraint at session scale
+
+Per-concept budget and cooldown are not enough: eight concepts × 3 diagrams is
+24, every one individually justified and collectively a slideshow. So the policy
+also carries a **session cap (10)** and **kind variety** — a kind shown in the
+last two aids scores negative, because three number lines in a row is how a
+diagram stops being looked at.
+
+---
+
+## 14. Files
 
 | File | Role |
 |---|---|
@@ -388,7 +455,9 @@ path is tested against mocked responses only.
 | `services/research/image_sources.py` | Commons/Met/AIC/LoC/NASA + licence filter |
 | `services/common/media_cache.py` | Download once at build time, serve same-origin |
 | `tests/core/test_visual_aids.py` | 66 tests |
+| `services/core/asset_collector.py` | Phase 3 — plan, draw, fetch, dedupe, manifest |
 | `tests/core/test_aid_policy.py` | 32 tests (policy, licence, media cache) |
+| `tests/core/test_asset_collector.py` | 17 tests (skip, reuse, retry, budget, library) |
 
 `HELGA_ENABLE_VISUAL_AIDS` (default **on**) gates the whole feature, including
 whether the prompt grammar is spent at all. It is independent of

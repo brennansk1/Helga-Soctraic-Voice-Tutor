@@ -28,7 +28,7 @@
 
     // --- stages -------------------------------------------------------------
 
-    var ORDER = ['preflight', 'research', 'skeleton', 'coverage', 'hydrate'];
+    var ORDER = ['preflight', 'research', 'skeleton', 'coverage', 'hydrate', 'assets'];
 
     function setStage(name, state) {
         var el = stageEls[name];
@@ -119,6 +119,22 @@
             return 'Coverage check: ' + m[1].toLowerCase() + (m[2] ? ' (' + m[2] + ')' : ''); }],
         [/^CHECK:HYDRATION:WARN/,        function () {
             return 'Some concepts could not be fully written'; }],
+        [/^ASSET:PHASE:START/,           function () {
+            return 'Gathering assets — drawing the diagrams this course will teach with'; }],
+        [/^ASSET:START:(\d+)/,           function (m) {
+            return 'Planning visuals for ' + m[1] + ' concepts'; }],
+        [/^ASSET:PROGRESS:\d+:(.+)/,     function (m) { return '   ' + m[1]; }],
+        [/^ASSET:BUDGET:(\d+)/,          function (m) {
+            return 'Asset budget reached (' + m[1] + ') — remaining concepts will draw live'; }],
+        [/^ASSET:SKIPPED:(.+)/,          function (m) {
+            return 'Asset gathering skipped (' + m[1] + ')'; }],
+        [/^ASSET:ERROR:(.+)/,            function (m) {
+            return 'Asset gathering had trouble: ' + m[1]; }],
+        [/^ASSET:DONE:(\d+):(\d+):(\d+):([\d.]+)/, function (m) {
+            return 'Assets ready — ' + m[1] + ' diagram(s), ' + m[2] + ' image(s), ' +
+                   m[3] + ' concept(s) needed none (' + m[4] + 's)'; }],
+        [/^ASSETS:READY:(\d+):(\d+):(\d+)/, function (m) {
+            return 'Loaded ' + m[1] + ' concept(s) of pre-built visuals'; }],
         [/^STRUCT:MODULE:(.+)/,          function (m) { return 'Module: ' + m[1]; }],
         [/^STRUCT:\w+:(.+)/,             function (m) { return '   ' + m[1]; }],
         [/^LOG: Generating (\d+) course modules for '(.+)'/, function (m) {
@@ -181,6 +197,19 @@
         if (!msg) return;
         log(msg);
 
+        // Phase 3 — asset collection. The course is not enterable until this
+        // finishes, so the stage has to be visible or the last minutes of a
+        // build look like a hang.
+        if (msg.indexOf('ASSET:PHASE:START') === 0 || msg.indexOf('ASSET:START:') === 0) {
+            setStage('assets', 'active');
+        }
+        if (msg.indexOf('ASSET:DONE:') === 0) {
+            setStage('assets', 'done');
+        }
+        if (msg.indexOf('ASSET:ERROR:') === 0 || msg.indexOf('ASSET:SKIPPED:') === 0) {
+            // Degradable by design: no pictures is not a failed build.
+            setStage('assets', 'warn');
+        }
         if (msg.indexOf('CHECK:PREFLIGHT:PASS') === 0) {
             setStage('preflight', 'done'); setStage('research', 'active');
             $('build-sub').textContent = 'Looking for how this subject is actually taught…';

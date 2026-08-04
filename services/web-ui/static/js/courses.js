@@ -65,7 +65,7 @@ async function loadCourses() {
             const card = document.createElement('div');
             card.className = 'course-card';
             const status = (course.status || 'unknown').toLowerCase();
-            const isReady = status === 'ready' || status === 'available';
+            const isReady = status === 'ready';   // 'available' (part-built) is NOT enterable
             const isBuilding = status === 'skeleton' || status === 'building';
 
             let actionButton;
@@ -472,9 +472,11 @@ function setupCreationSocket(topic) {
             }
         }
         else if (msg === 'COURSE_AVAILABLE') {
-            var actionsEl = document.getElementById('qc-progress-actions');
-            if (actionsEl) actionsEl.style.display = 'block';
-            statusEl.textContent = 'First concepts ready! You can start learning while the rest builds.';
+            // Retained only to swallow the signal from an in-flight older build.
+            // A course is no longer enterable part-built: the depth, fact,
+            // level, grounding and coverage checks all run after hydration, so
+            // "one concept exists" was never the same claim as "ready".
+            statusEl.textContent = 'Concepts written — running quality checks…';
         }
         else if (msg === 'COURSE_COMPLETE') {
             // Only the exact COURSE_COMPLETE signal closes the modal.
@@ -779,7 +781,7 @@ async function submitQuickCreate(submitBtn) {
             var latest = courses.find(function(c) {
                 return c.title && c.title.toLowerCase().includes(topicLower);
             }) || courses.find(function(c) {
-                return c.status === 'available' || c.status === 'ready';
+                return c.status === 'ready';
             }) || courses[0];
             if (latest) {
                 // Fire and forget — don't wait for the response (it triggers LLM which is slow)

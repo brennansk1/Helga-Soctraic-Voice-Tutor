@@ -426,7 +426,7 @@ async function loadRecentCourses() {
         var data = await res.json();
         var courses = (data.courses || []).filter(function(c) {
             var s = (c.status || '').toLowerCase();
-            return s === 'ready' || s === 'available';
+            return s === 'ready';
         }).slice(0, 3);
         if (courses.length === 0) return;
 
