@@ -142,12 +142,15 @@ class TestSkeletonUsesTheEvidence(unittest.TestCase):
         self.assertIn('prompt = (', body,
                       'the evidence must be fetched before the prompt is built')
 
-    def test_the_model_is_told_to_select_not_invent(self):
-        import inspect
-        from services.core.course_builder import SkeletonBuilder
-        src = inspect.getsource(SkeletonBuilder)
-        self.assertIn('SOURCE OF TRUTH', src)
-        self.assertIn('not to invent a different syllabus', src)
+    def test_the_model_is_told_to_synthesise_not_copy(self):
+        """The framing moved into the research brief itself (Phase 1), so it
+        travels with the evidence rather than living in the builder."""
+        import os
+        root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+        src = open(os.path.join(
+            root, 'services/research/curriculum_research.py')).read()
+        self.assertIn('SYNTHESISE, DO NOT COPY', src)
+        self.assertIn('not any one source', src)
 
     def test_unguided_generation_is_logged_as_degraded(self):
         """Falling back silently would hide exactly the condition that produced
