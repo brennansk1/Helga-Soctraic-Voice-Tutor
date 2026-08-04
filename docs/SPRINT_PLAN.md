@@ -632,6 +632,84 @@ Scope:
   conjunctive quality gate as a generated one; the learner is told what was covered and what was
   left out, never silently truncated.
 
+### A5.6 — Source strategy: what to wire, what to refuse (2026-08-04)
+
+#### The principle
+
+**A course needs the canon, explained — not the frontier, reported.** Papers and studies are
+the wrong *shape* of source for building a course, however authoritative they are. Grounding
+should be dominated by material that has already done the work of selecting, sequencing and
+explaining: textbooks, encyclopedias, curated collections.
+
+Primary literature stays (the depth contract requires it at mastery ≥ 4) but is no longer the
+growth area.
+
+#### Wired 2026-08-04
+
+| Source | Why | Status |
+|---|---|---|
+| **Wikibooks** | open textbooks — exactly "collected content to assimilate" | live |
+| **Wikiversity** | course material written *for students* | live |
+| Wikipedia | tertiary reference, resolves the subject | live |
+| Crossref / arXiv | required at mastery ≥ 4; not the growth area | live |
+| SearXNG | breadth; aggregates rather than duplicating engines | live |
+
+#### Evaluated and RECOMMENDED (domain-routed, not global)
+
+These are worth wiring, but **only for the subjects they serve**. Querying every source for
+every concept wastes latency and dilutes confidence with irrelevant hits.
+
+| Source | Route it to | Why it earns a place |
+|---|---|---|
+| **Open Library / Internet Archive** | any subject | canonical texts + full-text search; feeds A5.7 below |
+| **Met Museum**, **Art Institute of Chicago** | art, art history, design | primary artefacts *with curatorial explanation* — the right material for the domain |
+| **Library of Congress / Chronicling America** | history, journalism, US politics | primary historical sources, which history genuinely is taught from |
+| **Data USA** | statistics, economics, social science | real datasets to reason about, not prose |
+| **Stanford Encyclopedia of Philosophy** | philosophy, ethics, logic | peer-reviewed encyclopedia; already Tier 1 but never queried |
+
+#### Evaluated and DECLINED — with reasons
+
+- **Universities List API** — a directory of university names and domains. Contains no
+  teachable content of any kind.
+- **Numbers API** — trivia about integers. A hook at best; noise inside a syllabus.
+- **PokeAPI** — self-describes as a playground for practising JSON parsing. Only relevant to a
+  course *about consuming APIs*, and gimmicky even then.
+- **More general web search engines** (Brave, Bing) — SearXNG already aggregates. Adding them
+  duplicates results and inflates `web_source_count` without adding evidence.
+- **Anything requiring a key or paid tier** — breaks the offline-first premise and adds a
+  failure mode that will be discovered at build time.
+
+#### The scoring hazard to fix alongside this
+
+`compute_confidence` currently rewards **count**: three mediocre web pages outscore one
+excellent textbook. If sources are added without changing that, the system will *manufacture*
+confidence rather than measure it — the same class of error as the HelgaBench judge scoring a
+missing key as 1. Weight by kind (textbook > encyclopedia > web) before widening the pool.
+
+---
+
+### A5.7 — Book availability and ingestion pipeline (requested 2026-08-04)
+
+Wiring a book API is only half the feature. The learner needs to get from *"is this book
+available?"* to *"this book is now a course."*
+
+- **Availability check.** Given a title/author, resolve against Open Library / Internet Archive
+  and determine what is actually obtainable: full public-domain text, borrowable-only, or
+  metadata alone. These are three different answers and the UI must not present them as one.
+- **UI.** Search → results with an honest availability badge → preview of what would be
+  ingested → build. A book that cannot be read must say so *before* the learner invests in
+  choosing it.
+- **Pipeline.** Public-domain full text flows into the same document-ingestion path as A5.5
+  (segment on the book's own structure, map onto course shape, respect the depth contract and
+  the syllabus-coverage check).
+- **Refuse cleanly.** Where only metadata or a borrow record exists, offer to build from open
+  sources *about* the book rather than silently producing a course from a blurb.
+
+> **The failure mode to design against:** a learner searches a copyrighted textbook, gets a
+> result, clicks build, and receives a 12-concept course generated from a 200-word catalogue
+> description. Every structural check would pass. Only the availability state, surfaced
+> honestly, prevents it.
+
 ### Arc III — Make it last (A6–A7)
 
 **A6 — Optimization pass** — see §6. *Gate:* p95 latency and course-generation-time targets met with
