@@ -57,6 +57,20 @@ async function loadCourses() {
         }
 
         grid.innerHTML = '';
+        // Phase 3 output, surfaced where a learner chooses a course. Silent
+        // when a course has none — an older course predating asset collection
+        // should look normal, not deficient.
+        const assetChip = (course) => {
+            const a = course.assets;
+            if (!a || !a.collected) return '';
+            const parts = [];
+            if (a.diagrams) parts.push(a.diagrams + ' diagram' + (a.diagrams === 1 ? '' : 's'));
+            if (a.images) parts.push(a.images + ' image' + (a.images === 1 ? '' : 's'));
+            if (!parts.length) return '';
+            return `<span class="course-card-assets" title="Visuals prepared when this course was built">`
+                 + `<span class="i i-spark" aria-hidden="true"></span> ${parts.join(' · ')}</span>`;
+        };
+
         courses.forEach(course => {
             const [bg1, bg2] = getCardColors(course.title);
             const stats = course.stats || {};
@@ -100,7 +114,8 @@ async function loadCourses() {
                           ? `<span class="course-card-empty"><span class="i i-warning" aria-hidden="true"></span> No content — build did not finish</span>`
                           : `<span>${stats.modules || 0} modules</span>
                              <span>${stats.lessons || 0} lessons</span>
-                             <span>${stats.concepts || 0} concepts</span>`}
+                             <span>${stats.concepts || 0} concepts</span>
+                             ${assetChip(course)}`}
                     </div>
                     ${isEmpty ? '' : `
                     <div class="course-card-progress">

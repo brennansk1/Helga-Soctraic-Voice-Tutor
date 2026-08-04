@@ -290,3 +290,15 @@
     max-height: 150px;
     font-size: var(--font-size-xs);
 }
+
+/* Phase 3 output on the course card: what was prepared for this course before
+   a learner ever opened it. Quiet by design — a course built before asset
+   collection existed shows nothing here and must look normal, not deficient. */
+.course-card-assets {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--accent-primary, #2e6b8a);
+    white-space: nowrap;
+}
+.course-card-assets .i { width: 0.95em; height: 0.95em; }

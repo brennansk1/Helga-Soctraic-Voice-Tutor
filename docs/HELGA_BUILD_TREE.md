@@ -330,13 +330,24 @@ B13  Multimodal & Visuals .......................................... 🔨
 ├─ B13.1  Model swap → Qwen3.5-9B (multimodal) ................... ✅ config unified (compose/.env/
 │                                                                    deploy/main/llm_client/llm_utils)
 ├─ B13.2  Vision-capable LLM client (images param) .............. ✅ chat(images=…) + tests
-├─ B13.3  Chat renders images + LaTeX math ..................... ✅ images + KaTeX (offline, raw-TeX fallback); ⬜ Mermaid
-├─ B13.4  Hydration: diagram-as-code step (Mermaid + Socratic Q)  ⬜ (constrained output, B1)
-├─ B13.5  Online image extraction + license filter + cache ...... ⬜ (research_server, B12/#10)
-├─ B13.6  VLM relevance/caption/alt-text pass ................... ⬜ (now native via qwen3.5:9b)
+├─ B13.3  Chat renders images + LaTeX math ..................... ✅ images + KaTeX; SVG aid renderer
+│                                                                    supersedes Mermaid (no vendor lib)
+├─ B13.4  Diagram-as-code at build time (constrained output) .... ✅ Phase 3 asset_collector; Ollama
+│                                                                    `format` schema + retry-on-named-error
+├─ B13.5  Online image extraction + license filter + cache ...... ✅ image_sources + media_cache
+│                                                                    (fail-closed licence; ⬜ live-verify)
+├─ B13.6  VLM relevance/caption/alt-text pass ................... ⬜ (needs a server-side raster; see
+│                                                                    VISUAL_AIDS_DESIGN §9)
 ├─ B13.7  Student image input in Learn (attach→FSM→grader) ...... ✅ wired end-to-end (live-validate vision)
 ├─ B13.8  Local diffusion for illustrations (pre-gen, cached) ... ⬜ (optional; not for technical diagrams)
-└─ B13.9  Accessibility: alt text feeds TTS/text-only path ...... ⬜
+├─ B13.9  Accessibility: alt text feeds TTS/text-only path ...... ✅ deterministic description from the spec;
+│                                                                    feeds TTS + failure fallback
+├─ B13.10 Assistance rails for a tier-2 model ................... ✅ JSON repair, kind/field synonyms,
+│                                                                    derived geometry, false-claim removal
+├─ B13.11 WHEN to draw — aid_policy (none/reuse/generate) ....... ✅ cooldown, per-concept + session
+│                                                                    budgets, expertise reversal, variety
+└─ B13.12 Phase 3 Asset Collection + session-start manifest ..... ✅ skip/reuse/overlap/budget;
+                                                                     course locked until built
 ```
 Principle: visuals are objects of inquiry, not decoration. Prefer verifiable diagram-as-code
 for technical content; reserve diffusion for non-factual illustration; pre-generate at
