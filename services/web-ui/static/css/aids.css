@@ -356,19 +356,33 @@
    exists for looking closely; the card in the stream only has to be readable.
    ========================================================================== */
 
-/* One container, not two. The message bubble already draws a border and a
-   background; the card drawing its own inside it produced a box-in-a-box.
-   Inside a bubble the card goes flush to the bubble's padding and drops its
-   frame, so the figure reads as part of the message rather than an attachment
-   bolted to it. */
+/* Now that the tutor's turn is no longer a card, the FIGURE is the only thing
+   in the message that deserves a container — and it should look like one. It
+   was briefly stripped of its frame to avoid a box-in-a-box against the old
+   bubble; with the bubble gone that left the diagram floating with nothing but
+   a hairline under it. It gets its card back, sized to the reading column
+   rather than bleeding past it on negative margins. */
 .chat-msg-body .aid-stack {
-    margin: calc(var(--space-3) * -1) calc(var(--space-4) * -1) var(--space-3);
+    margin: 0 0 var(--space-4);
+    max-width: 100%;
 }
 .chat-msg-body .aid-card {
-    border: none;
-    border-bottom: 1px solid var(--aid-rule);
-    border-radius: var(--border-radius) var(--border-radius) 0 0;
-    background: transparent;
+    border: 1px solid var(--aid-rule);
+    border-radius: 14px;
+    background: var(--bg-secondary);
+    overflow: hidden;
+    max-width: 100%;
+}
+
+/* Shrink to the figure — but ONLY for a figure that has a natural width.
+   A 307px triangle centred in a 708px card reads as small and adrift; the same
+   triangle in a card that fits it reads as deliberate. Applying that to the
+   stretchy kinds (number line, plot, bars, timeline) was wrong: they have no
+   intrinsic width, so `fit-content` collapsed them to the minimum and squeezed
+   a 560-unit number line into 360px. Those still take the full column. */
+.chat-msg-body .aid-card:has(.aid-svg--intrinsic) {
+    width: fit-content;
+    min-width: min(360px, 100%);
 }
 .chat-msg-body .aid-head {
     background: transparent;

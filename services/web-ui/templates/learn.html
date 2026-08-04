@@ -3,16 +3,16 @@
 {% block title %}Helga - Learn{% endblock %}
 
 {% block head_scripts %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/learn-chat.css') }}?v=5">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/learn-chat.css') }}?v=6">
 <!-- KaTeX (offline, vendored) — math rendering in chat. Falls back to raw TeX if absent. See static/vendor/katex/README.md -->
 <link rel="stylesheet" href="{{ url_for('static', filename='vendor/katex/katex.min.css') }}">
 <script defer src="{{ url_for('static', filename='vendor/katex/katex.min.js') }}"></script>
 <!-- B13 visual teaching aids: SVG diagrams drawn from server-validated specs.
      Loaded BEFORE session.js, which calls into window.HelgaAids while rendering
      each message. No vendor library — the renderer is self-contained. -->
-<link rel="stylesheet" href="{{ url_for('static', filename='css/aids.css') }}?v=2">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/aids.css') }}?v=3">
 <script src="{{ url_for('static', filename='js/aids.js') }}?v=2"></script>
-<script src="{{ url_for('static', filename='js/session.js') }}?v=9"></script>
+<script src="{{ url_for('static', filename='js/session.js') }}?v=10"></script>
 {% endblock %}
 
 {% block body_class %}page-learn{% endblock %}
@@ -110,17 +110,9 @@
 
         <!-- Input area (typing form) -->
         <div class="learn-chat-input-area">
-            <div id="image-preview" class="learn-chat-image-preview hidden" aria-live="polite"></div>
             <form class="learn-chat-input-form" id="chat-input-form" onsubmit="return false;">
-                <input type="file" id="image-input" accept="image/*" hidden>
-                <button type="button" id="attach-btn" class="learn-chat-action-btn" title="Attach an image" aria-label="Attach an image">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
-                </button>
                 <div class="learn-chat-input-wrapper">
                     <textarea id="text-input" class="learn-chat-input" placeholder="Type your answer…" autocomplete="off" rows="1" required></textarea>
-                    <button type="submit" id="send-btn" class="learn-chat-send-btn" title="Send" aria-label="Send message">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
-                    </button>
                 </div>
                 <button type="button" id="mic-btn" class="learn-chat-action-btn" title="Speak your answer" data-recording="false" aria-label="Record voice answer">
                     <svg class="icon-mic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
@@ -128,6 +120,11 @@
                 <button type="button" id="pause-resume" class="learn-chat-action-btn" title="Pause session" data-paused="false" aria-label="Pause session">
                     <svg class="icon-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
                     <svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+                </button>
+                <!-- Send is the primary action and therefore the last control in
+                     the field: attach, then the text, then mic and pause, then send. -->
+                <button type="submit" id="send-btn" class="learn-chat-send-btn" title="Send" aria-label="Send message">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
                 </button>
             </form>
             <p class="learn-chat-disclaimer">Helga uses AI — double-check important details.</p>

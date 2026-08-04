@@ -116,10 +116,21 @@
     margin: 0;
 }
 
-/* ---- Messages ----------------------------------------------------------- */
+/* ---- Messages -----------------------------------------------------------
+   THE TUTOR IS NOT IN A BOX.
+
+   Both sides used to sit in bordered, shadowed cards, which is the visual
+   grammar of a messaging app: two people passing notes. Every serious
+   assistant UI — Claude, ChatGPT, Gemini — does the opposite, and for a
+   reason: the assistant's words are the DOCUMENT, so they sit on the page at
+   reading width with no container, while the user's turn keeps a soft bubble
+   because it is an interjection into that document. Alignment and fill are
+   enough to say who is speaking; a border and a drop shadow around every
+   paragraph is noise that makes long explanations tiring to read.
+   -------------------------------------------------------------------------- */
 .chat-msg {
-    max-width: 760px;
-    margin: 0 auto var(--space-5);
+    max-width: 748px;
+    margin: 0 auto var(--space-6);
     width: 100%;
     /* Reset legacy style.css .chat-msg padding — padding now lives on the body. */
     padding: 0;
@@ -128,45 +139,56 @@
     display: flex;
     align-items: flex-start;
     gap: var(--space-3);
+    flex-wrap: wrap;
 }
-.chat-msg.outgoing .chat-msg-content { flex-direction: row-reverse; }
+.chat-msg.outgoing .chat-msg-content { justify-content: flex-end; }
 
 .chat-msg-avatar {
-    width: 36px;
-    height: 36px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
     object-fit: cover;
     flex-shrink: 0;
+    margin-top: 2px;
     background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
 }
+/* The user's own turn is identified by alignment and fill. A second avatar
+   opposite the first only adds furniture and steals reading width. */
+.chat-msg.outgoing .chat-msg-avatar { display: none; }
 
 .chat-msg-body {
     position: relative;
-    max-width: 80%;
-    padding: var(--space-3) var(--space-4);
-    border-radius: var(--border-radius);
-    border: 1px solid var(--border-color);
-    box-shadow: var(--shadow-soft);
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: 100%;
 }
-/* Helga (incoming): white card, squared top-left toward the avatar. */
+/* Helga: no card. Just the words. */
 .chat-msg.incoming .chat-msg-body {
-    background: var(--bg-secondary);
-    border-top-left-radius: var(--border-radius-sm);
+    background: none;
+    border: none;
+    box-shadow: none;
+    padding: 0;
 }
-/* User (outgoing): tinted surface, right-aligned, squared top-right. */
+/* The learner: a soft, quiet bubble — filled, unbordered, unshadowed. */
 .chat-msg.outgoing .chat-msg-body {
+    flex: 0 1 auto;
+    max-width: 78%;
+    padding: var(--space-3) var(--space-4);
     background: var(--bg-tertiary);
-    border-top-right-radius: var(--border-radius-sm);
+    border: none;
+    box-shadow: none;
+    border-radius: 18px 18px 4px 18px;
 }
 
 .chat-msg-text {
     font-size: var(--font-size-base);
-    line-height: var(--line-height);
+    /* Looser than the UI default: this is prose to be read, not a label. */
+    line-height: 1.68;
     color: var(--text-primary);
     word-wrap: break-word;
     overflow-wrap: anywhere;
 }
+.chat-msg.outgoing .chat-msg-text { line-height: 1.55; }
 .chat-msg-text > *:first-child { margin-top: 0; }
 .chat-msg-text > *:last-child { margin-bottom: 0; }
 .chat-msg-text p { margin: 0 0 var(--space-3); }
@@ -215,31 +237,6 @@
 }
 
 /* Pending attached-image preview above the composer (B13 / Task #12) */
-.learn-chat-image-preview {
-    max-width: 760px;
-    margin: 0 auto var(--space-2);
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-}
-.learn-chat-image-preview.hidden { display: none; }
-.learn-chat-image-preview img {
-    max-height: 56px;
-    border-radius: var(--border-radius-sm);
-    border: 1px solid var(--border-color);
-}
-.learn-chat-image-preview .remove-image {
-    border: 1px solid var(--border-color);
-    background: var(--bg-tertiary);
-    color: var(--text-secondary);
-    border-radius: 50%;
-    width: 24px;
-    height: 24px;
-    line-height: 1;
-    cursor: pointer;
-}
-
-/* LaTeX math (KaTeX) — B13/#13. KaTeX inherits text color so dark mode works. */
 .chat-msg-text .katex { font-size: 1.05em; }
 .chat-msg-text .katex-display {
     margin: var(--space-3) 0;
@@ -269,25 +266,53 @@ pre.math-raw { display: block; margin: var(--space-2) 0; }
 .chat-msg-grade-badge.g4 { background: var(--color-success); color: var(--text-inverted); }
 
 /* Side action buttons (TTS / copy) — quiet, revealed on hover/focus */
+/* Actions belong UNDER the message, not floating in the margin beside it.
+   A vertical stack pinned to the right edge is where a chat app puts a
+   timestamp; every assistant UI puts copy/replay on a quiet row below the
+   turn, which is also the only place that survives a narrow screen. */
 .chat-msg-actions-side {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     gap: var(--space-1);
-    align-self: center;
-    opacity: 0;
-    transition: opacity var(--transition-base);
+    flex-basis: 100%;
+    margin: var(--space-2) 0 0 40px;
+    /* ALWAYS VISIBLE, just quiet. These were hover-only, which is wrong twice
+       over: this is a VOICE tutor, so play-aloud is a primary control rather
+       than a secondary one, and a hover-only control simply does not exist on
+       a touch screen. Quiet until you reach for it, never absent. */
+    opacity: 0.5;
+    transition: opacity var(--transition-fast);
 }
+.chat-msg.outgoing .chat-msg-actions-side { justify-content: flex-end; margin-left: 0; }
+.chat-msg:hover .chat-msg-actions-side,
+.chat-msg:focus-within .chat-msg-actions-side { opacity: 1; }
+
+/* Play-aloud carries a label on the tutor's turn: it is the feature this
+   product is named for, and an unlabelled speaker glyph in a row of glyphs
+   does not read as "hear this". */
+.chat-msg .tts-play-btn {
+    width: auto;
+    gap: var(--space-1);
+    padding: 0 var(--space-2);
+    font-size: 0.74rem;
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-secondary);
+}
+.chat-msg .tts-play-btn::after { content: "Play"; }
+.chat-msg .tts-play-btn.active::after { content: "Stop"; }
+.chat-msg .tts-play-btn.loading::after { content: "…"; }
 .chat-msg:hover .chat-msg-actions-side,
 .chat-msg:focus-within .chat-msg-actions-side { opacity: 1; }
 .chat-msg-action-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 30px;
-    height: 30px;
-    border: 1px solid var(--border-color);
-    border-radius: var(--border-radius-sm);
-    background: var(--bg-secondary);
+    width: 28px;
+    height: 28px;
+    /* Ghost: no chrome until you reach for it. */
+    border: none;
+    border-radius: 6px;
+    background: transparent;
     color: var(--text-secondary);
     cursor: pointer;
     padding: 0;
@@ -346,30 +371,49 @@ pre.math-raw { display: block; margin: var(--space-2) 0; }
 .chat-scroll-bottom-btn.visible { display: inline-flex; }
 .chat-scroll-bottom-btn svg { width: 20px; height: 20px; fill: currentColor; }
 
-/* ---- Composer ----------------------------------------------------------- */
+/* ---- Composer -----------------------------------------------------------
+   ONE FIELD, CONTROLS INSIDE IT.
+
+   The composer was a pill flanked by three free-floating circular buttons —
+   four separate objects competing for the eye, and the arrangement every
+   assistant UI abandoned. Attach, mic and pause now live inside the same
+   rounded container as the text, which reads as a single place to speak from
+   and lets the field own the full width.
+   -------------------------------------------------------------------------- */
 .learn-chat-input-area {
     flex-shrink: 0;
-    padding: var(--space-3) var(--space-5) var(--space-2);
+    padding: var(--space-2) var(--space-5) var(--space-3);
     background: var(--bg-chat);
-    border-top: 1px solid var(--border-color);
+    border-top: none;
 }
 .learn-chat-input-form {
     display: flex;
     align-items: flex-end;
-    gap: var(--space-2);
-    max-width: 760px;
+    gap: 0;
+    max-width: 748px;
     margin: 0 auto;
+    padding: var(--space-2) var(--space-2) var(--space-2) var(--space-2);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 26px;
+    box-shadow: var(--shadow-1);
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.learn-chat-input-form:focus-within {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-primary) 14%, transparent);
 }
 .learn-chat-input-wrapper {
     display: flex;
     align-items: flex-end;
     flex: 1;
+    min-width: 0;
     gap: var(--space-2);
-    padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--border-radius-lg);
-    box-shadow: var(--shadow-soft);
+    padding: 0 var(--space-1);
+    background: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
 }
 .learn-chat-input-wrapper:focus-within {
     border-color: var(--accent-primary);
@@ -385,16 +429,17 @@ pre.math-raw { display: block; margin: var(--space-2) 0; }
     font-size: var(--font-size-base);
     line-height: var(--line-height);
     color: var(--text-primary);
-    max-height: 160px;
+    max-height: 200px;
     padding: var(--space-2) 0;
+    font-size: 1rem;
 }
 .learn-chat-input::placeholder { color: var(--text-secondary); }
 .learn-chat-send-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
     flex-shrink: 0;
     border: none;
     border-radius: 50%;
@@ -403,23 +448,32 @@ pre.math-raw { display: block; margin: var(--space-2) 0; }
     cursor: pointer;
 }
 .learn-chat-send-btn:hover { background: var(--accent-primary-dark); }
-.learn-chat-send-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/* Nothing to send yet reads as a disabled control, not a live one. */
+.learn-chat-send-btn:disabled {
+    opacity: 1;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    cursor: default;
+}
 .learn-chat-send-btn svg { width: 20px; height: 20px; fill: currentColor; }
 
 .learn-chat-action-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 44px;
-    height: 44px;
+    width: 36px;
+    height: 36px;
     flex-shrink: 0;
-    border: 1px solid var(--border-color);
+    /* Inside the field now, so it carries no chrome of its own. */
+    border: none;
     border-radius: 50%;
-    background: var(--bg-secondary);
+    background: transparent;
     color: var(--text-secondary);
     cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast);
 }
-.learn-chat-action-btn:hover { background: var(--bg-primary); color: var(--accent-primary); }
+.learn-chat-action-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+.learn-chat-action-btn svg { width: 19px; height: 19px; }
 .learn-chat-action-btn svg { width: 20px; height: 20px; fill: currentColor; }
 /* pause/play icon swap */
 .learn-chat-action-btn .icon-play { display: none; }
@@ -496,7 +550,60 @@ pre.math-raw { display: block; margin: var(--space-2) 0; }
     .chat-msg-actions-side { opacity: 1; }
 }
 
-/* The grade badge took a whole line above the answer it was grading. Floating
-   it into the bubble's top corner keeps the verdict attached to the answer
-   without spending a line of vertical space on every graded turn. */
-.chat-msg-grade-badge { margin-bottom: var(--space-1); }
+/* ---- Grade as colour, not as a label ------------------------------------
+   The verdict used to be a filled pill on its own line above every graded
+   answer, shouting a word at the learner before they could re-read what they
+   had written. It is now the colour of their own bubble: present the moment
+   you look, gone the moment you stop, and it costs no vertical space at all.
+
+   The word survives in `.sr-only` markup and as a tooltip. Colour is never the
+   only carrier of meaning (WCAG 1.4.1) — "your answer was red" tells a screen
+   reader nothing.
+
+   The base border is transparent rather than absent so that a grade arriving
+   after the optimistic bubble is rendered does not shift the layout. */
+.chat-msg.outgoing .chat-msg-body {
+    border: 1.5px solid transparent;
+    transition: border-color var(--dur-slow, 320ms) var(--ease-standard, ease);
+}
+.chat-msg.outgoing[data-grade] .chat-msg-body { background: var(--bg-secondary); }
+.chat-msg.outgoing[data-grade="1"] .chat-msg-body { border-color: var(--color-danger, #e07d6a); }
+.chat-msg.outgoing[data-grade="2"] .chat-msg-body { border-color: var(--color-warning, #e0bc63); }
+/* 3 and 4 must not be the same colour: --accent-tertiary and --color-success
+   both resolve to the same green, so "Good" and "Excellent" were identical.
+   Blue for good, green for excellent — a clear step, not a shade. */
+.chat-msg.outgoing[data-grade="3"] .chat-msg-body { border-color: var(--accent-primary, #2e6b8a); }
+.chat-msg.outgoing[data-grade="4"] .chat-msg-body { border-color: var(--color-success, #4a8c6f); }
+
+/* A faint wash of the same colour, so the verdict is legible at a glance
+   without the border having to shout. */
+.chat-msg.outgoing[data-grade="1"] .chat-msg-body { background: color-mix(in srgb, var(--color-danger, #e07d6a) 8%, var(--bg-secondary)); }
+.chat-msg.outgoing[data-grade="2"] .chat-msg-body { background: color-mix(in srgb, var(--color-warning, #e0bc63) 10%, var(--bg-secondary)); }
+.chat-msg.outgoing[data-grade="3"] .chat-msg-body { background: color-mix(in srgb, var(--accent-primary, #2e6b8a) 7%, var(--bg-secondary)); }
+.chat-msg.outgoing[data-grade="4"] .chat-msg-body { background: color-mix(in srgb, var(--color-success, #4a8c6f) 10%, var(--bg-secondary)); }
+
+/* The badge is for assistive tech only. `.sr-only` alone lost to the base
+   badge rule on padding — same specificity, later stylesheet — leaving a 17px
+   sliver on screen, so the hiding is restated here where it wins. */
+.chat-msg-grade-badge.sr-only {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Anything that renders the badge visibly again (an older cached page) still
+   gets the compact treatment rather than the old full-size pill. */
+.chat-msg-grade-badge:not(.sr-only) {
+    display: inline-block;
+    margin: 0 0 var(--space-1);
+    padding: 1px 8px;
+    font-size: 0.64rem;
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    border-radius: 999px;
+}
