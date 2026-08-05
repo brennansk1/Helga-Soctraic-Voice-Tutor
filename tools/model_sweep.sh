@@ -122,11 +122,18 @@ await_headroom || die "memory is already below ${STOP_BELOW}% free — not start
 
 echo "[" > "$OUT"
 first=1
+# Listed ONCE, into a variable. `"$OLLAMA" list | grep -q` looks obvious and is
+# wrong under `set -o pipefail`: grep -q exits at the first match, ollama takes
+# SIGPIPE, and pipefail reports the whole pipeline as failed — so every model
+# present on disk was skipped as "not installed", and the sweep completed in
+# four seconds having measured nothing.
+INSTALLED=$("$OLLAMA" list 2>/dev/null)
+
 for model in "${CANDIDATES[@]}"; do
-  if ! "$OLLAMA" list 2>/dev/null | grep -qF "${model%%:*}"; then
-    warn "not installed, skipping: $model"
-    continue
-  fi
+  case "$INSTALLED" in
+    *"${model%%:*}"*) ;;
+    *) warn "not installed, skipping: $model"; continue ;;
+  esac
 
   echo
   log "──────────────────────────────────────────────────────────"
