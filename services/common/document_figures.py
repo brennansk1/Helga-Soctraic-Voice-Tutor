@@ -45,6 +45,7 @@ import os
 import re
 import zipfile
 from collections import Counter
+from urllib.parse import unquote
 from xml.etree import ElementTree as ET
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,18 @@ MIN_HEIGHT = 100
 MAX_ASPECT = 6.0           # a rule or a banner, not a figure
 MAX_FIGURES = 400          # a whole-book cap
 REPEAT_LIMIT = 3           # same bytes this many times => furniture
+
+# No single figure in a textbook is 25 MB. An entry claiming to be is either
+# corrupt or hostile: an EPUB is a ZIP, and a ZIP entry's declared size costs
+# nothing to inflate, so `z.read()` on an untrusted upload can allocate
+# hundreds of megabytes from a file of a few kilobytes. On a 24 GB host shared
+# with Ollama and the containers, that is an OOM, and the upload path is
+# reachable by anyone who can use /library.
+MAX_IMAGE_BYTES = 25 * 1024 * 1024
+
+# The whole-document budget. 400 figures at 25 MB each would still be 10 GB,
+# so the per-book total is capped as well as the per-image size.
+MAX_TOTAL_IMAGE_BYTES = 400 * 1024 * 1024
 
 _IMG_EXT = (".png", ".jpg", ".jpeg", ".gif", ".webp")
 # SVG is excluded deliberately: it is executable markup, and a figure taken
@@ -141,6 +154,7 @@ def extract_epub_figures(path, limit=MAX_FIGURES):
     references is page furniture.
     """
     out = []
+    budget = MAX_TOTAL_IMAGE_BYTES
     try:
         from bs4 import BeautifulSoup
     except ImportError:
@@ -148,6 +162,12 @@ def extract_epub_figures(path, limit=MAX_FIGURES):
         return out
     try:
         with zipfile.ZipFile(path) as z:
+            # A DRM'd book's "images" are ciphertext. Sniffing usually rejects
+            # them as an unrecognised format, but that is luck rather than a
+            # decision — random bytes can begin with a valid magic number.
+            if "META-INF/encryption.xml" in set(z.namelist()):
+                logger.warning("EPUB figures: DRM-protected, skipping")
+                return out
             names = set(z.namelist())
             base = _epub_opf_dir(z)
             docs = [n for n in z.namelist()
@@ -167,10 +187,15 @@ def extract_epub_figures(path, limit=MAX_FIGURES):
                     target = _resolve_zip_path(src, doc_dir, base, names)
                     if not target:
                         continue
-                    try:
-                        data = z.read(target)
-                    except KeyError:
+                    data = _safe_zip_read(z, target)
+                    if data is None:
                         continue
+                    budget -= len(data)
+                    if budget < 0:
+                        logger.warning(
+                            "EPUB figures: total image budget exhausted; "
+                            f"stopping after {len(out)} figure(s)")
+                        return out
 
                     # Caption, best source first: an explicit <figcaption>,
                     # then the alt attribute, then the nearest text.
@@ -197,19 +222,49 @@ def extract_epub_figures(path, limit=MAX_FIGURES):
 
 
 def _resolve_zip_path(src, doc_dir, base, names):
-    """Map an href in the markup to an entry in the zip."""
-    src = src.split("#")[0].split("?")[0]
+    """Map an href in the markup to an entry in the zip.
+
+    Percent-decodes and falls back to a case-insensitive match, for the same
+    reason `document_extract._resolve_href` does: `src="fig%201.png"` is the
+    file `fig 1.png`, and producers routinely disagree with themselves about
+    case between the markup and the archive. Missing either one drops the
+    book's figures silently — the course still builds, just without the
+    diagrams its author drew.
+    """
+    src = unquote(src.split("#")[0].split("?")[0])
+    lowered = {n.lower(): n for n in names}
     for candidate in (os.path.normpath(os.path.join(doc_dir, src)),
                       os.path.normpath(os.path.join(base, src)),
                       src.lstrip("/")):
-        candidate = candidate.replace("\\", "/")
+        candidate = candidate.replace("\\", "/").lstrip("./")
         if candidate in names:
             return candidate
-    tail = os.path.basename(src)
+        hit = lowered.get(candidate.lower())
+        if hit:
+            return hit
+    tail = os.path.basename(src).lower()
     for name in names:                       # last resort: match on filename
-        if name.endswith("/" + tail) or name == tail:
+        if os.path.basename(name).lower() == tail:
             return name
     return None
+
+
+def _safe_zip_read(z, name):
+    """Read a zip entry, refusing implausibly large ones.
+
+    The DECLARED size is checked before reading, so a decompression bomb is
+    rejected without ever being inflated.
+    """
+    try:
+        info = z.getinfo(name)
+    except KeyError:
+        return None
+    if info.file_size > MAX_IMAGE_BYTES:
+        logger.warning(
+            f"figure {name}: declared {info.file_size:,} bytes exceeds the "
+            f"{MAX_IMAGE_BYTES:,} cap — skipping (corrupt or hostile archive)")
+        return None
+    return z.read(name)
 
 
 # --- PDF ---------------------------------------------------------------------
@@ -230,10 +285,15 @@ def extract_pdf_figures(path, limit=MAX_FIGURES):
     try:
         reader = PdfReader(path)
         if getattr(reader, "is_encrypted", False):
+            # decrypt() returns 0 on failure rather than raising, so catching
+            # exceptions alone lets a locked file through to fail later inside
+            # the page loop as "File has not been decrypted".
             try:
-                reader.decrypt("")
+                unlocked = reader.decrypt("")
             except Exception:
-                logger.warning("PDF figures: encrypted, skipping")
+                unlocked = 0
+            if not unlocked:
+                logger.warning("PDF figures: password-protected, skipping")
                 return out
         for index, page in enumerate(reader.pages):
             try:
@@ -366,11 +426,16 @@ def _score(fig):
 def figures_from_document(path, limit=MAX_FIGURES):
     """Extract and review in one call. Returns (kept, rejected).
     Never raises — a book with no usable figures is a normal outcome."""
-    lower = (path or "").lower()
+    # CONTENT FIRST. `document_extract` already reads the TEXT of a PDF that
+    # was named .epub; if figures still dispatched on the suffix, such a book
+    # would be taught from with its diagrams silently missing — the hardest
+    # kind of defect to notice, because the course still builds.
     try:
-        if lower.endswith(".epub"):
+        from services.common.document_extract import sniff_kind, _is_epub_zip
+        kind = sniff_kind(path)
+        if kind == "zip" and _is_epub_zip(path):
             raw = extract_epub_figures(path, limit=limit)
-        elif lower.endswith(".pdf"):
+        elif kind == "pdf":
             raw = extract_pdf_figures(path, limit=limit)
         else:
             return [], []

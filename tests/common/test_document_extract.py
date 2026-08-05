@@ -20,15 +20,30 @@ from services.common.document_extract import (  # noqa: E402
     UnsupportedDocument, ExtractionFailed, summarize_source,
 )
 
-CHAP1 = """<html><body>
+# Chapters are deliberately PARAGRAPH-sized, not one-liners. `extract_epub`
+# refuses a book that yields less than MIN_USEFUL_CHARS, because an EPUB whose
+# only readable spine entry is its table of contents used to extract ~3
+# characters and be taught from as though it were the book. One-line fixtures
+# would sit under that floor and test the guard instead of the parser.
+_FILLER = (
+    "<p>Oxidative phosphorylation couples the electron transport chain to ATP "
+    "synthase, and the proton gradient across the inner membrane is what stores "
+    "the energy released along the way. Chemiosmosis explains how that gradient "
+    "does useful work, and it is the reason the inner membrane is folded into "
+    "cristae at all.</p>"
+)
+
+CHAP1 = f"""<html><body>
 <h1>Chapter One</h1>
 <p>The mitochondrion is the powerhouse of the cell.</p>
+{_FILLER}
 <script>console.log('noise')</script>
-<style>.x{color:red}</style>
+<style>.x{{color:red}}</style>
 </body></html>"""
 
-CHAP2 = """<html><body><h1>Chapter Two</h1>
-<p>Ribosomes synthesise proteins from messenger RNA.</p></body></html>"""
+CHAP2 = f"""<html><body><h1>Chapter Two</h1>
+<p>Ribosomes synthesise proteins from messenger RNA.</p>
+{_FILLER}</body></html>"""
 
 CONTAINER = """<?xml version="1.0"?>
 <container xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
