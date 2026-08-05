@@ -69,9 +69,17 @@ class TestPhotoRouting(unittest.TestCase):
 class _Base(unittest.TestCase):
     def setUp(self):
         self._old = os.environ.get("DATA_ROOT")
-        os.environ["DATA_ROOT"] = tempfile.mkdtemp(prefix="helga_assets_")
+        self._tmp = tempfile.mkdtemp(prefix="helga_assets_")
+        os.environ["DATA_ROOT"] = self._tmp
         from services.common.storage import StorageManager
-        self.st = StorageManager()
+        # PASS the directory. StorageManager's signature is
+        # `__init__(self, data_dir="/app/data")` — it does not read DATA_ROOT,
+        # so a bare StorageManager() ignored the temp dir this test just made
+        # and wrote to /app/data. On a Mac that is a read-only-filesystem
+        # error; INSIDE THE CONTAINER it silently succeeded and scribbled on
+        # the real data directory, so the isolation this setUp appears to
+        # provide never existed.
+        self.st = StorageManager(self._tmp)
         self.calls = []
 
     def tearDown(self):

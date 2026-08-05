@@ -885,6 +885,22 @@ def _requote(text):
     return "".join(out)
 
 
+# _close_unbalanced() WAS HERE AND HAS BEEN REMOVED.
+#
+# It hand-rolled bracket-closing for truncated model output. That was
+# reinventing a dependency this repo already declares: `fast-json-repair`
+# (Rust) and `json-repair` (pure Python) both handle truncation, and better —
+# verified on python:3.11-slim, which is what every service image runs:
+#
+#     '{"kind":"steps","steps":[{"label":"a"}'   -> {"kind":"steps","steps":[{"label":"a"}]}
+#     '{"a":1,'                                  -> {"a":1}
+#     '{"kind":"steps","steps":[{"label":"trunc' -> {"kind":"steps","steps":[{"label":"trunc"}]}
+#
+# The third case is the one my version could not do: it closed brackets but
+# could not close a truncated STRING and recover the partial value. Hand-rolled
+# parsing loses to a maintained parser, so repair_json() — which already tries
+# both backends — is the single path.
+
 def _repair_json_text(payload):
     """Parse model JSON, repairing what a 9B model commonly gets wrong.
 
