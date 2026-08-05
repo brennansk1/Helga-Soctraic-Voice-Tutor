@@ -126,6 +126,49 @@ await_headroom() {
   done
 }
 
+# Optional server tuning, applied ONCE before the sweep.
+#
+#   SWEEP_CTX=16384 SWEEP_KV=q8_0 ./tools/model_sweep.sh
+#
+# These are server-start variables, so applying them means restarting Ollama.
+# Left unset the sweep runs against whatever the server already has, which is
+# what produces a comparable baseline.
+SWEEP_CTX="${SWEEP_CTX:-}"
+SWEEP_KV="${SWEEP_KV:-}"
+
+apply_server_tuning() {
+  [ -z "$SWEEP_CTX" ] && [ -z "$SWEEP_KV" ] && return 0
+  unload_all
+  [ -n "$SWEEP_CTX" ] && launchctl setenv OLLAMA_CONTEXT_LENGTH "$SWEEP_CTX"
+  if [ -n "$SWEEP_KV" ]; then
+    launchctl setenv OLLAMA_KV_CACHE_TYPE "$SWEEP_KV"
+    # llama.cpp silently IGNORES a quantised KV cache without flash attention,
+    # and a silently-ignored setting is indistinguishable from a working one.
+    launchctl setenv OLLAMA_FLASH_ATTENTION 1
+  fi
+  launchctl setenv OLLAMA_MAX_LOADED_MODELS 1
+  log "restarting Ollama with ctx=${SWEEP_CTX:-default} kv=${SWEEP_KV:-f16}"
+  pkill -TERM -f "Ollama.app/Contents/MacOS/Ollama" 2>/dev/null; sleep 3
+  pkill -TERM -f "Ollama.app/Contents/Resources/ollama" 2>/dev/null; sleep 3
+  open -a Ollama >/dev/null 2>&1
+  for _ in $(seq 1 40); do
+    curl -sf --max-time 3 "$URL/api/version" >/dev/null 2>&1 && break; sleep 2
+  done
+  curl -sf --max-time 5 "$URL/api/version" >/dev/null || die "Ollama did not restart"
+}
+
+# The runner's own command line is the only place the EFFECTIVE context
+# appears. Reporting the value we asked for would hide the case that matters:
+# a setting the server declined.
+effective_ctx() {
+  # `tr ' ' '\n' | grep -A1 -x -- '-c'` looks tidier and returns "value:" —
+  # grep -A1 works on lines of the ORIGINAL stream, and pgrep -lf prefixes the
+  # pid, so the anchor never matches what it appears to. Match the pair
+  # directly instead.
+  pgrep -lf "llama-server" 2>/dev/null \
+    | grep -oE '\-c [0-9]+' | head -1 | awk '{print $2}'
+}
+
 trap 'echo; warn "interrupted — unloading before exit"; unload_all; exit 130' INT TERM
 
 command -v "$OLLAMA" >/dev/null || die "ollama not found at $OLLAMA"
@@ -140,6 +183,7 @@ echo
 
 # Start from a clean slate: anything already resident is another model's
 # memory, and it is not ours to leave in place.
+apply_server_tuning
 unload_all
 await_headroom || die "memory is already too tight to start"
 
@@ -206,7 +250,7 @@ EXTRACT
     warn "gate failed for $model (rc=$rc, ${elapsed}s)"
     result="{\"model\":\"$model\",\"error\":\"gate failed rc=$rc\"}"
   else
-    ok "$model — ${elapsed}s"
+    ok "$model — ${elapsed}s (runner ctx=$(effective_ctx))"
     echo "$result" | python3 -c "
 import sys,json
 try:
