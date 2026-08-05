@@ -1,8 +1,9 @@
 # Used Car Deal Analyzer — Design
 
-**Status: BUILT.** This document specified the tool; it is now implemented and tested
-(140 tests, all passing). See `README.md` for usage and `§10 As-built notes` for the
-two places the implementation deliberately diverged from this spec.
+**Status: BUILT (Rev 5).** This document specified the tool; it is now implemented and
+tested (174 tests, all passing). See `README.md` for usage, `§10 As-built notes` for where
+the implementation diverged from this spec, and `§11` for the Rev 5 redesign and the data
+integrations added on top of the original scope.
 
 **Rev 4** — as-built. Rev 3 specified the vetted candidate sources as concrete,
 implementation-ready specifications: exact endpoints and fields consumed (§3, Appendix A),
@@ -504,3 +505,77 @@ Run inside `build_datasets.py` (pandas; deterministic, seeded):
    the data block is replaced.
 
 Raw corpora never ship — only the fitted coefficient tables above.
+
+---
+
+## 11. Rev 5 — visual identity and full data integration
+
+Two changes on top of the built spec: a from-scratch visual identity, and closing the gap
+between data the tool *fetched* and data it actually *showed*.
+
+### 11.1 The design: an auction condition report
+
+The original build used a conventional app idiom — rounded cards on an off-white surface,
+blue accent, sans-serif throughout. Rev 5 replaces it with a document idiom drawn from what
+a used car is actually bought off: a window sticker, an auction sheet, an inspection form.
+
+| Element | Treatment |
+|---|---|
+| Structure | Numbered sections (`01`…`14`) stamped in a left margin gutter, separated by 2px ink rules. No cards, no rounded corners, no shadows. |
+| Figures | Every number in monospace with tabular figures, so money columns align like a printed ledger. |
+| Type | Sans for prose; uppercase letterspaced monospace for labels and micro-copy. |
+| Form fields | Underline-only, no boxes — a form to be filled in, not a UI to be operated. |
+| Score | A bordered "grade stamp" block with a 66px monospace figure and a five-segment band strip beneath. |
+| Findings | Ruled list with monospace `[✓] [!] [×]` marks rather than coloured pills. |
+| Surfaces | Warm newsprint `#f2efe6` / warm ink `#14150f` inverted at night. |
+| Series colours | Teal `#008f80` / rust `#cc4a15` (dark: `#0fa892` / `#e06a35`). Validator: **all checks pass in both modes** — CVD ΔE 13.4 light, 12.7 dark against an ≥8 target; ≥3:1 contrast on both surfaces. |
+| Print | A print stylesheet drops the input sections and the chrome, leaving a one-page sheet to take to the dealer. |
+
+Status colours (ok / warn / bad) remain a reserved ramp that never doubles as a data series,
+and are always paired with a mark or word, never carrying meaning by colour alone.
+
+### 11.2 Loan-length calculation (§08)
+
+Added on request. Every term from 24 to 84 months is priced out side by side: monthly
+payment, lifetime interest, interest as a share of the amount financed, **how many months
+the loan stays underwater** (computed at monthly resolution against the depreciation curve,
+via `valueAtMonth`), and — when income is known — the all-in share of take-home pay.
+
+- `loanTermComparison()` returns the option set plus a recommendation: the shortest term
+  that clears the 20/4/10 payment share and stays at or under 60 months. When no term
+  clears it, the tool says so plainly rather than recommending a longer one.
+- `termForPayment()` inverts the amortization formula for "what term gets me to $X/month",
+  and returns null — with an explanation — when the payment would not even cover interest.
+- Clicking a row adopts that term and re-runs the report.
+
+### 11.3 Data that was fetched but not shown
+
+Every field the source layer retrieves is now surfaced:
+
+| Data | Where it now appears |
+|---|---|
+| vPIC body, engine, drive, transmission, electrification, plant | Full spec grid in §05 |
+| NCAP frontal / side / rollover sub-ratings | Star rows in §05 (previously only the overall rating) |
+| Recall summary, consequence, remedy, campaign number | Expandable per-recall entries with a safety-critical flag |
+| Per-recall repair confirmation | A checkbox per campaign, feeding the score cap (previously one global toggle) |
+| Complaint counts by component | New §11 bar chart of the top eight systems |
+| FRED 13-month CPI series | Sparkline in §05 (previously only the first and last observation were used) |
+| EIA period and region | Named in the colophon and field hints |
+| Baked `recallCounts` | Now the offline recall warning — the table shipped in `data.js` was previously unused |
+
+New derived views: a **price-position number line** (§07) placing the ask against your
+comparables, fair value, target and walk-away; a **target-price solver** naming the price at
+which the car would reach the next score band; a **cumulative-cost chart** (§10) showing
+running spend and the per-mile figure improving as fixed costs amortize; and **CSV export**
+of the comparison table.
+
+### 11.4 Bug found and fixed during the redesign
+
+Re-running the report rewrote every section's `innerHTML`. If the user edited a field and
+then clicked, the blur-driven change re-rendered the section *between mousedown and
+mouseup* — the node under the cursor was replaced, so the browser emitted no click event at
+all and the interaction was silently swallowed. Sections now only rebuild when their content
+actually changed (compared against the last string written, since the browser re-serializes
+`innerHTML` and a naive comparison never matches), the price-chart legend renders into a
+fixed mount instead of being removed and re-inserted, and the term table uses a delegated
+listener. Covered by `test_ui_click_survives_an_edit_in_another_field`.

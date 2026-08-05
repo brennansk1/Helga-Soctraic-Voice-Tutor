@@ -3,408 +3,675 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Used Car Deal Analyzer</title>
+<title>Vehicle Condition &amp; Deal Report</title>
 <style>
-  :root {
-    color-scheme: light;
-    --surface-1: #fcfcfb;
-    --page: #f9f9f7;
-    --text-primary: #0b0b0b;
-    --text-secondary: #52514e;
-    --text-muted: #898781;
-    --grid: #e1e0d9;
-    --baseline: #c3c2b7;
-    --border: rgba(11,11,11,0.10);
-    --series-1: #2a78d6;
-    --series-2: #eb6834;
-    --status-good: #0ca30c;
-    --status-warning: #fab219;
-    --status-serious: #ec835a;
-    --status-critical: #d03b3b;
-    --warning-ink: #8a6100;
-    --delta-good: #006300;
-    --accent-wash: rgba(42,120,214,0.10);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:where(:not([data-theme="light"])) {
-      color-scheme: dark;
-      --surface-1: #1a1a19; --page: #0d0d0d;
-      --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
-      --grid: #2c2c2a; --baseline: #383835; --border: rgba(255,255,255,0.10);
-      --series-1: #3987e5; --series-2: #d95926;
-      --warning-ink: #fab219; --delta-good: #0ca30c;
-      --accent-wash: rgba(57,135,229,0.14);
-    }
-  }
-  :root[data-theme="dark"] {
+/* ============================================================================
+   DESIGN: "Auction condition report"
+
+   A used car is bought off paper — a window sticker, an auction sheet, a
+   mechanic's clipboard. So this reads as a document, not an app: ruled sections
+   with stamped numbers, hairline tables, underline-only form fields, and every
+   figure set in monospace so columns of money line up the way they do on a
+   printed report. Nothing is a rounded card; nothing floats on a shadow.
+
+   Type    system sans for prose, monospace for every number and label
+   Ink     warm newsprint / near-black, inverted at night
+   Signal  teal + rust (validated: CVD dE 13.4 light / 12.7 dark, >=3:1 on both
+           surfaces) with a reserved status ramp that never doubles as a series
+   ========================================================================= */
+
+:root {
+  color-scheme: light;
+  --paper:      #f2efe6;
+  --panel:      #eae6d9;
+  --sunk:       #e3dece;
+  --ink:        #16150f;
+  --ink-2:      #57544a;
+  --ink-3:      #8b8779;
+  --rule:       #d5d0c1;
+  --rule-mid:   #b3ad9a;
+  --rule-heavy: #16150f;
+  --s1:         #008f80;   /* series 1 — value, primary measure */
+  --s2:         #cc4a15;   /* series 2 — loan balance */
+  --ok:         #0f7a2e;
+  --warn:       #a86a00;
+  --bad:        #b3241c;
+  --s1-wash:    rgba(0,143,128,0.10);
+  --s2-wash:    rgba(204,74,21,0.10);
+
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+          "Liberation Mono", monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
     color-scheme: dark;
-    --surface-1: #1a1a19; --page: #0d0d0d;
-    --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
-    --grid: #2c2c2a; --baseline: #383835; --border: rgba(255,255,255,0.10);
-    --series-1: #3987e5; --series-2: #d95926;
-    --warning-ink: #fab219; --delta-good: #0ca30c;
-    --accent-wash: rgba(57,135,229,0.14);
+    --paper: #14150f; --panel: #1c1d16; --sunk: #23241b;
+    --ink: #f2efe6; --ink-2: #a8a494; --ink-3: #77746a;
+    --rule: #2e2f26; --rule-mid: #45463a; --rule-heavy: #f2efe6;
+    --s1: #0fa892; --s2: #e06a35;
+    --ok: #3fae55; --warn: #d9a01f; --bad: #e2635a;
+    --s1-wash: rgba(15,168,146,0.14); --s2-wash: rgba(224,106,53,0.14);
   }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #14150f; --panel: #1c1d16; --sunk: #23241b;
+  --ink: #f2efe6; --ink-2: #a8a494; --ink-3: #77746a;
+  --rule: #2e2f26; --rule-mid: #45463a; --rule-heavy: #f2efe6;
+  --s1: #0fa892; --s2: #e06a35;
+  --ok: #3fae55; --warn: #d9a01f; --bad: #e2635a;
+  --s1-wash: rgba(15,168,146,0.14); --s2-wash: rgba(224,106,53,0.14);
+}
 
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--page); color: var(--text-primary);
-    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-    font-size: 15px; line-height: 1.45;
-  }
-  .wrap { max-width: 1080px; margin: 0 auto; padding: 24px 20px 80px; }
-  header.top { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-  h1 { font-size: 24px; font-weight: 650; margin: 0; }
-  .subtitle { color: var(--text-secondary); margin: 6px 0 20px; max-width: 74ch; }
-  h2 { font-size: 17px; font-weight: 650; margin: 0 0 12px; }
-  h3 { font-size: 13px; font-weight: 650; margin: 16px 0 8px; color: var(--text-secondary);
-       text-transform: uppercase; letter-spacing: 0.04em; }
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--paper); color: var(--ink);
+  font-family: var(--sans); font-size: 15px; line-height: 1.5;
+}
+.sheet { max-width: 1140px; margin: 0 auto; padding: 0 22px 90px; }
 
-  .card { background: var(--surface-1); border: 1px solid var(--border);
-          border-radius: 12px; padding: 20px; margin-bottom: 16px; }
-  .grid { display: grid; gap: 14px 18px; }
-  .cols-4 { grid-template-columns: repeat(4, 1fr); }
-  .cols-3 { grid-template-columns: repeat(3, 1fr); }
-  @media (max-width: 860px) { .cols-4, .cols-3 { grid-template-columns: repeat(2, 1fr); } }
-  @media (max-width: 520px) { .cols-4, .cols-3 { grid-template-columns: 1fr; } }
+/* ---------------------------------------------------------------- masthead */
+.masthead { border-bottom: 3px solid var(--rule-heavy); padding: 26px 0 10px; margin-bottom: 2px; }
+.masthead-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+h1 {
+  font-size: clamp(26px, 4.4vw, 40px); line-height: 1; margin: 0; font-weight: 800;
+  letter-spacing: -0.025em; text-transform: uppercase;
+}
+h1 .thin { font-weight: 300; }
+.masthead-meta {
+  font-family: var(--mono); font-size: 11px; color: var(--ink-3);
+  text-transform: uppercase; letter-spacing: 0.1em; text-align: right; line-height: 1.7;
+}
+.masthead-rule {
+  display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  border-top: 1px solid var(--rule); margin-top: 12px; padding-top: 8px;
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+.lede { max-width: 68ch; color: var(--ink-2); margin: 20px 0 34px; font-size: 15.5px; }
 
-  label.field { display: flex; flex-direction: column; gap: 4px; font-size: 13px;
-                color: var(--text-secondary); font-weight: 550; }
-  label.field .hint { font-weight: 400; color: var(--text-muted); font-size: 12px; }
-  input, select { font: inherit; color: var(--text-primary); background: var(--page);
-                  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; width: 100%; }
-  input:focus, select:focus { outline: 2px solid var(--series-1); outline-offset: 1px; }
-  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+/* ------------------------------------------------------------- section rig */
+section.block { border-top: 2px solid var(--rule-heavy); padding: 0 0 34px; margin-top: 34px; }
+section.block > .inner { display: grid; grid-template-columns: 58px 1fr; gap: 0 20px; }
+.stamp {
+  font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: 0.1em;
+  color: var(--ink-3); padding-top: 12px;
+}
+.block-body { padding-top: 12px; min-width: 0; }
+h2 {
+  font-size: 15px; font-weight: 800; letter-spacing: 0.13em; text-transform: uppercase;
+  margin: 0 0 4px;
+}
+.block-note { color: var(--ink-2); font-size: 14px; margin: 0 0 18px; max-width: 72ch; }
+h3 {
+  font-family: var(--mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--ink-3); margin: 26px 0 10px;
+  border-bottom: 1px solid var(--rule); padding-bottom: 5px;
+}
+h3:first-child { margin-top: 0; }
+@media (max-width: 700px) {
+  section.block > .inner { grid-template-columns: 1fr; }
+  .stamp { padding-top: 10px; padding-bottom: 2px; }
+  .block-body { padding-top: 4px; }
+}
 
-  button { font: inherit; font-weight: 600; border-radius: 8px; border: 1px solid var(--border);
-           padding: 9px 16px; cursor: pointer; background: var(--surface-1); color: var(--text-primary); }
-  button.primary { background: var(--series-1); border-color: var(--series-1); color: #fff; }
-  button:not(.primary):hover { background: var(--accent-wash); }
-  button.small { padding: 4px 10px; font-size: 13px; font-weight: 500; }
-  button:disabled { opacity: 0.5; cursor: default; }
+/* ----------------------------------------------------------------- fields */
+.fieldgrid { display: grid; gap: 16px 22px; grid-template-columns: repeat(4, 1fr); }
+.fieldgrid.c3 { grid-template-columns: repeat(3, 1fr); }
+.fieldgrid.c2 { grid-template-columns: repeat(2, 1fr); }
+@media (max-width: 900px) { .fieldgrid, .fieldgrid.c3 { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .fieldgrid, .fieldgrid.c3, .fieldgrid.c2 { grid-template-columns: 1fr; } }
 
-  .prov { font-size: 11px; color: var(--text-muted); font-weight: 400; }
-  .prov::before { content: "· "; }
+label.f { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+label.f > .cap {
+  font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: 0.13em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+label.f > .hint { font-size: 11.5px; color: var(--ink-3); font-style: italic; }
+input, select {
+  font-family: var(--mono); font-size: 14px; color: var(--ink);
+  background: transparent; border: 0; border-bottom: 1px solid var(--rule-mid);
+  border-radius: 0; padding: 6px 2px; width: 100%; min-width: 0;
+  appearance: none; -webkit-appearance: none;
+}
+select {
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink-3) 50%),
+                    linear-gradient(135deg, var(--ink-3) 50%, transparent 50%);
+  background-position: right 10px center, right 5px center;
+  background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; padding-right: 22px;
+}
+input:focus, select:focus {
+  outline: 0; border-bottom: 2px solid var(--s1); padding-bottom: 5px; background: var(--s1-wash);
+}
+input::placeholder { color: var(--ink-3); opacity: 0.8; }
+input[type="checkbox"] { width: auto; }
 
-  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
-  @media (max-width: 860px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
-  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
-  .tile .label { font-size: 13px; color: var(--text-secondary); }
-  .tile .value { font-size: 26px; font-weight: 650; margin-top: 2px; }
-  .tile .sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
-  .tile.bare { border: none; padding: 0; background: none; }
+button {
+  font-family: var(--mono); font-size: 11.5px; font-weight: 700; letter-spacing: 0.11em;
+  text-transform: uppercase; border-radius: 0; border: 1.5px solid var(--ink);
+  padding: 9px 16px; cursor: pointer; background: transparent; color: var(--ink);
+  transition: background .12s, color .12s;
+}
+button:hover:not(:disabled) { background: var(--ink); color: var(--paper); }
+button.solid { background: var(--ink); color: var(--paper); }
+button.solid:hover { background: var(--s1); border-color: var(--s1); color: #fff; }
+button.ghost { border-color: var(--rule-mid); color: var(--ink-2); }
+button.tiny { padding: 4px 9px; font-size: 10px; }
+button:disabled { opacity: .45; cursor: default; }
+.controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 
-  .score-row { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
-  .score-hero { font-size: 52px; font-weight: 700; line-height: 1; }
-  .score-hero .of { font-size: 18px; color: var(--text-muted); font-weight: 500; }
-  .meter { flex: 1 1 260px; min-width: 220px; }
-  .meter .track { height: 10px; border-radius: 5px; background: var(--grid); overflow: hidden; }
-  .meter .fill { height: 100%; border-radius: 5px; transition: width .4s ease; }
-  .verdict { display: inline-flex; align-items: center; gap: 8px; font-weight: 650; margin-top: 8px; font-size: 16px; }
-  .caps { font-size: 13px; color: var(--warning-ink); margin-top: 4px; }
-  .score-detail { width: 100%; margin-top: 14px; }
-  .score-detail table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  .score-detail td { padding: 5px 8px 5px 0; color: var(--text-secondary); border-bottom: 1px solid var(--grid); }
-  .score-detail td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-primary); white-space: nowrap; }
+/* ------------------------------------------------------------ grade stamp */
+.verdict-rig { display: grid; grid-template-columns: auto 1fr; gap: 28px; align-items: start; }
+@media (max-width: 720px) { .verdict-rig { grid-template-columns: 1fr; } }
+.grade {
+  border: 3px solid var(--rule-heavy); padding: 14px 22px 12px; text-align: center;
+  min-width: 190px; background: var(--panel);
+}
+.grade .cap {
+  font-family: var(--mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+.grade .num {
+  font-family: var(--mono); font-size: 66px; line-height: 0.94; font-weight: 700;
+  letter-spacing: -0.04em; margin: 4px 0 0; font-variant-numeric: tabular-nums;
+}
+.grade .num .den { font-size: 20px; color: var(--ink-3); letter-spacing: 0; }
+.grade .verdict {
+  font-family: var(--mono); font-size: 12px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rule-mid);
+}
+.grade .caps { font-size: 11px; color: var(--warn); margin-top: 6px; line-height: 1.4; font-family: var(--sans); }
+.bandbar { display: flex; height: 6px; margin-top: 14px; border: 1px solid var(--rule-mid); }
+.bandbar span { flex: 1; }
 
-  .chart-block { position: relative; }
-  .chart-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-  .legend { display: flex; gap: 16px; font-size: 13px; color: var(--text-secondary); }
-  .legend .key { display: inline-flex; align-items: center; gap: 6px; }
-  .legend .swatch { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
-  svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-  .tooltip { position: absolute; pointer-events: none; z-index: 5; background: var(--surface-1);
-             border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 13px;
-             box-shadow: 0 4px 14px rgba(0,0,0,0.15); display: none; min-width: 165px; }
-  .tooltip .t-title { font-weight: 650; margin-bottom: 4px; }
-  .tooltip .t-row { display: flex; justify-content: space-between; gap: 12px; color: var(--text-secondary); }
-  .tooltip .t-row b { color: var(--text-primary); font-variant-numeric: tabular-nums; font-weight: 600; }
+table.ledger { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.ledger th {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ink-3); font-weight: 700; text-align: left; padding: 0 8px 6px 0;
+  border-bottom: 1px solid var(--rule-mid);
+}
+table.ledger td { padding: 7px 8px 7px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+table.ledger td.n, table.ledger th.n {
+  text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+table.ledger tr.total td { border-bottom: 0; border-top: 2px solid var(--rule-heavy); font-weight: 700; }
+.src { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+.barcell { position: relative; }
+.barcell .fill { position: absolute; left: 0; top: 50%; transform: translateY(-50%); height: 9px; background: var(--s1-wash); border-left: 2px solid var(--s1); }
 
-  details.table-view { margin-top: 8px; }
-  details.table-view summary { cursor: pointer; font-size: 13px; color: var(--text-muted); }
-  details.table-view table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
-  details.table-view th, details.table-view td { text-align: right; padding: 4px 8px;
-    border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
-  details.table-view th:first-child, details.table-view td:first-child { text-align: left; }
-  details.table-view th { color: var(--text-secondary); font-weight: 600; }
+/* -------------------------------------------------------------- figures */
+#tiles { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--rule); }
+@media (max-width: 860px) { #tiles { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 460px) { #tiles { grid-template-columns: 1fr; } }
+.tile { padding: 14px 18px 14px 0; border-right: 1px solid var(--rule); }
+.tile:last-child { border-right: 0; }
+@media (max-width: 860px) { .tile:nth-child(2n) { border-right: 0; } }
+.tile .cap {
+  font-family: var(--mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+.tile .val {
+  font-family: var(--mono); font-size: 25px; font-weight: 700; letter-spacing: -0.025em;
+  margin-top: 5px; font-variant-numeric: tabular-nums;
+}
+.tile .sub { font-size: 11.5px; color: var(--ink-3); margin-top: 3px; line-height: 1.35; }
 
-  ul.findings { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 9px; }
-  ul.findings li { display: flex; gap: 10px; align-items: flex-start; }
-  ul.findings .icon { flex: 0 0 auto; font-size: 15px; line-height: 1.4; }
-  ul.findings .tag { font-weight: 650; margin-right: 4px; }
-  .f-good .tag { color: var(--delta-good); }
-  .f-warning .tag { color: var(--warning-ink); }
-  .f-critical .tag { color: var(--status-critical); }
+/* --------------------------------------------------------------- charts */
+.chart-rig { position: relative; }
+.legend { display: flex; gap: 18px; flex-wrap: wrap; font-family: var(--mono); font-size: 10.5px;
+          letter-spacing: 0.09em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 10px; }
+.legend .key { display: inline-flex; align-items: center; gap: 7px; }
+.legend .sw { width: 16px; height: 3px; display: inline-block; }
+svg text { font-family: var(--mono); }
+.tip {
+  position: absolute; pointer-events: none; z-index: 9; background: var(--panel);
+  border: 1.5px solid var(--rule-heavy); padding: 9px 11px; font-size: 12px; display: none; min-width: 172px;
+}
+.tip .h { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+          border-bottom: 1px solid var(--rule); padding-bottom: 4px; margin-bottom: 5px; }
+.tip .r { display: flex; justify-content: space-between; gap: 14px; color: var(--ink-2); }
+.tip .r b { color: var(--ink); font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
-  #compare-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  #compare-table th, #compare-table td { padding: 8px 10px; border-bottom: 1px solid var(--grid);
-    text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  #compare-table th:first-child, #compare-table td:first-child { text-align: left; }
-  #compare-table th { color: var(--text-secondary); font-weight: 600; font-size: 13px; }
-  #compare-table td.best { font-weight: 700; }
-  #compare-table td.best::after { content: " ★"; color: var(--text-muted); font-weight: 400; }
+details.tv { margin-top: 10px; }
+details.tv summary {
+  cursor: pointer; font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+details.tv[open] summary { margin-bottom: 8px; }
 
-  .checklist { columns: 2; column-gap: 32px; font-size: 14px; color: var(--text-secondary); }
-  @media (max-width: 700px) { .checklist { columns: 1; } }
-  .checklist li { margin-bottom: 6px; break-inside: avoid; }
+/* -------------------------------------------------------------- findings */
+ul.findings { list-style: none; padding: 0; margin: 0; }
+ul.findings li {
+  display: grid; grid-template-columns: 30px 1fr; gap: 10px; align-items: start;
+  padding: 10px 0; border-bottom: 1px solid var(--rule);
+}
+ul.findings .mk { font-family: var(--mono); font-size: 12px; font-weight: 700; padding-top: 1px; }
+ul.findings .tag {
+  font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: 0.12em;
+  text-transform: uppercase; margin-right: 7px;
+}
+li.f-good .mk, li.f-good .tag { color: var(--ok); }
+li.f-warning .mk, li.f-warning .tag { color: var(--warn); }
+li.f-critical .mk, li.f-critical .tag { color: var(--bad); }
+.findings-body { font-size: 13.5px; color: var(--ink-2); }
+.findings-body .tag { color: inherit; }
 
-  .banner { border-radius: 8px; padding: 10px 14px; font-size: 14px; margin-bottom: 12px;
-            border: 1px solid var(--border); display: flex; gap: 8px; align-items: flex-start; }
-  .banner.info { background: var(--accent-wash); }
-  .footnote { font-size: 12px; color: var(--text-muted); margin-top: 20px; max-width: 92ch; }
-  .footnote a { color: inherit; }
-  #results { display: none; }
-  .overflow-x { overflow-x: auto; }
-  .spec-line { font-size: 14px; color: var(--text-secondary); }
-  .stars { letter-spacing: 2px; }
+/* --------------------------------------------------------------- recalls */
+.recall { border-bottom: 1px solid var(--rule); padding: 11px 0; }
+.recall summary { cursor: pointer; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.recall .comp { font-family: var(--mono); font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+.recall .camp { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); }
+.recall .crit { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.1em; color: var(--bad); border: 1px solid var(--bad); padding: 1px 5px; }
+.recall .detail { font-size: 13px; color: var(--ink-2); margin-top: 9px; padding-left: 2px; }
+.recall .detail dt { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin-top: 7px; }
+.recall .detail dd { margin: 2px 0 0; }
+.recall label.verify { display: inline-flex; gap: 7px; align-items: center; margin-top: 9px; font-size: 12px; color: var(--ink-2); }
+
+.speclist { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px 20px; }
+.speclist .cap { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.13em; text-transform: uppercase; color: var(--ink-3); }
+.speclist .v { font-family: var(--mono); font-size: 13px; margin-top: 2px; }
+.stars { font-size: 15px; letter-spacing: 2px; }
+
+/* ------------------------------------------------------------ comparison */
+#compare-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+#compare-table th {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink-3); font-weight: 700; text-align: right; padding: 0 10px 6px 0;
+  border-bottom: 1.5px solid var(--rule-heavy); white-space: nowrap;
+}
+#compare-table th:first-child, #compare-table td:first-child { text-align: left; }
+#compare-table td {
+  padding: 8px 10px 8px 0; border-bottom: 1px solid var(--rule); text-align: right;
+  font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+#compare-table td.best { font-weight: 700; color: var(--s1); }
+#compare-table td.best::after { content: " ◆"; font-size: 9px; }
+
+ul.checks { list-style: none; padding: 0; margin: 0; columns: 2; column-gap: 34px; }
+@media (max-width: 720px) { ul.checks { columns: 1; } }
+ul.checks li {
+  font-size: 13.5px; color: var(--ink-2); margin-bottom: 9px; break-inside: avoid;
+  padding-left: 22px; position: relative;
+}
+ul.checks li::before {
+  content: "☐"; position: absolute; left: 0; top: -1px; font-family: var(--mono);
+  color: var(--ink-3); font-size: 13px;
+}
+
+.callout { border-left: 3px solid var(--s1); background: var(--s1-wash); padding: 11px 14px; font-size: 13.5px; margin: 14px 0; }
+.callout.warn { border-left-color: var(--warn); background: transparent; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+.colophon {
+  border-top: 2px solid var(--rule-heavy); margin-top: 40px; padding-top: 14px;
+  font-size: 11.5px; color: var(--ink-3); max-width: 92ch; line-height: 1.6;
+}
+.colophon a { color: var(--ink-2); }
+.scroller { overflow-x: auto; }
+#results { display: none; }
+.rec-row { background: var(--s1-wash); }
+.rec-row td { font-weight: 700; }
+.rec-flag { font-family: var(--mono); font-size: 9px; letter-spacing: 0.1em; color: var(--s1); }
+
+@media print {
+  body { background: #fff; color: #000; font-size: 11pt; }
+  .noprint, section.block:has(#btn-analyze), #keys-block { display: none !important; }
+  .sheet { max-width: none; padding: 0; }
+  section.block { break-inside: avoid; page-break-inside: avoid; }
+  .grade { border-color: #000; }
+}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header class="top">
-    <h1>Used Car Deal Analyzer</h1>
-    <div class="row">
-      <button id="btn-keys" class="small" type="button">⚙ Data sources</button>
-      <button id="theme-toggle" class="small" type="button" aria-label="Toggle dark mode">◐ Theme</button>
+<div class="sheet">
+
+  <header class="masthead">
+    <div class="masthead-top">
+      <h1>Vehicle Condition<br><span class="thin">&amp; Deal Report</span></h1>
+      <div class="masthead-meta">
+        <div>Form UCDA-1 &nbsp;·&nbsp; Rev 2</div>
+        <div id="report-date">—</div>
+        <div class="controls noprint" style="justify-content:flex-end;margin-top:8px">
+          <button class="tiny ghost" id="btn-keys" type="button">Sources</button>
+          <button class="tiny ghost" id="theme-toggle" type="button">Invert</button>
+          <button class="tiny ghost" id="btn-print" type="button">Print</button>
+        </div>
+      </div>
+    </div>
+    <div class="masthead-rule">
+      <span>Prepared for the buyer</span>
+      <span id="masthead-subject">No vehicle entered</span>
+      <span id="masthead-mode">Offline · built-in data</span>
     </div>
   </header>
-  <p class="subtitle">
-    Enter a car you're considering. This estimates its fair value, projects the full cost of
-    ownership, checks the financing, pulls open safety recalls and crash ratings from NHTSA,
-    scores the deal 0–100, and gives you a negotiation target and walk-away price. Save several
-    candidates to compare. Everything runs in your browser; nothing you type is sent anywhere.
+
+  <p class="lede">
+    A complete workup on a used car before you buy it: what it is really worth, what it will
+    cost you over the years you keep it, which loan length actually makes sense, and every
+    open safety recall on record. Fill in the sections below and the report writes itself.
+    Nothing you enter leaves this browser.
   </p>
 
-  <section class="card" id="keys-card" style="display:none">
-    <h2>Data sources &amp; API keys</h2>
-    <p class="subtitle" style="margin-top:0">
-      The tool works fully offline from its built-in dataset. Free NHTSA and EPA lookups need no
-      key. These optional free keys add live prices and market context. Keys are stored only in
-      this browser's local storage and are sent directly to the provider.
-    </p>
-    <div class="grid cols-3">
-      <label class="field">EIA API key <span class="hint">live fuel &amp; electricity prices — free at eia.gov/opendata</span>
-        <input id="key-eia" type="text" placeholder="optional" autocomplete="off"></label>
-      <label class="field">FRED API key <span class="hint">used-car price trend — free at fred.stlouisfed.org</span>
-        <input id="key-fred" type="text" placeholder="optional" autocomplete="off"></label>
-      <label class="field">Marketcheck API key <span class="hint">auto-fill live market comps</span>
-        <input id="key-marketcheck" type="text" placeholder="optional" autocomplete="off"></label>
-    </div>
-    <div class="row" style="margin-top:14px">
-      <button class="small" id="btn-save-keys" type="button">Save keys</button>
-      <button class="small" id="btn-clear-keys" type="button">Clear keys</button>
-      <span id="keys-status" class="prov"></span>
-    </div>
+  <section class="block noprint" id="keys-block" style="display:none">
+    <div class="inner"><div class="stamp">00</div><div class="block-body">
+      <h2>Data sources</h2>
+      <p class="block-note">
+        The report works fully offline from its built-in dataset. VIN decoding, recalls,
+        complaints, crash ratings and EPA fuel economy come from free U.S. government APIs that
+        need no key. These optional free keys add live prices and market context; they are kept
+        in this browser only and sent straight to the provider.
+      </p>
+      <div class="fieldgrid c3">
+        <label class="f"><span class="cap">EIA key</span><span class="hint">live fuel &amp; electricity — eia.gov/opendata</span>
+          <input id="key-eia" type="text" placeholder="optional" autocomplete="off"></label>
+        <label class="f"><span class="cap">FRED key</span><span class="hint">used-car price index — fred.stlouisfed.org</span>
+          <input id="key-fred" type="text" placeholder="optional" autocomplete="off"></label>
+        <label class="f"><span class="cap">Marketcheck key</span><span class="hint">auto-fill live comps</span>
+          <input id="key-marketcheck" type="text" placeholder="optional" autocomplete="off"></label>
+      </div>
+      <div class="controls" style="margin-top:16px">
+        <button class="tiny" id="btn-save-keys" type="button">Save</button>
+        <button class="tiny ghost" id="btn-clear-keys" type="button">Clear</button>
+        <span class="src" id="keys-status"></span>
+      </div>
+    </div></div>
   </section>
 
-  <section class="card">
-    <h2>1 · The car</h2>
-    <div class="grid cols-4">
-      <label class="field">VIN <span class="hint">optional — decodes the car and pulls recalls</span>
-        <input id="in-vin" type="text" placeholder="17 characters" autocomplete="off" maxlength="17"></label>
-      <label class="field">&nbsp;
-        <button id="btn-vin" type="button">Decode VIN &amp; check recalls</button></label>
-      <label class="field">Nickname <span class="hint">for the comparison table</span>
-        <input id="in-name" type="text" placeholder="Blue Camry — corner lot"></label>
-      <label class="field">Model year
-        <input id="in-year" type="number" min="1981" max="2027" value="2019"></label>
-      <label class="field">Make
-        <select id="in-brand"></select></label>
-      <label class="field">Model <span class="hint">picks up exact EPA fuel economy</span>
-        <input id="in-model" list="model-list" placeholder="e.g. Camry">
-        <datalist id="model-list"></datalist></label>
-      <label class="field">Vehicle type
-        <select id="in-segment"></select></label>
-      <label class="field">Odometer (miles)
-        <input id="in-miles" type="number" min="0" step="1000" value="60000"></label>
-      <label class="field">Asking price ($)
-        <input id="in-price" type="number" min="0" step="100" value="18500"></label>
-      <label class="field">Fuel economy (MPG combined) <span class="hint" id="mpg-hint">blank = from EPA data</span>
-        <input id="in-mpg" type="number" min="5" max="150" placeholder="auto"></label>
-      <label class="field">Condition
-        <select id="in-condition">
-          <option value="excellent">Excellent (like new)</option>
-          <option value="good" selected>Good (minor wear)</option>
-          <option value="fair">Fair (visible wear, some issues)</option>
-          <option value="poor">Poor (mechanical or body problems)</option>
-        </select></label>
-    </div>
-    <div id="vin-result" style="margin-top:14px"></div>
+  <section class="block noprint">
+    <div class="inner"><div class="stamp">01</div><div class="block-body">
+      <h2>Subject vehicle</h2>
+      <p class="block-note">
+        Enter the VIN and the rest fills itself in, along with the car's recall and safety record.
+        No VIN? Fill in make, model and year by hand — everything still works.
+      </p>
+      <div class="fieldgrid">
+        <label class="f"><span class="cap">VIN</span><span class="hint">17 characters</span>
+          <input id="in-vin" type="text" maxlength="17" autocomplete="off" placeholder="—"></label>
+        <label class="f"><span class="cap">&nbsp;</span>
+          <button id="btn-vin" type="button" style="margin-top:2px">Decode &amp; check recalls</button></label>
+        <label class="f"><span class="cap">Reference name</span><span class="hint">for the comparison table</span>
+          <input id="in-name" type="text" placeholder="Blue Camry, corner lot"></label>
+        <label class="f"><span class="cap">Model year</span>
+          <input id="in-year" type="number" min="1981" max="2027" value="2019"></label>
+        <label class="f"><span class="cap">Make</span><select id="in-brand"></select></label>
+        <label class="f"><span class="cap">Model</span><span class="hint">matches EPA fuel economy</span>
+          <input id="in-model" list="model-list" placeholder="Camry"><datalist id="model-list"></datalist></label>
+        <label class="f"><span class="cap">Class</span><select id="in-segment"></select></label>
+        <label class="f"><span class="cap">Odometer</span><span class="hint">miles</span>
+          <input id="in-miles" type="number" min="0" step="1000" value="60000"></label>
+        <label class="f"><span class="cap">Asking price</span><span class="hint">dollars</span>
+          <input id="in-price" type="number" min="0" step="100" value="18500"></label>
+        <label class="f"><span class="cap">Combined MPG</span><span class="hint" id="mpg-hint">blank = EPA figure</span>
+          <input id="in-mpg" type="number" min="5" max="150" placeholder="auto"></label>
+        <label class="f"><span class="cap">Condition</span>
+          <select id="in-condition">
+            <option value="excellent">Excellent — like new</option>
+            <option value="good" selected>Good — minor wear</option>
+            <option value="fair">Fair — visible wear</option>
+            <option value="poor">Poor — known problems</option>
+          </select></label>
+      </div>
+      <div id="vin-result"></div>
+    </div></div>
   </section>
 
-  <section class="card">
-    <h2>2 · History &amp; market comps</h2>
-    <div class="grid cols-4">
-      <label class="field">Title status
-        <select id="in-title">
-          <option value="clean" selected>Clean</option>
-          <option value="rebuilt">Rebuilt / salvage</option>
-          <option value="lemon">Lemon / manufacturer buyback</option>
-        </select></label>
-      <label class="field">Accident history
-        <select id="in-accidents">
-          <option value="none" selected>None reported</option>
-          <option value="minor">Minor accident(s)</option>
-          <option value="major">Major / structural damage</option>
-          <option value="unknown">No history report available</option>
-        </select></label>
-      <label class="field">Previous owners
-        <input id="in-owners" type="number" min="1" max="10" value="1"></label>
-      <label class="field">Service records
-        <select id="in-records">
-          <option value="yes" selected>Available</option>
-          <option value="partial">Partial</option>
-          <option value="no">None</option>
-        </select></label>
-      <label class="field">Market comp #1 ($) <span class="hint">same year, trim &amp; miles</span>
-        <input id="in-comp1" type="number" min="0" step="100" placeholder="from KBB / Edmunds / Cars.com"></label>
-      <label class="field">Market comp #2 ($)
-        <input id="in-comp2" type="number" min="0" step="100" placeholder="optional"></label>
-      <label class="field">Market comp #3 ($)
-        <input id="in-comp3" type="number" min="0" step="100" placeholder="optional"></label>
-      <label class="field">Pre-purchase inspection
-        <select id="in-ppi">
-          <option value="yes">Done — passed</option>
-          <option value="planned" selected>Planned before purchase</option>
-          <option value="no">Not done / seller refused</option>
-        </select></label>
-    </div>
-    <div class="row" style="margin-top:12px">
-      <button class="small" id="btn-comps" type="button" style="display:none">Auto-fill comps from Marketcheck</button>
-      <label class="row" style="font-size:13px;color:var(--text-secondary);gap:6px">
-        <input type="checkbox" id="in-recalls-verified" style="width:auto">
-        Seller has documented that all open recalls were repaired
-      </label>
-    </div>
+  <section class="block noprint">
+    <div class="inner"><div class="stamp">02</div><div class="block-body">
+      <h2>History &amp; market comparables</h2>
+      <p class="block-note">
+        Comparables are the single biggest lever on accuracy. Pull one to three asking prices for
+        the same year, trim and mileage from KBB, Edmunds, Cars.com or Carvana. Without them the
+        price component of the score stays neutral rather than guessing.
+      </p>
+      <div class="fieldgrid">
+        <label class="f"><span class="cap">Title</span>
+          <select id="in-title">
+            <option value="clean" selected>Clean</option>
+            <option value="rebuilt">Rebuilt / salvage</option>
+            <option value="lemon">Lemon buyback</option>
+          </select></label>
+        <label class="f"><span class="cap">Accidents</span>
+          <select id="in-accidents">
+            <option value="none" selected>None reported</option>
+            <option value="minor">Minor</option>
+            <option value="major">Major / structural</option>
+            <option value="unknown">No report available</option>
+          </select></label>
+        <label class="f"><span class="cap">Prior owners</span>
+          <input id="in-owners" type="number" min="1" max="10" value="1"></label>
+        <label class="f"><span class="cap">Service records</span>
+          <select id="in-records">
+            <option value="yes" selected>Complete</option>
+            <option value="partial">Partial</option>
+            <option value="no">None</option>
+          </select></label>
+        <label class="f"><span class="cap">Comparable 1</span><span class="hint">dollars</span>
+          <input id="in-comp1" type="number" min="0" step="100" placeholder="—"></label>
+        <label class="f"><span class="cap">Comparable 2</span>
+          <input id="in-comp2" type="number" min="0" step="100" placeholder="—"></label>
+        <label class="f"><span class="cap">Comparable 3</span>
+          <input id="in-comp3" type="number" min="0" step="100" placeholder="—"></label>
+        <label class="f"><span class="cap">Inspection</span>
+          <select id="in-ppi">
+            <option value="yes">Done — passed</option>
+            <option value="planned" selected>Planned</option>
+            <option value="no">Not done / refused</option>
+          </select></label>
+      </div>
+      <div class="controls" style="margin-top:16px">
+        <button class="tiny" id="btn-comps" type="button" style="display:none">Auto-fill from Marketcheck</button>
+        <label style="display:inline-flex;gap:8px;align-items:center;font-size:12.5px;color:var(--ink-2)">
+          <input type="checkbox" id="in-recalls-verified"> All open recalls documented as repaired
+        </label>
+      </div>
+    </div></div>
   </section>
 
-  <section class="card">
-    <h2>3 · Financing &amp; ownership plan</h2>
-    <div class="grid cols-4">
-      <label class="field">How will you pay?
-        <select id="in-paytype">
-          <option value="loan" selected>Finance (loan)</option>
-          <option value="cash">Cash</option>
-        </select></label>
-      <label class="field">Down payment ($)
-        <input id="in-down" type="number" min="0" step="100" value="3000"></label>
-      <label class="field">Credit tier <span class="hint">sets the default APR</span>
-        <select id="in-credit">
-          <option value="superprime">Super prime (781+)</option>
-          <option value="prime" selected>Prime (661–780)</option>
-          <option value="nearprime">Near prime (601–660)</option>
-          <option value="subprime">Subprime (501–600)</option>
-          <option value="deepsub">Deep subprime (below 501)</option>
-        </select></label>
-      <label class="field">APR (%) <span class="hint" id="apr-hint">blank = tier average</span>
-        <input id="in-apr" type="number" min="0" max="40" step="0.1" placeholder="auto"></label>
-      <label class="field">Loan term (months)
-        <select id="in-term">
-          <option value="36">36</option><option value="48" selected>48</option>
-          <option value="60">60</option><option value="72">72</option><option value="84">84</option>
-        </select></label>
-      <label class="field">Sales tax (%)
-        <input id="in-tax" type="number" min="0" max="15" step="0.1" value="6.0"></label>
-      <label class="field">Dealer / doc / title fees ($)
-        <input id="in-fees" type="number" min="0" step="50" value="500"></label>
-      <label class="field">Your annual driving (miles)
-        <input id="in-annualmiles" type="number" min="1000" step="500" value="12000"></label>
-      <label class="field">Years you plan to keep it
-        <input id="in-horizon" type="number" min="1" max="15" value="5"></label>
-      <label class="field">State <span class="hint">regional fuel &amp; electricity prices</span>
-        <select id="in-state"></select></label>
-      <label class="field">Fuel price ($/gal) <span class="hint" id="gas-hint">blank = built-in average</span>
-        <input id="in-gas" type="number" min="0.5" max="10" step="0.05" placeholder="auto"></label>
-      <label class="field">Insurance ($/yr) <span class="hint">blank = class average</span>
-        <input id="in-insurance" type="number" min="0" step="50" placeholder="auto"></label>
-      <label class="field">Monthly take-home income ($) <span class="hint">optional — affordability check</span>
-        <input id="in-income" type="number" min="0" step="100" placeholder="optional"></label>
-    </div>
-    <div class="row" style="margin-top:18px">
-      <button class="primary" id="btn-analyze" type="button">Analyze this deal</button>
-      <button id="btn-save" type="button" style="display:none">＋ Save to comparison</button>
-      <span id="live-status" class="prov"></span>
-    </div>
+  <section class="block noprint">
+    <div class="inner"><div class="stamp">03</div><div class="block-body">
+      <h2>Financing &amp; ownership plan</h2>
+      <p class="block-note">
+        Leave APR blank to use the average for your credit tier. Enter your monthly take-home pay
+        and the report will also work out which loan length you can actually afford.
+      </p>
+      <div class="fieldgrid">
+        <label class="f"><span class="cap">Payment method</span>
+          <select id="in-paytype"><option value="loan" selected>Finance</option><option value="cash">Cash</option></select></label>
+        <label class="f"><span class="cap">Down payment</span><span class="hint">dollars</span>
+          <input id="in-down" type="number" min="0" step="100" value="3000"></label>
+        <label class="f"><span class="cap">Credit tier</span>
+          <select id="in-credit">
+            <option value="superprime">Super prime · 781+</option>
+            <option value="prime" selected>Prime · 661–780</option>
+            <option value="nearprime">Near prime · 601–660</option>
+            <option value="subprime">Subprime · 501–600</option>
+            <option value="deepsub">Deep subprime · &lt;501</option>
+          </select></label>
+        <label class="f"><span class="cap">APR</span><span class="hint" id="apr-hint">blank = tier average</span>
+          <input id="in-apr" type="number" min="0" max="40" step="0.1" placeholder="auto"></label>
+        <label class="f"><span class="cap">Loan term</span><span class="hint">months</span>
+          <select id="in-term">
+            <option value="24">24</option><option value="36">36</option>
+            <option value="48" selected>48</option><option value="60">60</option>
+            <option value="72">72</option><option value="84">84</option>
+          </select></label>
+        <label class="f"><span class="cap">Target payment</span><span class="hint">optional — solves for term</span>
+          <input id="in-target-payment" type="number" min="0" step="25" placeholder="—"></label>
+        <label class="f"><span class="cap">Sales tax</span><span class="hint">percent</span>
+          <input id="in-tax" type="number" min="0" max="15" step="0.1" value="6.0"></label>
+        <label class="f"><span class="cap">Dealer fees</span><span class="hint">doc, title, dollars</span>
+          <input id="in-fees" type="number" min="0" step="50" value="500"></label>
+        <label class="f"><span class="cap">Annual driving</span><span class="hint">miles</span>
+          <input id="in-annualmiles" type="number" min="1000" step="500" value="12000"></label>
+        <label class="f"><span class="cap">Years kept</span>
+          <input id="in-horizon" type="number" min="1" max="15" value="5"></label>
+        <label class="f"><span class="cap">State</span><span class="hint">regional energy prices</span>
+          <select id="in-state"></select></label>
+        <label class="f"><span class="cap">Fuel price</span><span class="hint" id="gas-hint">dollars per gallon</span>
+          <input id="in-gas" type="number" min="0.5" max="10" step="0.05" placeholder="auto"></label>
+        <label class="f"><span class="cap">Insurance</span><span class="hint">dollars per year</span>
+          <input id="in-insurance" type="number" min="0" step="50" placeholder="auto"></label>
+        <label class="f"><span class="cap">Take-home pay</span><span class="hint">per month, optional</span>
+          <input id="in-income" type="number" min="0" step="100" placeholder="—"></label>
+      </div>
+      <div class="controls" style="margin-top:24px">
+        <button class="solid" id="btn-analyze" type="button">Generate report</button>
+        <button id="btn-save" type="button" style="display:none">Add to comparison</button>
+        <span class="src" id="live-status"></span>
+      </div>
+    </div></div>
   </section>
 
   <div id="results">
-    <section class="card" id="score-card">
-      <h2>Deal score</h2>
-      <div class="score-row">
-        <div class="score-hero"><span id="score-num">–</span><span class="of"> / 100</span></div>
-        <div class="meter">
-          <div class="track"><div class="fill" id="score-fill" style="width:0%"></div></div>
-          <div class="verdict" id="score-verdict"></div>
-          <div class="caps" id="score-caps"></div>
+
+    <section class="block">
+      <div class="inner"><div class="stamp">04</div><div class="block-body">
+        <h2>Assessment</h2>
+        <div class="verdict-rig">
+          <div>
+            <div class="grade">
+              <div class="cap">Deal score</div>
+              <div class="num"><span id="score-num">—</span><span class="den">/100</span></div>
+              <div class="verdict" id="score-verdict"></div>
+              <div class="caps" id="score-caps"></div>
+            </div>
+            <div class="bandbar" id="score-band" aria-hidden="true"></div>
+            <div class="src" style="margin-top:6px" id="band-legend"></div>
+          </div>
+          <div>
+            <table class="ledger" id="score-breakdown-wrap">
+              <thead><tr><th>Component</th><th class="n">Points</th><th>Basis</th></tr></thead>
+              <tbody id="score-breakdown"></tbody>
+            </table>
+          </div>
         </div>
-        <div class="score-detail"><table id="score-breakdown"></table></div>
-      </div>
+      </div></div>
     </section>
 
-    <section class="card" id="identity-card" style="display:none">
-      <h2>Vehicle record</h2>
-      <div id="identity-body"></div>
+    <section class="block" id="identity-block" style="display:none">
+      <div class="inner"><div class="stamp">05</div><div class="block-body">
+        <h2>Vehicle record</h2>
+        <p class="block-note">Pulled live from the National Highway Traffic Safety Administration and the EPA.</p>
+        <div id="identity-body"></div>
+      </div></div>
     </section>
 
-    <div class="tiles" id="tiles"></div>
-
-    <section class="card">
-      <h2>Price &amp; negotiation</h2>
-      <div id="price-analysis"></div>
+    <section class="block">
+      <div class="inner"><div class="stamp">06</div><div class="block-body">
+        <h2>Key figures</h2>
+        <div id="tiles"></div>
+      </div></div>
     </section>
 
-    <section class="card chart-block">
-      <div class="chart-head">
-        <h2>Value vs. loan balance</h2>
+    <section class="block">
+      <div class="inner"><div class="stamp">07</div><div class="block-body">
+        <h2>Price position &amp; negotiation</h2>
+        <div id="price-narrative"></div>
+        <h3>Where the asking price sits</h3>
+        <div class="legend" id="price-legend"></div>
+        <div class="chart-rig">
+          <div class="scroller"><div id="price-chart"></div></div>
+          <div class="tip" id="price-tip"></div>
+        </div>
+        <div id="price-ladder"></div>
+        <div id="price-solver"></div>
+        <div id="afford-check"></div>
+      </div></div>
+    </section>
+
+    <section class="block" id="term-block">
+      <div class="inner"><div class="stamp">08</div><div class="block-body">
+        <h2>How long should the loan be?</h2>
+        <p class="block-note">
+          Every extra year of term buys a smaller payment and costs real interest — and keeps you
+          owing more than the car is worth for longer. Both are priced out below.
+        </p>
+        <div id="term-body"></div>
+      </div></div>
+    </section>
+
+    <section class="block">
+      <div class="inner"><div class="stamp">09</div><div class="block-body">
+        <h2>Value against what you owe</h2>
         <div class="legend" id="line-legend"></div>
-      </div>
-      <p class="subtitle" id="equity-note" style="margin:6px 0 10px; font-size:13px;"></p>
-      <div class="overflow-x"><div id="line-chart"></div></div>
-      <div class="tooltip" id="line-tooltip"></div>
-      <details class="table-view"><summary>View as table</summary><div id="line-table"></div></details>
+        <p class="block-note" id="equity-note"></p>
+        <div class="chart-rig">
+          <div class="scroller"><div id="line-chart"></div></div>
+          <div class="tip" id="line-tooltip"></div>
+        </div>
+        <details class="tv"><summary>Show as table</summary><div class="scroller" id="line-table"></div></details>
+      </div></div>
     </section>
 
-    <section class="card chart-block">
-      <div class="chart-head"><h2 id="tco-title">Total cost of ownership</h2></div>
-      <p class="subtitle" id="tco-note" style="margin:6px 0 10px; font-size:13px;"></p>
-      <div class="overflow-x"><div id="bar-chart"></div></div>
-      <div class="tooltip" id="bar-tooltip"></div>
-      <details class="table-view"><summary>View as table</summary><div id="bar-table"></div></details>
+    <section class="block">
+      <div class="inner"><div class="stamp">10</div><div class="block-body">
+        <h2 id="tco-title">Cost of ownership</h2>
+        <p class="block-note" id="tco-note"></p>
+        <div class="chart-rig">
+          <div class="scroller"><div id="bar-chart"></div></div>
+          <div class="tip" id="bar-tooltip"></div>
+        </div>
+        <details class="tv"><summary>Show as table</summary><div class="scroller" id="bar-table"></div></details>
+        <h3>Running total by year</h3>
+        <div class="chart-rig">
+          <div class="scroller"><div id="cum-chart"></div></div>
+          <div class="tip" id="cum-tip"></div>
+        </div>
+      </div></div>
     </section>
 
-    <section class="card">
-      <h2>Findings &amp; red flags</h2>
-      <ul class="findings" id="findings"></ul>
+    <section class="block" id="complaint-block" style="display:none">
+      <div class="inner"><div class="stamp">11</div><div class="block-body">
+        <h2>What owners complain about</h2>
+        <p class="block-note" id="complaint-note"></p>
+        <div class="chart-rig">
+          <div class="scroller"><div id="complaint-chart"></div></div>
+          <div class="tip" id="complaint-tip"></div>
+        </div>
+      </div></div>
     </section>
 
-    <section class="card" id="compare-card" style="display:none">
-      <h2>Comparison</h2>
-      <div class="overflow-x"><table id="compare-table"></table></div>
-      <div class="row" style="margin-top:12px">
-        <button class="small" id="btn-clear-compare" type="button">Clear all saved cars</button>
-      </div>
+    <section class="block">
+      <div class="inner"><div class="stamp">12</div><div class="block-body">
+        <h2>Findings</h2>
+        <ul class="findings" id="findings"></ul>
+      </div></div>
     </section>
 
-    <section class="card">
-      <h2>Before you sign — inspection checklist</h2>
-      <ul class="checklist">
-        <li>Run the VIN through a history report (Carfax or AutoCheck) and check open recalls above.</li>
-        <li>Get an independent pre-purchase inspection (about $100–200). A seller who refuses is a walk-away.</li>
-        <li>Cold-start the engine; listen for ticking, knocking or rough idle, and watch for smoke.</li>
-        <li>Check all fluids: oil level and color, coolant, brake, transmission. Milky oil means walk away.</li>
-        <li>Look for mismatched paint, uneven panel gaps or overspray — signs of body repair.</li>
-        <li>Verify tire wear is even; uneven wear signals alignment or suspension problems.</li>
-        <li>Test every electronic: windows, locks, A/C both hot and cold, infotainment, cameras, all lights.</li>
-        <li>Drive at highway speed: check for vibration, pulling, transmission hesitation and brake shudder.</li>
-        <li>Confirm the title is in the seller's name and the VIN matches the dash and door jamb.</li>
-        <li>Get the out-the-door price in writing before discussing financing or a trade-in.</li>
-        <li>Decline dealer add-ons (VIN etching, nitrogen, paint protection) — they are nearly pure margin.</li>
-        <li>If financing at a dealer, arrive with a pre-approval from a bank or credit union to compare.</li>
-      </ul>
+    <section class="block" id="compare-card" style="display:none">
+      <div class="inner"><div class="stamp">13</div><div class="block-body">
+        <h2>Comparison</h2>
+        <div class="scroller"><table id="compare-table"></table></div>
+        <div class="controls noprint" style="margin-top:16px">
+          <button class="tiny ghost" id="btn-export" type="button">Export CSV</button>
+          <button class="tiny ghost" id="btn-clear-compare" type="button">Clear all</button>
+        </div>
+      </div></div>
+    </section>
+
+    <section class="block">
+      <div class="inner"><div class="stamp">14</div><div class="block-body">
+        <h2>Pre-purchase checklist</h2>
+        <ul class="checks">
+          <li>Run the VIN through a history report (Carfax or AutoCheck).</li>
+          <li>Confirm every open recall above was actually repaired — free at any franchised dealer.</li>
+          <li>Independent pre-purchase inspection, about $100–200. A refusal is a walk-away.</li>
+          <li>Cold-start it: listen for ticking, knocking, rough idle; watch for smoke.</li>
+          <li>Check fluids — oil level and colour, coolant, brake, transmission. Milky oil means leave.</li>
+          <li>Look for mismatched paint, uneven panel gaps, overspray — all signs of body repair.</li>
+          <li>Check tyre wear is even; uneven wear points at alignment or suspension.</li>
+          <li>Test every electrical item: windows, locks, A/C hot and cold, screen, cameras, lights.</li>
+          <li>Drive at highway speed — vibration, pulling, gear hesitation, brake shudder.</li>
+          <li>Confirm the title is in the seller's name and the VIN matches dash and door jamb.</li>
+          <li>Get the out-the-door price in writing before discussing financing or a trade-in.</li>
+          <li>Decline dealer add-ons: VIN etching, nitrogen, paint protection are nearly pure margin.</li>
+          <li>Arrive with a credit-union pre-approval so the dealer has to beat a real number.</li>
+        </ul>
+      </div></div>
     </section>
   </div>
 
-  <p class="footnote" id="data-footnote"></p>
+  <p class="colophon" id="data-footnote"></p>
 </div>
 
 <script src="data.js"></script>

@@ -355,7 +355,7 @@ def test_ui_renders_all_four_stat_tiles(page):
 
 def test_ui_renders_the_score_breakdown_summing_to_100(page):
     maxima = page.eval_on_selector_all(
-        "#score-breakdown td.num",
+        "#score-breakdown td.n",
         "els => els.map(e => parseFloat(e.textContent.split('/')[1]))",
     )
     assert maxima, "score breakdown is empty"
@@ -400,8 +400,10 @@ def test_ui_salvage_title_forces_a_walk_away_verdict(page):
     score = int(page.inner_text("#score-num"))
     assert score <= 40, f"a salvage title must cap the score, got {score}"
     assert "capped" in page.inner_text("#score-caps").lower()
-    findings = page.inner_text("#findings")
-    assert "Title" in findings
+    # Tags render uppercased by the report's type treatment, so match case-insensitively.
+    findings = page.inner_text("#findings").lower()
+    assert "title" in findings
+    assert "salvage" in findings
     page.select_option("#in-title", "clean")
     page.wait_for_timeout(400)
 
@@ -458,3 +460,193 @@ def test_ui_escapes_html_in_user_supplied_text(page):
     page.click("#btn-clear-compare")
     page.wait_for_timeout(300)
     page.fill("#in-name", "")
+
+
+# ------------------------------------------------- new report sections (UI)
+
+
+def test_ui_renders_the_loan_term_comparison(page):
+    """Section 08 must price out every term with payment, interest and underwater time."""
+    rows = page.eval_on_selector_all("#term-table tbody tr", "els => els.length")
+    assert rows >= 5, f"expected a row per loan length, got {rows}"
+    payments = page.eval_on_selector_all(
+        "#term-table tbody tr td:nth-child(2)",
+        "els => els.map(e => parseFloat(e.textContent.replace(/[^0-9.]/g, '')))",
+    )
+    assert payments == sorted(payments, reverse=True), \
+        "payments must fall as the term lengthens"
+    interest = page.eval_on_selector_all(
+        "#term-table tbody tr td:nth-child(3)",
+        "els => els.map(e => parseFloat(e.textContent.replace(/[^0-9.]/g, '')))",
+    )
+    assert interest == sorted(interest), "total interest must rise as the term lengthens"
+
+
+def test_ui_marks_a_recommended_term(page):
+    assert page.eval_on_selector_all("#term-table tr.rec-row", "els => els.length") == 1
+
+
+def _settle_scroll(page, tries=25):
+    """Wait until the page has stopped scrolling.
+
+    The report uses smooth scrolling after 'Add to comparison', and a long animation
+    can still be running when the next interaction starts — which would slide the
+    click target out from under the cursor.
+    """
+    last = None
+    for _ in range(tries):
+        current = page.evaluate("() => Math.round(window.scrollY)")
+        if current == last:
+            return
+        last = current
+        page.wait_for_timeout(100)
+
+
+def test_ui_clicking_a_term_row_adopts_it(page):
+    _settle_scroll(page)
+    row = page.locator("#term-table tbody tr[data-term='60']")
+    row.scroll_into_view_if_needed()
+    _settle_scroll(page)
+    row.click()
+    page.wait_for_timeout(400)
+    assert page.input_value("#in-term") == "60"
+    page.select_option("#in-term", "48")
+    page.wait_for_timeout(400)
+
+
+def test_ui_target_payment_solves_for_a_term(page):
+    page.fill("#in-target-payment", "300")
+    page.dispatch_event("#in-target-payment", "change")
+    page.wait_for_timeout(500)
+    body = page.inner_text("#term-body").lower()
+    assert "months" in body and "300" in body
+    page.fill("#in-target-payment", "5")
+    page.dispatch_event("#in-target-payment", "change")
+    page.wait_for_timeout(500)
+    assert "never pays this loan off" in page.inner_text("#term-body").lower()
+    page.fill("#in-target-payment", "")
+    page.dispatch_event("#in-target-payment", "change")
+    page.wait_for_timeout(400)
+
+
+def test_ui_term_section_hidden_for_cash(page):
+    page.select_option("#in-paytype", "cash")
+    page.wait_for_timeout(400)
+    assert page.eval_on_selector("#term-block", "e => e.style.display") == "none"
+    page.select_option("#in-paytype", "loan")
+    page.wait_for_timeout(400)
+    assert page.eval_on_selector("#term-block", "e => e.style.display") == "block"
+
+
+def test_ui_renders_the_price_position_chart(page):
+    """Section 07 plots the ask against fair value, target and walk-away."""
+    assert page.eval_on_selector_all("#price-chart svg", "els => els.length") == 1
+    labels = page.inner_text("#price-chart").upper()
+    for expected in ("ASKING", "FAIR VALUE", "TARGET", "WALK AWAY"):
+        assert expected in labels, f"{expected} missing from the price line"
+
+
+def test_ui_price_chart_plots_each_comparable(page):
+    page.fill("#in-comp1", "18000")
+    page.fill("#in-comp2", "19000")
+    page.dispatch_event("#in-comp2", "change")
+    page.wait_for_timeout(500)
+    circles = page.eval_on_selector_all("#price-chart circle", "els => els.length")
+    assert circles >= 3, "two comparables plus the asking marker"
+    page.fill("#in-comp1", "")
+    page.fill("#in-comp2", "")
+    page.dispatch_event("#in-comp2", "change")
+    page.wait_for_timeout(400)
+
+
+def test_ui_price_solver_names_a_target_price(page):
+    page.fill("#in-price", "26000")
+    page.fill("#in-comp1", "18000")
+    page.dispatch_event("#in-comp1", "change")
+    page.wait_for_timeout(600)
+    text = page.inner_text("#price-solver")
+    assert "$" in text and "score" in text.lower()
+    page.fill("#in-price", "18500")
+    page.fill("#in-comp1", "")
+    page.dispatch_event("#in-comp1", "change")
+    page.wait_for_timeout(400)
+
+
+def test_ui_renders_the_cumulative_cost_chart(page):
+    assert page.eval_on_selector_all("#cum-chart path", "els => els.length") >= 2, \
+        "expected an area wash and a line"
+    assert page.eval_on_selector_all("#cum-chart .cum-hit", "els => els.length") >= 2
+
+
+def test_ui_affordability_prompts_for_income_then_grades_it(page):
+    assert "take-home" in page.inner_text("#afford-check").lower()
+    page.fill("#in-income", "5200")
+    page.dispatch_event("#in-income", "change")
+    page.wait_for_timeout(500)
+    text = page.inner_text("#afford-check")
+    assert "20 / 4 / 10" in text
+    assert "PASS" in text or "OVER" in text
+    page.fill("#in-income", "")
+    page.dispatch_event("#in-income", "change")
+    page.wait_for_timeout(400)
+
+
+def test_ui_offline_recall_fallback_is_surfaced(page):
+    """With no network, the baked recall count must still warn the user."""
+    findings = page.inner_text("#findings").lower()
+    assert "recall" in findings, "offline runs should still raise the recall check"
+
+
+def test_ui_complaint_section_hidden_without_live_data(page):
+    assert page.eval_on_selector("#complaint-block", "e => e.style.display") == "none"
+
+
+def test_ui_masthead_reports_the_data_mode(page):
+    assert "offline" in page.inner_text("#masthead-mode").lower()
+    assert page.inner_text("#masthead-subject").strip() != ""
+
+
+def test_ui_colophon_names_its_sources(page):
+    text = page.inner_text("#data-footnote")
+    for expected in ("NHTSA", "EPA", "EIA", "FRED", "Not financial advice"):
+        assert expected in text, f"colophon does not mention {expected}"
+
+
+def test_ui_csv_export_produces_a_downloadable_file(page):
+    page.fill("#in-name", "Test Camry")
+    page.dispatch_event("#in-name", "change")
+    page.wait_for_timeout(300)
+    page.click("#btn-save")
+    page.wait_for_selector("#compare-card", state="visible", timeout=5000)
+    with page.expect_download() as info:
+        page.click("#btn-export")
+    download = info.value
+    assert download.suggested_filename == "car-comparison.csv"
+    page.click("#btn-clear-compare")
+    page.wait_for_timeout(300)
+    page.fill("#in-name", "")
+
+
+def test_ui_score_band_strip_has_five_segments(page):
+    assert page.eval_on_selector_all("#score-band span", "els => els.length") == 5
+
+
+def test_ui_click_survives_an_edit_in_another_field(page):
+    """Regression: the first click after editing a field must still register.
+
+    Re-running the report used to rewrite every section's innerHTML, so the node under
+    the cursor was replaced between mousedown and mouseup and the browser emitted no
+    click at all. Sections now only rebuild when their content actually changes.
+    """
+    _settle_scroll(page)
+    page.fill("#in-name", "Regression check")     # dirty a field, leave it focused
+    row = page.locator("#term-table tbody tr[data-term='72']")
+    row.scroll_into_view_if_needed()
+    _settle_scroll(page)
+    row.click()                                   # first click after the edit
+    page.wait_for_timeout(400)
+    assert page.input_value("#in-term") == "72", "the click after an edit was swallowed"
+    page.select_option("#in-term", "48")
+    page.fill("#in-name", "")
+    page.dispatch_event("#in-name", "change")
+    page.wait_for_timeout(400)

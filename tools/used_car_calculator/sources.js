@@ -221,10 +221,15 @@
         var latest = parseFloat(obs[0].value);
         var yearAgo = parseFloat(obs[12].value);
         if (!isFinite(latest) || !isFinite(yearAgo) || yearAgo === 0) return null;
+        // Oldest-first, so the UI can draw it left to right as a sparkline.
+        var series = obs.slice().reverse().map(function (o) {
+          return { date: o.date, value: parseFloat(o.value) };
+        }).filter(function (o) { return isFinite(o.value); });
         return {
           changeYoY: (latest - yearAgo) / yearAgo,
           latest: latest,
-          date: obs[0].date
+          date: obs[0].date,
+          series: series
         };
       });
     }

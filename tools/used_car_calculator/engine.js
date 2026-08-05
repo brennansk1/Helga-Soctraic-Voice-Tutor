@@ -154,6 +154,93 @@
     return { payment: payment, totalInterest: interest, balanceByYear: byYear, months: months };
   }
 
+  /**
+   * Value at an arbitrary month, decaying the annual rate geometrically. Used by the
+   * loan-term comparison, which needs sub-year resolution to find the exact month a
+   * loan crosses back above water.
+   */
+  function valueAtMonth(price, age, segment, brand, month, data) {
+    var value = price;
+    for (var m = 1; m <= month; m++) {
+      var rate = depRateAt(age + Math.floor((m - 1) / 12) + 1, segment, brand, data);
+      value = Math.max(value * Math.pow(1 - rate, 1 / 12), data.constants.floorValue);
+    }
+    return value;
+  }
+
+  /**
+   * Shortest term that amortizes `principal` at `aprPercent` within `targetPayment`.
+   * Returns null when the payment never covers the interest, which is the honest
+   * answer to "what term gets me to $X/month" for an impossible X.
+   */
+  function termForPayment(principal, aprPercent, targetPayment) {
+    if (!(principal > 0) || !(targetPayment > 0)) return null;
+    var r = aprPercent / 100 / 12;
+    if (r === 0) return Math.ceil(principal / targetPayment);
+    if (targetPayment <= principal * r) return null;   // interest-only or worse
+    var n = -Math.log(1 - principal * r / targetPayment) / Math.log(1 + r);
+    return Math.ceil(n);
+  }
+
+  /**
+   * Compare loan lengths side by side: payment, lifetime interest, and how long each
+   * term leaves you underwater. `recommended` is the shortest term that clears the
+   * 20/4/10 payment share (when income is known) and stays at or under 60 months.
+   */
+  function loanTermComparison(input, data, terms) {
+    terms = terms || [24, 36, 48, 60, 72, 84];
+    var otd = outTheDoor(input.asking, input.taxRate, input.fees);
+    var principal = Math.max(otd - input.down, 0);
+    var insurancePerMonth = toNum(input.insurance,
+      (data.segments[input.segment] || {}).insPerYear || 1750) / 12;
+    var fuelPerMonth = annualFuelCost(input, data) / 12;
+
+    var options = terms.map(function (months) {
+      var loan = loanSchedule(principal, input.apr, months);
+      var balance = principal, r = input.apr / 100 / 12, underwaterMonths = 0;
+      for (var m = 1; m <= months; m++) {
+        balance = Math.max(balance - (loan.payment - balance * r), 0);
+        if (balance > valueAtMonth(input.asking, input.age, input.segment, input.brand, m, data)) {
+          underwaterMonths = m;
+        }
+      }
+      var allIn = loan.payment + insurancePerMonth + fuelPerMonth;
+      return {
+        months: months,
+        payment: loan.payment,
+        totalInterest: loan.totalInterest,
+        totalPaid: loan.payment * months,
+        interestShare: principal > 0 ? loan.totalInterest / principal : 0,
+        underwaterMonths: underwaterMonths,
+        monthlyAllIn: allIn,
+        incomeShare: input.income > 0 ? allIn / input.income : null,
+        affordable: input.income > 0 ? allIn <= input.income * 0.10 : null
+      };
+    });
+
+    var recommended = null, note = '';
+    if (input.income > 0) {
+      var fits = options.filter(function (o) { return o.affordable; });
+      if (!fits.length) {
+        note = 'No term here keeps the all-in cost within 10% of your take-home pay. ' +
+          'Stretching the loan does not fix that — a cheaper car does.';
+      } else {
+        var shortSafe = fits.filter(function (o) { return o.months <= 60; });
+        recommended = (shortSafe.length ? shortSafe : fits)[0];
+        note = 'Shortest term that keeps the all-in cost within 10% of take-home.';
+      }
+    } else {
+      var dry = options.filter(function (o) { return o.months <= 60 && o.underwaterMonths === 0; });
+      recommended = dry.length ? dry[0]
+        : options.filter(function (o) { return o.months <= 60; }).slice(-1)[0] || options[0];
+      note = dry.length
+        ? 'Shortest term that never leaves you owing more than the car is worth.'
+        : 'Shortest sensible term. Add income above for an affordability-based recommendation.';
+    }
+
+    return { options: options, recommended: recommended, note: note, principal: principal };
+  }
+
   /* -------------------------------------------------------- 4.5 maintenance */
 
   /** Repair spend rises ~6%/yr past age 3 (out of warranty), capped at 2.2x. */
@@ -232,6 +319,58 @@
       costPerMile: totalMiles > 0 ? total / totalMiles : 0,
       costPerMonth: total / (years * 12)
     };
+  }
+
+  /** Cumulative ownership cost year by year — index 0 is the day you buy. */
+  function cumulativeCost(input, data, loan) {
+    var years = input.horizon;
+    var values = projectValue(input.asking, input.age, input.segment, input.brand, years, data);
+    var maint = maintenanceCost(input.brand, input.age, years, data);
+    var fuelPerYear = annualFuelCost(input, data);
+    var insurancePerYear = toNum(input.insurance,
+      (data.segments[input.segment] || {}).insPerYear || 1750);
+    var upfront = input.asking * input.taxRate + input.fees;
+    var interestPerYear = loan && loan.months
+      ? loan.totalInterest / (loan.months / 12) : 0;
+
+    var out = [{ year: 0, total: upfront, perMile: 0 }];
+    var running = upfront;
+    for (var t = 1; t <= years; t++) {
+      running += (input.asking - values[t]) - (input.asking - values[t - 1]);  // that year's depreciation
+      running += fuelPerYear + insurancePerYear + maint.perYear[t - 1] + data.constants.regPerYear;
+      if (loan && loan.months) running += Math.min(interestPerYear, loan.totalInterest);
+      var miles = input.annualMiles * t;
+      out.push({ year: t, total: running, perMile: miles > 0 ? running / miles : 0 });
+    }
+    return out;
+  }
+
+  /**
+   * Solve for the asking price that would earn `targetScore`. Binary search, because
+   * the score is monotonic in price except where a hard cap flattens it — hence the
+   * explicit reachability check before searching.
+   */
+  function priceForScore(rawInput, data, live, targetScore) {
+    var lo = 500, hi = Math.max(toNum(rawInput.asking, 20000), 1000) * 1.5;
+    var atLo = analyze(Object.assign({}, rawInput, { asking: lo }), data, live).score.score;
+    if (atLo < targetScore) return null;     // a cap or the car itself makes this unreachable
+    var atHi = analyze(Object.assign({}, rawInput, { asking: hi }), data, live).score.score;
+    if (atHi >= targetScore) return hi;
+    for (var i = 0; i < 40; i++) {
+      var mid = (lo + hi) / 2;
+      if (analyze(Object.assign({}, rawInput, { asking: mid }), data, live).score.score >= targetScore) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo;
+  }
+
+  /** Offline recall signal: campaign count for this model-year from the baked table. */
+  function bakedRecallCount(input, data) {
+    var count = data.recallCounts[keyFor(input.brand, input.model, input.year)];
+    return count === undefined ? null : count;
   }
 
   /* --------------------------------------------------- 4.7 affordability */
@@ -512,6 +651,14 @@
       add('warning', 'History', 'No service records. Assume maintenance is overdue: price in a full fluid service ' +
         '(roughly $400–600) plus a timing belt if the engine uses one.');
     }
+    // Offline recall signal: when the live NHTSA lookup did not run, fall back to the
+    // baked campaign count so the user still knows to check.
+    if (!live.recalls && ctx.bakedRecallCount) {
+      add('warning', 'Recalls', 'This model year had ' + ctx.bakedRecallCount +
+        ' recall campaign' + (ctx.bakedRecallCount > 1 ? 's' : '') +
+        ' on record. The live NHTSA check did not run — look the VIN up at nhtsa.gov/recalls ' +
+        'and confirm the repairs were completed.');
+    }
     var rel = ctx.reliability;
     if (rel.blended && rel.rate > rel.p90) {
       add('warning', 'Complaints', 'NHTSA complaints for this model year run above the 90th percentile for its class' +
@@ -670,8 +817,11 @@
     ctx.score = dealScore(ctx);
     ctx.verdict = verdictFor(ctx.score.score);
     ctx.affordability = affordability(input, otd, loan.payment, tco);
+    ctx.bakedRecallCount = bakedRecallCount(input, data);
     ctx.findings = findings(ctx);
     ctx.principal = principal;
+    ctx.cumulative = cumulativeCost(input, data, loan);
+    ctx.termComparison = input.financed ? loanTermComparison(input, data) : null;
     return ctx;
   }
 
@@ -681,6 +831,9 @@
     outTheDoor: outTheDoor, negotiation: negotiation,
     depRateAt: depRateAt, projectValue: projectValue,
     loanSchedule: loanSchedule, maintenanceCost: maintenanceCost,
+    valueAtMonth: valueAtMonth, termForPayment: termForPayment,
+    loanTermComparison: loanTermComparison, cumulativeCost: cumulativeCost,
+    priceForScore: priceForScore, bakedRecallCount: bakedRecallCount,
     vehicleRecord: vehicleRecord, annualFuelCost: annualFuelCost,
     totalCostOfOwnership: totalCostOfOwnership, affordability: affordability,
     reliabilityScore: reliabilityScore, safetyPoints: safetyPoints,

@@ -853,3 +853,122 @@ test('the dataset carries a provenance stamp for every table', () => {
   ['vehicles', 'brands', 'segments', 'depCurves', 'mileSlopes', 'aprByTier', 'energy']
     .forEach(k => assert.ok(DATA.meta.sources[k], `no provenance stamp for ${k}`));
 });
+
+/* ------------------------------------------- loan length & solver additions */
+
+test('termForPayment inverts the amortization formula', () => {
+  const months = E.termForPayment(20000, 6, 386.66);
+  assert.ok(Math.abs(months - 60) <= 1, `got ${months}`);
+});
+
+test('termForPayment returns null when the payment never covers interest', () => {
+  assert.strictEqual(E.termForPayment(20000, 12, 100), null);
+  assert.strictEqual(E.termForPayment(20000, 12, 200), null);
+});
+
+test('termForPayment handles a 0% loan', () => {
+  assert.strictEqual(E.termForPayment(12000, 0, 500), 24);
+});
+
+test('valueAtMonth interpolates between the annual value points', () => {
+  const year1 = E.projectValue(20000, 5, 'Midsize car', 'Toyota', 1, DATA)[1];
+  const month12 = E.valueAtMonth(20000, 5, 'Midsize car', 'Toyota', 12, DATA);
+  assert.ok(Math.abs(month12 - year1) < 1, `${month12} vs ${year1}`);
+  const month6 = E.valueAtMonth(20000, 5, 'Midsize car', 'Toyota', 6, DATA);
+  assert.ok(month6 < 20000 && month6 > month12, 'mid-year value sits between the endpoints');
+});
+
+test('loanTermComparison: longer terms mean lower payments and more interest', () => {
+  const input = E.normalizeInput(baseInput(), DATA);
+  const c = E.loanTermComparison(input, DATA);
+  for (let i = 1; i < c.options.length; i++) {
+    assert.ok(c.options[i].payment < c.options[i - 1].payment, 'payment should fall as the term grows');
+    assert.ok(c.options[i].totalInterest > c.options[i - 1].totalInterest, 'interest should rise');
+  }
+});
+
+test('loanTermComparison: longer terms leave you underwater longer', () => {
+  const input = E.normalizeInput(baseInput({ down: 500 }), DATA);
+  const c = E.loanTermComparison(input, DATA);
+  const short = c.options.find(o => o.months === 36);
+  const long = c.options.find(o => o.months === 84);
+  assert.ok(long.underwaterMonths >= short.underwaterMonths);
+});
+
+test('loanTermComparison recommends the shortest affordable term when income is known', () => {
+  const input = E.normalizeInput(baseInput({ income: 6000 }), DATA);
+  const c = E.loanTermComparison(input, DATA);
+  assert.ok(c.recommended, 'a $6k income should afford this car');
+  assert.ok(c.recommended.affordable);
+  const shorterAffordable = c.options.filter(o => o.affordable && o.months < c.recommended.months);
+  assert.strictEqual(shorterAffordable.length, 0, 'nothing shorter should also have been affordable');
+});
+
+test('loanTermComparison refuses to recommend when no term is affordable', () => {
+  const input = E.normalizeInput(baseInput({ income: 900, asking: 45000, down: 0 }), DATA);
+  const c = E.loanTermComparison(input, DATA);
+  assert.strictEqual(c.recommended, null);
+  assert.ok(c.note.includes('cheaper car'), 'should say stretching the term is not the fix');
+});
+
+test('loanTermComparison computes income share only when income is given', () => {
+  const withIncome = E.loanTermComparison(E.normalizeInput(baseInput({ income: 5000 }), DATA), DATA);
+  const without = E.loanTermComparison(E.normalizeInput(baseInput({ income: 0 }), DATA), DATA);
+  assert.ok(withIncome.options[0].incomeShare > 0);
+  assert.strictEqual(without.options[0].incomeShare, null);
+  assert.strictEqual(without.options[0].affordable, null);
+});
+
+test('analyze attaches a term comparison for loans but not for cash', () => {
+  assert.ok(E.analyze(baseInput(), DATA).termComparison);
+  assert.strictEqual(E.analyze(baseInput({ payType: 'cash' }), DATA).termComparison, null);
+});
+
+test('cumulativeCost grows monotonically and ends at the TCO total', () => {
+  const ctx = E.analyze(baseInput({ payType: 'cash' }), DATA);
+  const cum = ctx.cumulative;
+  assert.strictEqual(cum.length, ctx.input.horizon + 1);
+  for (let i = 1; i < cum.length; i++) assert.ok(cum[i].total >= cum[i - 1].total);
+  assert.ok(Math.abs(cum[cum.length - 1].total - ctx.tco.total) < 1,
+    `cumulative ${cum[cum.length - 1].total} vs TCO ${ctx.tco.total}`);
+});
+
+test('cumulativeCost per-mile figure falls as fixed costs amortize', () => {
+  const ctx = E.analyze(baseInput({ payType: 'cash' }), DATA);
+  const first = ctx.cumulative[1].perMile;
+  const last = ctx.cumulative[ctx.cumulative.length - 1].perMile;
+  assert.ok(last < first, 'cost per mile should improve the longer you keep the car');
+});
+
+test('priceForScore finds a price that actually achieves the target', () => {
+  const raw = baseInput({ asking: 24000, comps: [18000] });
+  const price = E.priceForScore(raw, DATA, {}, 80);
+  assert.ok(price !== null, 'an 80 should be reachable by paying less');
+  const achieved = E.analyze(Object.assign({}, raw, { asking: price }), DATA).score.score;
+  assert.ok(achieved >= 80, `price ${price} only scored ${achieved}`);
+  assert.ok(price < 24000, 'the target price must be below the asking price');
+});
+
+test('priceForScore returns null when a hard cap makes the target unreachable', () => {
+  const raw = baseInput({ title: 'rebuilt', comps: [18000] });
+  assert.strictEqual(E.priceForScore(raw, DATA, {}, 80), null,
+    'no price fixes a salvage title');
+});
+
+test('bakedRecallCount reads the offline table and misses cleanly', () => {
+  const known = E.normalizeInput(baseInput(), DATA);
+  assert.strictEqual(E.bakedRecallCount(known, DATA), DATA.recallCounts['TOYOTA|CAMRY|2019']);
+  const unknown = E.normalizeInput(baseInput({ model: 'Nonexistent' }), DATA);
+  assert.strictEqual(E.bakedRecallCount(unknown, DATA), null);
+});
+
+test('offline analysis warns from the baked recall count', () => {
+  const ctx = E.analyze(baseInput(), DATA);        // no live data
+  assert.ok(ctx.findings.some(f => f.tag === 'Recalls' && f.text.includes('recall campaign')));
+});
+
+test('a live recall lookup suppresses the baked-count warning', () => {
+  const ctx = E.analyze(baseInput(), DATA, { recalls: [] });
+  const baked = ctx.findings.filter(f => f.tag === 'Recalls' && f.text.includes('did not run'));
+  assert.strictEqual(baked.length, 0);
+});

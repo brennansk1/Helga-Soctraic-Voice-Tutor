@@ -1,8 +1,20 @@
 # Used Car Deal Analyzer
 
 A self-contained tool that scores a used-car deal 0–100, tells you what to offer and when to
-walk away, projects the full cost of ownership, and pulls live safety recalls and crash
-ratings from NHTSA. Everything runs in the browser; nothing you type leaves the machine.
+walk away, works out how long the loan should be, projects the full cost of ownership, and
+pulls live safety recalls and crash ratings from NHTSA. Everything runs in the browser;
+nothing you type leaves the machine.
+
+## Design
+
+The report is styled as an **auction condition report** rather than a web app: ruled sections
+with stamped numbers down the left margin, underline-only form fields, hairline ledger tables,
+and every figure set in monospace so columns of money align the way they do on a printed
+sheet. Nothing is a rounded card and nothing floats on a shadow. Warm newsprint by day,
+inverted at night. Signal colours are teal and rust — validated for colourblind separation
+(ΔE 13.4 light / 12.7 dark against an ≥8 target, ≥3:1 contrast on both surfaces) — with a
+separate status ramp that never doubles as a data series. There is a print stylesheet, so
+`Print` gives you a clean sheet to take to the dealer.
 
 ## Running it
 
@@ -28,9 +40,13 @@ U.S. government APIs that need no key.
 | **Negotiation ladder** | opening offer, target, and walk-away price, each with its out-the-door equivalent |
 | **Cost of ownership** | depreciation + fuel/electricity + insurance + an age-escalating maintenance curve + taxes/fees + loan interest, as a total, per mile and per month |
 | **Loan and equity** | amortization schedule, total interest, and a year-by-year value-vs-balance projection that flags negative equity |
+| **Loan length** | every term from 24 to 84 months priced out — payment, lifetime interest, months underwater, share of take-home — with a recommendation, and a solver for "what term gets me to $X/month" |
 | **Deal score 0–100** | eight weighted components (below), with hard caps for structural risk |
+| **Price position** | a number line placing the ask against your comparables, fair value, target and walk-away |
+| **Target price solver** | the price at which this car would earn the next score band |
 | **Red flags** | ~25 rules, each with a concrete action, sorted critical → warning → good |
-| **Comparison** | saved candidates side by side with the best value starred per column |
+| **Comparison** | saved candidates side by side with the best value marked per column, exportable to CSV |
+| **Complaint breakdown** | what owners actually report to NHTSA, by component, so the inspection targets the right systems |
 
 ### Score weights
 
@@ -113,16 +129,17 @@ leaves its table untouched and is reported.
 ## Tests
 
 ```bash
-python3 -m pytest tests/test_used_car_calculator.py -v     # everything (37 tests)
-node --test 'tools/used_car_calculator/tests/*.test.js'    # the JS engine alone (103 tests)
+python3 -m pytest tests/test_used_car_calculator.py -v     # everything (54 tests)
+node --test 'tools/used_car_calculator/tests/*.test.js'    # the JS engine alone (120 tests)
 ```
 
-Three layers: 103 Node tests covering every formula, boundary and failure path in the engine
+Three layers: 120 Node tests covering every formula, boundary and failure path in the engine
 and the API client (with an injected fetch, so no network is touched); Python tests for the
 dataset builder, including a round-trip that proves a refreshed `data.js` is still loadable
-by the engine; and 15 headless-Chromium tests that drive the real UI — score rendering, chart
-geometry, live recomputation, the salvage-title cap, cash-vs-loan series, dark mode,
-comparison persistence and HTML-escaping of user text.
+by the engine; and 32 headless-Chromium tests that drive the real UI — score rendering, chart
+geometry, the loan-term table's monotonicity, the target-payment solver, live recomputation,
+the salvage-title cap, cash-vs-loan series, dark mode, CSV export, comparison persistence and
+HTML-escaping of user text.
 
 The Playwright tests skip cleanly if Playwright or Chromium is absent.
 
