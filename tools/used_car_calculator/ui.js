@@ -49,6 +49,11 @@
 
   var KEYS_STORE = 'ucda_keys_v1';
   var SAVED_STORE = 'ucda_saved_v1';
+  var INPUT_STORE = 'ucda_inputs_v1';
+
+  /** Charts are drawn at a narrower geometry on phones — this is a tool used at the kerb. */
+  function narrowScreen() { return window.innerWidth < 700; }
+  function chartW() { return narrowScreen() ? 430 : 720; }
 
   var lastCtx = null;
   var live = {};
@@ -101,7 +106,11 @@
       taxRate: (numOrNull('in-tax') || 0) / 100, fees: numOrNull('in-fees'),
       annualMiles: numOrNull('in-annualmiles'), horizon: numOrNull('in-horizon'),
       gasUsdPerGal: numOrNull('in-gas'), insurance: numOrNull('in-insurance'),
-      income: numOrNull('in-income')
+      income: numOrNull('in-income'),
+      state: val('in-state') || null,
+      tradeInValue: numOrNull('in-trade-value'),
+      tradePayoff: numOrNull('in-trade-payoff'),
+      applyCompBias: $('in-comp-bias').checked
     };
   }
 
@@ -348,7 +357,7 @@
     var pad = Math.max((hi - lo) * 0.14, 400);
     lo -= pad; hi += pad;
 
-    var W = 720, H = 132, padL = 12, padR = 12, axisY = 78;
+    var W = chartW(), H = 132, padL = 12, padR = 12, axisY = 78;
     var x = function (v) { return padL + (W - padL - padR) * ((v - lo) / (hi - lo)); };
     var svg = '';
 
@@ -494,7 +503,9 @@
           : 'You never owe more than the car is worth — the value line stays above the balance the whole way.')
       : 'Paid in cash, so this is simply what the car should be worth as the years pass.';
 
-    var W = 720, H = 290, padL = 74, padR = 108, padT = 14, padB = 32;
+    var narrow = narrowScreen();
+    var W = chartW(), H = narrow ? 250 : 290, padL = narrow ? 58 : 74,
+        padR = narrow ? 62 : 108, padT = 14, padB = 32;
     var maxY = Math.max.apply(null, series.reduce(function (a, s) { return a.concat(s.data); }, [])) * 1.10 || 1;
     var x = function (t) { return padL + (W - padL - padR) * (years ? t / years : 0); };
     var y = function (v) { return padT + (H - padT - padB) * (1 - v / maxY); };
@@ -533,7 +544,7 @@
 
     setHTML($('line-chart'), '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" ' +
       'aria-label="Projected value' + (ctx.input.financed ? ' against loan balance' : '') +
-      ' by year" style="min-width:560px">' + svg + '</svg>');
+      ' by year" style="min-width:' + (narrow ? 0 : 560) + 'px">' + svg + '</svg>');
 
     attachLineHover(ctx, series, x, y, years, W, padL, padR);
 
@@ -590,7 +601,9 @@
     var mount = $(mountId);
     if (!items.length) { mount.innerHTML = ''; return; }
     var max = Math.max.apply(null, items.map(function (i) { return i[1]; })) || 1;
-    var rowH = 34, labelW = opts.labelW || 196, valueW = 92, barMaxW = 380, barH = 17, r = 4;
+    var narrow = narrowScreen();
+    var rowH = 34, labelW = narrow ? 118 : (opts.labelW || 196),
+        valueW = narrow ? 76 : 92, barMaxW = narrow ? 210 : 380, barH = 17, r = 4;
     var W = labelW + barMaxW + valueW, H = items.length * rowH + 4;
     var color = opts.color || css('--s1');
     var svg = '';
@@ -670,7 +683,9 @@
   /** Cumulative spend, with the per-mile figure improving as fixed costs amortize. */
   function renderCumulativeChart(ctx) {
     var cum = ctx.cumulative;
-    var W = 720, H = 200, padL = 74, padR = 96, padT = 12, padB = 30;
+    var narrow = narrowScreen();
+    var W = chartW(), H = narrow ? 176 : 200, padL = narrow ? 58 : 74,
+        padR = narrow ? 54 : 96, padT = 12, padB = 30;
     var maxY = cum[cum.length - 1].total * 1.10 || 1;
     var years = cum.length - 1;
     var x = function (t) { return padL + (W - padL - padR) * (years ? t / years : 0); };
@@ -701,7 +716,8 @@
         (H - padT - padB) + '" fill="transparent"/>';
     });
     setHTML($('cum-chart'), '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" ' +
-      'aria-label="Cumulative cost of ownership by year" style="min-width:560px">' + svg + '</svg>');
+      'aria-label="Cumulative cost of ownership by year" style="min-width:' +
+      (narrow ? 0 : 560) + 'px">' + svg + '</svg>');
 
     var tip = $('cum-tip');
     var rig = tip.closest('.chart-rig');
@@ -750,6 +766,127 @@
           '<div class="r"><span>Share</span><b>' + (it[1] / c.count * 100).toFixed(0) + '%</b></div>';
       }
     });
+  }
+
+  /* ------------------------------------------------ what it costs at signing */
+
+  function renderSigning(ctx) {
+    var p = ctx.purchase;
+    var rows = [['Vehicle price', ctx.input.asking, '']];
+    if (p.tradeValue > 0) {
+      rows.push(['Trade-in allowance', -p.tradeValue, 'what they gave you for the old car']);
+      if (p.tradePayoff > 0) rows.push(['Loan still owed on the trade', p.tradePayoff, 'paid off from the allowance']);
+      rows.push(['Taxable amount', p.taxableAmount, p.creditAllowed
+        ? 'your state taxes the difference only'
+        : 'your state taxes the full price despite the trade']);
+    }
+    rows.push(['Sales tax', p.salesTax, (ctx.input.taxRate * 100).toFixed(2) + '%' +
+      (p.taxSavings > 0 ? ' — ' + usd(p.taxSavings) + ' less thanks to the trade' : '')]);
+    rows.push(['Dealer and title fees', ctx.input.fees, '']);
+    rows.push(['Down payment', -ctx.input.down, 'cash from you']);
+    if (p.tradeEquity !== 0) {
+      rows.push(['Trade equity applied', -p.tradeEquity, p.tradeEquity < 0
+        ? 'negative — this shortfall gets added to the loan' : 'value left after the payoff']);
+    }
+
+    var html = '<table class="ledger"><tbody>' + rows.map(function (r) {
+      return '<tr><td>' + esc(r[0]) + '</td><td class="n">' +
+        (r[1] < 0 ? '\u2212' + usd(Math.abs(r[1])) : usd(r[1])) +
+        '</td><td class="src">' + esc(r[2]) + '</td></tr>';
+    }).join('') +
+      '<tr class="total"><td>' + (ctx.input.financed ? 'Amount financed' : 'Cash due at signing') +
+      '</td><td class="n">' + usd(ctx.input.financed ? p.principal : Math.max(p.otd - ctx.input.down - p.tradeEquity, 0)) +
+      '</td><td class="src">out the door ' + usd(p.otd) + '</td></tr></tbody></table>';
+
+    if (p.rolledNegativeEquity > 0) {
+      html += '<div class="callout warn">You owe <b>' + usd(p.rolledNegativeEquity) +
+        '</b> more on the trade than it is worth. That debt does not disappear — it is added to ' +
+        'this loan, so you start the new car underwater by that much.</div>';
+    } else if (p.taxSavings > 0) {
+      html += '<div class="callout">The trade-in cuts your sales tax by <b>' + usd(p.taxSavings) +
+        '</b> because your state taxes only the price difference. Selling privately would have to ' +
+        'beat the allowance by more than that to be worth it.</div>';
+    }
+    setHTML($('signing-body'), html);
+  }
+
+  /* ------------------------------------------------------- service schedule */
+
+  function renderServices(ctx) {
+    var sv = ctx.services;
+    var block = $('service-block');
+    if (!sv.horizon.length) {
+      $('service-note').textContent = 'Nothing on the standard wear schedule falls due within ' +
+        'the years you plan to keep this car.';
+      setHTML($('service-body'), '');
+      return;
+    }
+    block.style.display = 'block';
+    $('service-note').textContent = 'Wear items on the odometer clock, at ' +
+      fmtNum.format(ctx.input.annualMiles) + ' miles a year. These are what the maintenance ' +
+      'budget above actually gets spent on — shown separately because the first year is often ' +
+      'the expensive one.';
+
+    var months = function (m) {
+      return m < 1 ? 'now' : m < 12 ? Math.round(m) + ' mo' : (m / 12).toFixed(1) + ' yr';
+    };
+    var html = '<table class="ledger"><thead><tr><th>Item</th><th class="n">Due at</th>' +
+      '<th class="n">From now</th><th class="n">Cost</th></tr></thead><tbody>' +
+      sv.horizon.map(function (item) {
+        var soon = item.monthsAway <= 12;
+        return '<tr><td>' + esc(item.name) +
+          (item.conditional ? '<br><span class="src">' + esc(item.conditional) + '</span>' : '') +
+          '</td><td class="n">' + fmtNum.format(item.dueAtMiles) + ' mi</td>' +
+          '<td class="n"' + (soon ? ' style="color:' + css('--warn') + '"' : '') + '>' +
+          months(item.monthsAway) + '</td><td class="n">' + usd(item.cost) + '</td></tr>';
+      }).join('') +
+      '<tr class="total"><td>Total over ' + ctx.input.horizon + ' years</td><td></td><td></td>' +
+      '<td class="n">' + usd(sv.horizonTotal) + '</td></tr></tbody></table>';
+
+    if (sv.firstYearTotal > 0) {
+      html += sv.frontLoaded
+        ? '<div class="callout warn"><b>' + usd(sv.firstYearTotal) + ' lands in the first year</b> — ' +
+          'about ' + usd(sv.overrun) + ' more than the average annual maintenance budget of ' +
+          usd(sv.budgetYearOne) + '. Ask the seller to cover it, or take it off the price.</div>'
+        : '<div class="callout"><b>' + usd(sv.firstYearTotal) + '</b> of wear items fall due in the ' +
+          'first year, within the ' + usd(sv.budgetYearOne) + ' annual maintenance budget.</div>';
+    }
+    setHTML($('service-body'), html);
+  }
+
+  /* ----------------------------------------------------------- sensitivity */
+
+  function renderSensitivity(ctx) {
+    var s = E.sensitivity(readForm(), DATA, live);
+    $('sens-note').textContent = 'The ' + usd(s.base) + ' total above is a point estimate built on ' +
+      'class averages. Varying each assumption on its own shows how much it actually moves the ' +
+      'answer — ' + esc(String(s.driver).toLowerCase()) + ' is the one that matters most here.';
+
+    var items = s.items.map(function (i) { return [i.label, i.swing]; });
+    horizontalBars('sens-chart', 'sens-tip', items, {
+      color: css('--s2'), barClass: 'sens-bar', labelW: 168,
+      label: 'How much each assumption moves the total cost',
+      format: function (v) { return '±' + usd(v / 2); },
+      tip: function (it) {
+        var f = s.items.filter(function (x) { return x.label === it[0]; })[0];
+        return '<div class="r"><span>' + esc(f.lowLabel) + '</span><b>' + usd(f.low) + '</b></div>' +
+          '<div class="r"><span>' + esc(f.highLabel) + '</span><b>' + usd(f.high) + '</b></div>' +
+          '<div class="r"><span>Swing</span><b>' + usd(f.swing) + '</b></div>';
+      }
+    });
+
+    setHTML($('sens-body'), '<div class="callout">Taking the largest single uncertainty either way, ' +
+      'the realistic range for ' + ctx.input.horizon + '-year cost of ownership is <b>' +
+      usd(s.low) + ' to ' + usd(s.high) + '</b>, not ' + usd(s.base) + ' exactly. ' +
+      'The cheapest way to shrink this range is to get a real insurance quote and a ' +
+      'pre-purchase inspection before you commit.</div>' +
+      '<table class="ledger"><thead><tr><th>Assumption</th><th>Why it is uncertain</th>' +
+      '<th class="n">Range of total cost</th></tr></thead><tbody>' +
+      s.items.map(function (i) {
+        return '<tr><td>' + esc(i.label) + '<br><span class="src">' + esc(i.lowLabel) + ' to ' +
+          esc(i.highLabel) + '</span></td><td>' + esc(i.note) + '</td><td class="n">' +
+          usd(i.low) + ' – ' + usd(i.high) + '</td></tr>';
+      }).join('') + '</tbody></table>');
   }
 
   function renderFindings(ctx) {
@@ -876,11 +1013,14 @@
     renderIdentity(ctx);
     renderTiles(ctx);
     renderPrice(ctx);
+    renderSigning(ctx);
     renderTermComparison(ctx);
     renderLineChart(ctx);
     renderBarChart(ctx);
     renderCumulativeChart(ctx);
     renderComplaintChart(ctx);
+    renderServices(ctx);
+    renderSensitivity(ctx);
     renderFindings(ctx);
     renderCompare();
     renderColophon(ctx);
@@ -991,6 +1131,88 @@
     });
   }
 
+  /* ------------------------------------- persistence, sharing, state defaults */
+
+  var FORM_IDS = ['in-vin', 'in-name', 'in-year', 'in-brand', 'in-model', 'in-segment',
+    'in-miles', 'in-price', 'in-mpg', 'in-condition', 'in-title', 'in-accidents', 'in-owners',
+    'in-records', 'in-comp1', 'in-comp2', 'in-comp3', 'in-ppi', 'in-paytype', 'in-down',
+    'in-credit', 'in-apr', 'in-term', 'in-target-payment', 'in-tax', 'in-fees',
+    'in-annualmiles', 'in-horizon', 'in-state', 'in-gas', 'in-insurance', 'in-income',
+    'in-trade-value', 'in-trade-payoff'];
+  var CHECK_IDS = ['in-recalls-verified', 'in-comp-bias'];
+
+  function collectForm() {
+    var out = {};
+    FORM_IDS.forEach(function (id) { if ($(id)) out[id] = $(id).value; });
+    CHECK_IDS.forEach(function (id) { if ($(id)) out[id] = $(id).checked ? 1 : 0; });
+    return out;
+  }
+
+  function applyForm(values) {
+    if (!values) return false;
+    var applied = false;
+    Object.keys(values).forEach(function (id) {
+      var el = $(id);
+      if (!el) return;
+      if (CHECK_IDS.indexOf(id) !== -1) el.checked = !!values[id];
+      else el.value = values[id];
+      applied = true;
+    });
+    return applied;
+  }
+
+  function persistForm() { saveJson(INPUT_STORE, collectForm()); }
+
+  /** Encode the whole form into the URL so a report can be sent to somebody else. */
+  function shareLink() {
+    var packed = btoa(unescape(encodeURIComponent(JSON.stringify(collectForm()))));
+    var url = location.origin + location.pathname + '#c=' + packed;
+    var done = function (ok) {
+      $('keys-status').textContent = '';
+      setStatus(ok ? 'Link copied — it carries every value on this page.'
+                   : 'Copy failed; the link is in the address bar.');
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(function () { done(true); }, function () { done(false); });
+    } else {
+      done(false);
+    }
+    history.replaceState(null, '', '#c=' + packed);
+  }
+
+  function restoreFromHash() {
+    var match = /[#&]c=([^&]+)/.exec(location.hash);
+    if (!match) return false;
+    try {
+      return applyForm(JSON.parse(decodeURIComponent(escape(atob(match[1])))));
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /** Selecting a state fills in its tax rate and registration as editable defaults. */
+  function applyStateDefaults(force) {
+    var code = val('in-state');
+    var info = E.stateInfo(code, DATA);
+    if (!info) {
+      $('state-note').textContent = '';
+      return;
+    }
+    if (force || !$('in-tax').dataset.touched) {
+      $('in-tax').value = (info.tax * 100).toFixed(2);
+    }
+    $('state-note').innerHTML = '<b>' + esc(code) + ':</b> sales tax about ' +
+      (info.tax * 100).toFixed(2) + '%, registration around ' + usd(info.reg) + ' a year' +
+      (info.propertyTaxRate > 0
+        ? ', plus an annual tax on the vehicle\'s value of roughly ' +
+          (info.propertyTaxRate * 100).toFixed(1) + '%'
+        : '') + '. ' +
+      (info.tradeInCredit
+        ? 'Trade-ins reduce the taxable amount here.'
+        : '<b>Trade-ins do not reduce sales tax here</b> — you are taxed on the full price.') +
+      ' <span class="src">' + esc(DATA.states.verifyNote) + '</span>';
+  }
+
   /* ------------------------------------------------------------- init */
 
   function refreshModelList() {
@@ -1034,7 +1256,35 @@
     });
 
     Array.prototype.forEach.call(document.querySelectorAll('input, select'), function (el) {
-      el.addEventListener('change', function () { if (lastCtx) run(); });
+      el.addEventListener('change', function () {
+        if (el.id === 'in-tax') el.dataset.touched = '1';
+        if (FORM_IDS.indexOf(el.id) !== -1 || CHECK_IDS.indexOf(el.id) !== -1) persistForm();
+        if (lastCtx) run();
+      });
+    });
+    $('in-state').addEventListener('change', function () {
+      applyStateDefaults(true);
+      persistForm();
+      if (lastCtx) run();
+    });
+
+    $('btn-share').addEventListener('click', shareLink);
+    $('btn-reset').addEventListener('click', function () {
+      saveJson(INPUT_STORE, null);
+      history.replaceState(null, '', location.pathname);
+      location.reload();
+    });
+
+    // Charts are drawn at a different geometry on narrow screens; redraw on resize.
+    var resizeTimer = null, wasNarrow = narrowScreen();
+    window.addEventListener('resize', function () {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(function () {
+        if (narrowScreen() !== wasNarrow) {
+          wasNarrow = narrowScreen();
+          if (lastCtx) run();
+        }
+      }, 200);
     });
 
     $('btn-save').addEventListener('click', function () {
@@ -1082,8 +1332,17 @@
       if (lastCtx) run();      // charts re-render against the mode's validated palette
     });
 
+    // A shared link wins over whatever this browser had saved.
+    var restored = restoreFromHash() || applyForm(loadJson(INPUT_STORE, null));
+    if (restored) {
+      refreshModelList();
+      if ($('in-tax').value) $('in-tax').dataset.touched = '1';
+    }
+    applyStateDefaults(false);
+
     renderCompare();
     renderColophon(null);
+    if (restored) refreshLive().then(run);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

@@ -650,3 +650,149 @@ def test_ui_click_survives_an_edit_in_another_field(page):
     page.fill("#in-name", "")
     page.dispatch_event("#in-name", "change")
     page.wait_for_timeout(400)
+
+
+# ------------------------------------- trade-in, services, sensitivity (UI)
+
+
+def test_ui_state_selection_fills_tax_and_explains_the_rules(page):
+    page.select_option("#in-state", "VA")
+    page.wait_for_timeout(500)
+    assert float(page.input_value("#in-tax")) > 0, "selecting a state should seed the tax rate"
+    note = page.inner_text("#state-note").lower()
+    assert "virginia" in note or "va" in note
+    assert "confirm" in note, "the note must say the defaults need verifying"
+
+
+def test_ui_state_without_trade_in_credit_says_so(page):
+    page.select_option("#in-state", "CA")
+    page.wait_for_timeout(500)
+    assert "do not reduce sales tax" in page.inner_text("#state-note").lower()
+    page.select_option("#in-state", "TX")
+    page.wait_for_timeout(400)
+    assert "reduce the taxable amount" in page.inner_text("#state-note").lower()
+
+
+def test_ui_signing_section_breaks_down_the_deal(page):
+    rows = page.eval_on_selector_all("#signing-body tr", "els => els.length")
+    assert rows >= 4
+    text = page.inner_text("#signing-body").lower()
+    assert "sales tax" in text
+    assert "out the door" in text
+
+
+def test_ui_trade_in_shows_the_tax_saving(page):
+    page.select_option("#in-state", "TX")
+    page.fill("#in-trade-value", "8000")
+    page.dispatch_event("#in-trade-value", "change")
+    page.wait_for_timeout(600)
+    text = page.inner_text("#signing-body").lower()
+    assert "trade-in allowance" in text
+    assert "taxable amount" in text
+    assert "cuts your sales tax" in text
+
+
+def test_ui_negative_trade_equity_is_called_out(page):
+    page.fill("#in-trade-payoff", "12000")
+    page.dispatch_event("#in-trade-payoff", "change")
+    page.wait_for_timeout(600)
+    assert "underwater" in page.inner_text("#signing-body").lower()
+    assert "trade-in" in page.inner_text("#findings").lower()
+    page.fill("#in-trade-value", "")
+    page.fill("#in-trade-payoff", "")
+    page.dispatch_event("#in-trade-payoff", "change")
+    page.wait_for_timeout(500)
+
+
+def test_ui_service_schedule_lists_upcoming_work(page):
+    page.fill("#in-miles", "44000")
+    page.dispatch_event("#in-miles", "change")
+    page.wait_for_timeout(700)
+    rows = page.eval_on_selector_all("#service-body tbody tr", "els => els.length")
+    assert rows >= 2, "wear items should be listed"
+    text = page.inner_text("#service-body").lower()
+    assert "tyres" in text or "brake" in text
+    assert "first year" in text
+
+
+def test_ui_service_schedule_warns_when_year_one_is_front_loaded(page):
+    text = page.inner_text("#service-body").lower()
+    assert "lands in the first year" in text or "fall due in the" in text
+
+
+def test_ui_sensitivity_ranks_the_assumptions(page):
+    bars = page.eval_on_selector_all(".sens-bar", "els => els.length")
+    assert bars >= 5, f"expected a bar per assumption, got {bars}"
+    widths = page.eval_on_selector_all(
+        ".sens-bar", "els => els.map(e => e.getBBox().width)")
+    assert widths == sorted(widths, reverse=True), "bars must be sorted by swing"
+
+
+def test_ui_sensitivity_states_a_range_not_a_point(page):
+    text = page.inner_text("#sens-body")
+    assert "realistic range" in text.lower()
+    assert text.count("$") >= 3
+    assert "point estimate" in page.inner_text("#sens-note").lower()
+
+
+def test_ui_score_section_qualifies_the_number(page):
+    text = page.inner_text("#score-card").lower() if page.query_selector("#score-card") \
+        else page.inner_text("#results").lower()
+    assert "not a measurement" in text or "weighted judgement" in text
+
+
+def test_ui_comp_bias_toggle_moves_the_walk_away_price(page):
+    page.fill("#in-comp1", "19000")
+    page.dispatch_event("#in-comp1", "change")
+    page.wait_for_timeout(600)
+    with_bias = page.inner_text("#price-ladder")
+    page.uncheck("#in-comp-bias")
+    page.wait_for_timeout(600)
+    without_bias = page.inner_text("#price-ladder")
+    assert with_bias != without_bias, "the haircut must change the numbers"
+    page.check("#in-comp-bias")
+    page.wait_for_timeout(500)
+
+
+def test_ui_share_link_round_trips_the_form(page):
+    page.fill("#in-price", "17250")
+    page.dispatch_event("#in-price", "change")
+    page.wait_for_timeout(400)
+    page.click("#btn-share")
+    page.wait_for_timeout(400)
+    url = page.evaluate("() => location.hash")
+    assert url.startswith("#c="), "the link must carry the encoded form"
+
+    page.goto("file://" + INDEX_HTML + url)
+    page.wait_for_timeout(1200)
+    assert page.input_value("#in-price") == "17250", "a shared link must restore the values"
+
+
+def test_ui_inputs_survive_a_reload(page):
+    page.goto("file://" + INDEX_HTML)
+    page.wait_for_timeout(800)
+    assert page.input_value("#in-price") == "17250", "inputs should persist between visits"
+
+
+def test_ui_reset_clears_saved_inputs(page):
+    page.click("#btn-reset")
+    page.wait_for_timeout(1200)
+    assert page.input_value("#in-price") == "18500", "reset should restore the defaults"
+    # Re-establish a rendered report for any later test.
+    page.click("#btn-analyze")
+    page.wait_for_selector("#results", state="visible", timeout=20000)
+    page.wait_for_timeout(400)
+
+
+def test_ui_charts_shrink_for_a_phone_viewport(page):
+    page.set_viewport_size({"width": 390, "height": 800})
+    page.wait_for_timeout(900)
+    page.click("#btn-analyze")
+    page.wait_for_timeout(1200)
+    width = page.eval_on_selector("#line-chart svg", "e => e.viewBox.baseVal.width")
+    assert width < 600, f"charts should redraw narrower on a phone, got {width}"
+    body_scrolls = page.evaluate(
+        "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2")
+    assert not body_scrolls, "the page itself must not scroll sideways on a phone"
+    page.set_viewport_size({"width": 1240, "height": 1000})
+    page.wait_for_timeout(700)

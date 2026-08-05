@@ -90,6 +90,107 @@
       'Electric':        { mpg: 0,  insPerYear: 1950, evKwhPer100mi: 33 }
     },
 
+    /* Maintenance cost and service life vary enormously WITHIN a brand — a Camry and a
+     * Tundra do not cost the same to keep. These scale the brand baseline by vehicle class.
+     * tyres/brakes are the replacement cost for that class, used by the service schedule. */
+    segmentFactors: {
+      'Compact car':  { maint: 0.85, life: 1.00, tyres: 700,  brakes: 550,  belt: true },
+      'Midsize car':  { maint: 0.95, life: 1.00, tyres: 850,  brakes: 620,  belt: true },
+      'Compact SUV':  { maint: 1.00, life: 1.00, tyres: 900,  brakes: 650,  belt: true },
+      'Midsize SUV':  { maint: 1.15, life: 0.95, tyres: 1150, brakes: 780,  belt: true },
+      'Pickup truck': { maint: 1.20, life: 1.05, tyres: 1300, brakes: 850,  belt: true },
+      'Minivan':      { maint: 1.05, life: 0.95, tyres: 950,  brakes: 700,  belt: true },
+      'Sports car':   { maint: 1.35, life: 0.85, tyres: 1400, brakes: 1100, belt: true },
+      'Luxury':       { maint: 1.30, life: 0.90, tyres: 1300, brakes: 950,  belt: true },
+      'Hybrid':       { maint: 0.90, life: 1.05, tyres: 850,  brakes: 500,  belt: false },
+      'Electric':     { maint: 0.65, life: 1.05, tyres: 1000, brakes: 450,  belt: false },
+      'default':      { maint: 1.00, life: 1.00, tyres: 900,  brakes: 650,  belt: true }
+    },
+
+    /* Listing prices are ASKING prices. Cars transact below ask, so comps anchored to
+     * listings bias fair value — and therefore the walk-away price — upward. This is the
+     * haircut applied to comp-derived value, disclosed in the UI and adjustable there. */
+    compBias: {
+      askingToTransaction: 0.96,
+      note: 'Listings are asking prices; used cars typically transact a few percent below ask.'
+    },
+
+    /* Wear items on a mileage clock. Costs are before the class multiplier below.
+     * evSkip items do not exist on a battery-electric car. */
+    serviceSchedule: [
+      { name: 'Tyres (set of four)',        everyMiles: 45000,  costKey: 'tyres' },
+      { name: 'Brake pads and rotors',      everyMiles: 50000,  costKey: 'brakes' },
+      { name: 'Engine air and cabin filters', everyMiles: 30000, cost: 110 },
+      { name: 'Brake fluid service',        everyMiles: 45000,  cost: 140 },
+      { name: 'Starter battery',            everyMiles: 60000,  cost: 230 },
+      { name: 'Transmission fluid service', everyMiles: 60000,  cost: 300, evSkip: true },
+      { name: 'Spark plugs',                everyMiles: 100000, cost: 340, evSkip: true },
+      { name: 'Coolant flush',              everyMiles: 100000, cost: 200 },
+      { name: 'Shocks and struts',          everyMiles: 100000, cost: 950 },
+      { name: 'Timing belt and water pump', everyMiles: 100000, cost: 950, evSkip: true,
+        conditional: 'only if this engine uses a belt rather than a chain — ask before you buy' }
+    ],
+
+    /* State defaults. APPROXIMATE combined sales-tax averages and typical registration —
+     * every one is editable in the UI and should be confirmed locally. tradeInCredit marks
+     * states that tax only the price difference after a trade-in (the large majority).
+     * propertyTaxRate is an annual tax on vehicle value where the state levies one. */
+    states: {
+      verifyNote: 'Approximate defaults — confirm your local rate; every field stays editable.',
+      rates: {
+        AL: { tax: 0.052, tradeInCredit: true,  reg: 100, propertyTaxRate: 0 },
+        AK: { tax: 0.018, tradeInCredit: true,  reg: 120, propertyTaxRate: 0 },
+        AZ: { tax: 0.084, tradeInCredit: true,  reg: 150, propertyTaxRate: 0 },
+        AR: { tax: 0.095, tradeInCredit: true,  reg: 110, propertyTaxRate: 0 },
+        CA: { tax: 0.088, tradeInCredit: false, reg: 350, propertyTaxRate: 0 },
+        CO: { tax: 0.078, tradeInCredit: true,  reg: 400, propertyTaxRate: 0 },
+        CT: { tax: 0.064, tradeInCredit: true,  reg: 120, propertyTaxRate: 0.020 },
+        DE: { tax: 0.043, tradeInCredit: true,  reg: 100, propertyTaxRate: 0 },
+        FL: { tax: 0.070, tradeInCredit: true,  reg: 225, propertyTaxRate: 0 },
+        GA: { tax: 0.070, tradeInCredit: true,  reg: 100, propertyTaxRate: 0 },
+        HI: { tax: 0.045, tradeInCredit: false, reg: 250, propertyTaxRate: 0 },
+        ID: { tax: 0.060, tradeInCredit: true,  reg: 120, propertyTaxRate: 0 },
+        IL: { tax: 0.089, tradeInCredit: true,  reg: 210, propertyTaxRate: 0 },
+        IN: { tax: 0.070, tradeInCredit: true,  reg: 130, propertyTaxRate: 0 },
+        IA: { tax: 0.069, tradeInCredit: true,  reg: 150, propertyTaxRate: 0 },
+        KS: { tax: 0.087, tradeInCredit: true,  reg: 130, propertyTaxRate: 0.015 },
+        KY: { tax: 0.060, tradeInCredit: false, reg: 120, propertyTaxRate: 0.012 },
+        LA: { tax: 0.095, tradeInCredit: true,  reg: 100, propertyTaxRate: 0 },
+        ME: { tax: 0.055, tradeInCredit: true,  reg: 120, propertyTaxRate: 0.018 },
+        MD: { tax: 0.060, tradeInCredit: false, reg: 190, propertyTaxRate: 0 },
+        MA: { tax: 0.063, tradeInCredit: true,  reg: 120, propertyTaxRate: 0.015 },
+        MI: { tax: 0.060, tradeInCredit: false, reg: 200, propertyTaxRate: 0 },
+        MN: { tax: 0.075, tradeInCredit: true,  reg: 200, propertyTaxRate: 0 },
+        MS: { tax: 0.072, tradeInCredit: true,  reg: 110, propertyTaxRate: 0.015 },
+        MO: { tax: 0.082, tradeInCredit: true,  reg: 110, propertyTaxRate: 0.020 },
+        MT: { tax: 0.000, tradeInCredit: true,  reg: 220, propertyTaxRate: 0 },
+        NE: { tax: 0.069, tradeInCredit: true,  reg: 150, propertyTaxRate: 0.015 },
+        NV: { tax: 0.083, tradeInCredit: true,  reg: 300, propertyTaxRate: 0 },
+        NH: { tax: 0.000, tradeInCredit: true,  reg: 220, propertyTaxRate: 0 },
+        NJ: { tax: 0.066, tradeInCredit: true,  reg: 120, propertyTaxRate: 0 },
+        NM: { tax: 0.078, tradeInCredit: true,  reg: 100, propertyTaxRate: 0 },
+        NY: { tax: 0.085, tradeInCredit: true,  reg: 130, propertyTaxRate: 0 },
+        NC: { tax: 0.030, tradeInCredit: true,  reg: 140, propertyTaxRate: 0.012 },
+        ND: { tax: 0.070, tradeInCredit: true,  reg: 110, propertyTaxRate: 0 },
+        OH: { tax: 0.073, tradeInCredit: true,  reg: 110, propertyTaxRate: 0 },
+        OK: { tax: 0.090, tradeInCredit: true,  reg: 150, propertyTaxRate: 0 },
+        OR: { tax: 0.000, tradeInCredit: true,  reg: 250, propertyTaxRate: 0 },
+        PA: { tax: 0.063, tradeInCredit: true,  reg: 110, propertyTaxRate: 0 },
+        RI: { tax: 0.070, tradeInCredit: true,  reg: 120, propertyTaxRate: 0.020 },
+        SC: { tax: 0.075, tradeInCredit: true,  reg: 100, propertyTaxRate: 0.017 },
+        SD: { tax: 0.064, tradeInCredit: true,  reg: 110, propertyTaxRate: 0 },
+        TN: { tax: 0.095, tradeInCredit: true,  reg: 110, propertyTaxRate: 0 },
+        TX: { tax: 0.082, tradeInCredit: true,  reg: 150, propertyTaxRate: 0 },
+        UT: { tax: 0.072, tradeInCredit: true,  reg: 150, propertyTaxRate: 0 },
+        VT: { tax: 0.062, tradeInCredit: true,  reg: 140, propertyTaxRate: 0 },
+        VA: { tax: 0.043, tradeInCredit: false, reg: 110, propertyTaxRate: 0.035 },
+        WA: { tax: 0.092, tradeInCredit: true,  reg: 250, propertyTaxRate: 0 },
+        WV: { tax: 0.065, tradeInCredit: true,  reg: 110, propertyTaxRate: 0 },
+        WI: { tax: 0.055, tradeInCredit: true,  reg: 150, propertyTaxRate: 0 },
+        WY: { tax: 0.054, tradeInCredit: true,  reg: 150, propertyTaxRate: 0.015 }
+      }
+    },
+
     /* Piecewise annual depreciation rates by segment (fraction of current value per year),
      * with knots at ages 5, 8 and 12 — the observed old-car slowdown.
      * brandAdj shifts the rate additively (clamped +/-0.03 by the engine). */

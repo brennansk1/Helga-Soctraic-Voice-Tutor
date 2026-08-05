@@ -579,3 +579,58 @@ actually changed (compared against the last string written, since the browser re
 `innerHTML` and a naive comparison never matches), the price-chart legend renders into a
 fixed mount instead of being removed and re-inserted, and the term table uses a delegated
 listener. Covered by `test_ui_click_survives_an_edit_in_another_field`.
+
+---
+
+## 12. Rev 6 — accuracy, missing costs, and honesty about uncertainty
+
+Rev 6 answers the question "is this as useful as it could be?" with the gaps that mattered.
+
+### 12.1 Accuracy corrections
+
+| Problem | Fix |
+|---|---|
+| Comps are **asking** prices; cars transact below ask, so fair value — and the walk-away price — was biased high, in the direction that costs the buyer money | `data.compBias.askingToTransaction` haircut applied to comp-derived value only (never to the seller's own ask, which is not evidence), disclosed in the findings and toggleable for real sold prices |
+| Brand-level maintenance and lifespan applied to every model — a Tundra costed like a Camry | `segmentFactors` scales maintenance, expected service life and wear-item costs by vehicle class; EVs drop engine-only items entirely |
+| Registration was a flat national constant and vehicle property tax did not exist | Both come from the state table when a state is picked |
+
+### 12.2 Costs that were missing
+
+- **Trade-in** (`purchaseCosts`): allowance, payoff, and the sales-tax treatment. Most states
+  tax only the price difference — worth real money and invisible on the sticker. Negative
+  equity on the trade is rolled into the new loan and raised as a critical finding, because
+  that is the trap that quietly turns a good deal into a bad one.
+- **State rules**: approximate combined sales tax, registration, annual vehicle property tax,
+  and whether a trade-in reduces the taxable amount. Every value is an editable default
+  carrying a "confirm locally" note rather than an assertion.
+- **Wear items** (`serviceOutlook`): tyres, brakes, fluids, plugs, belt, struts on the
+  odometer clock, costed by class. Presented as a *breakdown of* the maintenance budget, not
+  added on top of it — double counting would be worse than the omission. When year one
+  exceeds the smooth annual budget by 25%, that becomes a negotiating point.
+- **Dealer fees**: flagged above $800, noting they are negotiable in practice, without
+  asserting specific legal caps that could not be verified offline.
+
+### 12.3 Honesty about what is known
+
+- **`sensitivity()`** varies insurance, repair costs, fuel, mileage, price and APR
+  independently, ranks them by how much each swings the total, and reports a range rather
+  than a point estimate. Insurance and repair costs — the two class averages — normally top
+  the list, which is exactly the message the buyer needs.
+- **The score now says what it is** in the report itself: a weighted judgement with chosen,
+  uncalibrated weights, built to rank cars against each other rather than to judge one.
+
+### 12.4 Workflow
+
+Inputs persist to local storage and survive a reload; `Copy link` encodes the entire form
+into the URL so a report can be sent to someone else; `Reset` clears both. Charts redraw at a
+narrower geometry below 700px and the page no longer scrolls sideways on a phone — which is
+where this tool is actually used, standing next to the car.
+
+### 12.5 Still open
+
+The shipped dataset has still never been regenerated from live EPA/NHTSA feeds (egress is
+blocked in the build environment), and there is no model-specific failure intelligence —
+mining NHTSA complaint text and TSBs for "this engine eats head gaskets at 90k" remains the
+highest-value work left.
+
+**Test coverage: 216 — 148 Node, 69 pytest (47 headless-browser).**

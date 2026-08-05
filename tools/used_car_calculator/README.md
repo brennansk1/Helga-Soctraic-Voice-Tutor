@@ -45,6 +45,9 @@ U.S. government APIs that need no key.
 | **Price position** | a number line placing the ask against your comparables, fair value, target and walk-away |
 | **Target price solver** | the price at which this car would earn the next score band |
 | **Red flags** | ~25 rules, each with a concrete action, sorted critical → warning → good |
+| **At signing** | the full cash picture including a trade-in, and how your state's rules move the sales tax |
+| **Coming due** | wear items on the odometer clock — tyres, brakes, belts — with a warning when year one is front-loaded |
+| **Uncertainty** | each assumption varied on its own and ranked by how much it swings the total, with a realistic range instead of a false-precision point estimate |
 | **Comparison** | saved candidates side by side with the best value marked per column, exportable to CSV |
 | **Complaint breakdown** | what owners actually report to NHTSA, by component, so the inspection targets the right systems |
 
@@ -84,6 +87,23 @@ recall at 60 until you confirm the repair.
 | [Marketcheck](https://www.marketcheck.com/apis/) | auto-fill live market comps from active listings |
 
 Keys are stored only in your browser's local storage and are sent directly to the provider.
+
+### Method notes worth knowing
+
+- **Comparables are asking prices.** Listings sit above what cars actually transact for, so
+  comp-derived fair value is discounted before it is used. Without that haircut the walk-away
+  price is biased high — in the direction that costs you money. The toggle in section 02 turns
+  it off if you entered real sold prices.
+- **Costs are scaled by vehicle class, not just brand.** A Tundra and a Camry are both Toyotas
+  and do not cost the same to keep; maintenance, expected service life and wear-item costs are
+  all adjusted for the class of vehicle.
+- **The score is a weighted judgement, not a measurement.** The weights were chosen, not
+  calibrated against outcomes. It is built to rank cars against each other; the report says so
+  where the score appears.
+- **State rules matter.** Most states tax only the price difference after a trade-in, several
+  levy an annual tax on the vehicle's value, and registration varies widely. All three are in
+  the totals once you pick a state, from an approximate built-in table you should confirm
+  locally — every field stays editable.
 
 ### Built in (offline baseline)
 Brand maintenance costs, reliability baselines and lifespan miles (RepairPal, Consumer
@@ -129,17 +149,17 @@ leaves its table untouched and is reported.
 ## Tests
 
 ```bash
-python3 -m pytest tests/test_used_car_calculator.py -v     # everything (54 tests)
-node --test 'tools/used_car_calculator/tests/*.test.js'    # the JS engine alone (120 tests)
+python3 -m pytest tests/test_used_car_calculator.py -v     # everything (69 tests)
+node --test 'tools/used_car_calculator/tests/*.test.js'    # the JS engine alone (148 tests)
 ```
 
-Three layers: 120 Node tests covering every formula, boundary and failure path in the engine
+Three layers: 148 Node tests covering every formula, boundary and failure path in the engine
 and the API client (with an injected fetch, so no network is touched); Python tests for the
 dataset builder, including a round-trip that proves a refreshed `data.js` is still loadable
-by the engine; and 32 headless-Chromium tests that drive the real UI — score rendering, chart
-geometry, the loan-term table's monotonicity, the target-payment solver, live recomputation,
-the salvage-title cap, cash-vs-loan series, dark mode, CSV export, comparison persistence and
-HTML-escaping of user text.
+by the engine; and 47 headless-Chromium tests that drive the real UI — score rendering, chart
+geometry, the loan-term table's monotonicity, the target-payment solver, trade-in tax rules,
+the service schedule, sensitivity ordering, the share link round-trip, phone layout, dark
+mode, CSV export and HTML-escaping of user text.
 
 The Playwright tests skip cleanly if Playwright or Chromium is absent.
 
@@ -158,6 +178,21 @@ The Playwright tests skip cleanly if Playwright or Chromium is absent.
 
 ## Limitations
 
-U.S. market only (USD, MPG, U.S. tax and APR conventions). Estimates are decision support,
-not appraisals — verify price against live listings and get a real insurance quote before
-committing. Not financial advice.
+U.S. market only (USD, MPG, U.S. tax and APR conventions).
+
+Known gaps, stated plainly:
+
+- **The shipped benchmark tables have never been regenerated from live sources.** They are a
+  curated transcription of published figures. `build_datasets.py --refresh` exists and is
+  tested, but has not been run against the real EPA and NHTSA feeds — do that first if the
+  numbers matter to you.
+- **No model-specific failure intelligence.** The complaint chart gives you component
+  categories, not "this engine eats head gaskets around 90k". Mining NHTSA complaint text and
+  technical service bulletins would close that gap and is the most valuable thing left undone.
+- **Insurance is a class average** and is usually the single largest source of uncertainty in
+  the total — the sensitivity section will normally tell you so. Get a real quote.
+- **Timing belt vs chain is not known per engine**, so that line is flagged conditional rather
+  than assumed.
+
+Estimates are decision support, not appraisals. Verify price against live listings, get a real
+insurance quote, and have the car inspected before committing. Not financial advice.

@@ -972,3 +972,236 @@ test('a live recall lookup suppresses the baked-count warning', () => {
   const baked = ctx.findings.filter(f => f.tag === 'Recalls' && f.text.includes('did not run'));
   assert.strictEqual(baked.length, 0);
 });
+
+/* ------------------------- class scaling, trade-in, services, sensitivity */
+
+test('segmentFactors scales cost and life by vehicle class', () => {
+  const truck = E.segmentFactors('Pickup truck', DATA);
+  const compact = E.segmentFactors('Compact car', DATA);
+  assert.ok(truck.maint > compact.maint, 'trucks cost more to maintain');
+  assert.ok(truck.tyres > compact.tyres, 'truck tyres cost more');
+  assert.ok(E.segmentFactors('NotAClass', DATA).maint === 1, 'unknown class falls back to neutral');
+});
+
+test('maintenanceCost separates a truck from a sedan of the same brand', () => {
+  const sedan = E.maintenanceCost('Toyota', 5, 5, DATA, 'Midsize car').total;
+  const truck = E.maintenanceCost('Toyota', 5, 5, DATA, 'Pickup truck').total;
+  assert.ok(truck > sedan, 'a Tundra should not cost the same as a Camry');
+  const unscaled = E.maintenanceCost('Toyota', 5, 5, DATA).total;
+  assert.ok(unscaled > 0, 'omitting the class still works');
+});
+
+test('an EV costs less to maintain than the equivalent petrol car', () => {
+  const ev = E.maintenanceCost('Tesla', 5, 5, DATA, 'Electric').total;
+  const petrol = E.maintenanceCost('Tesla', 5, 5, DATA, 'Midsize car').total;
+  assert.ok(ev < petrol);
+});
+
+test('lifespanMiles is class-adjusted', () => {
+  assert.ok(E.lifespanMiles('Toyota', 'Pickup truck', DATA) >
+            E.lifespanMiles('Toyota', 'Sports car', DATA));
+});
+
+test('fairValue applies the asking-to-transaction haircut only to real comps', () => {
+  const withComps = E.fairValue(E.normalizeInput(baseInput({ comps: [20000] }), DATA), DATA);
+  assert.strictEqual(withComps.base, 20000, 'the raw comp average is reported as entered');
+  assert.ok(withComps.biasApplied);
+  assert.ok(Math.abs(withComps.adjustedBase - 20000 * DATA.compBias.askingToTransaction) < 1e-9);
+
+  const noComps = E.fairValue(E.normalizeInput(baseInput({ comps: [] }), DATA), DATA);
+  assert.strictEqual(noComps.biasApplied, false, 'never discount the seller\'s own ask');
+});
+
+test('the comp haircut can be switched off', () => {
+  const off = E.fairValue(E.normalizeInput(baseInput({ comps: [20000], applyCompBias: false }), DATA), DATA);
+  assert.strictEqual(off.biasApplied, false);
+  assert.strictEqual(off.adjustedBase, 20000);
+});
+
+test('the haircut lowers fair value, and with it the walk-away price', () => {
+  const on = E.analyze(baseInput({ comps: [20000] }), DATA);
+  const off = E.analyze(baseInput({ comps: [20000], applyCompBias: false }), DATA);
+  assert.ok(on.fair.value < off.fair.value);
+  assert.ok(on.negotiation.walkAway < off.negotiation.walkAway);
+});
+
+test('stateInfo resolves a state and misses cleanly', () => {
+  assert.ok(E.stateInfo('CA', DATA));
+  assert.ok(E.stateInfo('ca', DATA), 'case insensitive');
+  assert.strictEqual(E.stateInfo('ZZ', DATA), null);
+  assert.strictEqual(E.stateInfo(null, DATA), null);
+});
+
+test('purchaseCosts taxes only the difference where the state allows it', () => {
+  const input = E.normalizeInput(baseInput({ tradeInValue: 8000, state: 'TX' }), DATA);
+  const p = E.purchaseCosts(input, DATA);
+  assert.ok(p.creditAllowed);
+  assert.ok(Math.abs(p.taxableAmount - (18500 - 8000)) < 1e-9);
+  assert.ok(Math.abs(p.taxSavings - 8000 * input.taxRate) < 1e-6);
+});
+
+test('purchaseCosts taxes the full price where the state gives no credit', () => {
+  const input = E.normalizeInput(baseInput({ tradeInValue: 8000, state: 'CA' }), DATA);
+  const p = E.purchaseCosts(input, DATA);
+  assert.strictEqual(p.creditAllowed, false);
+  assert.strictEqual(p.taxableAmount, 18500);
+  assert.strictEqual(p.taxSavings, 0);
+});
+
+test('a trade-in credit cannot exceed the price of the car', () => {
+  const input = E.normalizeInput(baseInput({ asking: 5000, tradeInValue: 20000, state: 'TX' }), DATA);
+  assert.strictEqual(E.purchaseCosts(input, DATA).taxableAmount, 0);
+});
+
+test('trade equity reduces the amount financed', () => {
+  const none = E.analyze(baseInput(), DATA);
+  const withTrade = E.analyze(baseInput({ tradeInValue: 6000 }), DATA);
+  assert.ok(withTrade.principal < none.principal);
+  assert.ok(withTrade.loan.payment < none.loan.payment);
+});
+
+test('negative equity on the trade is rolled into the new loan and flagged', () => {
+  const ctx = E.analyze(baseInput({ tradeInValue: 4000, tradePayoff: 9000 }), DATA);
+  assert.ok(Math.abs(ctx.purchase.rolledNegativeEquity - 5000) < 1e-9);
+  const plain = E.analyze(baseInput(), DATA);
+  assert.ok(ctx.principal > plain.principal, 'the shortfall is financed');
+  assert.ok(ctx.findings.some(f => f.tag === 'Trade-in' && f.level === 'critical'));
+});
+
+test('purchaseCosts with no trade-in matches the plain out-the-door formula', () => {
+  const input = E.normalizeInput(baseInput(), DATA);
+  const p = E.purchaseCosts(input, DATA);
+  assert.ok(Math.abs(p.otd - E.outTheDoor(input.asking, input.taxRate, input.fees)) < 1e-9);
+});
+
+test('states with a vehicle property tax add it to the cost of ownership', () => {
+  const plain = E.analyze(baseInput({ state: 'TX' }), DATA);
+  const taxed = E.analyze(baseInput({ state: 'VA' }), DATA);
+  assert.strictEqual(plain.tco.propertyTax, 0);
+  assert.ok(taxed.tco.propertyTax > 0);
+  assert.ok(taxed.findings.some(f => f.tag === 'Taxes'));
+});
+
+test('upcomingServices returns items due soonest first, within the window', () => {
+  const input = E.normalizeInput(baseInput({ miles: 44000 }), DATA);
+  const soon = E.upcomingServices(input, DATA, 12000);
+  assert.ok(soon.length > 0);
+  for (let i = 1; i < soon.length; i++) {
+    assert.ok(soon[i].milesAway >= soon[i - 1].milesAway);
+  }
+  soon.forEach(s => {
+    assert.ok(s.milesAway > 0 && s.milesAway <= 12000);
+    assert.ok(s.dueAtMiles > input.miles);
+    assert.ok(s.cost > 0);
+  });
+});
+
+test('upcomingServices omits engine-only items on an EV', () => {
+  const ev = E.normalizeInput(baseInput({
+    brand: 'Tesla', model: 'Model 3', segment: 'Electric', miles: 95000
+  }), DATA);
+  const names = E.upcomingServices(ev, DATA, 40000).map(s => s.name.toLowerCase());
+  assert.ok(!names.some(n => n.includes('spark plug')), 'an EV has no spark plugs');
+  assert.ok(!names.some(n => n.includes('timing belt')), 'an EV has no timing belt');
+  assert.ok(names.some(n => n.includes('tyre')), 'it still wears tyres');
+});
+
+test('service costs scale with the vehicle class', () => {
+  const car = E.upcomingServices(E.normalizeInput(baseInput({ miles: 44000 }), DATA), DATA, 12000);
+  const truck = E.upcomingServices(
+    E.normalizeInput(baseInput({ miles: 44000, brand: 'Ford', model: 'F-150' }), DATA), DATA, 12000);
+  const tyreCar = car.find(s => s.name.toLowerCase().includes('tyre'));
+  const tyreTruck = truck.find(s => s.name.toLowerCase().includes('tyre'));
+  assert.ok(tyreTruck.cost > tyreCar.cost);
+});
+
+test('serviceOutlook flags a front-loaded first year', () => {
+  // Just before the 45k/50k cluster: tyres and brakes both land inside year one.
+  const ctx = E.analyze(baseInput({ miles: 44000 }), DATA);
+  assert.ok(ctx.services.firstYearTotal > 0);
+  assert.ok(ctx.services.frontLoaded, 'tyres plus brakes should exceed the smooth annual budget');
+  assert.ok(ctx.findings.some(f => f.tag === 'Maintenance'));
+});
+
+test('serviceOutlook is quiet when nothing is due soon', () => {
+  const ctx = E.analyze(baseInput({ miles: 31000, annualMiles: 6000 }), DATA);
+  assert.ok(!ctx.services.frontLoaded);
+});
+
+test('serviceOutlook horizon covers at least the first year', () => {
+  const ctx = E.analyze(baseInput({ miles: 44000 }), DATA);
+  assert.ok(ctx.services.horizonTotal >= ctx.services.firstYearTotal);
+  assert.ok(ctx.services.horizon.length >= ctx.services.firstYear.length);
+});
+
+test('sensitivity ranks factors by how much they move the total', () => {
+  const s = E.sensitivity(baseInput({ comps: [18000] }), DATA, {});
+  assert.ok(s.items.length >= 5);
+  for (let i = 1; i < s.items.length; i++) {
+    assert.ok(s.items[i].swing <= s.items[i - 1].swing, 'must be sorted by swing');
+  }
+  s.items.forEach(i => {
+    assert.ok(i.high >= i.low);
+    assert.ok(Number.isFinite(i.swing));
+    assert.ok(i.note && i.label);
+  });
+  assert.ok(s.low < s.base && s.base < s.high, 'the band brackets the point estimate');
+  assert.strictEqual(s.driver, s.items[0].label);
+});
+
+test('sensitivity drops APR for a cash purchase', () => {
+  const financed = E.sensitivity(baseInput(), DATA, {});
+  const cash = E.sensitivity(baseInput({ payType: 'cash' }), DATA, {});
+  assert.ok(financed.items.some(i => i.label === 'APR'));
+  assert.ok(!cash.items.some(i => i.label === 'APR'));
+});
+
+test('maintMultiplier scales the repair line without touching anything else', () => {
+  const base = E.analyze(baseInput(), DATA);
+  const worse = E.analyze(baseInput({ maintMultiplier: 1.5 }), DATA);
+  assert.ok(Math.abs(worse.tco.maintenance - base.tco.maintenance * 1.5) < 1e-6);
+  assert.strictEqual(worse.tco.fuel, base.tco.fuel);
+});
+
+test('cumulative cost still reconciles with the total after the new cost lines', () => {
+  ['TX', 'VA', 'CA'].forEach(state => {
+    const ctx = E.analyze(baseInput({ payType: 'cash', state, tradeInValue: 3000 }), DATA);
+    const cum = ctx.cumulative[ctx.cumulative.length - 1].total;
+    assert.ok(Math.abs(cum - ctx.tco.total) < 1, `${state}: ${cum} vs ${ctx.tco.total}`);
+  });
+});
+
+test('every state entry is well formed', () => {
+  const rates = DATA.states.rates;
+  assert.ok(Object.keys(rates).length >= 50);
+  Object.entries(rates).forEach(([code, s]) => {
+    assert.ok(/^[A-Z]{2}$/.test(code), code);
+    assert.ok(s.tax >= 0 && s.tax < 0.15, `${code} tax`);
+    assert.strictEqual(typeof s.tradeInCredit, 'boolean', `${code} tradeInCredit`);
+    assert.ok(s.reg >= 0 && s.reg < 1000, `${code} reg`);
+    assert.ok(s.propertyTaxRate >= 0 && s.propertyTaxRate < 0.06, `${code} propertyTaxRate`);
+  });
+});
+
+test('the full input sweep still holds with trade-ins and states in play', () => {
+  for (const state of ['TX', 'CA', 'VA', 'OR', null]) {
+    for (const tradeInValue of [0, 5000, 25000]) {
+      for (const tradePayoff of [0, 12000]) {
+        const ctx = E.analyze(baseInput({ state, tradeInValue, tradePayoff, comps: [18000] }), DATA);
+        assert.ok(ctx.score.score >= 0 && ctx.score.score <= 100);
+        assert.ok(Number.isFinite(ctx.tco.total) && ctx.tco.total > 0);
+        assert.ok(Number.isFinite(ctx.principal) && ctx.principal >= 0);
+        assert.ok(Number.isFinite(ctx.otd));
+      }
+    }
+  }
+});
+
+test('findings flag an inflated dealer fee without asserting a legal cap', () => {
+  const high = E.analyze(baseInput({ fees: 1200 }), DATA);
+  const normal = E.analyze(baseInput({ fees: 400 }), DATA);
+  const fee = high.findings.filter(f => f.tag === 'Fees')[0];
+  assert.ok(fee, 'a high doc fee should be raised');
+  assert.ok(fee.text.includes('negotiable'));
+  assert.ok(!normal.findings.some(f => f.tag === 'Fees'));
+});

@@ -65,27 +65,82 @@
       ? comps.reduce(function (a, b) { return a + b; }, 0) / comps.length
       : Math.max(input.asking || 0, 0);
 
+    // Comps come off listings, which are ASKING prices; cars transact below ask. Without
+    // this haircut the fair value — and with it the walk-away price — is biased high.
+    // Only applied to real comps: anchoring to the seller's own ask is not evidence.
+    var biasFactor = (hasComps && input.applyCompBias !== false)
+      ? (data.compBias ? data.compBias.askingToTransaction : 1) : 1;
+    var adjustedBase = base * biasFactor;
+
     var expectedMiles = input.age * data.constants.stdMilesPerYear;
-    var slope = mileageSlope(base, input.segment, data);
+    var slope = mileageSlope(adjustedBase, input.segment, data);
     var rawAdj = (expectedMiles - input.miles) * slope;
     // A mileage correction can never dominate the valuation.
-    var mileageAdj = clamp(rawAdj, -0.15 * base, 0.15 * base);
+    var mileageAdj = clamp(rawAdj, -0.15 * adjustedBase, 0.15 * adjustedBase);
 
     var condition = CONDITION_FACTOR[input.condition] !== undefined ? CONDITION_FACTOR[input.condition] : 1;
     var title     = TITLE_FACTOR[input.title] !== undefined ? TITLE_FACTOR[input.title] : 1;
     var accident  = ACCIDENT_FACTOR[input.accidents] !== undefined ? ACCIDENT_FACTOR[input.accidents] : 1;
     var owners    = (input.owners || 1) >= 3 ? 0.97 : 1.00;
 
-    var value = (base + mileageAdj) * condition * title * accident * owners;
+    var value = (adjustedBase + mileageAdj) * condition * title * accident * owners;
     return {
       value: Math.max(value, data.constants.floorValue),
-      base: base,
+      base: base,                   // raw comp average, as entered
+      adjustedBase: adjustedBase,   // after the asking-to-transaction haircut
+      biasFactor: biasFactor,
+      biasApplied: biasFactor !== 1,
       hasComps: hasComps,
       compCount: comps.length,
       mileageAdj: mileageAdj,
       expectedMiles: expectedMiles,
       slope: slope,
       factors: { condition: condition, title: title, accident: accident, owners: owners }
+    };
+  }
+
+  /* ------------------------------------------------- purchase costs & trade-in */
+
+  /** State defaults, when a state is selected. */
+  function stateInfo(code, data) {
+    if (!code || !data.states || !data.states.rates) return null;
+    return data.states.rates[String(code).toUpperCase()] || null;
+  }
+
+  /**
+   * What the deal actually costs at signing, including the trade-in.
+   *
+   * Most states tax only the price difference after a trade-in, which is worth real money
+   * and is invisible if you only look at the sticker. Negative equity on the trade is
+   * rolled into the new loan, which is the trap this makes visible.
+   */
+  function purchaseCosts(input, data) {
+    var st = stateInfo(input.state, data);
+    var creditAllowed = input.tradeInCredit !== undefined
+      ? !!input.tradeInCredit
+      : (st ? !!st.tradeInCredit : true);
+
+    var tradeValue = Math.max(toNum(input.tradeInValue, 0), 0);
+    var tradePayoff = Math.max(toNum(input.tradePayoff, 0), 0);
+    var creditedTrade = creditAllowed ? Math.min(tradeValue, input.asking) : 0;
+
+    var taxableAmount = Math.max(input.asking - creditedTrade, 0);
+    var salesTax = taxableAmount * input.taxRate;
+    var taxWithoutTrade = input.asking * input.taxRate;
+    var taxSavings = Math.max(taxWithoutTrade - salesTax, 0);
+
+    var otd = input.asking + salesTax + input.fees;
+    var tradeEquity = tradeValue - tradePayoff;
+    var principal = Math.max(otd - input.down - tradeEquity, 0);
+
+    return {
+      salesTax: salesTax, taxableAmount: taxableAmount, taxSavings: taxSavings,
+      tradeValue: tradeValue, tradePayoff: tradePayoff, tradeEquity: tradeEquity,
+      rolledNegativeEquity: Math.max(-tradeEquity, 0),
+      creditAllowed: creditAllowed, otd: otd, principal: principal,
+      registrationPerYear: st ? st.reg : data.constants.regPerYear,
+      propertyTaxRate: st ? st.propertyTaxRate : 0,
+      stateCode: input.state || null
     };
   }
 
@@ -189,8 +244,7 @@
    */
   function loanTermComparison(input, data, terms) {
     terms = terms || [24, 36, 48, 60, 72, 84];
-    var otd = outTheDoor(input.asking, input.taxRate, input.fees);
-    var principal = Math.max(otd - input.down, 0);
+    var principal = purchaseCosts(input, data).principal;
     var insurancePerMonth = toNum(input.insurance,
       (data.segments[input.segment] || {}).insPerYear || 1750) / 12;
     var fuelPerMonth = annualFuelCost(input, data) / 12;
@@ -243,18 +297,86 @@
 
   /* -------------------------------------------------------- 4.5 maintenance */
 
-  /** Repair spend rises ~6%/yr past age 3 (out of warranty), capped at 2.2x. */
-  function maintenanceCost(brand, startAge, years, data) {
+  /** Class cost/life multipliers — a Tundra is not a Camry, even though both are Toyotas. */
+  function segmentFactors(segment, data) {
+    return (data.segmentFactors && (data.segmentFactors[segment] || data.segmentFactors['default']))
+      || { maint: 1, life: 1, tyres: 900, brakes: 650, belt: true };
+  }
+
+  /**
+   * Repair spend rises ~6%/yr past age 3 (out of warranty), capped at 2.2x, and is scaled
+   * by vehicle class. `segment` is optional so callers that only know the brand still work.
+   */
+  function maintenanceCost(brand, startAge, years, data, segment) {
     var brandData = data.brands[brand] || data.brands['Other'];
+    var classMultiplier = segment ? segmentFactors(segment, data).maint : 1;
+    var base = brandData.perYear !== undefined ? brandData.perYear : brandData.maintPerYear;
     var perYear = [], total = 0;
     for (var t = 0; t < years; t++) {
-      var factor = clamp(1 + 0.06 * Math.max(startAge + t - 3, 0), 1, 2.2);
-      var cost = brandData.perYear !== undefined ? brandData.perYear : brandData.maintPerYear;
-      cost = cost * factor;
+      var ageFactor = clamp(1 + 0.06 * Math.max(startAge + t - 3, 0), 1, 2.2);
+      var cost = base * ageFactor * classMultiplier;
       perYear.push(cost);
       total += cost;
     }
     return { total: total, perYear: perYear };
+  }
+
+  /** Expected service life in miles for this brand in this class. */
+  function lifespanMiles(brand, segment, data) {
+    var brandData = data.brands[brand] || data.brands['Other'];
+    return brandData.lifeMiles * segmentFactors(segment, data).life;
+  }
+
+  /**
+   * Wear items coming due, on the odometer clock. Returns everything due within
+   * `withinMiles` of today, soonest first, with the cost scaled to the vehicle class.
+   */
+  function upcomingServices(input, data, withinMiles) {
+    var factors = segmentFactors(input.segment, data);
+    var isEV = input.segment === 'Electric';
+    var out = [];
+    (data.serviceSchedule || []).forEach(function (item) {
+      if (isEV && item.evSkip) return;
+      var cost = item.costKey ? factors[item.costKey] : item.cost * factors.maint;
+      // Next multiple of the interval at or after the current odometer.
+      var due = Math.ceil(input.miles / item.everyMiles) * item.everyMiles;
+      if (due <= input.miles) due += item.everyMiles;
+      var milesAway = due - input.miles;
+      if (milesAway > withinMiles) return;
+      out.push({
+        name: item.name,
+        dueAtMiles: due,
+        milesAway: milesAway,
+        monthsAway: input.annualMiles > 0 ? milesAway / input.annualMiles * 12 : Infinity,
+        cost: cost,
+        conditional: item.conditional || null
+      });
+    });
+    return out.sort(function (a, b) { return a.milesAway - b.milesAway; });
+  }
+
+  /**
+   * Near-term maintenance outlook. The first-year total is the number a buyer actually
+   * needs: it is what lands right after purchase, and it is often front-loaded well above
+   * the smooth annual average that the cost-of-ownership model budgets.
+   */
+  function serviceOutlook(input, data) {
+    var firstYear = upcomingServices(input, data, input.annualMiles);
+    var horizon = upcomingServices(input, data, input.annualMiles * input.horizon);
+    var sum = function (list) {
+      return list.reduce(function (a, s) { return a + s.cost; }, 0);
+    };
+    var budgetYearOne = maintenanceCost(input.brand, input.age, 1, data, input.segment).total;
+    var firstYearTotal = sum(firstYear);
+    return {
+      firstYear: firstYear,
+      firstYearTotal: firstYearTotal,
+      horizon: horizon,
+      horizonTotal: sum(horizon),
+      budgetYearOne: budgetYearOne,
+      frontLoaded: firstYearTotal > budgetYearOne * 1.25,
+      overrun: Math.max(firstYearTotal - budgetYearOne, 0)
+    };
   }
 
   /* ----------------------------------------------------------- 4.6 fuel/TCO */
@@ -293,15 +415,23 @@
 
   function totalCostOfOwnership(input, data, loan) {
     var years = input.horizon;
+    var purchase = purchaseCosts(input, data);
     var values = projectValue(input.asking, input.age, input.segment, input.brand, years, data);
     var depreciation = input.asking - values[years];
     var fuelPerYear = annualFuelCost(input, data);
     var fuel = fuelPerYear * years;
     var insurance = toNum(input.insurance, (data.segments[input.segment] || {}).insPerYear || 1750) * years;
-    var maintenance = maintenanceCost(input.brand, input.age, years, data);
-    var taxesFees = input.asking * input.taxRate + input.fees + data.constants.regPerYear * years;
+    var maintenance = maintenanceCost(input.brand, input.age, years, data, input.segment);
+    var maintenanceTotal = maintenance.total * toNum(input.maintMultiplier, 1);
+
+    // Several states levy an annual tax on the vehicle's value; it falls as the car does.
+    var propertyTax = 0;
+    for (var t = 1; t <= years; t++) propertyTax += values[t] * purchase.propertyTaxRate;
+
+    var taxesFees = purchase.salesTax + input.fees +
+      purchase.registrationPerYear * years + propertyTax;
     var interest = loan ? loan.totalInterest : 0;
-    var total = depreciation + fuel + insurance + maintenance.total + taxesFees + interest;
+    var total = depreciation + fuel + insurance + maintenanceTotal + taxesFees + interest;
     var totalMiles = input.annualMiles * years;
 
     return {
@@ -310,9 +440,12 @@
       fuel: fuel,
       fuelPerYear: fuelPerYear,
       insurance: insurance,
-      maintenance: maintenance.total,
+      maintenance: maintenanceTotal,
       maintenancePerYear: maintenance.perYear,
       taxesFees: taxesFees,
+      salesTax: purchase.salesTax,
+      propertyTax: propertyTax,
+      registrationPerYear: purchase.registrationPerYear,
       interest: interest,
       total: total,
       totalMiles: totalMiles,
@@ -324,25 +457,85 @@
   /** Cumulative ownership cost year by year — index 0 is the day you buy. */
   function cumulativeCost(input, data, loan) {
     var years = input.horizon;
+    var purchase = purchaseCosts(input, data);
     var values = projectValue(input.asking, input.age, input.segment, input.brand, years, data);
-    var maint = maintenanceCost(input.brand, input.age, years, data);
+    var maint = maintenanceCost(input.brand, input.age, years, data, input.segment);
+    var maintMultiplier = toNum(input.maintMultiplier, 1);
     var fuelPerYear = annualFuelCost(input, data);
     var insurancePerYear = toNum(input.insurance,
       (data.segments[input.segment] || {}).insPerYear || 1750);
-    var upfront = input.asking * input.taxRate + input.fees;
+    var upfront = purchase.salesTax + input.fees;
     var interestPerYear = loan && loan.months
       ? loan.totalInterest / (loan.months / 12) : 0;
 
     var out = [{ year: 0, total: upfront, perMile: 0 }];
     var running = upfront;
     for (var t = 1; t <= years; t++) {
-      running += (input.asking - values[t]) - (input.asking - values[t - 1]);  // that year's depreciation
-      running += fuelPerYear + insurancePerYear + maint.perYear[t - 1] + data.constants.regPerYear;
+      running += values[t - 1] - values[t];                       // that year's depreciation
+      running += fuelPerYear + insurancePerYear +
+        maint.perYear[t - 1] * maintMultiplier + purchase.registrationPerYear +
+        values[t] * purchase.propertyTaxRate;
       if (loan && loan.months) running += Math.min(interestPerYear, loan.totalInterest);
       var miles = input.annualMiles * t;
       out.push({ year: t, total: running, perMile: miles > 0 ? running / miles : 0 });
     }
     return out;
+  }
+
+  /**
+   * How much the cost estimate moves when the assumptions do.
+   *
+   * The report otherwise presents a single number to the dollar, which overstates how much
+   * is actually known — insurance and repair costs here are class averages that can be off
+   * by half. Each factor is varied independently and ranked by how much it swings the total.
+   */
+  function sensitivity(rawInput, data, live) {
+    var base = analyze(rawInput, data, live);
+    var baseTotal = base.tco.total;
+    var factors = [
+      { label: 'Insurance premium', note: 'a class average; real quotes vary by half',
+        low: { insurance: base.input.insurance * 0.6 }, high: { insurance: base.input.insurance * 1.4 },
+        lowLabel: '-40%', highLabel: '+40%' },
+      { label: 'Repair costs', note: 'brand and class average, not this specific car',
+        low: { maintMultiplier: 0.6 }, high: { maintMultiplier: 1.4 },
+        lowLabel: '-40%', highLabel: '+40%' },
+      { label: 'Fuel price', note: 'pump prices over the years you keep it',
+        low: { gasUsdPerGal: base.input.gasUsdPerGal * 0.7 },
+        high: { gasUsdPerGal: base.input.gasUsdPerGal * 1.3 },
+        lowLabel: '-30%', highLabel: '+30%' },
+      { label: 'Miles you drive', note: 'more miles means more fuel and faster wear',
+        low: { annualMiles: base.input.annualMiles * 0.7 },
+        high: { annualMiles: base.input.annualMiles * 1.3 },
+        lowLabel: '-30%', highLabel: '+30%' },
+      { label: 'Price you pay', note: 'how the negotiation actually lands',
+        low: { asking: base.input.asking * 0.95 }, high: { asking: base.input.asking * 1.05 },
+        lowLabel: '-5%', highLabel: '+5%' }
+    ];
+    if (base.input.financed) {
+      factors.push({ label: 'APR', note: 'the rate you are actually approved at',
+        low: { apr: Math.max(base.input.apr - 2, 0) }, high: { apr: base.input.apr + 2 },
+        lowLabel: '-2 pts', highLabel: '+2 pts' });
+    }
+
+    var items = factors.map(function (f) {
+      var lo = analyze(Object.assign({}, rawInput, f.low), data, live).tco.total;
+      var hi = analyze(Object.assign({}, rawInput, f.high), data, live).tco.total;
+      return {
+        label: f.label, note: f.note,
+        low: Math.min(lo, hi), high: Math.max(lo, hi),
+        lowLabel: f.lowLabel, highLabel: f.highLabel,
+        swing: Math.abs(hi - lo)
+      };
+    }).sort(function (a, b) { return b.swing - a.swing; });
+
+    return {
+      base: baseTotal,
+      items: items,
+      // A plausible band, not a worst case: the largest single swing either way.
+      low: baseTotal - (items.length ? items[0].swing / 2 : 0),
+      high: baseTotal + (items.length ? items[0].swing / 2 : 0),
+      driver: items.length ? items[0].label : null
+    };
   }
 
   /**
@@ -638,6 +831,43 @@
           '. A larger down payment or a shorter term closes that gap.');
       }
     }
+    // Trade-in traps.
+    if (ctx.purchase && ctx.purchase.rolledNegativeEquity > 0) {
+      add('critical', 'Trade-in', 'You owe ' + money(ctx.purchase.rolledNegativeEquity) +
+        ' more on your trade than it is worth, and that debt gets rolled into this loan. ' +
+        'You would start the new car already underwater by that amount — pay it off separately ' +
+        'if you possibly can.');
+    }
+    if (ctx.purchase && ctx.purchase.tradeValue > 0 && !ctx.purchase.creditAllowed) {
+      add('warning', 'Trade-in', 'Your state does not appear to reduce sales tax by the trade-in ' +
+        'value, so you are taxed on the full price. Selling the old car privately instead may net ' +
+        'you more — check your state\'s rule, it is worth ' +
+        money(Math.min(ctx.purchase.tradeValue, input.asking) * input.taxRate) + ' here.');
+    }
+
+    // Dealer fees are the least regulated number on the contract.
+    if (input.fees >= 800) {
+      add('warning', 'Fees', 'Dealer and documentation fees of ' + money(input.fees) +
+        ' are on the high side. Some states cap this fee by law and others do not, so check ' +
+        'your state\'s rule — and remember it is negotiable in practice even where it is not ' +
+        'capped: ask for the price to come down by the same amount.');
+    }
+
+    // Near-term wear items.
+    if (ctx.services && ctx.services.frontLoaded) {
+      add('warning', 'Maintenance', 'About ' + money(ctx.services.firstYearTotal) +
+        ' of wear items come due in the first year (' +
+        ctx.services.firstYear.slice(0, 3).map(function (s) { return s.name.toLowerCase(); }).join(', ') +
+        ') — roughly ' + money(ctx.services.overrun) + ' above the average annual budget. ' +
+        'Use it as a negotiating point, and have the money ready.');
+    }
+
+    if (ctx.tco && ctx.tco.propertyTax > 0) {
+      add('warning', 'Taxes', 'Your state levies an annual tax on the vehicle\'s value — about ' +
+        money(ctx.tco.propertyTax) + ' over ' + input.horizon + ' years on this car. ' +
+        'It is easy to forget and it is included in the totals here.');
+    }
+
     var brandData = data.brands[input.brand] || data.brands['Other'];
     if (brandData.maintPerYear >= 850) {
       add('warning', 'Running cost', input.brand + ' averages ' + money(brandData.maintPerYear) +
@@ -693,6 +923,15 @@
     }
     if (input.ppi === 'yes') {
       add('good', 'Inspection', 'Passed an independent pre-purchase inspection.');
+    }
+    if (ctx.purchase && ctx.purchase.taxSavings > 0) {
+      add('good', 'Trade-in', 'Your state taxes only the price difference after the trade-in, ' +
+        'which saves ' + money(ctx.purchase.taxSavings) + ' in sales tax on this deal.');
+    }
+    if (ctx.fair && ctx.fair.biasApplied) {
+      add('good', 'Method', 'Your comparables are listing prices, so fair value here is set ' +
+        (100 - ctx.fair.biasFactor * 100).toFixed(0) + '% below their average — cars normally ' +
+        'transact under ask, and pricing off the ask alone would push your walk-away number too high.');
     }
     if (ctx.safety.rated && ctx.safety.stars >= 5) {
       add('good', 'Safety', '5-star NHTSA overall crash rating.');
@@ -751,7 +990,13 @@
       elecUsdPerKwh: toNum(raw.elecUsdPerKwh, data.energy.elecUsdPerKwh),
       insurance: toNum(raw.insurance, (data.segments[rec && rec.seg ? rec.seg : segment] || {}).insPerYear),
       income: Math.max(toNum(raw.income, 0), 0),
-      isEV: raw.isEV
+      isEV: raw.isEV,
+      state: raw.state || null,
+      tradeInValue: Math.max(toNum(raw.tradeInValue, 0), 0),
+      tradePayoff: Math.max(toNum(raw.tradePayoff, 0), 0),
+      tradeInCredit: raw.tradeInCredit,
+      applyCompBias: raw.applyCompBias !== false,
+      maintMultiplier: clamp(toNum(raw.maintMultiplier, 1), 0.1, 5)
     };
   }
 
@@ -772,17 +1017,18 @@
 
     var fair = fairValue(input, data);
     var priceDelta = fair.value > 0 ? (input.asking - fair.value) / fair.value : 0;
-    var otd = outTheDoor(input.asking, input.taxRate, input.fees);
-    var principal = Math.max(otd - input.down, 0);
+    var purchase = purchaseCosts(input, data);
+    var otd = purchase.otd;
+    var principal = purchase.principal;
     var loan = input.financed
       ? loanSchedule(principal, input.apr, input.termMonths)
       : { payment: 0, totalInterest: 0, balanceByYear: [0], months: 0 };
 
     var tco = totalCostOfOwnership(input, data, loan);
 
-    var brandData = data.brands[input.brand] || data.brands['Other'];
-    var remainingMiles = Math.max(brandData.lifeMiles - input.miles, 0);
-    var lifeUsed = clamp(input.miles / brandData.lifeMiles, 0, 1);
+    var lifeMiles = lifespanMiles(input.brand, input.segment, data);
+    var remainingMiles = Math.max(lifeMiles - input.miles, 0);
+    var lifeUsed = clamp(input.miles / lifeMiles, 0, 1);
     var milesPerYear = input.age > 0 ? input.miles / input.age : input.miles;
 
     // Equity: how long the loan balance exceeds the car's value.
@@ -808,6 +1054,7 @@
       input: input, data: data, live: live, fair: fair, priceDelta: priceDelta,
       otd: otd, loan: loan, tco: tco, remainingMiles: remainingMiles, lifeUsed: lifeUsed,
       milesPerYear: milesPerYear, remainingYears: remainingMiles / input.annualMiles,
+      purchase: purchase, lifeMiles: lifeMiles,
       reliability: reliability, safety: safety,
       negotiation: negotiation(fair.value, input),
       valueCurve: valueCurve, balanceCurve: balanceCurve, underwaterUntil: underwaterUntil,
@@ -818,10 +1065,12 @@
     ctx.verdict = verdictFor(ctx.score.score);
     ctx.affordability = affordability(input, otd, loan.payment, tco);
     ctx.bakedRecallCount = bakedRecallCount(input, data);
-    ctx.findings = findings(ctx);
     ctx.principal = principal;
     ctx.cumulative = cumulativeCost(input, data, loan);
     ctx.termComparison = input.financed ? loanTermComparison(input, data) : null;
+    ctx.services = serviceOutlook(input, data);
+    // findings() reads the views above, so it runs last.
+    ctx.findings = findings(ctx);
     return ctx;
   }
 
@@ -832,6 +1081,9 @@
     depRateAt: depRateAt, projectValue: projectValue,
     loanSchedule: loanSchedule, maintenanceCost: maintenanceCost,
     valueAtMonth: valueAtMonth, termForPayment: termForPayment,
+    segmentFactors: segmentFactors, lifespanMiles: lifespanMiles,
+    upcomingServices: upcomingServices, serviceOutlook: serviceOutlook,
+    stateInfo: stateInfo, purchaseCosts: purchaseCosts, sensitivity: sensitivity,
     loanTermComparison: loanTermComparison, cumulativeCost: cumulativeCost,
     priceForScore: priceForScore, bakedRecallCount: bakedRecallCount,
     vehicleRecord: vehicleRecord, annualFuelCost: annualFuelCost,

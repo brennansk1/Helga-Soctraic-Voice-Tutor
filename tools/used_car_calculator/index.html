@@ -308,6 +308,10 @@ ul.checks li::before {
 }
 .colophon a { color: var(--ink-2); }
 .scroller { overflow-x: auto; }
+/* Wide ledgers must scroll inside their own section, never push the page sideways. */
+#term-body, #service-body, #sens-body, #signing-body, #price-ladder,
+#afford-check, .score-detail { overflow-x: auto; max-width: 100%; }
+table.ledger { min-width: 320px; }
 #results { display: none; }
 .rec-row { background: var(--s1-wash); }
 .rec-row td { font-weight: 700; }
@@ -334,7 +338,9 @@ ul.checks li::before {
         <div class="controls noprint" style="justify-content:flex-end;margin-top:8px">
           <button class="tiny ghost" id="btn-keys" type="button">Sources</button>
           <button class="tiny ghost" id="theme-toggle" type="button">Invert</button>
+          <button class="tiny ghost" id="btn-share" type="button">Copy link</button>
           <button class="tiny ghost" id="btn-print" type="button">Print</button>
+          <button class="tiny ghost" id="btn-reset" type="button">Reset</button>
         </div>
       </div>
     </div>
@@ -458,6 +464,12 @@ ul.checks li::before {
             <option value="no">Not done / refused</option>
           </select></label>
       </div>
+      <label style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;color:var(--ink-2);margin-top:14px;max-width:72ch">
+        <input type="checkbox" id="in-comp-bias" checked style="margin-top:3px">
+        <span>Treat comparables as <b>asking</b> prices and discount them to an expected transaction
+        price. Listings sit above what cars actually sell for, so leaving this on keeps your
+        walk-away number honest. Untick only if you entered real sold prices.</span>
+      </label>
       <div class="controls" style="margin-top:16px">
         <button class="tiny" id="btn-comps" type="button" style="display:none">Auto-fill from Marketcheck</button>
         <label style="display:inline-flex;gap:8px;align-items:center;font-size:12.5px;color:var(--ink-2)">
@@ -513,7 +525,12 @@ ul.checks li::before {
           <input id="in-insurance" type="number" min="0" step="50" placeholder="auto"></label>
         <label class="f"><span class="cap">Take-home pay</span><span class="hint">per month, optional</span>
           <input id="in-income" type="number" min="0" step="100" placeholder="—"></label>
+        <label class="f"><span class="cap">Trade-in value</span><span class="hint">what they offered you</span>
+          <input id="in-trade-value" type="number" min="0" step="100" placeholder="—"></label>
+        <label class="f"><span class="cap">Trade-in payoff</span><span class="hint">still owed on it</span>
+          <input id="in-trade-payoff" type="number" min="0" step="100" placeholder="—"></label>
       </div>
+      <p class="block-note" id="state-note" style="margin:14px 0 0"></p>
       <div class="controls" style="margin-top:24px">
         <button class="solid" id="btn-analyze" type="button">Generate report</button>
         <button id="btn-save" type="button" style="display:none">Add to comparison</button>
@@ -527,6 +544,12 @@ ul.checks li::before {
     <section class="block">
       <div class="inner"><div class="stamp">04</div><div class="block-body">
         <h2>Assessment</h2>
+        <div class="callout warn" style="margin-top:0">
+          The score is a weighted judgement, not a measurement. The weights are chosen, not
+          calibrated against outcomes, and the benchmark data behind reliability, repair costs and
+          depreciation are class averages — see the sources note at the foot of the report. Use it
+          to rank cars against each other, not as a verdict on any one of them.
+        </div>
         <div class="verdict-rig">
           <div>
             <div class="grade">
@@ -579,8 +602,19 @@ ul.checks li::before {
       </div></div>
     </section>
 
-    <section class="block" id="term-block">
+    <section class="block" id="signing-block">
       <div class="inner"><div class="stamp">08</div><div class="block-body">
+        <h2>What it costs at signing</h2>
+        <p class="block-note">
+          The sticker is not the number. This is everything that changes hands on the day,
+          including how a trade-in moves the sales tax.
+        </p>
+        <div id="signing-body"></div>
+      </div></div>
+    </section>
+
+    <section class="block" id="term-block">
+      <div class="inner"><div class="stamp">09</div><div class="block-body">
         <h2>How long should the loan be?</h2>
         <p class="block-note">
           Every extra year of term buys a smaller payment and costs real interest — and keeps you
@@ -591,7 +625,7 @@ ul.checks li::before {
     </section>
 
     <section class="block">
-      <div class="inner"><div class="stamp">09</div><div class="block-body">
+      <div class="inner"><div class="stamp">10</div><div class="block-body">
         <h2>Value against what you owe</h2>
         <div class="legend" id="line-legend"></div>
         <p class="block-note" id="equity-note"></p>
@@ -604,7 +638,7 @@ ul.checks li::before {
     </section>
 
     <section class="block">
-      <div class="inner"><div class="stamp">10</div><div class="block-body">
+      <div class="inner"><div class="stamp">11</div><div class="block-body">
         <h2 id="tco-title">Cost of ownership</h2>
         <p class="block-note" id="tco-note"></p>
         <div class="chart-rig">
@@ -620,8 +654,28 @@ ul.checks li::before {
       </div></div>
     </section>
 
+    <section class="block" id="service-block">
+      <div class="inner"><div class="stamp">12</div><div class="block-body">
+        <h2>Coming due</h2>
+        <p class="block-note" id="service-note"></p>
+        <div id="service-body"></div>
+      </div></div>
+    </section>
+
+    <section class="block" id="sensitivity-block">
+      <div class="inner"><div class="stamp">13</div><div class="block-body">
+        <h2>How wrong could this be</h2>
+        <p class="block-note" id="sens-note"></p>
+        <div class="chart-rig">
+          <div class="scroller"><div id="sens-chart"></div></div>
+          <div class="tip" id="sens-tip"></div>
+        </div>
+        <div id="sens-body"></div>
+      </div></div>
+    </section>
+
     <section class="block" id="complaint-block" style="display:none">
-      <div class="inner"><div class="stamp">11</div><div class="block-body">
+      <div class="inner"><div class="stamp">14</div><div class="block-body">
         <h2>What owners complain about</h2>
         <p class="block-note" id="complaint-note"></p>
         <div class="chart-rig">
@@ -632,14 +686,14 @@ ul.checks li::before {
     </section>
 
     <section class="block">
-      <div class="inner"><div class="stamp">12</div><div class="block-body">
+      <div class="inner"><div class="stamp">15</div><div class="block-body">
         <h2>Findings</h2>
         <ul class="findings" id="findings"></ul>
       </div></div>
     </section>
 
     <section class="block" id="compare-card" style="display:none">
-      <div class="inner"><div class="stamp">13</div><div class="block-body">
+      <div class="inner"><div class="stamp">16</div><div class="block-body">
         <h2>Comparison</h2>
         <div class="scroller"><table id="compare-table"></table></div>
         <div class="controls noprint" style="margin-top:16px">
@@ -650,7 +704,7 @@ ul.checks li::before {
     </section>
 
     <section class="block">
-      <div class="inner"><div class="stamp">14</div><div class="block-body">
+      <div class="inner"><div class="stamp">17</div><div class="block-body">
         <h2>Pre-purchase checklist</h2>
         <ul class="checks">
           <li>Run the VIN through a history report (Carfax or AutoCheck).</li>
