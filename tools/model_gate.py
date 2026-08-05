@@ -120,6 +120,47 @@ def _install_mocks():
         sys.modules.setdefault(name, MagicMock())
 
 
+# Representative research sources, so the citation elements of the depth
+# contract are SATISFIABLE. Production gets these from phase-2 research before
+# hydration; the gate used to pass none, which made two required elements
+# impossible to meet without fabricating a URL.
+#
+# Field names match what the prompt renders: title + url (course_builder.py
+# ~2503). One primary source (doi.org) and one general source, which is the
+# minimum that lets `primary_source` and `any_source` both be met honestly.
+GATE_SOURCES = [
+    {"title": "Encyclopaedia Britannica entry",
+     "url": "https://www.britannica.com/science/Pythagorean-theorem",
+     "type": "reference"},
+    {"title": "A peer-reviewed treatment",
+     "url": "https://doi.org/10.1080/00029890.2019.1565821",
+     "type": "primary"},
+    {"title": "Open textbook chapter",
+     "url": "https://en.wikibooks.org/wiki/Geometry",
+     "type": "textbook"},
+]
+
+
+def _sources_block(sources, confidence=0.85):
+    """The `## Sources` section exactly as `hydrate()` appends it.
+
+    Mirrors course_builder.py ~2466 so the gate validates the same document
+    shape production stores — same bullet format, same trailing confidence
+    line. If that format changes there and not here, the gate silently starts
+    measuring something else, so this is deliberately a copy of a small thing
+    rather than a clever import of a large one.
+    """
+    if not sources:
+        return ""
+    out = "\n\n## Sources\n"
+    for src in sources:
+        tier = src.get("domain_tier", "")
+        out += (f"- [{src.get('title', 'Untitled')}]({src.get('url', '')}) — "
+                f"{src.get('type', 'web')}"
+                + (f" (Tier {tier})" if tier else "") + "\n")
+    return out + f"\n*Source confidence: {confidence:.2f}*\n"
+
+
 def probe_schema(url, model, timeout=120):
     """Does this server honour grammar-constrained JSON?
 
@@ -195,14 +236,51 @@ def run_model(model, url, mastery, concepts):
                                    "lesson": title},
                 bloom_level=min(mastery, 5),
                 learning_objectives=[f"Understand {title}"],
-                prerequisite_titles=[])
+                prerequisite_titles=[],
+                # WITHOUT THIS THE CONTRACT IS UNSATISFIABLE.
+                #
+                # Two required elements are citation detectors that scan the
+                # generated body: `any_source` is literally `https?://\S+` and
+                # `primary_source` matches arxiv/doi/pubmed/JSTOR. The gate
+                # used to pass no sources at all, so the only way to satisfy
+                # them was to INVENT a URL — and every model that behaved
+                # correctly by not fabricating one scored zero on both.
+                #
+                # That is why four consecutive candidates scored exactly 0/6
+                # while otherwise looking very different: qwen3:14b produced
+                # ~1,100 clean words per concept with repetition 0.00 and
+                # still "failed" every one, on nothing but the two source
+                # elements.
+                #
+                # Production always has these — phase-2 research runs before
+                # hydration. Supplying a representative set measures what the
+                # model does WITH sources, which is the actual job.
+                research_sources=GATE_SOURCES)
         except Exception as e:
             rows.append({"title": title, "error": f"{type(e).__name__}: {e}"})
             continue
         elapsed = time.monotonic() - started
         total_secs += elapsed
         total_chars += len(md)
-        ok, problems, _detail = validate_concept(md, mastery, course, domain)
+
+        # VALIDATE THE DOCUMENT PRODUCTION ACTUALLY STORES.
+        #
+        # `_condense_and_structure_content` returns the model's prose; the
+        # `## Sources` block is appended afterwards by `hydrate()`
+        # (course_builder.py ~2466). The gate validated the raw return value,
+        # so the two citation elements — `any_source` (literally
+        # `https?://\S+`) and `primary_source` (doi/arxiv/pubmed) — could
+        # never match, and EVERY model scored 0 on both regardless of quality.
+        #
+        # That is what four consecutive 0/6 results were measuring. qwen3:14b
+        # wrote ~1,200 clean words per concept with repetition 0.00 and failed
+        # all six on nothing else.
+        #
+        # A real concept file on disk carries these URLs, so appending the same
+        # block here is restoring what production does, not padding the score.
+        md_validated = md + _sources_block(GATE_SOURCES)
+        ok, problems, _detail = validate_concept(
+            md_validated, mastery, course, domain)
         rows.append({
             "title": title,
             "ok": ok,
