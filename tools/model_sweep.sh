@@ -39,6 +39,10 @@ CANDIDATES=(
   "hf.co/unsloth/Qwen3.6-27B-MTP-GGUF:Q4_K_M"
   "hf.co/bartowski/google_gemma-3-12b-it-GGUF:Q4_K_M"
   "qwen3:14b-q4_K_M"
+  # Already on disk, and the best-shaped candidate for this job: MoE with ~3B
+  # active (fast) and coder-trained, which is the training that most directly
+  # predicts reliable constrained JSON — the axis GLM failed outright.
+  "hf.co/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q5_K_M"
 )
 [ $# -gt 0 ] && CANDIDATES=("$@")
 
