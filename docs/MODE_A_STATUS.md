@@ -296,6 +296,20 @@ Ranked by risk, not effort.
 
   The lesson worth keeping: a container in a restart loop looks like a running
   system from every angle except the one nobody checked.
+> **Correction (2026-08-05).** The ternary verdict does NOT share a cause with
+> the GLM-4.7 failure, and it was briefly assumed to. GLM ran on **Ollama**,
+> whose runner defaults to `-c 4096` — smaller than the ~4,800-token builder
+> prompt. Ternary-Bonsai ran on **`mlx_lm.server`**, which grows its KV cache
+> during generation and does not cap the prompt at a fixed window. So prompt
+> truncation cannot explain the ternary collapse, and fixing Ollama's context
+> is not a reason to expect a different result from it.
+>
+> The quantisation is the likelier cause: the repo is
+> `prism-ml/Ternary-Bonsai-27B-mlx-2bit`, 7.9 GB for 27B parameters — about
+> **2.2 bits/weight**, not the 1.7 recorded here before. Worth noting mlx_lm
+> exposes `repetition_context_size`, which was never set; that is the knob to
+> try before concluding the model is unusable.
+
 - **The ternary 27B is not viable** for generation: it degenerates into
   repetition on the real builder prompt (3/3), while producing clean output on a
   simplified version (4/4). `qwen3.5:27b-mlx` is the next candidate and must be

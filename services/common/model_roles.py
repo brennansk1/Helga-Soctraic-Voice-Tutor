@@ -51,7 +51,7 @@ Two things this seam cannot decide for you:
     stopped being the normal failure. Verify the candidate's server honours it
     before trusting the build path to it.
 
-And one thing the project already learned: Ternary-Bonsai-27B at 1.7-bit
+And one thing the project already learned: Ternary-Bonsai-27B at 2-bit (7.9 GB, ~2.2 bits/weight)
 produced clean output on a simplified prompt (4/4) and degenerated into
 repetition on the REAL builder prompt (3/3). See docs/MODE_A_STATUS.md §5. Gate
 any candidate on the real prompt — `tools/model_gate.py` does exactly that.

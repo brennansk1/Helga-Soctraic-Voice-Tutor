@@ -134,7 +134,7 @@ since the user runs other software on the same machine.
 with everything else instead of reserving a container slice. Dropping the
 PyTorch dependency chain (done — see `services/common/embeddings.py`) removes
 hundreds of MB and a recurring source of version conflicts. MLX quantisations
-(1.7-bit ternary) have no GGUF equivalent, so portability was costing us the
+(2-bit ternary, ~2.2 bits/weight) have no GGUF equivalent, so portability was costing us the
 best memory/quality trade available.
 
 **What we explicitly accept:** v1 will not run on Linux or Jetson without work.
@@ -439,7 +439,7 @@ it offline; fixed-curriculum platforms do it worse.
 **A4.1c — SPLIT THE MODELS: large for batch, 9B for interactive.**
 Generation is where quality is failing and where latency does not matter. A 4-bit 27B fits in
 24 GB and can run overnight at any speed. **Zero runtime cost if it works.**
-> **Gate this on the REAL builder prompt.** Ternary-Bonsai-27B at 1.7-bit collapsed into
+> **Gate this on the REAL builder prompt.** Ternary-Bonsai-27B at 2-bit (7.9 GB, ~2.2 bits/weight) collapsed into
 > repetition on the actual builder prompt (3/3) while producing clean output on a simplified
 > one (4/4). A candidate that looks fine on a toy prompt has not been tested.
 
