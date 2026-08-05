@@ -166,14 +166,40 @@ for model in "${CANDIDATES[@]}"; do
        Results so far are in $OUT"
   fi
 
-  # Tee to a per-model log. Capturing stdout into a variable alone left a
-  # multi-hour run completely opaque — no way to tell progress from a hang.
+  # LIVE LOG, NOT A CAPTURED VARIABLE.
+  #
+  # model_gate writes its per-concept progress AND its final JSON to stdout.
+  # `result=$(... )` swallowed both until the process exited, so a run that
+  # takes an hour per model showed nothing at all — there was no way to tell
+  # progress from a hang, which is exactly what happened on the first attempt.
+  #
+  # PYTHONUNBUFFERED matters as much as the redirect: without it Python
+  # block-buffers stdout when it is a file rather than a terminal, so the log
+  # stays empty until the very end and is no more observable than the
+  # variable was.
   slug=$(echo "$model" | tr '/:' '__')
   mlog="$(dirname "$OUT")/${slug}.log"
+  log "live log   : $mlog"
   started=$(date +%s)
-  result=$(python3 tools/model_gate.py --model "$model" --json 2>"$mlog")
+  PYTHONUNBUFFERED=1 python3 tools/model_gate.py --model "$model" --json \
+      > "$mlog" 2>&1
   rc=$?
-  log "detail log: $mlog"
+
+  # The JSON result is the trailing array, after the human-readable table.
+  result=$(python3 - "$mlog" <<'EXTRACT'
+import json, sys
+text = open(sys.argv[1], errors="replace").read()
+start = text.rfind("\n[")
+if start != -1:
+    try:
+        print(json.dumps(json.loads(text[start:].strip())))
+        sys.exit(0)
+    except json.JSONDecodeError:
+        pass
+sys.exit(1)
+EXTRACT
+)
+  [ -z "$result" ] && rc=1
   elapsed=$(( $(date +%s) - started ))
 
   if [ $rc -ne 0 ] || [ -z "$result" ]; then
