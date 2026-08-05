@@ -137,7 +137,21 @@ def probe_schema(url, model, timeout=120):
                 {"role": "user", "content":
                  "Propose two teaching diagrams for the Pythagorean theorem."},
             ],
-            "max_tokens": 400,
+            # 400 was too low and it read as a MODEL failure. Measured against
+            # qwen3:14b, the constrained response came back as valid-but-
+            # truncated JSON ("Unterminated string") — the grammar was working
+            # and the budget was not. A probe that reports "this model cannot
+            # do constrained JSON" when it actually can is worse than no probe,
+            # because it eliminates good candidates.
+            "max_tokens": 1200,
+            # THINKING OFF. Without this a reasoning model spends the whole
+            # budget on its thinking block and returns empty content — measured
+            # here as an empty string on two of three request shapes, reported
+            # as "returned text that is not JSON". llm_utils has disabled this
+            # since the A1/A6 fix; the probe never did, so it was not measuring
+            # what production does.
+            "reasoning_effort": "none",
+            "chat_template_kwargs": {"enable_thinking": False},
             "format": AID_SCHEMA,          # Ollama
             "response_format": {"type": "json_schema",
                                 "json_schema": {"name": "aids",
