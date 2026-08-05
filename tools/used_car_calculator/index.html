@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Used Car Deal Analyzer</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --status-good: #0ca30c;
+    --status-warning: #fab219;
+    --status-serious: #ec835a;
+    --status-critical: #d03b3b;
+    --warning-ink: #8a6100;
+    --delta-good: #006300;
+    --accent-wash: rgba(42,120,214,0.10);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1: #1a1a19; --page: #0d0d0d;
+      --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
+      --grid: #2c2c2a; --baseline: #383835; --border: rgba(255,255,255,0.10);
+      --series-1: #3987e5; --series-2: #d95926;
+      --warning-ink: #fab219; --delta-good: #0ca30c;
+      --accent-wash: rgba(57,135,229,0.14);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19; --page: #0d0d0d;
+    --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
+    --grid: #2c2c2a; --baseline: #383835; --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5; --series-2: #d95926;
+    --warning-ink: #fab219; --delta-good: #0ca30c;
+    --accent-wash: rgba(57,135,229,0.14);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px; line-height: 1.45;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 24px 20px 80px; }
+  header.top { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  h1 { font-size: 24px; font-weight: 650; margin: 0; }
+  .subtitle { color: var(--text-secondary); margin: 6px 0 20px; max-width: 74ch; }
+  h2 { font-size: 17px; font-weight: 650; margin: 0 0 12px; }
+  h3 { font-size: 13px; font-weight: 650; margin: 16px 0 8px; color: var(--text-secondary);
+       text-transform: uppercase; letter-spacing: 0.04em; }
+
+  .card { background: var(--surface-1); border: 1px solid var(--border);
+          border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+  .grid { display: grid; gap: 14px 18px; }
+  .cols-4 { grid-template-columns: repeat(4, 1fr); }
+  .cols-3 { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 860px) { .cols-4, .cols-3 { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 520px) { .cols-4, .cols-3 { grid-template-columns: 1fr; } }
+
+  label.field { display: flex; flex-direction: column; gap: 4px; font-size: 13px;
+                color: var(--text-secondary); font-weight: 550; }
+  label.field .hint { font-weight: 400; color: var(--text-muted); font-size: 12px; }
+  input, select { font: inherit; color: var(--text-primary); background: var(--page);
+                  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; width: 100%; }
+  input:focus, select:focus { outline: 2px solid var(--series-1); outline-offset: 1px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+  button { font: inherit; font-weight: 600; border-radius: 8px; border: 1px solid var(--border);
+           padding: 9px 16px; cursor: pointer; background: var(--surface-1); color: var(--text-primary); }
+  button.primary { background: var(--series-1); border-color: var(--series-1); color: #fff; }
+  button:not(.primary):hover { background: var(--accent-wash); }
+  button.small { padding: 4px 10px; font-size: 13px; font-weight: 500; }
+  button:disabled { opacity: 0.5; cursor: default; }
+
+  .prov { font-size: 11px; color: var(--text-muted); font-weight: 400; }
+  .prov::before { content: "· "; }
+
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+  @media (max-width: 860px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .tile .label { font-size: 13px; color: var(--text-secondary); }
+  .tile .value { font-size: 26px; font-weight: 650; margin-top: 2px; }
+  .tile .sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .tile.bare { border: none; padding: 0; background: none; }
+
+  .score-row { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+  .score-hero { font-size: 52px; font-weight: 700; line-height: 1; }
+  .score-hero .of { font-size: 18px; color: var(--text-muted); font-weight: 500; }
+  .meter { flex: 1 1 260px; min-width: 220px; }
+  .meter .track { height: 10px; border-radius: 5px; background: var(--grid); overflow: hidden; }
+  .meter .fill { height: 100%; border-radius: 5px; transition: width .4s ease; }
+  .verdict { display: inline-flex; align-items: center; gap: 8px; font-weight: 650; margin-top: 8px; font-size: 16px; }
+  .caps { font-size: 13px; color: var(--warning-ink); margin-top: 4px; }
+  .score-detail { width: 100%; margin-top: 14px; }
+  .score-detail table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .score-detail td { padding: 5px 8px 5px 0; color: var(--text-secondary); border-bottom: 1px solid var(--grid); }
+  .score-detail td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-primary); white-space: nowrap; }
+
+  .chart-block { position: relative; }
+  .chart-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .legend { display: flex; gap: 16px; font-size: 13px; color: var(--text-secondary); }
+  .legend .key { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .swatch { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+  svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .tooltip { position: absolute; pointer-events: none; z-index: 5; background: var(--surface-1);
+             border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 13px;
+             box-shadow: 0 4px 14px rgba(0,0,0,0.15); display: none; min-width: 165px; }
+  .tooltip .t-title { font-weight: 650; margin-bottom: 4px; }
+  .tooltip .t-row { display: flex; justify-content: space-between; gap: 12px; color: var(--text-secondary); }
+  .tooltip .t-row b { color: var(--text-primary); font-variant-numeric: tabular-nums; font-weight: 600; }
+
+  details.table-view { margin-top: 8px; }
+  details.table-view summary { cursor: pointer; font-size: 13px; color: var(--text-muted); }
+  details.table-view table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+  details.table-view th, details.table-view td { text-align: right; padding: 4px 8px;
+    border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+  details.table-view th:first-child, details.table-view td:first-child { text-align: left; }
+  details.table-view th { color: var(--text-secondary); font-weight: 600; }
+
+  ul.findings { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 9px; }
+  ul.findings li { display: flex; gap: 10px; align-items: flex-start; }
+  ul.findings .icon { flex: 0 0 auto; font-size: 15px; line-height: 1.4; }
+  ul.findings .tag { font-weight: 650; margin-right: 4px; }
+  .f-good .tag { color: var(--delta-good); }
+  .f-warning .tag { color: var(--warning-ink); }
+  .f-critical .tag { color: var(--status-critical); }
+
+  #compare-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  #compare-table th, #compare-table td { padding: 8px 10px; border-bottom: 1px solid var(--grid);
+    text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #compare-table th:first-child, #compare-table td:first-child { text-align: left; }
+  #compare-table th { color: var(--text-secondary); font-weight: 600; font-size: 13px; }
+  #compare-table td.best { font-weight: 700; }
+  #compare-table td.best::after { content: " ★"; color: var(--text-muted); font-weight: 400; }
+
+  .checklist { columns: 2; column-gap: 32px; font-size: 14px; color: var(--text-secondary); }
+  @media (max-width: 700px) { .checklist { columns: 1; } }
+  .checklist li { margin-bottom: 6px; break-inside: avoid; }
+
+  .banner { border-radius: 8px; padding: 10px 14px; font-size: 14px; margin-bottom: 12px;
+            border: 1px solid var(--border); display: flex; gap: 8px; align-items: flex-start; }
+  .banner.info { background: var(--accent-wash); }
+  .footnote { font-size: 12px; color: var(--text-muted); margin-top: 20px; max-width: 92ch; }
+  .footnote a { color: inherit; }
+  #results { display: none; }
+  .overflow-x { overflow-x: auto; }
+  .spec-line { font-size: 14px; color: var(--text-secondary); }
+  .stars { letter-spacing: 2px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Used Car Deal Analyzer</h1>
+    <div class="row">
+      <button id="btn-keys" class="small" type="button">⚙ Data sources</button>
+      <button id="theme-toggle" class="small" type="button" aria-label="Toggle dark mode">◐ Theme</button>
+    </div>
+  </header>
+  <p class="subtitle">
+    Enter a car you're considering. This estimates its fair value, projects the full cost of
+    ownership, checks the financing, pulls open safety recalls and crash ratings from NHTSA,
+    scores the deal 0–100, and gives you a negotiation target and walk-away price. Save several
+    candidates to compare. Everything runs in your browser; nothing you type is sent anywhere.
+  </p>
+
+  <section class="card" id="keys-card" style="display:none">
+    <h2>Data sources &amp; API keys</h2>
+    <p class="subtitle" style="margin-top:0">
+      The tool works fully offline from its built-in dataset. Free NHTSA and EPA lookups need no
+      key. These optional free keys add live prices and market context. Keys are stored only in
+      this browser's local storage and are sent directly to the provider.
+    </p>
+    <div class="grid cols-3">
+      <label class="field">EIA API key <span class="hint">live fuel &amp; electricity prices — free at eia.gov/opendata</span>
+        <input id="key-eia" type="text" placeholder="optional" autocomplete="off"></label>
+      <label class="field">FRED API key <span class="hint">used-car price trend — free at fred.stlouisfed.org</span>
+        <input id="key-fred" type="text" placeholder="optional" autocomplete="off"></label>
+      <label class="field">Marketcheck API key <span class="hint">auto-fill live market comps</span>
+        <input id="key-marketcheck" type="text" placeholder="optional" autocomplete="off"></label>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button class="small" id="btn-save-keys" type="button">Save keys</button>
+      <button class="small" id="btn-clear-keys" type="button">Clear keys</button>
+      <span id="keys-status" class="prov"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>1 · The car</h2>
+    <div class="grid cols-4">
+      <label class="field">VIN <span class="hint">optional — decodes the car and pulls recalls</span>
+        <input id="in-vin" type="text" placeholder="17 characters" autocomplete="off" maxlength="17"></label>
+      <label class="field">&nbsp;
+        <button id="btn-vin" type="button">Decode VIN &amp; check recalls</button></label>
+      <label class="field">Nickname <span class="hint">for the comparison table</span>
+        <input id="in-name" type="text" placeholder="Blue Camry — corner lot"></label>
+      <label class="field">Model year
+        <input id="in-year" type="number" min="1981" max="2027" value="2019"></label>
+      <label class="field">Make
+        <select id="in-brand"></select></label>
+      <label class="field">Model <span class="hint">picks up exact EPA fuel economy</span>
+        <input id="in-model" list="model-list" placeholder="e.g. Camry">
+        <datalist id="model-list"></datalist></label>
+      <label class="field">Vehicle type
+        <select id="in-segment"></select></label>
+      <label class="field">Odometer (miles)
+        <input id="in-miles" type="number" min="0" step="1000" value="60000"></label>
+      <label class="field">Asking price ($)
+        <input id="in-price" type="number" min="0" step="100" value="18500"></label>
+      <label class="field">Fuel economy (MPG combined) <span class="hint" id="mpg-hint">blank = from EPA data</span>
+        <input id="in-mpg" type="number" min="5" max="150" placeholder="auto"></label>
+      <label class="field">Condition
+        <select id="in-condition">
+          <option value="excellent">Excellent (like new)</option>
+          <option value="good" selected>Good (minor wear)</option>
+          <option value="fair">Fair (visible wear, some issues)</option>
+          <option value="poor">Poor (mechanical or body problems)</option>
+        </select></label>
+    </div>
+    <div id="vin-result" style="margin-top:14px"></div>
+  </section>
+
+  <section class="card">
+    <h2>2 · History &amp; market comps</h2>
+    <div class="grid cols-4">
+      <label class="field">Title status
+        <select id="in-title">
+          <option value="clean" selected>Clean</option>
+          <option value="rebuilt">Rebuilt / salvage</option>
+          <option value="lemon">Lemon / manufacturer buyback</option>
+        </select></label>
+      <label class="field">Accident history
+        <select id="in-accidents">
+          <option value="none" selected>None reported</option>
+          <option value="minor">Minor accident(s)</option>
+          <option value="major">Major / structural damage</option>
+          <option value="unknown">No history report available</option>
+        </select></label>
+      <label class="field">Previous owners
+        <input id="in-owners" type="number" min="1" max="10" value="1"></label>
+      <label class="field">Service records
+        <select id="in-records">
+          <option value="yes" selected>Available</option>
+          <option value="partial">Partial</option>
+          <option value="no">None</option>
+        </select></label>
+      <label class="field">Market comp #1 ($) <span class="hint">same year, trim &amp; miles</span>
+        <input id="in-comp1" type="number" min="0" step="100" placeholder="from KBB / Edmunds / Cars.com"></label>
+      <label class="field">Market comp #2 ($)
+        <input id="in-comp2" type="number" min="0" step="100" placeholder="optional"></label>
+      <label class="field">Market comp #3 ($)
+        <input id="in-comp3" type="number" min="0" step="100" placeholder="optional"></label>
+      <label class="field">Pre-purchase inspection
+        <select id="in-ppi">
+          <option value="yes">Done — passed</option>
+          <option value="planned" selected>Planned before purchase</option>
+          <option value="no">Not done / seller refused</option>
+        </select></label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="small" id="btn-comps" type="button" style="display:none">Auto-fill comps from Marketcheck</button>
+      <label class="row" style="font-size:13px;color:var(--text-secondary);gap:6px">
+        <input type="checkbox" id="in-recalls-verified" style="width:auto">
+        Seller has documented that all open recalls were repaired
+      </label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>3 · Financing &amp; ownership plan</h2>
+    <div class="grid cols-4">
+      <label class="field">How will you pay?
+        <select id="in-paytype">
+          <option value="loan" selected>Finance (loan)</option>
+          <option value="cash">Cash</option>
+        </select></label>
+      <label class="field">Down payment ($)
+        <input id="in-down" type="number" min="0" step="100" value="3000"></label>
+      <label class="field">Credit tier <span class="hint">sets the default APR</span>
+        <select id="in-credit">
+          <option value="superprime">Super prime (781+)</option>
+          <option value="prime" selected>Prime (661–780)</option>
+          <option value="nearprime">Near prime (601–660)</option>
+          <option value="subprime">Subprime (501–600)</option>
+          <option value="deepsub">Deep subprime (below 501)</option>
+        </select></label>
+      <label class="field">APR (%) <span class="hint" id="apr-hint">blank = tier average</span>
+        <input id="in-apr" type="number" min="0" max="40" step="0.1" placeholder="auto"></label>
+      <label class="field">Loan term (months)
+        <select id="in-term">
+          <option value="36">36</option><option value="48" selected>48</option>
+          <option value="60">60</option><option value="72">72</option><option value="84">84</option>
+        </select></label>
+      <label class="field">Sales tax (%)
+        <input id="in-tax" type="number" min="0" max="15" step="0.1" value="6.0"></label>
+      <label class="field">Dealer / doc / title fees ($)
+        <input id="in-fees" type="number" min="0" step="50" value="500"></label>
+      <label class="field">Your annual driving (miles)
+        <input id="in-annualmiles" type="number" min="1000" step="500" value="12000"></label>
+      <label class="field">Years you plan to keep it
+        <input id="in-horizon" type="number" min="1" max="15" value="5"></label>
+      <label class="field">State <span class="hint">regional fuel &amp; electricity prices</span>
+        <select id="in-state"></select></label>
+      <label class="field">Fuel price ($/gal) <span class="hint" id="gas-hint">blank = built-in average</span>
+        <input id="in-gas" type="number" min="0.5" max="10" step="0.05" placeholder="auto"></label>
+      <label class="field">Insurance ($/yr) <span class="hint">blank = class average</span>
+        <input id="in-insurance" type="number" min="0" step="50" placeholder="auto"></label>
+      <label class="field">Monthly take-home income ($) <span class="hint">optional — affordability check</span>
+        <input id="in-income" type="number" min="0" step="100" placeholder="optional"></label>
+    </div>
+    <div class="row" style="margin-top:18px">
+      <button class="primary" id="btn-analyze" type="button">Analyze this deal</button>
+      <button id="btn-save" type="button" style="display:none">＋ Save to comparison</button>
+      <span id="live-status" class="prov"></span>
+    </div>
+  </section>
+
+  <div id="results">
+    <section class="card" id="score-card">
+      <h2>Deal score</h2>
+      <div class="score-row">
+        <div class="score-hero"><span id="score-num">–</span><span class="of"> / 100</span></div>
+        <div class="meter">
+          <div class="track"><div class="fill" id="score-fill" style="width:0%"></div></div>
+          <div class="verdict" id="score-verdict"></div>
+          <div class="caps" id="score-caps"></div>
+        </div>
+        <div class="score-detail"><table id="score-breakdown"></table></div>
+      </div>
+    </section>
+
+    <section class="card" id="identity-card" style="display:none">
+      <h2>Vehicle record</h2>
+      <div id="identity-body"></div>
+    </section>
+
+    <div class="tiles" id="tiles"></div>
+
+    <section class="card">
+      <h2>Price &amp; negotiation</h2>
+      <div id="price-analysis"></div>
+    </section>
+
+    <section class="card chart-block">
+      <div class="chart-head">
+        <h2>Value vs. loan balance</h2>
+        <div class="legend" id="line-legend"></div>
+      </div>
+      <p class="subtitle" id="equity-note" style="margin:6px 0 10px; font-size:13px;"></p>
+      <div class="overflow-x"><div id="line-chart"></div></div>
+      <div class="tooltip" id="line-tooltip"></div>
+      <details class="table-view"><summary>View as table</summary><div id="line-table"></div></details>
+    </section>
+
+    <section class="card chart-block">
+      <div class="chart-head"><h2 id="tco-title">Total cost of ownership</h2></div>
+      <p class="subtitle" id="tco-note" style="margin:6px 0 10px; font-size:13px;"></p>
+      <div class="overflow-x"><div id="bar-chart"></div></div>
+      <div class="tooltip" id="bar-tooltip"></div>
+      <details class="table-view"><summary>View as table</summary><div id="bar-table"></div></details>
+    </section>
+
+    <section class="card">
+      <h2>Findings &amp; red flags</h2>
+      <ul class="findings" id="findings"></ul>
+    </section>
+
+    <section class="card" id="compare-card" style="display:none">
+      <h2>Comparison</h2>
+      <div class="overflow-x"><table id="compare-table"></table></div>
+      <div class="row" style="margin-top:12px">
+        <button class="small" id="btn-clear-compare" type="button">Clear all saved cars</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Before you sign — inspection checklist</h2>
+      <ul class="checklist">
+        <li>Run the VIN through a history report (Carfax or AutoCheck) and check open recalls above.</li>
+        <li>Get an independent pre-purchase inspection (about $100–200). A seller who refuses is a walk-away.</li>
+        <li>Cold-start the engine; listen for ticking, knocking or rough idle, and watch for smoke.</li>
+        <li>Check all fluids: oil level and color, coolant, brake, transmission. Milky oil means walk away.</li>
+        <li>Look for mismatched paint, uneven panel gaps or overspray — signs of body repair.</li>
+        <li>Verify tire wear is even; uneven wear signals alignment or suspension problems.</li>
+        <li>Test every electronic: windows, locks, A/C both hot and cold, infotainment, cameras, all lights.</li>
+        <li>Drive at highway speed: check for vibration, pulling, transmission hesitation and brake shudder.</li>
+        <li>Confirm the title is in the seller's name and the VIN matches the dash and door jamb.</li>
+        <li>Get the out-the-door price in writing before discussing financing or a trade-in.</li>
+        <li>Decline dealer add-ons (VIN etching, nitrogen, paint protection) — they are nearly pure margin.</li>
+        <li>If financing at a dealer, arrive with a pre-approval from a bank or credit union to compare.</li>
+      </ul>
+    </section>
+  </div>
+
+  <p class="footnote" id="data-footnote"></p>
+</div>
+
+<script src="data.js"></script>
+<script src="engine.js"></script>
+<script src="sources.js"></script>
+<script src="ui.js"></script>
+</body>
+</html>

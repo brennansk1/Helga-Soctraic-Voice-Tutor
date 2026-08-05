@@ -1,9 +1,10 @@
-# Used Car Deal Analyzer — Full Design (for approval)
+# Used Car Deal Analyzer — Design
 
-**Status: DESIGN ONLY — no implementation yet.** This document specifies the complete tool.
-Nothing gets built until this design is approved.
+**Status: BUILT.** This document specified the tool; it is now implemented and tested
+(140 tests, all passing). See `README.md` for usage and `§10 As-built notes` for the
+two places the implementation deliberately diverged from this spec.
 
-**Rev 3** — the vetted candidate sources are now built into the design as concrete,
+**Rev 4** — as-built. Rev 3 specified the vetted candidate sources as concrete,
 implementation-ready specifications: exact endpoints and fields consumed (§3, Appendix A),
 the baked-data schema (Appendix B), and the corpus-fitting methodology (Appendix C).
 
@@ -283,17 +284,66 @@ Helga web-ui integration · non-US markets.
 
 ---
 
-## 9. Open questions for approval
+## 9. Decisions taken at build time
 
-1. **Data architecture OK?** T1 NHTSA/EPA live + T3 baked datasets by default; EIA/FRED and
-   Marketcheck/Auto.dev as optional user-keyed enrichment.
-2. **Corpus fitting:** OK to fit depreciation/$-per-mile coefficients from the Craigslist
-   (Kaggle) + CarGurus (HuggingFace) corpora at build time? (Only fitted coefficients ship;
-   raw datasets are never redistributed.)
-3. **U.S.-market assumptions** (USD, MPG, U.S. APR/tax norms) — correct for you?
-4. Default 5-year TCO horizon and localStorage persistence — OK?
+The Rev 3 open questions were resolved as follows when the build was authorized:
 
-Approve as-is or with changes, and the build proceeds on this branch.
+1. **Data architecture** — built as specified: T1 NHTSA/EPA live by default, T3 baked
+   dataset as the offline baseline, T2/T4 keyed sources optional and off by default.
+2. **Corpus fitting** — implemented in `build_datasets.py` as an opt-in `--corpus` flag.
+   Only fitted coefficients are written to `data.js`; raw corpora are never redistributed.
+   The shipped dataset is the curated baseline (see §10).
+3. **U.S.-market assumptions** — retained (USD, MPG, U.S. APR/tax conventions).
+4. **5-year default horizon and localStorage persistence** — retained.
+
+---
+
+## 10. As-built notes
+
+Two deliberate divergences from the Rev 3 spec, plus the shipped data's honest status.
+
+### 10.1 Multiple files instead of one self-contained HTML
+
+Rev 3 called for a single self-contained `index.html`. The build splits it into
+`index.html` + `data.js` + `engine.js` + `sources.js` + `ui.js`, loaded as classic
+`<script src>` tags.
+
+**Why:** the model engine had to be importable by a headless test runner. A single inlined
+file cannot be `require()`d, which would have left every formula testable only through the
+DOM. The split preserves every property that mattered — no build step, no network, works
+directly from `file://`, nothing to install — while making the 103-test engine suite
+possible. `data.js` still carries the `DATA-START`/`DATA-END` markers so
+`build_datasets.py` rewrites exactly the machine-managed block.
+
+### 10.2 Shipped dataset is curated, not fitted
+
+The environment this was built in blocks egress to `nhtsa.gov` and `fueleconomy.gov`, so
+the fitted tables could not be generated at build time. The shipped `data.js` is therefore
+a **curated transcription of published figures** — every table stamped as `curated (…)` in
+`meta.sources` — rather than the fitted output of Appendix C.
+
+This is a data-vintage limitation, not a functional one: `build_datasets.py --refresh`
+is implemented, tested, and will replace those tables with EPA-derived and corpus-fitted
+values on any networked machine. The `--check` command reports each table's age and
+provenance. The Appendix C fitting code is covered by tests that recover a known
+depreciation curve from a synthetic corpus and that reject both thin cells and fits that
+disagree with published figures.
+
+One calibration bug was caught by the tests during the build and fixed in the data: the
+original segment depreciation curves were too flat for older vehicles (they implied a
+12-year-old Camry retaining ~$13.3k). The curves were re-derived against published
+five-year segment depreciation, and a regression test now pins residual values to a
+realistic band.
+
+### 10.3 Test coverage as built
+
+| Layer | Count | What it covers |
+|---|---|---|
+| Engine + sources (Node) | 103 | every formula in §4, all score caps, boundary conditions, a full input sweep asserting the score stays in 0–100 and nothing goes NaN, plus all eleven Appendix A endpoints against an injected fetch (success, HTTP error, network failure, and missing-key paths) |
+| Dataset builder (pytest) | 22 | dataset extraction, provenance stamps, curve ordering, the EPA parser, corpus cleaning and curve fitting, the sanity gates, and a round-trip proving a rewritten `data.js` is still loadable by the engine |
+| UI (headless Chromium) | 15 | score and chart rendering, breakdown maxima summing to 100, live recomputation on input change, the salvage-title cap, cash-vs-loan series and legend suppression, dark-mode redraw, comparison persistence, VIN validation, and HTML-escaping of user-supplied text |
+
+Run: `python3 -m pytest tests/test_used_car_calculator.py -v`
 
 ---
 
