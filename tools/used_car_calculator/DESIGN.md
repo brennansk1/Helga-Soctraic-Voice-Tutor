@@ -3,8 +3,9 @@
 **Status: DESIGN ONLY — no implementation yet.** This document specifies the complete tool.
 Nothing gets built until this design is approved.
 
-**Rev 2** — data layer redesigned around the best available public APIs and downloadable
-datasets (see §3), per review feedback.
+**Rev 3** — the vetted candidate sources are now built into the design as concrete,
+implementation-ready specifications: exact endpoints and fields consumed (§3, Appendix A),
+the baked-data schema (Appendix B), and the corpus-fitting methodology (Appendix C).
 
 ---
 
@@ -293,3 +294,163 @@ Helga web-ui integration · non-US markets.
 4. Default 5-year TCO horizon and localStorage persistence — OK?
 
 Approve as-is or with changes, and the build proceeds on this branch.
+
+---
+
+## Appendix A — Concrete source specifications (the built-in candidates)
+
+Each entry: exact call, the fields we consume, where they flow, and the failure behavior.
+All live calls use `fetch()` with a 6s timeout; any failure silently falls back to baked
+data and flips that value's provenance marker to "baked".
+
+### A1 · NHTSA vPIC — VIN decode (T1)
+```
+GET https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/{VIN}?format=json
+```
+Consume from `Results[0]`: `ModelYear`, `Make`, `Model`, `Trim`, `BodyClass`, `FuelTypePrimary`,
+`ElectrificationLevel`, `DisplacementL`, `TransmissionStyle`, `DriveType`, `PlantCountry`.
+→ Auto-fills §2.1; `BodyClass` maps to our segment via a fixed lookup table; partial decodes
+(vPIC returns blanks, not errors) fill what they can and leave the rest editable.
+`ErrorCode != 0` → show "VIN not recognized — fill fields manually".
+
+### A2 · NHTSA Recalls (T1)
+```
+GET https://api.nhtsa.gov/recalls/recallsByVehicle?make={make}&model={model}&modelYear={year}
+```
+Consume per result: `Component`, `Summary`, `Consequence`, `Remedy`, `NHTSACampaignNumber`,
+`ReportReceivedDate`. → Vehicle identity card banner + one red-flag entry per recall with
+campaign number; safety-critical components (air bags, brakes, steering, fuel system,
+seat belts) trigger the score cap of 60 (§4.8) until the user marks "repair verified".
+Baked fallback: recall *count* per make/model-year from the T3 flat file, with a
+"check live at nhtsa.gov/recalls before buying" note.
+
+### A3 · NHTSA Complaints (T1)
+```
+GET https://api.nhtsa.gov/complaints/complaintsByVehicle?make={make}&model={model}&modelYear={year}
+```
+Consume: total `count`, and per-complaint `components` — aggregated client-side into the
+top-3 component categories. → Complaint-rate blend (§4.10) and the "complaints are N× the
+segment average for {component}" warning rule. Baked fallback: per-model-year complaint
+counts table (T3).
+
+### A4 · NHTSA Safety Ratings / NCAP (T1)
+```
+GET https://api.nhtsa.gov/SafetyRatings/modelyear/{year}/make/{make}/model/{model}
+GET https://api.nhtsa.gov/SafetyRatings/VehicleId/{id}          (first result's VehicleId)
+```
+Consume: `OverallRating` (1–5 or "Not Rated"), `OverallFrontCrashRating`,
+`OverallSideCrashRating`, `RolloverRating`. → Stars on the identity card; Safety score
+component (§4.8): 5★→6, 4★→4.5, 3★→2, ≤2★→0, Not Rated→3 (neutral, labeled).
+
+### A5 · FuelEconomy.gov web services (T1) + vehicles.csv (T3)
+```
+GET https://www.fueleconomy.gov/feg/ws/rest/vehicle/menu/options?year=&make=&model=
+GET https://www.fueleconomy.gov/feg/ws/rest/vehicle/{id}        (Accept: application/json)
+Bulk: https://www.fueleconomy.gov/feg/epadata/vehicles.csv
+```
+Consume (both paths carry the same schema): `comb08` (combined MPG), `fuelType1`,
+`combE` (EV kWh/100mi), `fuelCost08`, `VClass`. → Exact fuel math in §4.6; `VClass` →
+segment mapping. The CSV is the offline source of the same records — the build script
+distills it to `{year, make, model → comb08, fuelType, combE, VClass}` (~one compact row
+per model-year, trim-averaged). Live per-trim lookup refines it when online.
+
+### A6 · EIA Open Data v2 (T2, free key)
+```
+GET https://api.eia.gov/v2/petroleum/pri/gnd/data/?api_key={k}&frequency=weekly
+    &data[0]=value&facets[product][]=EPMR&facets[duoarea][]=NUS&sort[0][column]=period
+    &sort[0][direction]=desc&length=1
+```
+Consume: latest `value` = US regular retail $/gal (state-level via `duoarea` when the user
+picks a state; falls back to national). Electricity: `/v2/electricity/retail-sales/data/`
+with `facets[sectorid][]=RES` and the user's state → ¢/kWh for EV math. → Replaces the
+fuel-price default; marker flips to "live". No key → baked national averages.
+
+### A7 · FRED (T2, free key)
+```
+GET https://api.stlouisfed.org/fred/series/observations?series_id=CUSR0000SETA02
+    &api_key={k}&file_type=json&sort_order=desc&limit=13
+```
+Consume: last 13 monthly observations of CPI *Used Cars and Trucks* → 12-month trend
+("used prices are down 2.1% over the last year — time is on your side") next to the
+fair-value estimate. Cosmetic context only; never enters the score.
+
+### A8 · Listing corpora (T3, build-time only — never shipped raw)
+- Kaggle `austinreese/craigslist-carstrucks-data` (~426k rows): `price, year, manufacturer,
+  model, odometer, condition, title_status, state`.
+- HuggingFace `rebrowser/carguruscom-dataset` (~4.7M rows sample): price, mileage, YMM,
+  deal-rating fields.
+→ Input to the fitting procedure in Appendix C. Downloaded manually or via the script's
+`--corpus <path>` flag (Kaggle requires a logged-in download; the script never embeds
+credentials). The script works with either corpus alone and stamps which it used.
+
+### A9 · NHTSA flat files (T3)
+Full complaints/recalls extracts from NHTSA's datasets portal (`static.nhtsa.gov/odi/ffdd/`)
+→ per-make/model-year complaint counts and recall counts, normalized per Appendix C.
+
+### A10 · Experian / RepairPal / CR / iSeeCars published figures (T3, manual refresh)
+No bulk public source exists for APR-by-tier, brand maintenance $/yr, or lifespan miles.
+These stay as a hand-maintained, cited, date-stamped table in the data block; the build
+script's `--check` mode prints their age and nags past 12 months.
+
+### A11 · Marketcheck / Auto.dev (T4, user key)
+```
+Marketcheck: GET https://mc-api.marketcheck.com/v2/search/car/active?api_key={k}
+             &year={y}&make={m}&model={mo}&miles_range={lo}-{hi}&radius=100&zip={zip}
+Auto.dev:    GET https://auto.dev/api/listings?apikey={k}&year_min=&year_max=&make=&model=
+```
+Consume: median + IQR of listed prices for matching year/model/miles/region → auto-fills
+the three comp fields (user can override). Keys live only in localStorage; a missing key
+simply leaves comps manual.
+
+---
+
+## Appendix B — Baked data block schema
+
+`build_datasets.py` emits one JSON object, inlined into `index.html` between
+`/* ==DATA-START== */` and `/* ==DATA-END== */` markers (or `data.json` side-file):
+
+```json
+{
+  "meta":     { "built": "2026-08-05", "sources": { "epa_csv": "2026-07-…", "nhtsa_ffdd": "…",
+                "corpus": "cargurus-sample@2026-02", "manual_tables": "2026-08" } },
+  "vehicles": { "Toyota": { "Camry": { "2019": { "mpg": 34, "fuel": "gas", "vclass": "Midsize" } } } },
+  "brands":   { "Toyota": { "maintPerYear": 441, "relBaseline": 90, "lifeMiles": 250000 } },
+  "segments": { "Midsize": { "insPerYear": 1750 } },
+  "depCurves":{ "Midsize": { "r1_5": 0.128, "r6_8": 0.094, "r9_12": 0.071, "r13p": 0.052 },
+                "brandAdj": { "Toyota": -0.013, "Land Rover": 0.024 } },
+  "mileSlopes": { "Midsize": [ { "band": [0, 15000], "usdPerMile": 0.09 } ] },
+  "complaints": { "Toyota|Camry|2019": { "count": 61, "per100k": 14.2, "top": ["ELECTRICAL"] } },
+  "recallCounts": { "Toyota|Camry|2019": 3 },
+  "aprByTier": { "superprime": 7.4, "prime": 9.6, "nearprime": 14.1, "subprime": 18.9, "deepsub": 21.6 },
+  "energy":   { "gasUsdPerGal": 3.15, "elecUsdPerKwh": 0.17 },
+  "constants": { "stdMilesPerYear": 12000, "regPerYear": 150, "floorValue": 1500, "cpmBenchmark": 0.45 }
+}
+```
+The `vehicles` tree also powers the make/model/year dropdowns. Target inlined size:
+≤ 1.5 MB minified (model list trimmed to 1996+ — OBD-II era — with a manual-entry escape
+hatch for older cars).
+
+---
+
+## Appendix C — Corpus fitting methodology (build-time)
+
+Run inside `build_datasets.py` (pandas; deterministic, seeded):
+
+1. **Clean:** drop rows with price < $500 or > $250k, odometer < 100 or > 400k,
+   missing year/make; dedupe by VIN/listing-id where present; winsorize price at 1%/99%
+   within each (segment, year) cell.
+2. **Depreciation curves:** for each segment, regress `log(price)` on vehicle age with
+   piecewise-linear knots at 5, 8, and 12 years, controlling for odometer deviation from
+   `age × 12k`. Slope per piece → `depCurves.{seg}.r*`. Brand adjustment = brand fixed-effect
+   on the residual, clamped to ±3%/yr → `depCurves.brandAdj`.
+3. **$/mile slopes:** within (segment × price band), coefficient of odometer on price for
+   listings of the same model-year → `mileSlopes`, clamped to [$0.02, $0.25]/mile.
+4. **Complaint normalization:** complaints per model-year ÷ approximate sales weight
+   (corpus listing frequency as the proxy denominator) → `per100k`-style rate; p90 within
+   segment defines the score scale (§4.10).
+5. **Validation gate:** the script refuses to emit coefficients from cells with n < 300
+   listings (falls back to the parent segment) and prints an R² report; fitted values are
+   sanity-checked against published iSeeCars segment depreciation figures (±5 pts) before
+   the data block is replaced.
+
+Raw corpora never ship — only the fitted coefficient tables above.
