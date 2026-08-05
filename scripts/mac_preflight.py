@@ -157,6 +157,58 @@ def check_keep_alive():
               "cold model load", fix)
 
 
+def check_inference_engine():
+    """Which engine Ollama is actually using on this Mac.
+
+    Ollama shipped an MLX backend in preview in v0.19 (March 2026) and made it
+    the default on Apple Silicon in v0.30 (May 2026) — reported as roughly
+    doubling decode. Decode is 93% of a course build here
+    (docs/PERFORMANCE_PASS.md), so this is the largest single lever available
+    and it costs no code change: the MLX engine is behind the same Ollama API,
+    so `format` schema constraints, keep_alive, /api/ps and NUM_PARALLEL all
+    keep working.
+
+    The trap, and the reason this check exists: the default is reported to be
+    gated on machine memory, with 32 GB as the threshold and llama.cpp Metal
+    below it. THE TARGET BOX IS 24 GB. So the fast path may be silently off on
+    exactly the machine this project is tuned for, and nothing anywhere says
+    so — the model loads, answers, and is simply slower than it should be.
+
+    This reports what it can determine and points at the check that is
+    authoritative. It deliberately does not assert an override variable: the
+    mechanism differs across versions and guessing one here would be worse
+    than saying "go look".
+    """
+    ver = (_get("/api/version") or {}).get("version")
+    if not ver:
+        check("inference engine", WARN, "could not read Ollama version")
+        return
+
+    def _tuple(v):
+        parts = []
+        for piece in str(v).split(".")[:3]:
+            digits = "".join(c for c in piece if c.isdigit())
+            parts.append(int(digits) if digits else 0)
+        return tuple(parts + [0] * (3 - len(parts)))
+
+    total = _sh("sysctl", "-n", "hw.memsize")
+    gb = int(total) / (1024 ** 3) if total.isdigit() else 0
+
+    if _tuple(ver) < (0, 19, 0):
+        check("inference engine", BAD,
+              f"Ollama {ver} predates the MLX backend",
+              "upgrade Ollama — MLX roughly doubles decode on Apple Silicon")
+    elif gb and gb < 32:
+        check("inference engine", WARN,
+              f"Ollama {ver} on a {gb:.0f} GB Mac — MLX is reported to default "
+              "on only at 32 GB+, so this machine may be on llama.cpp Metal",
+              "confirm with `ollama ps` (look for 100% GPU) and check "
+              "docs.ollama.com for the MLX override on this version")
+    else:
+        check("inference engine", OK,
+              f"Ollama {ver} — MLX should be the default; confirm with `ollama ps`")
+
+
 def check_context_length():
     """num_ctx, which decides whether mastery 4-5 output is silently truncated."""
     model = os.environ.get("OLLAMA_MODEL", "qwen3.5:9b")
@@ -263,6 +315,7 @@ def main():
     check_memory()
     if check_ollama_running():
         check_keep_alive()
+        check_inference_engine()
         check_context_length()
     check_host_services()
     check_docker()
