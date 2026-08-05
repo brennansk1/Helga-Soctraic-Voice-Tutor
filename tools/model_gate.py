@@ -161,7 +161,7 @@ def _sources_block(sources, confidence=0.85):
     return out + f"\n*Source confidence: {confidence:.2f}*\n"
 
 
-def probe_schema(url, model, timeout=120):
+def probe_schema(url, model, timeout=300):
     """Does this server honour grammar-constrained JSON?
 
     Asked as a question the model would plausibly get WRONG unconstrained —
@@ -170,6 +170,27 @@ def probe_schema(url, model, timeout=120):
     """
     import requests
     endpoint = url.rstrip("/") + "/v1/chat/completions"
+
+    # WARM THE MODEL FIRST, AND DO NOT COUNT THE LOAD AGAINST THE PROBE.
+    #
+    # probe_schema is the first thing in the run that touches the model, so it
+    # pays the cold load — and on this machine the weights live on a USB drive
+    # where a 13.5 GB load measured ~4 minutes. Against a 120s timeout that is
+    # a guaranteed ReadTimeout, reported as "constrained JSON: NO".
+    #
+    # Three candidates were marked json=N that way (gemma-3-12b,
+    # Mistral-Small-24B, GLM). The gate's own rule says a N "disqualifies the
+    # build role regardless of the other columns", so a slow disk was
+    # eliminating models on a capability they were never asked to demonstrate.
+    try:
+        requests.post(endpoint, timeout=900, json={
+            "model": model,
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 1,
+        })
+    except Exception as e:
+        return False, f"model would not load: {type(e).__name__}"
+
     try:
         resp = requests.post(endpoint, timeout=timeout, json={
             "model": model,
