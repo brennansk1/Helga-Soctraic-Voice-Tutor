@@ -129,7 +129,8 @@
     var taxWithoutTrade = input.asking * input.taxRate;
     var taxSavings = Math.max(taxWithoutTrade - salesTax, 0);
 
-    var otd = input.asking + salesTax + input.fees;
+    var titleFee = st ? st.titleFee : 0;
+    var otd = input.asking + salesTax + input.fees + titleFee;
     var tradeEquity = tradeValue - tradePayoff;
     var principal = Math.max(otd - input.down - tradeEquity, 0);
 
@@ -138,8 +139,17 @@
       tradeValue: tradeValue, tradePayoff: tradePayoff, tradeEquity: tradeEquity,
       rolledNegativeEquity: Math.max(-tradeEquity, 0),
       creditAllowed: creditAllowed, otd: otd, principal: principal,
+      titleFee: titleFee,
       registrationPerYear: st ? st.reg : data.constants.regPerYear,
       propertyTaxRate: st ? st.propertyTaxRate : 0,
+      // Inspections are amortized to a yearly figure so the annual total is comparable.
+      inspectionPerYear: st && st.inspect
+        ? (st.inspect.cadence === 'annual' ? st.inspect.cost
+          : st.inspect.cadence === 'biennial' ? st.inspect.cost / 2 : 0)
+        : 0,
+      inspection: st ? st.inspect : null,
+      evFeePerYear: (st && input.segment === 'Electric') ? st.evFee : 0,
+      insuranceIndex: st ? st.ins : 1,
       stateCode: input.state || null
     };
   }
@@ -428,8 +438,10 @@
     var propertyTax = 0;
     for (var t = 1; t <= years; t++) propertyTax += values[t] * purchase.propertyTaxRate;
 
-    var taxesFees = purchase.salesTax + input.fees +
-      purchase.registrationPerYear * years + propertyTax;
+    var stateAnnual = (purchase.registrationPerYear + purchase.inspectionPerYear +
+      purchase.evFeePerYear) * years;
+    var taxesFees = purchase.salesTax + input.fees + purchase.titleFee +
+      stateAnnual + propertyTax;
     var interest = loan ? loan.totalInterest : 0;
     var total = depreciation + fuel + insurance + maintenanceTotal + taxesFees + interest;
     var totalMiles = input.annualMiles * years;
@@ -445,7 +457,11 @@
       taxesFees: taxesFees,
       salesTax: purchase.salesTax,
       propertyTax: propertyTax,
+      titleFee: purchase.titleFee,
       registrationPerYear: purchase.registrationPerYear,
+      inspectionPerYear: purchase.inspectionPerYear,
+      evFeePerYear: purchase.evFeePerYear,
+      stateAnnual: stateAnnual,
       interest: interest,
       total: total,
       totalMiles: totalMiles,
@@ -464,7 +480,7 @@
     var fuelPerYear = annualFuelCost(input, data);
     var insurancePerYear = toNum(input.insurance,
       (data.segments[input.segment] || {}).insPerYear || 1750);
-    var upfront = purchase.salesTax + input.fees;
+    var upfront = purchase.salesTax + input.fees + purchase.titleFee;
     var interestPerYear = loan && loan.months
       ? loan.totalInterest / (loan.months / 12) : 0;
 
@@ -474,6 +490,7 @@
       running += values[t - 1] - values[t];                       // that year's depreciation
       running += fuelPerYear + insurancePerYear +
         maint.perYear[t - 1] * maintMultiplier + purchase.registrationPerYear +
+        purchase.inspectionPerYear + purchase.evFeePerYear +
         values[t] * purchase.propertyTaxRate;
       if (loan && loan.months) running += Math.min(interestPerYear, loan.totalInterest);
       var miles = input.annualMiles * t;
@@ -992,6 +1009,7 @@
       income: Math.max(toNum(raw.income, 0), 0),
       isEV: raw.isEV,
       state: raw.state || null,
+      stateDefaultsApplied: false,
       tradeInValue: Math.max(toNum(raw.tradeInValue, 0), 0),
       tradePayoff: Math.max(toNum(raw.tradePayoff, 0), 0),
       tradeInCredit: raw.tradeInCredit,
@@ -1006,9 +1024,31 @@
    *          complaints: {per100k, top}, safety: {overallRating},
    *          mpg, gasUsdPerGal, elecUsdPerKwh, cpiTrend }
    */
+  /**
+   * Apply the selected state's cost profile to anything the user has not set by hand.
+   * Insurance varies about threefold across states and is one of the largest lines in the
+   * total, so leaving it at a national average is a real accuracy loss.
+   */
+  function applyStateDefaults(input, data) {
+    var st = stateInfo(input.state, data);
+    if (!st) return input;
+    if (!isNum(input.rawInsurance)) {
+      input.insurance = (data.segments[input.segment] || {}).insPerYear * st.ins;
+    }
+    if (!isNum(input.rawGas)) input.gasUsdPerGal = st.gas;
+    if (!isNum(input.rawElec)) input.elecUsdPerKwh = st.elec;
+    input.stateDefaultsApplied = true;
+    return input;
+  }
+
   function analyze(rawInput, data, live) {
     live = live || {};
     var input = normalizeInput(rawInput, data);
+    // Remember which figures the user supplied, so state defaults never overwrite them.
+    input.rawInsurance = toNum(rawInput.insurance, NaN);
+    input.rawGas = toNum(rawInput.gasUsdPerGal, NaN);
+    input.rawElec = toNum(rawInput.elecUsdPerKwh, NaN);
+    applyStateDefaults(input, data);
 
     // Live overrides: network data wins over baked defaults when present.
     if (isNum(live.mpg) && !isNum(rawInput.mpg)) input.mpg = live.mpg;
@@ -1084,6 +1124,7 @@
     segmentFactors: segmentFactors, lifespanMiles: lifespanMiles,
     upcomingServices: upcomingServices, serviceOutlook: serviceOutlook,
     stateInfo: stateInfo, purchaseCosts: purchaseCosts, sensitivity: sensitivity,
+    applyStateDefaults: applyStateDefaults,
     loanTermComparison: loanTermComparison, cumulativeCost: cumulativeCost,
     priceForScore: priceForScore, bakedRecallCount: bakedRecallCount,
     vehicleRecord: vehicleRecord, annualFuelCost: annualFuelCost,

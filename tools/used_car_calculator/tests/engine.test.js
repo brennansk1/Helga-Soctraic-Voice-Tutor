@@ -1205,3 +1205,91 @@ test('findings flag an inflated dealer fee without asserting a legal cap', () =>
   assert.ok(fee.text.includes('negotiable'));
   assert.ok(!normal.findings.some(f => f.tag === 'Fees'));
 });
+
+/* ------------------------------------------------- state-level completeness */
+
+test('every state carries a full cost profile', () => {
+  const rates = DATA.states.rates;
+  Object.entries(rates).forEach(([code, st]) => {
+    assert.ok(st.ins > 0.3 && st.ins < 2.5, `${code} insurance index`);
+    assert.ok(st.gas > 1.5 && st.gas < 8, `${code} fuel price`);
+    assert.ok(st.elec > 0.05 && st.elec < 0.6, `${code} electricity`);
+    assert.ok(st.evFee >= 0 && st.evFee < 500, `${code} EV fee`);
+    assert.ok(st.titleFee >= 0 && st.titleFee < 400, `${code} title fee`);
+    assert.ok(['annual', 'biennial', 'none'].indexOf(st.inspect.cadence) !== -1, `${code} cadence`);
+    assert.ok(st.inspect.cost >= 0 && st.inspect.cost < 200, `${code} inspection cost`);
+  });
+});
+
+test('state insurance index drives the insurance line', () => {
+  const cheap = E.analyze(baseInput({ state: 'ME', insurance: null }), DATA);
+  const dear = E.analyze(baseInput({ state: 'MI', insurance: null }), DATA);
+  assert.ok(dear.tco.insurance > cheap.tco.insurance * 2,
+    'Michigan should cost far more to insure than Maine');
+});
+
+test('a hand-entered insurance figure overrides the state default', () => {
+  const ctx = E.analyze(baseInput({ state: 'MI', insurance: 1000 }), DATA);
+  assert.ok(Math.abs(ctx.tco.insurance - 1000 * ctx.input.horizon) < 1e-6);
+});
+
+test('state fuel and electricity prices feed the energy cost', () => {
+  const cheap = E.analyze(baseInput({ state: 'TX', gasUsdPerGal: null }), DATA);
+  const dear = E.analyze(baseInput({ state: 'CA', gasUsdPerGal: null }), DATA);
+  assert.ok(dear.tco.fuel > cheap.tco.fuel, 'California fuel costs more than Texas');
+  assert.ok(Math.abs(cheap.input.gasUsdPerGal - DATA.states.rates.TX.gas) < 1e-9);
+});
+
+test('an EV picks up the state electricity rate and the EV registration surcharge', () => {
+  const ev = baseInput({ brand: 'Tesla', model: 'Model 3', segment: 'Electric', asking: 22000 });
+  const noFee = E.analyze(Object.assign({}, ev, { state: 'CA' }), DATA);
+  const fee = E.analyze(Object.assign({}, ev, { state: 'TX' }), DATA);
+  assert.strictEqual(fee.tco.evFeePerYear, DATA.states.rates.TX.evFee);
+  assert.strictEqual(noFee.tco.evFeePerYear, DATA.states.rates.CA.evFee);
+  assert.ok(Math.abs(noFee.input.elecUsdPerKwh - DATA.states.rates.CA.elec) < 1e-9);
+});
+
+test('the EV surcharge is not charged on a petrol car', () => {
+  assert.strictEqual(E.analyze(baseInput({ state: 'TX' }), DATA).tco.evFeePerYear, 0);
+});
+
+test('inspection cost is amortized by its cadence', () => {
+  const annual = E.analyze(baseInput({ state: 'NY' }), DATA);      // annual inspection
+  const none = E.analyze(baseInput({ state: 'FL' }), DATA);        // no inspection
+  assert.ok(annual.tco.inspectionPerYear > 0);
+  assert.strictEqual(none.tco.inspectionPerYear, 0);
+  const biennial = E.analyze(baseInput({ state: 'MO' }), DATA);
+  assert.ok(Math.abs(biennial.tco.inspectionPerYear -
+    DATA.states.rates.MO.inspect.cost / 2) < 1e-9, 'a biennial charge is half a year');
+});
+
+test('the state title fee lands in the out-the-door price', () => {
+  const withState = E.analyze(baseInput({ state: 'FL' }), DATA);
+  const without = E.analyze(baseInput({ state: null }), DATA);
+  assert.strictEqual(withState.purchase.titleFee, DATA.states.rates.FL.titleFee);
+  assert.ok(withState.otd > without.otd);
+});
+
+test('state choice materially changes the cost of ownership', () => {
+  const cheapState = E.analyze(baseInput({ state: 'NH', insurance: null, gasUsdPerGal: null }), DATA);
+  const dearState = E.analyze(baseInput({ state: 'MI', insurance: null, gasUsdPerGal: null }), DATA);
+  assert.ok(dearState.tco.total > cheapState.tco.total,
+    'the same car should not cost the same everywhere');
+});
+
+test('cumulative cost still reconciles for every state', () => {
+  Object.keys(DATA.states.rates).forEach(state => {
+    const ctx = E.analyze(baseInput({ payType: 'cash', state, insurance: null, gasUsdPerGal: null }), DATA);
+    const cum = ctx.cumulative[ctx.cumulative.length - 1].total;
+    assert.ok(Math.abs(cum - ctx.tco.total) < 1, `${state}: ${cum} vs ${ctx.tco.total}`);
+  });
+});
+
+test('every state produces a finite, sane analysis', () => {
+  Object.keys(DATA.states.rates).forEach(state => {
+    const ctx = E.analyze(baseInput({ state, comps: [18000], insurance: null }), DATA);
+    assert.ok(ctx.score.score >= 0 && ctx.score.score <= 100, state);
+    assert.ok(Number.isFinite(ctx.tco.total) && ctx.tco.total > 0, state);
+    assert.ok(Number.isFinite(ctx.otd) && ctx.otd > 0, state);
+  });
+});

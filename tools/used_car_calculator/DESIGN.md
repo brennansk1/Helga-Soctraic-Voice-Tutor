@@ -1,9 +1,9 @@
 # Used Car Deal Analyzer — Design
 
-**Status: BUILT (Rev 5).** This document specified the tool; it is now implemented and
-tested (174 tests, all passing). See `README.md` for usage, `§10 As-built notes` for where
-the implementation diverged from this spec, and `§11` for the Rev 5 redesign and the data
-integrations added on top of the original scope.
+**Status: BUILT (Rev 7).** This document specified the tool; it is now implemented and
+tested (245 tests, all passing). See `README.md` for usage, `§10` for where the build
+diverged from this spec, and `§11`–`§13` for the redesign, the accuracy work and the
+production-quality pass layered on top of the original scope.
 
 **Rev 4** — as-built. Rev 3 specified the vetted candidate sources as concrete,
 implementation-ready specifications: exact endpoints and fields consumed (§3, Appendix A),
@@ -634,3 +634,67 @@ mining NHTSA complaint text and TSBs for "this engine eats head gaskets at 90k" 
 highest-value work left.
 
 **Test coverage: 216 — 148 Node, 69 pytest (47 headless-browser).**
+
+---
+
+## 13. Rev 7 — production quality
+
+### 13.1 Accessibility, measured rather than claimed
+
+An audit of the palette found a real defect: `--ink-3` — used for every hint, caption,
+provenance label and axis tick — measured **3.13:1 on paper and 2.88:1 on panels**, below the
+4.5:1 WCAG AA floor for body text. The success green also failed at 4.38:1 on panel
+backgrounds. Both are fixed, and the fix is now defended by a test rather than a promise:
+`test_ui_text_meets_wcag_contrast` walks every rendered text node in the live page,
+composites its background through any translucent layers (an earlier version of the check
+read a 14%-alpha wash as opaque and produced false positives), and fails if the ratio falls
+short. It runs in both themes.
+
+| Token | Was | Now | On paper / panel |
+|---|---|---|---|
+| `--ink-3` | `#8b8779` | `#676354` | 5.23 / 4.82 |
+| `--warn` (as text) | `#a86a00` | `#845200` | 5.73 / 5.28 |
+| `--ok` (as text) | `#0f7a2e` | `#0d6b28` | 5.80 / 5.34 |
+| dark `--ink-3` | `#77746a` | `#928f82` | 5.66 / 5.23 |
+
+New `--field-line` (3.13:1) carries form-control boundaries, which need 3:1 rather than 4.5:1,
+and `--s1-ink` is a darkened teal for the places the series colour was being used as text.
+
+Also added: visible `:focus-visible` on every control, a skip link, landmark roles, polite
+live regions announcing the score and status, `prefers-reduced-motion` support, and an
+accessible-name check over every input.
+
+### 13.2 Robustness
+
+- **Inline validation** with specific messages. Bad input blocks the report, marks the field
+  `aria-invalid`, scrolls to it and announces the problem — instead of being silently coerced
+  into something plausible.
+- **An error boundary** around both the analysis and the render phase. A thrown exception now
+  produces a clear panel that keeps every input, rather than a half-rendered or blank page.
+  Tested by injecting a synthetic engine failure and asserting recovery.
+- **A real busy state** on the primary action while the network lookups run.
+
+### 13.3 State-level completeness
+
+The state table went from four fields to eleven. Selecting a state now applies its sales tax
+and trade-in credit rule, one-off title fee, annual registration, **insurance cost index**
+(Michigan ≈ 1.9× national, Maine ≈ 0.55× — one of the largest lines in the total), typical
+fuel and electricity prices, safety/emissions inspection cadence and cost, EV registration
+surcharge, and annual vehicle property tax. All of it flows into the cost of ownership and
+the cumulative curve, and the reconciliation between them is asserted for all fifty states.
+Anything typed by hand still wins over a state default.
+
+### 13.4 Usefulness and orientation
+
+- **The bottom line** — a plain-language paragraph at the top of the report: what to open at,
+  what to settle at, what to walk away above, what it costs a month all in, which loan term,
+  and the two to four things to do next. It leads with "do not buy this car until…" when a
+  critical finding exists.
+- **A sticky summary bar** carrying score, verdict, opening offer, walk-away price and all-in
+  monthly cost while you scroll a long report, with a control back to the inputs.
+- **A stated minimum**: four fields, marked in the form, with everything else defaulted.
+- **A genuine print sheet** — inputs, chrome and interactive affordances drop out, leaving the
+  bottom line, the numbers, the findings and a checklist with room to write.
+- Document metadata: description, theme-color for both schemes, and an inline SVG favicon.
+
+**Test coverage: 245 — 159 Node, 86 pytest (64 headless-browser).**

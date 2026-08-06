@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vehicle Condition &amp; Deal Report</title>
+<meta name="description" content="Score a used-car deal 0-100: fair value, negotiation targets, loan length, full cost of ownership, state-level taxes and fees, and live NHTSA recalls. Runs entirely in your browser.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f2efe6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14150f" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23f2efe6'/%3E%3Crect x='3' y='3' width='26' height='26' fill='none' stroke='%2316150f' stroke-width='2.5'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='16' font-weight='700' text-anchor='middle' fill='%23008f80'%3E%24%3C/text%3E%3C/svg%3E">
 <style>
 /* ============================================================================
    DESIGN: "Auction condition report"
@@ -27,14 +32,17 @@
   --sunk:       #e3dece;
   --ink:        #16150f;
   --ink-2:      #57544a;
-  --ink-3:      #8b8779;
+  --ink-3:      #676354;   /* 5.2:1 on paper, 4.8:1 on panel — AA for body text */
+  --field-line: #8b8779;   /* 3.1:1 — AA for a form-control boundary */
+  --s1-ink:     #00695e;   /* teal darkened for use as text (5.7:1) */
   --rule:       #d5d0c1;
   --rule-mid:   #b3ad9a;
   --rule-heavy: #16150f;
   --s1:         #008f80;   /* series 1 — value, primary measure */
   --s2:         #cc4a15;   /* series 2 — loan balance */
-  --ok:         #0f7a2e;
-  --warn:       #a86a00;
+  --ok:         #0d6b28;   /* 5.8:1 on paper, 5.3:1 on panel — AA as text everywhere */
+  --warn:       #845200;   /* 5.7:1 — readable as text, not just as a signal */
+  --warn-mark:  #a86a00;   /* the meter fill, where 3:1 is the bar */
   --bad:        #b3241c;
   --s1-wash:    rgba(0,143,128,0.10);
   --s2-wash:    rgba(204,74,21,0.10);
@@ -47,24 +55,99 @@
   :root:where(:not([data-theme="light"])) {
     color-scheme: dark;
     --paper: #14150f; --panel: #1c1d16; --sunk: #23241b;
-    --ink: #f2efe6; --ink-2: #a8a494; --ink-3: #77746a;
+    --ink: #f2efe6; --ink-2: #a8a494; --ink-3: #928f82;
+    --field-line: #77746a; --s1-ink: #0fa892;
     --rule: #2e2f26; --rule-mid: #45463a; --rule-heavy: #f2efe6;
     --s1: #0fa892; --s2: #e06a35;
-    --ok: #3fae55; --warn: #d9a01f; --bad: #e2635a;
+    --ok: #3fae55; --warn: #d9a01f; --warn-mark: #d9a01f; --bad: #e2635a;
     --s1-wash: rgba(15,168,146,0.14); --s2-wash: rgba(224,106,53,0.14);
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
   --paper: #14150f; --panel: #1c1d16; --sunk: #23241b;
-  --ink: #f2efe6; --ink-2: #a8a494; --ink-3: #77746a;
+  --ink: #f2efe6; --ink-2: #a8a494; --ink-3: #928f82;
+  --field-line: #77746a; --s1-ink: #0fa892;
   --rule: #2e2f26; --rule-mid: #45463a; --rule-heavy: #f2efe6;
   --s1: #0fa892; --s2: #e06a35;
-  --ok: #3fae55; --warn: #d9a01f; --bad: #e2635a;
+  --ok: #3fae55; --warn: #d9a01f; --warn-mark: #d9a01f; --bad: #e2635a;
   --s1-wash: rgba(15,168,146,0.14); --s2-wash: rgba(224,106,53,0.14);
 }
 
 * { box-sizing: border-box; }
+
+/* Keyboard focus must be obvious everywhere, and never removed. */
+:focus-visible {
+  outline: 3px solid var(--s1);
+  outline-offset: 2px;
+}
+button:focus-visible { outline-offset: 3px; }
+
+/* Honour a reduced-motion preference: no smooth scrolling, no transitions. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* Inline validation */
+label.f.invalid > .cap { color: var(--bad); }
+label.f.invalid input, label.f.invalid select { border-bottom-color: var(--bad); }
+.field-error {
+  font-size: 11.5px; color: var(--bad); font-family: var(--sans);
+  display: flex; gap: 5px; align-items: flex-start; margin-top: 2px;
+}
+.field-error::before { content: "▲"; font-size: 9px; line-height: 1.5; }
+
+/* Sticky summary — the four numbers you need while scrolling a long report */
+#stickybar {
+  position: sticky; top: 0; z-index: 40; display: none;
+  background: var(--panel); border-bottom: 2px solid var(--rule-heavy);
+}
+#stickybar.on { display: block; }
+.sb-inner {
+  max-width: 1140px; margin: 0 auto; padding: 8px 22px;
+  display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+  font-family: var(--mono);
+}
+.sb-score { font-size: 21px; font-weight: 700; letter-spacing: -0.02em; }
+.sb-den { font-size: 11px; color: var(--ink-3); }
+.sb-verdict { font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; }
+.sb-fig { display: inline-flex; gap: 7px; align-items: baseline; font-size: 13px; }
+.sb-cap { font-size: 9.5px; letter-spacing: 0.13em; text-transform: uppercase; color: var(--ink-3); }
+#sb-edit { margin-left: auto; }
+@media (max-width: 640px) {
+  .sb-inner { gap: 12px; padding: 7px 14px; }
+  .sb-fig:nth-of-type(3) { display: none; }
+}
+@media print { #stickybar { display: none !important; } }
+
+/* The bottom line — the paragraph you act on */
+.bottomline {
+  border: 2px solid var(--rule-heavy); padding: 16px 18px; margin: 0 0 22px;
+  background: var(--panel);
+}
+.bottomline h3 { margin-top: 0; border: 0; padding: 0; }
+.bottomline p { margin: 0 0 8px; font-size: 15px; line-height: 1.55; }
+.bottomline p:last-child { margin-bottom: 0; }
+.bottomline b { font-family: var(--mono); }
+.actions { list-style: none; padding: 0; margin: 10px 0 0; }
+.actions li { padding: 5px 0 5px 20px; position: relative; font-size: 13.5px; color: var(--ink-2); }
+.actions li::before { content: "→"; position: absolute; left: 0; font-family: var(--mono); color: var(--ink-3); }
+
+/* Fatal-error panel */
+#fatal {
+  display: none; border: 2px solid var(--bad); padding: 16px 18px; margin: 20px 0;
+  background: var(--panel);
+}
+#fatal h2 { color: var(--bad); }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0; background: var(--paper); color: var(--ink);
@@ -125,6 +208,9 @@ h3:first-child { margin-top: 0; }
 @media (max-width: 560px) { .fieldgrid, .fieldgrid.c3, .fieldgrid.c2 { grid-template-columns: 1fr; } }
 
 label.f { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+label.f > .cap .req {
+  color: var(--s2); font-weight: 700; margin-left: 3px;
+}
 label.f > .cap {
   font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: 0.13em;
   text-transform: uppercase; color: var(--ink-3);
@@ -132,7 +218,7 @@ label.f > .cap {
 label.f > .hint { font-size: 11.5px; color: var(--ink-3); font-style: italic; }
 input, select {
   font-family: var(--mono); font-size: 14px; color: var(--ink);
-  background: transparent; border: 0; border-bottom: 1px solid var(--rule-mid);
+  background: transparent; border: 0; border-bottom: 1.5px solid var(--field-line);
   border-radius: 0; padding: 6px 2px; width: 100%; min-width: 0;
   appearance: none; -webkit-appearance: none;
 }
@@ -286,7 +372,7 @@ li.f-critical .mk, li.f-critical .tag { color: var(--bad); }
   padding: 8px 10px 8px 0; border-bottom: 1px solid var(--rule); text-align: right;
   font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap;
 }
-#compare-table td.best { font-weight: 700; color: var(--s1); }
+#compare-table td.best { font-weight: 700; color: var(--s1-ink); }
 #compare-table td.best::after { content: " ◆"; font-size: 9px; }
 
 ul.checks { list-style: none; padding: 0; margin: 0; columns: 2; column-gap: 34px; }
@@ -315,18 +401,39 @@ table.ledger { min-width: 320px; }
 #results { display: none; }
 .rec-row { background: var(--s1-wash); }
 .rec-row td { font-weight: 700; }
-.rec-flag { font-family: var(--mono); font-size: 9px; letter-spacing: 0.1em; color: var(--s1); }
+.rec-flag { font-family: var(--mono); font-size: 9px; letter-spacing: 0.1em; color: var(--s1-ink); }
 
 @media print {
-  body { background: #fff; color: #000; font-size: 11pt; }
-  .noprint, section.block:has(#btn-analyze), #keys-block { display: none !important; }
+  /* The printed artefact is a negotiation sheet, not a screenshot of the page:
+     the inputs, the chrome and the interactive affordances all come out. */
+  body { background: #fff; color: #000; font-size: 10.5pt; }
+  .input-block, .noprint, #stickybar, #fatal, details.tv, #keys-block { display: none !important; }
   .sheet { max-width: none; padding: 0; }
-  section.block { break-inside: avoid; page-break-inside: avoid; }
-  .grade { border-color: #000; }
+  section.block { break-inside: avoid; page-break-inside: avoid; border-top-color: #000; }
+  .masthead { border-bottom-color: #000; }
+  .grade { border-color: #000; background: #fff; }
+  .bottomline { border-color: #000; background: #fff; }
+  .callout { border-left-color: #000; background: #fff; }
+  h1 { font-size: 20pt; }
+  a[href]::after { content: ""; }
+  /* Room to write on the checklist. */
+  ul.checks li { padding-top: 3px; padding-bottom: 3px; }
+  .colophon { font-size: 8pt; }
 }
 </style>
 </head>
 <body>
+<a href="#results" class="visually-hidden" id="skip-link">Skip to the report</a>
+<div id="stickybar" aria-hidden="true">
+  <div class="sb-inner">
+    <span class="sb-score"><b id="sb-num">—</b><span class="sb-den">/100</span></span>
+    <span class="sb-verdict" id="sb-verdict"></span>
+    <span class="sb-fig"><span class="sb-cap">Offer</span><b id="sb-offer">—</b></span>
+    <span class="sb-fig"><span class="sb-cap">Walk at</span><b id="sb-walk">—</b></span>
+    <span class="sb-fig"><span class="sb-cap">All-in/mo</span><b id="sb-mo">—</b></span>
+    <button class="tiny ghost" id="sb-edit" type="button">Edit inputs</button>
+  </div>
+</div>
 <div class="sheet">
 
   <header class="masthead">
@@ -354,11 +461,16 @@ table.ledger { min-width: 320px; }
   <p class="lede">
     A complete workup on a used car before you buy it: what it is really worth, what it will
     cost you over the years you keep it, which loan length actually makes sense, and every
-    open safety recall on record. Fill in the sections below and the report writes itself.
-    Nothing you enter leaves this browser.
+    open safety recall on record.
+    <br><br>
+    <b>You only need four things</b> — year, make and model, mileage and the asking price
+    (<span style="color:var(--s2);font-weight:700">*</span> below), or just the VIN. Everything
+    else has a sensible default and only sharpens the answer. Pick your state and the report
+    adds your local taxes, fees, insurance levels and inspection rules. Nothing you enter
+    leaves this browser.
   </p>
 
-  <section class="block noprint" id="keys-block" style="display:none">
+  <section class="block noprint input-block" id="keys-block" style="display:none">
     <div class="inner"><div class="stamp">00</div><div class="block-body">
       <h2>Data sources</h2>
       <p class="block-note">
@@ -383,7 +495,7 @@ table.ledger { min-width: 320px; }
     </div></div>
   </section>
 
-  <section class="block noprint">
+  <section class="block noprint input-block" id="block-vehicle">
     <div class="inner"><div class="stamp">01</div><div class="block-body">
       <h2>Subject vehicle</h2>
       <p class="block-note">
@@ -397,15 +509,15 @@ table.ledger { min-width: 320px; }
           <button id="btn-vin" type="button" style="margin-top:2px">Decode &amp; check recalls</button></label>
         <label class="f"><span class="cap">Reference name</span><span class="hint">for the comparison table</span>
           <input id="in-name" type="text" placeholder="Blue Camry, corner lot"></label>
-        <label class="f"><span class="cap">Model year</span>
+        <label class="f"><span class="cap">Model year<span class="req" aria-hidden="true">*</span></span>
           <input id="in-year" type="number" min="1981" max="2027" value="2019"></label>
         <label class="f"><span class="cap">Make</span><select id="in-brand"></select></label>
         <label class="f"><span class="cap">Model</span><span class="hint">matches EPA fuel economy</span>
           <input id="in-model" list="model-list" placeholder="Camry"><datalist id="model-list"></datalist></label>
         <label class="f"><span class="cap">Class</span><select id="in-segment"></select></label>
-        <label class="f"><span class="cap">Odometer</span><span class="hint">miles</span>
+        <label class="f"><span class="cap">Odometer<span class="req" aria-hidden="true">*</span></span><span class="hint">miles</span>
           <input id="in-miles" type="number" min="0" step="1000" value="60000"></label>
-        <label class="f"><span class="cap">Asking price</span><span class="hint">dollars</span>
+        <label class="f"><span class="cap">Asking price<span class="req" aria-hidden="true">*</span></span><span class="hint">dollars</span>
           <input id="in-price" type="number" min="0" step="100" value="18500"></label>
         <label class="f"><span class="cap">Combined MPG</span><span class="hint" id="mpg-hint">blank = EPA figure</span>
           <input id="in-mpg" type="number" min="5" max="150" placeholder="auto"></label>
@@ -421,7 +533,7 @@ table.ledger { min-width: 320px; }
     </div></div>
   </section>
 
-  <section class="block noprint">
+  <section class="block noprint input-block" id="block-history">
     <div class="inner"><div class="stamp">02</div><div class="block-body">
       <h2>History &amp; market comparables</h2>
       <p class="block-note">
@@ -479,7 +591,7 @@ table.ledger { min-width: 320px; }
     </div></div>
   </section>
 
-  <section class="block noprint">
+  <section class="block noprint input-block" id="block-finance">
     <div class="inner"><div class="stamp">03</div><div class="block-body">
       <h2>Financing &amp; ownership plan</h2>
       <p class="block-note">
@@ -511,7 +623,7 @@ table.ledger { min-width: 320px; }
           <input id="in-target-payment" type="number" min="0" step="25" placeholder="—"></label>
         <label class="f"><span class="cap">Sales tax</span><span class="hint">percent</span>
           <input id="in-tax" type="number" min="0" max="15" step="0.1" value="6.0"></label>
-        <label class="f"><span class="cap">Dealer fees</span><span class="hint">doc, title, dollars</span>
+        <label class="f"><span class="cap">Dealer &amp; doc fees</span><span class="hint">title is added from your state</span>
           <input id="in-fees" type="number" min="0" step="50" value="500"></label>
         <label class="f"><span class="cap">Annual driving</span><span class="hint">miles</span>
           <input id="in-annualmiles" type="number" min="1000" step="500" value="12000"></label>
@@ -530,20 +642,30 @@ table.ledger { min-width: 320px; }
         <label class="f"><span class="cap">Trade-in payoff</span><span class="hint">still owed on it</span>
           <input id="in-trade-payoff" type="number" min="0" step="100" placeholder="—"></label>
       </div>
-      <p class="block-note" id="state-note" style="margin:14px 0 0"></p>
+      <div id="state-note" style="margin:16px 0 0"></div>
       <div class="controls" style="margin-top:24px">
         <button class="solid" id="btn-analyze" type="button">Generate report</button>
         <button id="btn-save" type="button" style="display:none">Add to comparison</button>
-        <span class="src" id="live-status"></span>
+        <span class="src" id="live-status" role="status" aria-live="polite"></span>
       </div>
     </div></div>
   </section>
 
-  <div id="results">
+  <div id="fatal" role="alert">
+    <h2>Something went wrong</h2>
+    <p id="fatal-msg" class="block-note" style="margin-bottom:8px"></p>
+    <p class="block-note" style="margin:0">
+      Your inputs are still on the page and nothing was lost. Adjust a value and try again, or
+      press Reset to start from the defaults.
+    </p>
+  </div>
+
+  <div id="results" role="region" aria-label="Deal report" tabindex="-1">
 
     <section class="block">
       <div class="inner"><div class="stamp">04</div><div class="block-body">
         <h2>Assessment</h2>
+        <div class="bottomline" id="bottomline"></div>
         <div class="callout warn" style="margin-top:0">
           The score is a weighted judgement, not a measurement. The weights are chosen, not
           calibrated against outcomes, and the benchmark data behind reliability, repair costs and
@@ -552,9 +674,12 @@ table.ledger { min-width: 320px; }
         </div>
         <div class="verdict-rig">
           <div>
-            <div class="grade">
-              <div class="cap">Deal score</div>
-              <div class="num"><span id="score-num">—</span><span class="den">/100</span></div>
+            <div class="grade" role="group" aria-labelledby="grade-cap">
+              <div class="cap" id="grade-cap">Deal score</div>
+              <div class="num" role="status" aria-live="polite">
+                <span id="score-num">—</span><span class="den" aria-hidden="true">/100</span>
+                <span class="visually-hidden">out of 100</span>
+              </div>
               <div class="verdict" id="score-verdict"></div>
               <div class="caps" id="score-caps"></div>
             </div>
@@ -726,6 +851,7 @@ table.ledger { min-width: 320px; }
   </div>
 
   <p class="colophon" id="data-footnote"></p>
+  <div id="sr-announce" class="visually-hidden" role="status" aria-live="polite"></div>
 </div>
 
 <script src="data.js"></script>

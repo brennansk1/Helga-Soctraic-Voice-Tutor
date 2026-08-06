@@ -5,6 +5,20 @@ walk away, works out how long the loan should be, projects the full cost of owne
 pulls live safety recalls and crash ratings from NHTSA. Everything runs in the browser;
 nothing you type leaves the machine.
 
+## Accessibility & quality
+
+- **WCAG 2.1 AA contrast is enforced by test**, not by eye: a Playwright check walks every
+  rendered text node, composites its background through any translucent layers, and fails the
+  build if the ratio falls short — in both light and dark themes.
+- Visible keyboard focus on every control, a skip link, landmark roles, and polite live
+  regions so the score and status changes are announced.
+- `prefers-reduced-motion` is honoured throughout.
+- Inline, specific validation: bad input blocks the report and says exactly what is wrong,
+  rather than being silently coerced.
+- An error boundary — if the engine or a renderer throws, you get a clear message and keep
+  your inputs, instead of a blank page.
+- Works from `file://`, offline, with no build step and no dependencies.
+
 ## Design
 
 The report is styled as an **auction condition report** rather than a web app: ruled sections
@@ -50,6 +64,8 @@ U.S. government APIs that need no key.
 | **Uncertainty** | each assumption varied on its own and ranked by how much it swings the total, with a realistic range instead of a false-precision point estimate |
 | **Comparison** | saved candidates side by side with the best value marked per column, exportable to CSV |
 | **Complaint breakdown** | what owners actually report to NHTSA, by component, so the inspection targets the right systems |
+| **The bottom line** | a plain-language paragraph up top: what to offer, what to walk at, what it costs a month, and the two or three things to do next |
+| **State cost profile** | sales tax and trade-in credit, title fee, registration, insurance level, fuel and electricity prices, inspection cadence, EV surcharge and vehicle property tax — all flowing into the totals |
 
 ### Score weights
 
@@ -100,10 +116,12 @@ Keys are stored only in your browser's local storage and are sent directly to th
 - **The score is a weighted judgement, not a measurement.** The weights were chosen, not
   calibrated against outcomes. It is built to rank cars against each other; the report says so
   where the score appears.
-- **State rules matter.** Most states tax only the price difference after a trade-in, several
-  levy an annual tax on the vehicle's value, and registration varies widely. All three are in
-  the totals once you pick a state, from an approximate built-in table you should confirm
-  locally — every field stays editable.
+- **State rules matter, and there are nine of them.** Picking a state applies its sales tax and
+  trade-in credit rule, title fee, annual registration, insurance cost level (Michigan runs
+  roughly three times Maine), typical fuel and electricity prices, safety/emissions inspection
+  cadence and cost, EV registration surcharge, and annual vehicle property tax where one
+  exists. All of it lands in the totals. The table is approximate and every value stays
+  editable — confirm your local figures.
 
 ### Built in (offline baseline)
 Brand maintenance costs, reliability baselines and lifespan miles (RepairPal, Consumer
@@ -149,17 +167,18 @@ leaves its table untouched and is reported.
 ## Tests
 
 ```bash
-python3 -m pytest tests/test_used_car_calculator.py -v     # everything (69 tests)
-node --test 'tools/used_car_calculator/tests/*.test.js'    # the JS engine alone (148 tests)
+python3 -m pytest tests/test_used_car_calculator.py -v     # everything (86 tests)
+node --test 'tools/used_car_calculator/tests/*.test.js'    # the JS engine alone (159 tests)
 ```
 
-Three layers: 148 Node tests covering every formula, boundary and failure path in the engine
+Three layers: 159 Node tests covering every formula, boundary and failure path in the engine
 and the API client (with an injected fetch, so no network is touched); Python tests for the
 dataset builder, including a round-trip that proves a refreshed `data.js` is still loadable
-by the engine; and 47 headless-Chromium tests that drive the real UI — score rendering, chart
+by the engine; and 64 headless-Chromium tests that drive the real UI — score rendering, chart
 geometry, the loan-term table's monotonicity, the target-payment solver, trade-in tax rules,
-the service schedule, sensitivity ordering, the share link round-trip, phone layout, dark
-mode, CSV export and HTML-escaping of user text.
+the service schedule, sensitivity ordering, the share-link round-trip, phone layout, WCAG
+contrast in both themes, keyboard/ARIA affordances, input validation, error recovery, the
+print sheet, CSV export and HTML-escaping of user text.
 
 The Playwright tests skip cleanly if Playwright or Chromium is absent.
 

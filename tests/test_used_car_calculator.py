@@ -667,10 +667,20 @@ def test_ui_state_selection_fills_tax_and_explains_the_rules(page):
 def test_ui_state_without_trade_in_credit_says_so(page):
     page.select_option("#in-state", "CA")
     page.wait_for_timeout(500)
-    assert "do not reduce sales tax" in page.inner_text("#state-note").lower()
+    assert "no trade-in credit" in page.inner_text("#state-note").lower()
     page.select_option("#in-state", "TX")
     page.wait_for_timeout(400)
-    assert "reduce the taxable amount" in page.inner_text("#state-note").lower()
+    assert "after your trade-in" in page.inner_text("#state-note").lower()
+
+
+def test_ui_state_panel_covers_every_cost_that_varies_by_state(page):
+    page.select_option("#in-state", "VA")
+    page.wait_for_timeout(500)
+    note = page.inner_text("#state-note").lower()
+    for expected in ("sales tax", "title", "registration", "insurance", "fuel",
+                     "electricity", "inspection", "ev surcharge", "property tax"):
+        assert expected in note, f"the state profile omits {expected}"
+    assert "confirm your local figures" in note
 
 
 def test_ui_signing_section_breaks_down_the_deal(page):
@@ -796,3 +806,223 @@ def test_ui_charts_shrink_for_a_phone_viewport(page):
     assert not body_scrolls, "the page itself must not scroll sideways on a phone"
     page.set_viewport_size({"width": 1240, "height": 1000})
     page.wait_for_timeout(700)
+
+
+# ------------------------------------------- professional polish (UI layer)
+
+
+def test_ui_bottom_line_gives_actionable_numbers(page):
+    text = page.inner_text("#bottomline")
+    assert "bottom line" in text.lower()
+    assert "open at" in text.lower()
+    assert "walk away above" in text.lower()
+    assert "a month" in text.lower()
+    assert text.count("$") >= 4
+
+
+def test_ui_bottom_line_leads_with_a_verdict(page):
+    page.select_option("#in-title", "rebuilt")
+    page.wait_for_timeout(600)
+    assert "do not buy" in page.inner_text("#bottomline").lower()
+    page.select_option("#in-title", "clean")
+    page.wait_for_timeout(600)
+    assert "do not buy" not in page.inner_text("#bottomline").lower()
+
+
+def test_ui_sticky_bar_carries_the_key_numbers(page):
+    assert "on" in page.eval_on_selector("#stickybar", "e => e.className")
+    assert page.inner_text("#sb-num").strip().isdigit()
+    for sel in ("#sb-offer", "#sb-walk", "#sb-mo"):
+        assert "$" in page.inner_text(sel), f"{sel} should show a figure"
+
+
+def test_ui_sticky_bar_edit_button_returns_to_the_form(page):
+    page.click("#sb-edit")
+    page.wait_for_timeout(600)
+    focused = page.evaluate("() => document.activeElement.id")
+    assert focused == "in-price"
+
+
+def test_ui_blocks_the_report_on_invalid_input_with_a_specific_message(page):
+    page.fill("#in-price", "0")
+    page.dispatch_event("#in-price", "change")
+    page.wait_for_timeout(500)
+    assert page.eval_on_selector("#results", "e => e.style.display") == "none"
+    error = page.inner_text(".field-error")
+    assert "asking price" in error.lower()
+    assert page.eval_on_selector("#in-price", "e => e.getAttribute('aria-invalid')") == "true"
+    page.fill("#in-price", "18500")
+    page.dispatch_event("#in-price", "change")
+    page.wait_for_timeout(500)
+    assert page.eval_on_selector("#results", "e => e.style.display") == "block"
+    assert page.eval_on_selector_all(".field-error", "els => els.length") == 0
+
+
+def test_ui_validation_catches_an_impossible_year(page):
+    page.fill("#in-year", "1899")
+    page.dispatch_event("#in-year", "change")
+    page.wait_for_timeout(500)
+    assert "1981" in page.inner_text(".field-error")
+    page.fill("#in-year", "2019")
+    page.dispatch_event("#in-year", "change")
+    page.wait_for_timeout(500)
+
+
+def test_ui_has_a_live_region_for_screen_readers(page):
+    assert page.eval_on_selector("#sr-announce", "e => e.getAttribute('aria-live')") == "polite"
+    text = page.inner_text("#sr-announce")
+    assert "deal score" in text.lower(), "the score should be announced when it changes"
+
+
+def test_ui_exposes_landmarks_and_a_skip_link(page):
+    assert page.eval_on_selector("#skip-link", "e => e.getAttribute('href')") == "#results"
+    assert page.eval_on_selector("#results", "e => e.getAttribute('role')") == "region"
+    assert page.eval_on_selector("#results", "e => e.getAttribute('aria-label')")
+
+
+def test_ui_every_input_has_an_accessible_name(page):
+    unlabelled = page.evaluate("""() => {
+      const bad = [];
+      document.querySelectorAll('input, select').forEach(el => {
+        const inLabel = el.closest('label');
+        const aria = el.getAttribute('aria-label') || el.getAttribute('aria-labelledby');
+        if (!inLabel && !aria) bad.push(el.id || el.outerHTML.slice(0, 40));
+      });
+      return bad;
+    }""")
+    assert unlabelled == [], f"inputs without an accessible name: {unlabelled}"
+
+
+CONTRAST_JS = r"""
+() => {
+  // Composite a possibly-transparent colour over its ancestors before measuring,
+  // otherwise a 14%-alpha wash reads as a fully saturated background.
+  const parse = (s) => {
+    const m = s.match(/-?\d+(\.\d+)?/g);
+    if (!m) return null;
+    const v = m.map(Number);
+    return { r: v[0], g: v[1], b: v[2], a: v.length > 3 ? v[3] : 1 };
+  };
+  const over = (fg, bg) => ({
+    r: fg.r * fg.a + bg.r * (1 - fg.a),
+    g: fg.g * fg.a + bg.g * (1 - fg.a),
+    b: fg.b * fg.a + bg.b * (1 - fg.a),
+    a: 1
+  });
+  const bgOf = (el) => {
+    const stack = [];
+    let n = el;
+    while (n && n !== document.documentElement) {
+      const c = parse(getComputedStyle(n).backgroundColor);
+      if (c && c.a > 0) { stack.push(c); if (c.a === 1) break; }
+      n = n.parentElement;
+    }
+    const root = parse(getComputedStyle(document.documentElement).backgroundColor)
+      || { r: 255, g: 255, b: 255, a: 1 };
+    let acc = root.a === 1 ? root : { r: 255, g: 255, b: 255, a: 1 };
+    for (let i = stack.length - 1; i >= 0; i--) acc = over(stack[i], acc);
+    return acc;
+  };
+  const lum = (c) => {
+    const f = [c.r, c.g, c.b].map(v => {
+      v /= 255;
+      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * f[0] + 0.7152 * f[1] + 0.0722 * f[2];
+  };
+  const bad = [];
+  document.querySelectorAll('p, td, th, li, span, div, label, h1, h2, h3, button, summary, dd, dt')
+    .forEach(el => {
+      if (el.offsetParent === null) return;
+      if (!Array.from(el.childNodes).some(n => n.nodeType === 3 && n.textContent.trim().length > 1)) return;
+      const cs = getComputedStyle(el);
+      if (cs.visibility === 'hidden' || parseFloat(cs.opacity) < 0.95) return;
+      const size = parseFloat(cs.fontSize);
+      const weight = parseInt(cs.fontWeight, 10) || 400;
+      const need = (size >= 24 || (size >= 18.66 && weight >= 700)) ? 3 : 4.5;
+      const bg = bgOf(el);
+      const fgRaw = parse(cs.color);
+      if (!fgRaw) return;
+      const fg = fgRaw.a < 1 ? over(fgRaw, bg) : fgRaw;
+      const l1 = lum(fg), l2 = lum(bg);
+      const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+      if (ratio < need - 0.02) {
+        bad.push((el.tagName + '.' + (el.className || '')).slice(0, 42) +
+          '  ' + ratio.toFixed(2) + ':1 (need ' + need + ')  "' +
+          el.textContent.trim().slice(0, 30) + '"');
+      }
+    });
+  return bad.slice(0, 14);
+}
+"""
+
+
+def test_ui_text_meets_wcag_contrast(page):
+    """Every rendered text node must clear WCAG AA against its composited background."""
+    failures = page.evaluate(CONTRAST_JS)
+    assert failures == [], "light-mode text failing WCAG AA:\n" + "\n".join(failures)
+
+
+def test_ui_dark_mode_also_meets_contrast(page):
+    page.click("#theme-toggle")
+    page.wait_for_timeout(700)
+    failures = page.evaluate(CONTRAST_JS)
+    page.click("#theme-toggle")
+    page.wait_for_timeout(500)
+    assert failures == [], "dark-mode text failing WCAG AA:\n" + "\n".join(failures)
+
+
+def test_ui_recovers_from_an_engine_failure_instead_of_dying(page):
+    page.evaluate("""() => {
+      window.__origAnalyze = window.UCDA_ENGINE.analyze;
+      window.UCDA_ENGINE.analyze = () => { throw new Error('synthetic engine failure'); };
+    }""")
+    page.fill("#in-miles", "61000")
+    page.dispatch_event("#in-miles", "change")
+    page.wait_for_timeout(500)
+    assert page.eval_on_selector("#fatal", "e => e.style.display") == "block"
+    assert "synthetic engine failure" in page.inner_text("#fatal-msg")
+    page.evaluate("() => { window.UCDA_ENGINE.analyze = window.__origAnalyze; }")
+    page.fill("#in-miles", "60000")
+    page.dispatch_event("#in-miles", "change")
+    page.wait_for_timeout(600)
+    assert page.eval_on_selector("#fatal", "e => e.style.display") == "none"
+
+
+def test_ui_marks_the_required_fields(page):
+    required = page.eval_on_selector_all("label.f .req", "els => els.length")
+    assert required >= 3, "the minimum viable inputs should be marked"
+    assert "only need four things" in page.inner_text(".lede").lower()
+
+
+def test_ui_declares_document_metadata(page):
+    assert page.eval_on_selector("meta[name=description]", "e => e.content")
+    assert page.eval_on_selector("link[rel=icon]", "e => e.href").startswith("data:image/svg")
+    assert page.eval_on_selector_all("meta[name=theme-color]", "els => els.length") == 2
+
+
+def test_print_sheet_drops_the_inputs_and_keeps_the_numbers(page):
+    page.emulate_media(media="print")
+    page.wait_for_timeout(300)
+    hidden = page.eval_on_selector_all(
+        ".input-block", "els => els.every(e => getComputedStyle(e).display === 'none')")
+    assert hidden, "input sections must not print"
+    assert page.eval_on_selector("#stickybar", "e => getComputedStyle(e).display") == "none"
+    for keep in ("#bottomline", "#score-breakdown", "#findings"):
+        assert page.eval_on_selector(keep, "e => getComputedStyle(e).display") != "none", \
+            f"{keep} should still print"
+    page.emulate_media(media="screen")
+    page.wait_for_timeout(300)
+
+
+def test_ui_state_costs_reach_the_totals(page):
+    """Changing state alone must move the cost of ownership."""
+    page.select_option("#in-state", "ME")
+    page.wait_for_timeout(700)
+    cheap = page.inner_text("#tco-note")
+    page.select_option("#in-state", "MI")
+    page.wait_for_timeout(700)
+    dear = page.inner_text("#tco-note")
+    assert cheap != dear, "state should change the cost of ownership"
+    money = lambda s: int(re.sub(r"[^0-9]", "", s.split("all in")[0]))
+    assert money(dear) > money(cheap), "Michigan insurance should cost more than Maine"
