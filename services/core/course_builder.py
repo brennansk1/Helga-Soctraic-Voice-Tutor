@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Optional, Tuple, Any
 # Content providers removed — all content is LLM-generated
 from services.common.storage import StorageManager
+from services.common import scaffolding as _scaf
 from services.common.llm_utils import (
     llm_generate,
     extract_python_list,
@@ -1161,7 +1162,7 @@ class SkeletonBuilder:
             new_batch = llm_generate_json(
                 current_prompt,
                 sys_prompt=raw_sys,
-                max_tokens=800,
+                max_tokens=_scaf.MODULE_JSON_TOKENS,
                 progress_callback=self.status_callback,
             )
 
@@ -2790,7 +2791,7 @@ class ContentHydrator:
         result["key_facts"] = " ".join(facts[:5])
         result["examples"] = " ".join(examples[:3])
         result["edge_cases"] = " ".join(edges[:3])
-        result["remainder"] = " ".join(other)[:1500]
+        result["remainder"] = " ".join(other)[:_scaf.RESEARCH_REMAINDER_CHARS]
         return result
 
     def _should_fact_check(self, idx):
@@ -3078,9 +3079,10 @@ class ContentHydrator:
         if rs.get("edge_cases"):
             research_input += f"\n### EDGE CASES (from sources — use in Edge Cases section):\n{rs['edge_cases']}\n"
         remainder = rs.get("remainder", raw_text or "")
-        source_material = remainder[:3000] if remainder else "Use your internal knowledge."
+        source_material = (remainder[:_scaf.SOURCE_MATERIAL_CHARS] if remainder
+                               else "Use your internal knowledge.")
         if not research_input and raw_text:
-            source_material = raw_text[:5000]
+            source_material = raw_text[:_scaf.RAW_TEXT_CHARS]
 
         # Build static sections (prepended in Python, not LLM-generated)
         obj_lines = ""
@@ -3332,12 +3334,22 @@ Generate ONLY the sections below. Do NOT generate Metadata, Learning Objectives,
         if depth >= 3:
             required_sections["## Edge Cases & Limitations"] = f"## Edge Cases & Limitations\n- See further reading on {title}.\n"
 
-        for section_header, stub in required_sections.items():
-            if section_header not in content:
-                logger.warning(
-                    f"  [MARKDOWN] Missing '{section_header}' in LLM output for {title}. Injecting stub."
-                )
-                content += f"\n{stub}"
+        missing = [h for h in required_sections if h not in content]
+        for section_header in missing:
+            logger.warning(
+                f"  [MARKDOWN] Missing '{section_header}' in LLM output for {title}."
+                + (" Injecting stub." if _scaf.STUB_MISSING_SECTIONS else " NOT injecting (lean mode).")
+            )
+
+        # Record what the MODEL failed to produce, separately from what we
+        # patched. Without this a document that needed 36 injections and one
+        # that needed none are indistinguishable downstream — which is exactly
+        # how a weak model scored like a strong one on the gate.
+        self._last_injected_sections = list(missing)
+
+        if _scaf.STUB_MISSING_SECTIONS:
+            for section_header in missing:
+                content += f"\n{required_sections[section_header]}"
 
         return content
 
@@ -3426,7 +3438,7 @@ class SyllabusAuditor:
                     if all_concepts[j][2]["uid"] in uids_to_delete:
                         continue
                     ratio = self._word_overlap_ratio(all_concepts[i][3], all_concepts[j][3])
-                    if ratio > 0.4:
+                    if ratio > _scaf.TITLE_DEDUP_RATIO:
                         dup_concept = all_concepts[j][2]
                         orig_concept = all_concepts[i][2]
                         logger.info(

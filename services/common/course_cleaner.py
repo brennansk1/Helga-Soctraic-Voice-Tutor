@@ -8,7 +8,11 @@ logger = logging.getLogger(__name__)
 
 # Courses with these statuses are considered incomplete and should be cleaned up
 # on container restart. Only "ready" courses are preserved.
-INCOMPLETE_STATUSES = {"failed", "hydration_failed", "building", "skeleton"}
+# "building" and "skeleton" are what a LIVE build looks like — a course sits in
+# "skeleton" for the whole of hydration. Including them meant a librarian
+# restart mid-build deleted the course out from under the running hydrator.
+# Only genuinely terminal-failed courses are collectable here.
+INCOMPLETE_STATUSES = {"failed", "hydration_failed"}
 
 
 def clean_failed_courses(data_dir: str = "/app/data"):

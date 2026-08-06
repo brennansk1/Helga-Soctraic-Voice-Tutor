@@ -110,11 +110,19 @@ class BackgroundOperations:
             return
         try:
             courses = self.storage.courses.list_courses()
-            cutoff = (datetime.utcnow() - timedelta(hours=1)).isoformat()
+            # SQLite writes created_at via CURRENT_TIMESTAMP ("2026-08-05
+            # 12:34:56", space separator); isoformat() produces a "T". Byte-wise
+            # ' '(0x20) < 'T'(0x54), so at index 10 EVERY same-day course
+            # compared as older than the cutoff and the one-hour grace period
+            # did not exist. A live build sits in status "skeleton", which is
+            # exactly what this targets, and this runs every 300s — so every
+            # build was rewritten to "failed / timed out (>1 hour)" about five
+            # minutes in, while it was still running.
+            cutoff = (datetime.utcnow() - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
             for course in courses:
                 status = course.get("status", "")
                 created = course.get("created_at", "")
-                if status in ("building", "skeleton") and created and created < cutoff:
+                if status in ("building", "skeleton") and created and created.replace("T", " ")[:19] < cutoff:
                     uid = course.get("uid", "")
                     logger.warning(f"Cleaning stale course '{course.get('title')}' ({uid}) — stuck in '{status}' since {created}")
                     # Mark as failed instead of deleting — user can see what happened
