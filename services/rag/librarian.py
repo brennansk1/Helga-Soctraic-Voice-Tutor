@@ -1,13 +1,14 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, has_request_context
 import logging
 import sys
 import os
 import time
 import json
+import threading
 import requests
 import re
 import uuid
-from services.common.storage import StorageManager
+from services.common.storage import StorageManager, DEFAULT_STUDENT_ID
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +20,54 @@ LLM_API_URL = os.getenv(
 DATA_ROOT = os.getenv("DATA_ROOT", "/app/data")
 
 
+# B15.5: the web-ui emits status updates into a per-student Socket.IO room and
+# DROPS any payload that arrives without a student_id (fail closed — never
+# broadcast one student's tokens to another). This service used to POST
+# {"message": ...} with no owner, so every STRUCT:/hydration message it sent was
+# silently discarded with a 202 and the wizard's progress tree never populated.
+# The drop is correct; the caller has to stamp the owner.
+#
+# The owner is resolved from the inbound request when it carries one, otherwise
+# it is the legacy single-student id — the same fallback storage.py and the
+# web-ui's current_student_id() use, and the room a pre-accounts browser joins.
+# The wizard's ContentHydrator fans concept work out over a ThreadPoolExecutor
+# and calls back from worker threads that have NO Flask request context, so
+# request handlers stash the resolved owner here for those threads to read.
+_status_student_id = DEFAULT_STUDENT_ID
+_status_student_lock = threading.Lock()
+
+
+def _status_owner() -> str:
+    """student_id to stamp on outbound status payloads."""
+    if has_request_context():
+        try:
+            body = request.get_json(silent=True) or {}
+            sid = body.get("student_id") or request.args.get("student_id")
+            if sid:
+                return sid
+        except Exception as e:
+            logger.debug(f"Could not read student_id from request: {e}")
+    with _status_student_lock:
+        return _status_student_id
+
+
+def _bind_status_owner() -> str:
+    """Pin the current request's owner for the worker threads spawned under it.
+
+    Call once at the top of any handler that emits progress; without it a
+    callback running off the request thread falls back to whatever the previous
+    request left behind.
+    """
+    global _status_student_id
+    owner = _status_owner()
+    with _status_student_lock:
+        _status_student_id = owner
+    return owner
+
+
 def _update_status(message: str, log: str = None):
     try:
-        payload = {"message": message}
+        payload = {"message": message, "student_id": _status_owner()}
         if log:
             payload["log"] = log
         requests.post(
@@ -585,6 +631,7 @@ def create_custom_course():
         return jsonify({"error": "Missing title or modules"}), 400
 
     try:
+        _bind_status_owner()
         course_uid = f"course_{uuid.uuid4().hex[:8]}"
 
         # Build course dict
@@ -645,15 +692,34 @@ def create_custom_course():
 
             course_dict["modules"].append(module_dict)
 
-        course_dict["status"] = "ready"
+        # This path builds a placeholder skeleton only — literal "Lesson N" /
+        # "Concept N" titles, empty learning objectives — and NEVER invokes the
+        # ContentHydrator, so not one concept has a markdown body. Marking it
+        # "ready" made courses.js render an enterable "Start Learning" card over
+        # a course with no content at all.
+        #
+        # "partial" is the honest status: courses.js already handles it (disabled
+        # "Not Ready" button, see static/js/courses.js), and course_cleaner's
+        # INCOMPLETE_STATUSES ({"failed", "hydration_failed"}) does not collect
+        # it, so the user's module structure survives a restart instead of being
+        # deleted out from under them. Not "skeleton"/"building": those make the
+        # card poll for a build that will never arrive.
+        course_dict["status"] = "partial"
         storage.courses.create_course(course_dict)
 
-        logger.info(f"Custom course created: {course_uid} with {len(modules)} modules")
+        logger.info(
+            f"Custom course skeleton created (NOT hydrated, status=partial): "
+            f"{course_uid} with {len(modules)} modules"
+        )
         return jsonify(
             {
                 "status": "ok",
                 "course_uid": course_uid,
-                "message": f'Course "{title}" created with {len(modules)} modules',
+                "course_status": "partial",
+                "message": (
+                    f'Course "{title}" outlined with {len(modules)} modules. '
+                    "No content has been generated yet, so it is not ready to study."
+                ),
             }
         )
 
@@ -1225,6 +1291,7 @@ def preview_custom_course():
         logger.info(
             f"Generating preview structure for '{title}' with {len(modules)} modules"
         )
+        _bind_status_owner()
 
         # Instantiate builder once
         from services.core.course_builder import SkeletonBuilder
@@ -1304,6 +1371,9 @@ def create_custom_course_wizard():
             return jsonify({"error": "Course structure is required"}), 400
 
         logger.info(f"Creating custom course '{title}' with {len(modules)} modules")
+        # Pin the owner before any status emit: hydration below calls back from
+        # ThreadPoolExecutor workers that have no request context.
+        _bind_status_owner()
         _update_status(f"Creating course: {title}")
 
         course_uid = f"course_{uuid.uuid4().hex[:8]}"
@@ -1457,13 +1527,37 @@ def create_custom_course_wizard():
             )
             hydrator.hydrate(course_uid)
             logger.info(f"Content hydration completed for course {course_uid}")
-            course_dict["status"] = "ready"
-            storage.courses.update_course(course_uid, course_dict)
+
+            # hydrate() re-reads the course itself and writes its own copy back
+            # (course_builder.ContentHydrator.hydrate), carrying depth_contract,
+            # fact_check, level_calibration, grounding, assets, hydrated_count,
+            # per-concept source_confidence — and the status it decided on.
+            # `course_dict` here is the PRE-hydration snapshot taken before any
+            # of that existed; json-dumping it back erased every quality verdict,
+            # after which the tutor saw stub concepts as llm_fallback=False /
+            # source_confidence=None. Always re-read and edit the hydrated copy.
+            hydrated = storage.courses.get_course(course_uid)
+            if not hydrated:
+                # hydrate() returns silently (no raise) when the course is
+                # missing, so a successful return proves nothing on its own.
+                # Never stamp "ready" on a course that was never hydrated.
+                raise RuntimeError(
+                    f"Course {course_uid} not found after hydration — "
+                    "nothing was hydrated"
+                )
+            if hydrated.get("status") != "ready":
+                hydrated["status"] = "ready"
+                storage.courses.update_course(course_uid, hydrated)
         except Exception as hydration_err:
             logger.error(f"Content hydration failed: {hydration_err}", exc_info=True)
-            # WIZ-4: Mark as "partial" not "failed" — allows user to retry hydration
-            course_dict["status"] = "partial"
-            storage.courses.update_course(course_uid, course_dict)
+            # WIZ-4: Mark as "partial" not "failed" — allows user to retry hydration.
+            # Re-read for the same reason as the success path: the hydrator
+            # persists concepts as it goes, so the stale pre-hydration
+            # course_dict would throw away whatever did complete. Fall back to
+            # it only if the course is gone from storage entirely.
+            partial = storage.courses.get_course(course_uid) or course_dict
+            partial["status"] = "partial"
+            storage.courses.update_course(course_uid, partial)
             raise Exception(f"Content hydration failed: {str(hydration_err)}")
 
         _update_status(f"Course '{title}' created successfully!")
@@ -1484,7 +1578,14 @@ def create_custom_course_wizard():
             try:
                 course = storage.courses.get_course(course_uid)
                 if course:
-                    course["status"] = "failed"
+                    # A hydration failure already marked this "partial" (WIZ-4)
+                    # and then re-raised through here — overwriting that with
+                    # "failed" made WIZ-4 a no-op and handed the half-built
+                    # course to course_cleaner, which deletes "failed" on the
+                    # next restart. Only stamp "failed" on courses that never
+                    # got that far.
+                    if course.get("status") != "partial":
+                        course["status"] = "failed"
                     course["error"] = str(e)[:500]
                     storage.courses.update_course(course_uid, course)
             except Exception as e:

@@ -11,6 +11,8 @@
      Loaded BEFORE session.js, which calls into window.HelgaAids while rendering
      each message. No vendor library — the renderer is self-contained. -->
 <link rel="stylesheet" href="{{ url_for('static', filename='css/aids.css') }}?v=3">
+<!-- A5 trust surface: sources + grounding confidence on the concept view. -->
+<link rel="stylesheet" href="{{ url_for('static', filename='css/trust.css') }}?v=1">
 <script src="{{ url_for('static', filename='js/aids.js') }}?v=2"></script>
 <script src="{{ url_for('static', filename='js/session.js') }}?v=10"></script>
 {% endblock %}
@@ -92,6 +94,26 @@
              Driven by concept_correct_streak + concept_question_count. -->
         <div id="mastery-progress-wrap" class="mastery-progress hidden" aria-hidden="true">
             <div id="mastery-progress-fill" class="mastery-progress-fill"></div>
+        </div>
+
+        <!-- A5 trust surface: where this concept's content came from.
+             Populated by updateTrustSurface() in session.js from the concept
+             markdown that already ships in state.graph_node.text. Collapsed and
+             quiet when the concept is well grounded; opens itself, tinted, when
+             the content leans on the model's own knowledge. -->
+        <div id="trust-surface" class="trust-surface hidden" data-state="grounded">
+            <button type="button" id="trust-toggle" class="trust-toggle"
+                    aria-expanded="false" aria-controls="trust-detail">
+                <span class="trust-dot" aria-hidden="true"></span>
+                <span class="i i-warning trust-warn-icon" aria-hidden="true"></span>
+                <span class="trust-label" id="trust-label"></span>
+                <span class="trust-count" id="trust-count"></span>
+                <span class="i i-arrow-right trust-chevron" aria-hidden="true"></span>
+            </button>
+            <div id="trust-detail" class="trust-detail hidden">
+                <p class="trust-caveat" id="trust-caveat"></p>
+                <ul class="trust-sources" id="trust-sources"></ul>
+            </div>
         </div>
 
         <!-- Hero (hidden after first message) -->
@@ -1340,6 +1362,13 @@
             // FSM clears its state and streams the new concept content.
             window.navigatingToNode = true;
             window._navClearanceSeen = false;
+
+            // Clear the trust surface for the same reason the transcript is
+            // suppressed: until the FSM hands back the NEW concept's markdown,
+            // any verdict on screen belongs to the previous concept. Showing
+            // "well grounded" over a concept that is not is the exact failure
+            // this feature exists to prevent.
+            if (window.resetTrustSurface) window.resetTrustSurface();
 
             // Disable the text input during navigation so the user can't
             // type into a concept that isn't ready yet.

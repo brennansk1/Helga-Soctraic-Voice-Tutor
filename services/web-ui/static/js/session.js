@@ -134,6 +134,11 @@ function updateUI(state) {
         }
     }
 
+    // A5 trust surface — show where this concept's content came from.
+    // Driven from graph_node (the FSM's current_lesson_node), which carries the
+    // concept's full markdown; see updateTrustSurface().
+    updateTrustSurface(state);
+
     // Update chat stream
     updateChatStream(state.transcript);
 
@@ -146,6 +151,311 @@ function updateUI(state) {
         updatePalace(state);
     }
 }
+
+/* ===========================================================================
+ * A5 TRUST SURFACE — sources + grounding confidence on the concept view
+ * ===========================================================================
+ *
+ * WHERE THE DATA COMES FROM
+ * -------------------------
+ * Everything below is parsed out of the concept's own markdown, which already
+ * arrives in the browser as `state.graph_node.text` on every state_update
+ * (fsm_logic.get_state() spreads current_lesson_node into `graph_node`, and
+ * web-ui passes the state through verbatim). No new endpoint is needed.
+ *
+ * Parsing markdown client-side is not the prettiest option, but it is the only
+ * HONEST one available right now: the builder formats `research_sources` into
+ * markdown and then discards the list, so there is no structured citation array
+ * anywhere in storage, in structure.json, or in any API response. The markdown
+ * IS the citation record.
+ *
+ * Two deliberate non-choices, both verified rather than assumed:
+ *
+ *   - NOT `state.current_context`. Same markdown, but truncated to 10 000
+ *     chars. `## Sources` is appended LAST by the builder, so it is the first
+ *     thing that truncation destroys on long concepts.
+ *
+ *   - NOT `graph_node.source_confidence` as the primary signal. That field is
+ *     populated by _queue_entry() (the syllabus-advance path) but NOT by
+ *     navigate_to_topic(), which is the path the learn tab actually uses when
+ *     a learner clicks a node. It is read here as a cross-check when present,
+ *     never depended on.
+ * ========================================================================= */
+
+/* The builder's confidence floor, HELGA_CONFIDENCE_FLOOR (course_builder.py).
+ * Its default is 0.5 and it is persisted per course at
+ * structure.json -> grounding.confidence_floor — but no endpoint exposes that
+ * block to the browser, so it cannot be read at runtime today.
+ *
+ * This mirroring is safe for the state that matters most: a concept scored
+ * below the floor at BUILD time gets a "Limited sources." blockquote written
+ * into its markdown, and _classifyGrounding() treats that marker as
+ * authoritative. So if a deployment overrides the floor, the weakly-grounded
+ * state still renders correctly from the artifact itself; only the
+ * grounded/partly-grounded split below would drift. */
+const TRUST_FLOOR = 0.5;
+
+/* The boundary between "well grounded" and "partly grounded" is the midpoint of
+ * the above-floor range, i.e. halfway between the floor and a perfect score.
+ * Derived from the floor rather than picked, so there is exactly one number to
+ * change if the floor moves. With the default floor this is 0.75. */
+const TRUST_STRONG = TRUST_FLOOR + (1 - TRUST_FLOOR) / 2;
+
+/* Raw `type` values come from the research service (wikipedia, web, ...). Map
+ * them onto words a learner can act on. Anything unrecognised is title-cased
+ * and shown as-is rather than dropped — an unknown source type is still
+ * information, and silently relabelling it "Web" would be a lie. */
+const TRUST_TYPE_LABELS = {
+    wikipedia: 'Reference',
+    encyclopedia: 'Reference',
+    reference: 'Reference',
+    dictionary: 'Reference',
+    textbook: 'Textbook',
+    book: 'Textbook',
+    epub: 'Textbook',
+    'user-document': 'Your document',
+    primary: 'Primary',
+    paper: 'Primary',
+    journal: 'Primary',
+    arxiv: 'Primary',
+    web: 'Web',
+    search: 'Web',
+    searxng: 'Web'
+};
+
+function _trustEscape(str) {
+    return String(str == null ? '' : str)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/* Only http(s) links are rendered as links. The URLs originate from web search
+ * results, so javascript:/data: must never reach an href. */
+function _trustSafeUrl(url) {
+    const u = String(url || '').trim();
+    return /^https?:\/\//i.test(u) ? u : '';
+}
+
+/**
+ * Pull the trust record out of a concept's markdown.
+ *
+ * Expected shape, as written by course_builder.py:
+ *
+ *   > **Limited sources.** ... (confidence 0.40) ...      <- only when below floor
+ *
+ *   ## Sources
+ *   - [Pythagorean theorem](https://en.wikipedia.org/...) — wikipedia (Tier 1)
+ *
+ *   *Source confidence: 0.40*
+ */
+function parseTrustFromMarkdown(md) {
+    const out = { sources: [], confidence: null, limitedMarker: false };
+    if (!md) return out;
+    const text = String(md);
+
+    // The builder's own below-floor verdict, baked into the artifact at build
+    // time. Authoritative — see the TRUST_FLOOR note above.
+    out.limitedMarker = /\*\*Limited sources\.\*\*/.test(text);
+
+    const confMatch = text.match(/\*\s*Source confidence:\s*([0-9]*\.?[0-9]+)\s*\*/i);
+    if (confMatch) {
+        const parsed = parseFloat(confMatch[1]);
+        if (!isNaN(parsed)) out.confidence = parsed;
+    }
+
+    // Isolate the "## Sources" section: everything after its heading, cut at the
+    // next heading. Done in two steps rather than one regex with an
+    // end-of-input lookahead — the builder appends Sources LAST, so in practice
+    // there is no following heading to anchor against.
+    const secMatch = text.match(/^#{1,3}[ \t]*Sources[ \t]*$([\s\S]*)/mi);
+    if (secMatch) {
+        const nextHeading = secMatch[1].search(/^#{1,3}[ \t]/m);
+        const section = nextHeading === -1
+            ? secMatch[1]
+            : secMatch[1].slice(0, nextHeading);
+        const lines = section.split('\n');
+        for (const line of lines) {
+            // - [Title](url) — type (Tier N)
+            // The separator is an em dash in practice; accept hyphens too since
+            // it is only a delimiter and cheap to be lenient about.
+            const m = line.match(/^\s*[-*]\s*\[([^\]]*)\]\(([^)\s]*)[^)]*\)\s*(?:[—–-]+\s*(.*))?$/);
+            if (!m) continue;
+            const tail = (m[3] || '').trim();
+            const tierMatch = tail.match(/\(Tier\s*(\d+)\)/i);
+            const rawType = tail.replace(/\(Tier\s*\d+\)/i, '').trim().toLowerCase();
+            out.sources.push({
+                title: (m[1] || '').trim() || 'Untitled source',
+                url: m[2] || '',
+                type: rawType,
+                tier: tierMatch ? tierMatch[1] : null
+            });
+        }
+    }
+    return out;
+}
+
+/**
+ * Decide which of the three honest states this concept is in.
+ *
+ * Three words beat a bare number: "0.85" tells a learner nothing, and inviting
+ * them to interpret a float is how a trust signal becomes decoration.
+ *
+ * The ordering matters — every path to "this is weakly grounded" is checked
+ * before either confident state can be returned, so the failure mode is always
+ * toward under-claiming.
+ */
+function _classifyGrounding(trust, graphNode) {
+    const node = graphNode || {};
+
+    // A concept invented to pad an empty lesson: no research pass ever ran.
+    if (node.llm_fallback) return 'unsourced';
+
+    // The builder already judged this one below its own floor.
+    if (trust.limitedMarker) return 'unsourced';
+
+    const conf = (typeof trust.confidence === 'number')
+        ? trust.confidence
+        : (typeof node.source_confidence === 'number' ? node.source_confidence : null);
+
+    if (conf !== null && conf < TRUST_FLOOR) return 'unsourced';
+
+    // No citations at all means the content is the model's own recall, whatever
+    // number happens to sit beside it.
+    if (!trust.sources.length) return 'unsourced';
+
+    // Cited, but the build recorded no score — claim the middle, not the top.
+    if (conf === null) return 'partial';
+
+    return conf >= TRUST_STRONG ? 'grounded' : 'partial';
+}
+
+const TRUST_COPY = {
+    grounded: {
+        label: 'Well grounded',
+        caveat: 'This concept was built from the references below, and the research pass found them to agree.'
+    },
+    partial: {
+        label: 'Partly grounded',
+        caveat: 'Some of this concept comes from the references below; the rest is the model’s own knowledge. Worth checking specific figures, dates and names against a source you trust.'
+    },
+    unsourced: {
+        label: 'Mostly the model’s own knowledge',
+        caveat: 'The research pass found little corroborating material for this concept, so it leans on what the model already knew. The ideas are usually sound, but treat specific figures, dates, names and results as unverified — check them before you rely on or repeat them.'
+    }
+};
+
+/* Remembers the last concept + state rendered, so the 2-second state poll does
+ * not rebuild this DOM (and re-collapse a panel the learner just opened) on
+ * every tick. */
+let _trustLastKey = null;
+
+function updateTrustSurface(state) {
+    const wrap = document.getElementById('trust-surface');
+    if (!wrap) return;   // not the learn page
+
+    const node = (state && state.graph_node) || null;
+    const inSession = !!(state && state.current_lesson_uid);
+
+    if (!node || !inSession) {
+        wrap.classList.add('hidden');
+        _trustLastKey = null;
+        return;
+    }
+
+    const trust = parseTrustFromMarkdown(node.text);
+    const grounding = _classifyGrounding(trust, node);
+
+    // If the markdown carried no trust information at all AND the FSM has no
+    // confidence for this concept, say nothing rather than inventing a verdict.
+    // An absent Sources block is not evidence of an unsourced concept — it can
+    // equally mean the concept markdown has not loaded yet.
+    const hasAnySignal = trust.sources.length > 0
+        || trust.confidence !== null
+        || trust.limitedMarker
+        || typeof node.source_confidence === 'number'
+        || !!node.llm_fallback;
+    if (!hasAnySignal) {
+        wrap.classList.add('hidden');
+        _trustLastKey = null;
+        return;
+    }
+
+    const key = (state.current_lesson_uid || '') + '|' + grounding + '|' + trust.sources.length;
+    if (key === _trustLastKey) return;
+    _trustLastKey = key;
+
+    const copy = TRUST_COPY[grounding];
+    wrap.dataset.state = grounding;
+    wrap.classList.remove('hidden');
+
+    const labelEl = document.getElementById('trust-label');
+    if (labelEl) labelEl.textContent = copy.label;
+
+    const countEl = document.getElementById('trust-count');
+    if (countEl) {
+        const n = trust.sources.length;
+        countEl.textContent = n
+            ? '· ' + n + ' source' + (n === 1 ? '' : 's')
+            : '· no sources cited';
+    }
+
+    const caveatEl = document.getElementById('trust-caveat');
+    if (caveatEl) caveatEl.textContent = copy.caveat;
+
+    const listEl = document.getElementById('trust-sources');
+    if (listEl) {
+        if (!trust.sources.length) {
+            listEl.innerHTML = '<li class="trust-empty">No references were recorded for this concept.</li>';
+        } else {
+            listEl.innerHTML = trust.sources.map(src => {
+                const typeLabel = TRUST_TYPE_LABELS[src.type]
+                    || (src.type ? src.type.charAt(0).toUpperCase() + src.type.slice(1) : 'Source');
+                const safeUrl = _trustSafeUrl(src.url);
+                // rel=noopener: these are third-party URLs from web search.
+                const titleHtml = safeUrl
+                    ? '<a href="' + _trustEscape(safeUrl) + '" target="_blank" rel="noopener noreferrer">'
+                        + _trustEscape(src.title) + '</a>'
+                    : '<span>' + _trustEscape(src.title) + '</span>';
+                const tierHtml = src.tier
+                    ? '<span class="trust-tier" title="Source quality tier recorded at build time">Tier '
+                        + _trustEscape(src.tier) + '</span>'
+                    : '';
+                return '<li class="trust-source"><span class="trust-type">'
+                    + _trustEscape(typeLabel) + '</span>' + titleHtml + tierHtml + '</li>';
+            }).join('');
+        }
+    }
+
+    // Weak grounding opens itself. The learner should not have to go looking for
+    // the one state that actually changes how they ought to read the page; the
+    // other two stay collapsed so evidence never crowds out the concept.
+    setTrustExpanded(grounding === 'unsourced');
+}
+
+function setTrustExpanded(expanded) {
+    const toggle = document.getElementById('trust-toggle');
+    const detail = document.getElementById('trust-detail');
+    if (!toggle || !detail) return;
+    toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    detail.classList.toggle('hidden', !expanded);
+}
+
+function setupTrustSurface() {
+    const toggle = document.getElementById('trust-toggle');
+    if (!toggle) return;
+    toggle.addEventListener('click', () => {
+        setTrustExpanded(toggle.getAttribute('aria-expanded') !== 'true');
+    });
+}
+
+// Exposed for learn.html, which clears the panel on concept navigation so a
+// stale verdict can never sit above a newly-opened concept.
+window.updateTrustSurface = updateTrustSurface;
+window.resetTrustSurface = function () {
+    _trustLastKey = null;
+    const wrap = document.getElementById('trust-surface');
+    if (wrap) wrap.classList.add('hidden');
+};
 
 // Markdown to HTML renderer for chat messages.
 // Supports: headers, bold, italic, inline code, fenced code blocks,
@@ -1215,6 +1525,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Fetch and populate voices
     fetchAndPopulateVoices();
+
+    // A5 trust surface expand/collapse (no-op off the learn page)
+    setupTrustSurface();
 
     // Establish WebSocket connection (single io() call for the entire file)
     socket = io();

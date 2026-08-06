@@ -34,6 +34,7 @@ class TestEvidenceMustBeStructural(unittest.TestCase):
     def _brief(self, syllabi=None, courses=None, texts=None):
         with patch.object(cr, 'subject_outline',
                           return_value={'outlines': syllabi or [], 'vocabulary': []}), \
+             patch.object(cr, 'discover_broader_subjects', return_value=[]), \
              patch.object(cr, '_wikiversity_course_shapes', return_value=courses or []), \
              patch.object(cr, '_internet_archive_books', return_value=texts or []), \
              patch.object(cr.time, 'sleep', lambda *a: None):

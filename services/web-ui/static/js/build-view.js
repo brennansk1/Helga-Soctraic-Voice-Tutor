@@ -29,15 +29,24 @@
     // --- stages -------------------------------------------------------------
 
     var ORDER = ['preflight', 'research', 'skeleton', 'coverage', 'hydrate', 'assets'];
+    var reached = 0;   // furthest stage index activated so far
 
     function setStage(name, state) {
         var el = stageEls[name];
         if (!el) return;
+        // Never walk backwards. Two producers drive these stages now (the
+        // fine-grained CHECK:/RESEARCH: stream and the coarse PIPELINE_STAGE
+        // events); whichever arrives second must not un-finish a stage.
+        var idx = ORDER.indexOf(name);
+        if (state === 'active') {
+            if (idx < reached) return;
+            reached = idx;
+        }
         el.classList.remove('is-active', 'is-done', 'is-warn');
         if (state) el.classList.add('is-' + state);
         // Everything before the active stage is finished by definition.
         if (state === 'active') {
-            var i = ORDER.indexOf(name);
+            var i = idx;
             ORDER.slice(0, i).forEach(function (prev) {
                 var p = stageEls[prev];
                 if (p && !p.classList.contains('is-warn')) {
@@ -136,6 +145,15 @@
         [/^ASSETS:READY:(\d+):(\d+):(\d+)/, function (m) {
             return 'Loaded ' + m[1] + ' concept(s) of pre-built visuals'; }],
         [/^STRUCT:MODULE:(.+)/,          function (m) { return 'Module: ' + m[1]; }],
+        [/^STRUCT:(?:UNIT|LESSON):(.+)/, function (m) { return '   ' + m[1]; }],
+        // The concept/hydration lines carry the uid in field 2. The old
+        // catch-all printed it, so the log read "con_4f2a91bc:Photosynthesis".
+        [/^STRUCT:CONCEPT:[^:]*:(.+)/,   function (m) { return '   ' + m[1]; }],
+        [/^STRUCT:HYDRATING:[^:]*:[^:]*:(.+)/, function (m) {
+            return '   Writing “' + m[1] + '”…'; }],
+        [/^STRUCT:HYDRATED:[^:]*:[^:]*:(.+)/, function (m) {
+            return '   Wrote “' + m[1] + '”'; }],
+        [/^STRUCT:WARN:(\w+):?(.*)/,     function (m) { return warnText(m[1], m[2]); }],
         [/^STRUCT:\w+:(.+)/,             function (m) { return '   ' + m[1]; }],
         [/^LOG: Generating (\d+) course modules for '(.+)'/, function (m) {
             return 'Planning ' + m[1] + ' modules for ' + m[2]; }],
@@ -159,6 +177,27 @@
         [/^ERROR:\s*(.*)/,               function (m) { return m[1] || 'Something went wrong'; }],
         [/^LOG:\s*(.*)/,                 function (m) { return m[1]; }],
     ];
+
+    // STRUCT:WARN:<KIND>[:<detail>] — the six quality caveats. They are the
+    // only signal a learner gets that this course sits below the level it
+    // claims or still carries a claim the fact-checker could not resolve, and
+    // this page had no handler at all: they rendered as plain log lines,
+    // indistinguishable from ordinary progress.
+    var WARN_TEXT = {
+        CONCEPT_STUB:    function (d) { return 'Could not write “' + d + '” — left as a stub'; },
+        DEPTH_MISS:      function (d) { return '“' + d + '” is thinner than the level requested'; },
+        DEPTH_SUMMARY:   function (d) { return d || 'Some concepts are below the requested level'; },
+        FACT_UNRESOLVED: function (d) { return '“' + d + '” has a claim that could not be verified'; },
+        FACT_SUMMARY:    function (d) { return d + ' concepts still contain confirmed-false claims'; },
+        LEVEL_GAP:       function (d) { return 'This course reads ' + d + ' levels from the one it claims'; }
+    };
+
+    var warnings = [];
+
+    function warnText(kind, detail) {
+        return WARN_TEXT[kind] ? WARN_TEXT[kind](detail)
+                               : (kind + (detail ? ': ' + detail : ''));
+    }
 
     function humanise(msg) {
         for (var i = 0; i < HUMAN.length; i++) {
@@ -192,10 +231,10 @@
     // previous progress UI matched substrings like "hydrat" and broke whenever
     // a message was reworded.
 
-    function handle(raw) {
+    function handle(raw, alreadyLogged) {
         var msg = String(raw == null ? '' : raw).trim();
         if (!msg) return;
-        log(msg);
+        if (!alreadyLogged) log(msg);
 
         // Phase 3 — asset collection. The course is not enterable until this
         // finishes, so the stage has to be visible or the last minutes of a
@@ -261,18 +300,46 @@
             return;
         }
 
+        if (msg.indexOf('STRUCT:WARN:') === 0) {
+            var wf = msg.slice('STRUCT:WARN:'.length).split(':');
+            var wt = warnText(wf[0], wf.slice(1).join(':'));
+            warnings.push(wt);
+            addEvidence('<p class="build-warn">' + esc(wt) + '</p>');
+            return;
+        }
+
         if (msg.indexOf('STRUCT:MODULE:') === 0) {
             modules.push({ title: msg.slice('STRUCT:MODULE:'.length), children: [] });
             renderTree();
             $('build-sub').textContent = 'Writing the course structure…';
             return;
         }
+        // Only genuine structure nodes become tree children. The old catch-all
+        // also swallowed STRUCT:HYDRATING / STRUCT:STRUCTURING / STRUCT:HYDRATED
+        // — progress events about concepts that were ALREADY counted — which
+        // inflated the concept total roughly fourfold, saturated the growth bar
+        // within the first module, and printed raw internals like
+        // "con_4f2a91bc:START:Photosynthesis" into the learner's tree.
         if (msg.indexOf('STRUCT:') === 0 && modules.length) {
-            var leaf = msg.split(':').slice(2).join(':');
-            if (leaf) {
-                modules[modules.length - 1].children.push(leaf);
-                conceptCount++;
-                renderTree();
+            var sParts = msg.split(':');
+            var sType = sParts[1];
+            if (sType === 'UNIT' || sType === 'LESSON') {
+                var container = modules[modules.length - 1];
+                var label = sParts.slice(2).join(':');
+                if (label) { container.children.push(label); renderTree(); }
+            } else if (sType === 'CONCEPT') {
+                // STRUCT:CONCEPT:<uid>:<title> — the title only; the uid is ours.
+                var cTitle = sParts.slice(3).join(':');
+                if (cTitle) {
+                    modules[modules.length - 1].children.push(cTitle);
+                    conceptCount++;
+                    renderTree();
+                }
+            } else if (sType === 'HYDRATING') {
+                // A concept being written, not a new one. Report it, count nothing.
+                setStage('hydrate', 'active');
+                var hTitle = sParts.slice(4).join(':');
+                if (hTitle) $('build-sub').textContent = 'Writing “' + hTitle + '”…';
             }
             return;
         }
@@ -318,6 +385,53 @@
         e.hidden = false;
     }
 
+    // --- structured pipeline stages (B6.4) ---------------------------------
+    //
+    // The builder emits a PIPELINE_STAGE event at each real phase boundary.
+    // This page previously had exactly one completion path — a `course_ready`
+    // socket event with no emitter anywhere in the repo — so it never marked
+    // its stages done, never showed the summary card, and never rendered the
+    // "Open course" link. DONE is that signal, and it carries the course uid.
+    //
+    // Deliberately coarse: the CHECK:/RESEARCH: stream above knows more about
+    // where a build is than these six stages do, so this only ever nudges the
+    // indicator forward (setStage refuses to walk backwards).
+    var STAGE_STEP = {
+        PREFLIGHT: function () { setStage('preflight', 'active'); },
+        // SkeletonBuilder researches first, then writes; the coverage evidence
+        // message promotes 'research' to 'skeleton' when it lands.
+        SKELETON:  function () { setStage('research', 'active'); },
+        AUDIT:     function () { setStage('coverage', 'active'); },
+        HYDRATE:   function () { setStage('hydrate', 'active'); },
+        FINALIZE:  function () { setStage('hydrate', 'done'); }
+    };
+
+    function handleStage(ev, message) {
+        if (!ev || ev.type !== 'PIPELINE_STAGE') return false;
+        if (ev.stage === 'ERROR') {
+            fail(message || 'The build stopped before the course was finished.');
+            return true;
+        }
+        if (ev.stage === 'DONE') {
+            if (typeof ev.modules === 'number') {
+                // The builder's own counts win. A tab that opened mid-build
+                // never saw the earlier STRUCT events, and the audit deletes
+                // duplicate concepts after they were announced — so what was
+                // streamed is not what ended up on disk.
+                totals = { modules: ev.modules, concepts: ev.concepts };
+            }
+            finish(ev.course_uid);
+            return true;
+        }
+        var step = STAGE_STEP[ev.stage];
+        if (step) step();
+        else console.warn('[build-view] Unknown pipeline stage: ' + ev.stage);
+        if (message) $('build-sub').textContent = message;
+        return true;
+    }
+
+    var totals = null;
+
     function finish(courseUid) {
         ORDER.forEach(function (s) {
             var el = stageEls[s];
@@ -328,10 +442,16 @@
         });
         $('build-sub').textContent = 'Done.';
         var done = $('build-done');
+        var nMods = totals ? totals.modules : modules.length;
+        var nCons = totals && typeof totals.concepts === 'number' ? totals.concepts : conceptCount;
         $('build-done-sub').textContent =
-            modules.length + ' modules' +
-            (conceptCount ? ', ' + conceptCount + ' concepts' : '') +
-            ' — built in ' + $('build-elapsed').textContent + '.';
+            nMods + ' modules' +
+            (nCons ? ', ' + nCons + ' concepts' : '') +
+            ' — built in ' + $('build-elapsed').textContent + '.' +
+            (warnings.length
+                ? ' ' + warnings.length + ' quality note' +
+                  (warnings.length === 1 ? '' : 's') + ' — see the evidence panel.'
+                : '');
         if (courseUid) {
             $('build-open').href = '/learn?course_uid=' + encodeURIComponent(courseUid);
         }
@@ -367,13 +487,22 @@
         if (window.io) {
             var socket = window.io();
             socket.on('status_update', function (d) {
-                handle(d && (d.message || d.status || d.text));
+                var text = d && (d.message || d.status || d.text);
+                // Log the human line either way, then let the structured event
+                // — when there is one — drive the stages and the finish card.
+                if (text) log(text);
+                if (d && d.event && handleStage(d.event, text)) return;
+                handle(text, true);
             });
+            // Kept as an alias. The FSM's completion signal reaches the browser
+            // inside status_update (that is the only channel web-ui relays to a
+            // student's room), so DONE above is the live path; this fires only
+            // if a dedicated emitter is ever added on the server.
             socket.on('course_ready', function (d) {
                 finish(d && d.course_uid);
             });
         }
 
-        window.HelgaBuildView = { handle: handle, finish: finish };
+        window.HelgaBuildView = { handle: handle, finish: finish, handleStage: handleStage };
     });
 })();

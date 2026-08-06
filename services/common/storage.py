@@ -9,9 +9,11 @@ Replaces KuzuDB with three storage mechanisms:
 
 import os
 import re
+import copy
 import json
 import sqlite3
 import logging
+import tempfile
 import uuid
 import shutil
 import threading
@@ -45,6 +47,47 @@ LEGACY_PARENT_ID = "par_legacy0"
 def _sid(student_id: Optional[str]) -> str:
     """Resolve the effective student_id (R0 fallback = legacy student)."""
     return student_id or DEFAULT_STUDENT_ID
+
+
+def _atomic_write_json(path: str, payload: Any, indent: int = 2):
+    """Write JSON via a temp file + os.replace so a reader never sees half a file.
+
+    structure.json has many writers: the hydration worker threads and the main
+    hydrate thread in course_builder, the syllabus auditor, the librarian, and
+    background_ops — across TWO processes (core-logic and rag), with no lock.
+    A plain open(path, "w") truncates first, so a crash or a slow dump leaves a
+    window in which the file on disk is not valid JSON.
+
+    That window is not a recoverable inconvenience here. course_cleaner.py
+    classifies an unparseable structure.json as `corrupted` and shutil.rmtree()s
+    the entire course directory — content markdown included. A torn write does
+    not degrade a course, it DESTROYS it.
+
+    os.replace() is atomic on POSIX, so every reader sees either the whole old
+    document or the whole new one. Same pattern as build_state._atomic_write;
+    the fsync additionally makes it hold across a hard power loss, which costs
+    ~1ms on a file written a few dozen times per build.
+
+    This makes each write all-or-nothing. It does NOT serialise writers: two
+    processes that each read -> mutate -> write still lose one of the two edits
+    (last writer wins). Fixing that needs a lock or a version column and a
+    compare-and-swap in every caller, which is a cross-service change.
+    """
+    directory = os.path.dirname(path) or "."
+    os.makedirs(directory, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=directory, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(payload, f, indent=indent)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 class _ThreadLocalDB:
@@ -800,6 +843,119 @@ class CourseStore:
         # so a CourseStore built standalone (tests, scripts) still works.
         self.on_content_saved = None
 
+    def _structure_path(self, uid: str) -> str:
+        return os.path.join(self.courses_dir, uid, "structure.json")
+
+    @staticmethod
+    def _file_signature(path: str):
+        """(mtime_ns, size, inode) for structure.json, or None if it is gone.
+
+        Used to revalidate the cache. st_mtime alone is one-second granular on
+        some filesystems and a build rewrites structure.json far faster than
+        that; the inode changes on every os.replace, so the triple cannot miss a
+        write made through _atomic_write_json even inside the same second.
+
+        One stat() per get_course. The per-concept path (save_concept_content ->
+        get_concept_by_uid -> get_course) already does a file write and an FTS
+        upsert per call, so a ~2us stat is not measurable there.
+        """
+        try:
+            st = os.stat(path)
+        except OSError:
+            return None
+        return (st.st_mtime_ns, st.st_size, st.st_ino)
+
+    def _cache_put(self, uid: str, path: str, course_dict: dict):
+        """Cache a course keyed on the signature of the file we just wrote."""
+        sig = self._file_signature(path)
+        if sig is None:
+            self._cache.pop(uid, None)
+            return
+        self._cache[uid] = (sig, copy.deepcopy(course_dict))
+
+    @staticmethod
+    def _sqlite_now() -> str:
+        """UTC in SQLite's own CURRENT_TIMESTAMP format: "YYYY-MM-DD HH:MM:SS"."""
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+    def _write_course_row(self, uid: str, course_dict: dict, is_create: bool):
+        """Write the `courses` metadata row. Raises if SQLite refuses.
+
+        Shared by create_course and update_course so the two can never drift in
+        which columns they write — they used to be two hand-maintained copies of
+        the same 14-column list, one INSERT OR REPLACE and one UPDATE.
+
+        It is an upsert rather than an UPDATE because an UPDATE ... WHERE uid=?
+        against a missing row succeeds while changing nothing: structure.json
+        would say "ready" and SQLite would still say "skeleton" (or say nothing
+        at all), permanently and with no error, and /api/courses reads SQLite
+        while /api/course_status reads the JSON.
+
+        created_at is set explicitly instead of being left to the column
+        default. The default is datetime('now') — UTC, SPACE separator — while
+        Python-side course dicts carry an isoformat()/strftime "T". Comparing
+        the two byte-wise mis-orders every row (' ' 0x20 < 'T' 0x54); that is
+        what made background_ops mark every live build "failed" about five
+        minutes in. We deliberately do NOT copy course_dict["created_at"] into
+        the column: course_builder writes that one with local-time strftime, and
+        a local timestamp measured against a UTC cutoff resurrects exactly the
+        same bug shifted by the UTC offset.
+        """
+        cat = course_dict.get("catalog") or {}
+        sql = """
+            INSERT INTO courses (uid, title, overview, status, teaching_style,
+                subject, grade_band, grade_numeric, is_catalog, catalog_status,
+                version, visibility, reviewed_by, published_at,
+                enrichment_included, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(uid) DO UPDATE SET
+                title=excluded.title,
+                overview=excluded.overview,
+                status=excluded.status,
+                teaching_style=excluded.teaching_style,
+                subject=excluded.subject,
+                grade_band=excluded.grade_band,
+                grade_numeric=excluded.grade_numeric,
+                is_catalog=excluded.is_catalog,
+                catalog_status=excluded.catalog_status,
+                version=excluded.version,
+                visibility=excluded.visibility,
+                reviewed_by=excluded.reviewed_by,
+                published_at=excluded.published_at,
+                enrichment_included=excluded.enrichment_included
+        """
+        # A rebuild under an existing uid restarts the clock (this is what
+        # INSERT OR REPLACE used to do); an ordinary update must not, or the
+        # stale-build sweeper's one-hour grace period resets on every write.
+        if is_create:
+            sql += ",\n                created_at=excluded.created_at"
+
+        params = (
+            uid,
+            course_dict.get("title", ""),
+            course_dict.get("overview", ""),
+            course_dict.get("status", "unknown"),
+            course_dict.get("teaching_style", ""),
+            cat.get("subject"), cat.get("grade_band"), cat.get("grade_numeric"),
+            1 if cat.get("is_catalog") else 0,
+            cat.get("catalog_status", "draft") if cat else "draft",
+            cat.get("version", 1) if cat else 1,
+            cat.get("visibility", "private") if cat else "private",
+            cat.get("reviewed_by"), cat.get("published_at"),
+            1 if cat.get("enrichment_included") else 0,
+            self._sqlite_now(),
+        )
+
+        db_path = os.path.join(self.data_dir, "helga.db")
+        # 30s busy timeout (default is 5): core-logic and rag both write this
+        # database, and a build holds the write lock in bursts.
+        conn = sqlite3.connect(db_path, timeout=30)
+        try:
+            conn.execute(sql, params)
+            conn.commit()
+        finally:
+            conn.close()
+
     def create_course(self, course_dict: dict) -> str:
         """Write course structure.json and sync metadata to SQLite."""
         uid = course_dict.get("uid") or f"course_{uuid.uuid4().hex[:8]}"
@@ -809,100 +965,93 @@ class CourseStore:
         if "status" not in course_dict:
             course_dict["status"] = "skeleton"
 
-        # AUTO-10: Write SQLite row first; only write JSON if SQLite succeeds
-        cat = course_dict.get("catalog") or {}
-        db_path = os.path.join(self.data_dir, "helga.db")
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT OR REPLACE INTO courses (uid, title, overview, status, teaching_style,
-                    subject, grade_band, grade_numeric, is_catalog, catalog_status,
-                    version, visibility, reviewed_by, published_at, enrichment_included)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                uid,
-                course_dict.get("title", ""),
-                course_dict.get("overview", ""),
-                course_dict.get("status", "unknown"),
-                course_dict.get("teaching_style", ""),
-                cat.get("subject"), cat.get("grade_band"), cat.get("grade_numeric"),
-                1 if cat.get("is_catalog") else 0,
-                cat.get("catalog_status", "draft") if cat else "draft",
-                cat.get("version", 1) if cat else 1,
-                cat.get("visibility", "private") if cat else "private",
-                cat.get("reviewed_by"), cat.get("published_at"),
-                1 if cat.get("enrichment_included") else 0,
-            ))
-            conn.commit()
+        # AUTO-10: Write SQLite row first; only write JSON if SQLite succeeds,
+        # so a structure.json can never exist that /api/courses cannot see.
+        self._write_course_row(uid, course_dict, is_create=True)
 
         course_dir = os.path.join(self.courses_dir, uid)
-        os.makedirs(course_dir, exist_ok=True)
         os.makedirs(os.path.join(course_dir, "content"), exist_ok=True)
 
-        structure_path = os.path.join(course_dir, "structure.json")
-        with open(structure_path, "w") as f:
-            json.dump(course_dict, f, indent=2)
+        structure_path = self._structure_path(uid)
+        _atomic_write_json(structure_path, course_dict)
+        self._cache_put(uid, structure_path, course_dict)
 
         logger.info(f"Created course structure: {structure_path}")
         return uid
 
     def get_course(self, uid: str) -> Optional[dict]:
-        """Read course structure.json."""
-        if uid in self._cache:
-            # Return a copy to prevent accidental in-memory mutations affecting the cache
-            import copy
-            return copy.deepcopy(self._cache[uid])
-            
-        path = os.path.join(self.courses_dir, uid, "structure.json")
-        if not os.path.exists(path):
+        """Read course structure.json, cached but revalidated against the file.
+
+        The cache used to have no invalidation at all — it was only evicted on
+        delete and replaced on this process's own update_course. That is wrong
+        across processes, and the split here is exactly along a process
+        boundary: the build runs in core-logic, but /api/course_status and
+        /api/course_structure are served by rag, out of a different
+        StorageManager. The frontend polls the status endpoint every 5s during a
+        build, which guarantees rag caches the course while it is still a
+        skeleton — and then reports "skeleton" for the life of the process, no
+        matter how the build ends.
+
+        It was also destructive rather than merely stale: background_ops calls
+        get_course, mutates the result and writes it back, so it could overwrite
+        an hour of hydration with a snapshot taken before it started.
+        """
+        path = self._structure_path(uid)
+        sig = self._file_signature(path)
+        if sig is None:
+            # Course deleted (possibly by the other process) — the cached copy
+            # must not outlive the file.
+            self._cache.pop(uid, None)
             return None
+
+        entry = self._cache.get(uid)
+        if entry is not None and entry[0] == sig:
+            # Copy out so a caller's in-place mutations can't poison the cache.
+            return copy.deepcopy(entry[1])
+
+        # Signature is read BEFORE the file, never after: a write that lands
+        # mid-read then leaves us with new content under an old signature, which
+        # merely costs one re-read next call. The other order would cache old
+        # content under the new signature and be stale forever.
         with open(path, "r") as f:
             course = json.load(f)
-            import copy
-            self._cache[uid] = copy.deepcopy(course)
-            return course
+        self._cache[uid] = (sig, copy.deepcopy(course))
+        return course
 
     def update_course(self, uid: str, course_dict: dict):
-        """Overwrite course structure.json and update metadata in SQLite."""
+        """Overwrite course structure.json and update metadata in SQLite.
+
+        Ordering matches create_course (SQLite first, then JSON). It used to be
+        the reverse, with the SQLite half wrapped in a bare `except Exception:
+        logger.error(...)` that did not re-raise — so a failed metadata write
+        left structure.json saying "ready" and courses.status saying "skeleton",
+        permanently, invisibly, with each endpoint reading a different half.
+        Now a failure of either half propagates and the caller can see it.
+        """
         course_dict["uid"] = uid
         course_dict["updated_at"] = datetime.utcnow().isoformat()
-        
-        import copy
-        self._cache[uid] = copy.deepcopy(course_dict)
-        
-        path = os.path.join(self.courses_dir, uid, "structure.json")
-        with open(path, "w") as f:
-            json.dump(course_dict, f, indent=2)
-            
-        # Update metadata table
+
+        self._write_course_row(uid, course_dict, is_create=False)
+
+        # _atomic_write_json makedirs the course directory. update_course used
+        # to assume it existed and raised FileNotFoundError if create_course's
+        # JSON half had failed.
+        path = self._structure_path(uid)
         try:
-            db_path = os.path.join(self.data_dir, "helga.db")
-            with sqlite3.connect(db_path) as conn:
-                cursor = conn.cursor()
-                cat = course_dict.get("catalog") or {}
-                cursor.execute("""
-                    UPDATE courses SET title=?, overview=?, status=?, teaching_style=?,
-                        subject=?, grade_band=?, grade_numeric=?, is_catalog=?,
-                        catalog_status=?, version=?, visibility=?, reviewed_by=?,
-                        published_at=?, enrichment_included=?
-                    WHERE uid=?
-                """, (
-                    course_dict.get("title", ""),
-                    course_dict.get("overview", ""),
-                    course_dict.get("status", "unknown"),
-                    course_dict.get("teaching_style", ""),
-                    cat.get("subject"), cat.get("grade_band"), cat.get("grade_numeric"),
-                    1 if cat.get("is_catalog") else 0,
-                    cat.get("catalog_status", "draft") if cat else "draft",
-                    cat.get("version", 1) if cat else 1,
-                    cat.get("visibility", "private") if cat else "private",
-                    cat.get("reviewed_by"), cat.get("published_at"),
-                    1 if cat.get("enrichment_included") else 0,
-                    uid
-                ))
-                conn.commit()
-        except Exception as e:
-            logger.error(f"Failed to update course metadata in SQLite: {e}")
+            _atomic_write_json(path, course_dict)
+        except Exception:
+            # SQLite committed and the JSON did not: the two halves now
+            # disagree. Say so loudly — this is the divergence that used to be
+            # silent — and drop the cache so nothing serves the un-written doc.
+            self._cache.pop(uid, None)
+            logger.error(
+                f"Course {uid}: SQLite metadata was updated but structure.json "
+                f"was NOT written — the two are now out of sync at {path}",
+                exc_info=True,
+            )
+            raise
+
+        self._cache_put(uid, path, course_dict)
 
     def list_catalog_courses(self, published_only: bool = True,
                              subject: str = None, grade_band: str = None) -> List[dict]:
@@ -990,8 +1139,27 @@ class CourseStore:
                     ("concept_vec", "course_uid"),
                     ("hydration_provenance", "course_uid"),
                 ]
+                # A table that does not exist yet is expected and uninteresting
+                # (concept_vec is only created once a vector index is built,
+                # concept_fts only where FTS5 is compiled in). Anything else —
+                # a renamed column, a locked or corrupt table — is a cascade
+                # that silently failed to run, which is the precise failure this
+                # list exists to prevent, and it used to be logged at DEBUG.
+                # Separating the two lets the real one be a WARNING without
+                # crying wolf on every delete.
+                present = {
+                    r[0] for r in cursor.execute(
+                        "SELECT name FROM sqlite_master "
+                        "WHERE type IN ('table','view')"
+                    ).fetchall()
+                }
                 total_rows = 0
                 for table, col in cascade_tables:
+                    if table not in present:
+                        logger.debug(
+                            f"Cascade: no {table} table in this schema, nothing to delete"
+                        )
+                        continue
                     try:
                         cursor.execute(
                             f"DELETE FROM {table} WHERE {col}=?", (uid,)
@@ -1003,8 +1171,10 @@ class CourseStore:
                                 f"for course {uid}"
                             )
                     except sqlite3.OperationalError as e:
-                        # Table or column may not exist in older schemas — skip.
-                        logger.debug(f"Cascade skip for {table}: {e}")
+                        logger.warning(
+                            f"Cascade delete FAILED on table {table} for course "
+                            f"{uid} — rows are now orphaned: {e}"
+                        )
                 conn.commit()
                 if total_rows > 0:
                     logger.info(
@@ -1245,24 +1415,40 @@ class SearchStore:
         if not self.is_available():
             return 0
         conn = self._get_db()
-        conn.execute("DELETE FROM concept_fts")
-        count = 0
-        for course in self.courses.list_courses():
-            course_uid = course.get("uid")
-            if not course_uid:
-                continue
-            for concept in self.courses.get_flat_concepts(course_uid):
-                concept_uid = concept.get("uid")
-                if not concept_uid:
+        # The DELETE opens a transaction that stays open until commit. If the
+        # repopulate below raises — a course directory disappearing mid-walk is
+        # enough — that transaction is left open on a THREAD-LOCAL connection
+        # that goes on being reused, holding a RESERVED write lock on helga.db.
+        # The other process (rag vs core-logic) then blocks on every write until
+        # this one exits. Roll back so the failure costs nothing but the rebuild
+        # itself; the index keeps its previous contents.
+        try:
+            conn.execute("DELETE FROM concept_fts")
+            count = 0
+            for course in self.courses.list_courses():
+                course_uid = course.get("uid")
+                if not course_uid:
                     continue
-                content = self.courses.get_concept_content(course_uid, concept_uid)
-                conn.execute(
-                    "INSERT INTO concept_fts (concept_uid, course_uid, title, content) "
-                    "VALUES (?, ?, ?, ?)",
-                    (concept_uid, course_uid, concept.get("title", ""), content or ""),
-                )
-                count += 1
-        conn.commit()
+                for concept in self.courses.get_flat_concepts(course_uid):
+                    concept_uid = concept.get("uid")
+                    if not concept_uid:
+                        continue
+                    content = self.courses.get_concept_content(course_uid, concept_uid)
+                    conn.execute(
+                        "INSERT INTO concept_fts (concept_uid, course_uid, title, content) "
+                        "VALUES (?, ?, ?, ?)",
+                        (concept_uid, course_uid, concept.get("title", ""), content or ""),
+                    )
+                    count += 1
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except sqlite3.Error as rb:
+                logger.error(f"FTS rebuild rollback failed, write lock may be held: {rb}")
+            logger.error("FTS index rebuild failed; previous index left intact",
+                         exc_info=True)
+            raise
         logger.info(f"Rebuilt concept FTS index with {count} concept(s)")
         return count
 

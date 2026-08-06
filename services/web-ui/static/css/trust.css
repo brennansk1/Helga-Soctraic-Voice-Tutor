@@ -1,0 +1,243 @@
+/* ============================================================================
+ * Trust surface — A5 gate: "every concept view shows its sources and
+ * confidence".
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * The builder computes a grounding confidence per concept and writes a
+ * `## Sources` block into the concept markdown, and until now the session view
+ * showed neither. A concept the research pass barely corroborated was taught in
+ * exactly the same voice, and rendered in exactly the same chrome, as one built
+ * from three solid references. The learner had no way to tell them apart.
+ *
+ * DESIGN INTENT
+ * -------------
+ * The concept text is the product; this is supporting evidence. So the
+ * well-grounded case is deliberately quiet — a single line, collapsed, that a
+ * learner can open if they care where something came from.
+ *
+ * The weakly-grounded case is deliberately NOT quiet. That asymmetry is the
+ * whole point of the feature: a trust surface that is equally understated when
+ * content is thin has failed at its only job. That state gets a tinted surface,
+ * a warning rule down the leading edge, and opens expanded so the caveat is
+ * read rather than discovered.
+ *
+ * Every colour here is an existing token with a dark-mode value defined in
+ * style.css (--bg-warning, --status-warning, ...). No new palette entries.
+ * ==========================================================================*/
+
+.trust-surface {
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    font-size: var(--font-size-xs);
+}
+
+.trust-surface.hidden { display: none; }
+
+/* ---- Collapsed summary row ---------------------------------------------- */
+
+.trust-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    padding: var(--space-2) var(--space-5);
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: var(--font-size-xs);
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.trust-toggle:hover {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+/* The status dot carries the state at a glance for anyone scanning rather than
+   reading. It is never the ONLY carrier — the label beside it says the same
+   thing in words, because colour alone fails for ~4% of male learners. */
+.trust-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+    background: var(--text-secondary);
+}
+
+.trust-label {
+    font-weight: var(--font-weight-medium, 500);
+    letter-spacing: 0.01em;
+}
+
+.trust-count {
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+/* Chevron rotates to point down when the panel is open. Reusing i-arrow-right
+   rather than adding a caret keeps this inside the existing mask-icon set. */
+.trust-chevron {
+    margin-left: auto;
+    flex: 0 0 auto;
+    opacity: 0.7;
+    transition: transform var(--transition-fast);
+}
+
+.trust-toggle[aria-expanded="true"] .trust-chevron {
+    transform: rotate(90deg);
+}
+
+/* ---- Expanded detail ----------------------------------------------------- */
+
+.trust-detail {
+    padding: 0 var(--space-5) var(--space-3);
+}
+
+.trust-detail.hidden { display: none; }
+
+.trust-caveat {
+    margin: 0 0 var(--space-2);
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: 1.5;
+    max-width: 68ch;
+}
+
+.trust-sources {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.trust-source {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    line-height: 1.5;
+}
+
+.trust-source a {
+    color: var(--accent-primary);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    overflow-wrap: anywhere;
+}
+
+.trust-source a:hover {
+    border-bottom-color: currentColor;
+}
+
+/* Source type (textbook / primary / web / reference). A small caps-ish tag
+   rather than a coloured pill: four of these stacked in colour would out-shout
+   the concept text they are supposed to be supporting. */
+.trust-type {
+    flex: 0 0 auto;
+    padding: 1px var(--space-2);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    color: var(--text-secondary);
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+}
+
+/* Tier is the builder's own domain-quality ranking. Kept subordinate to the
+   type tag — it is useful detail, not a headline. */
+.trust-tier {
+    flex: 0 0 auto;
+    color: var(--text-secondary);
+    opacity: 0.8;
+    white-space: nowrap;
+}
+
+.trust-empty {
+    margin: 0;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+/* ---- The three grounding states ----------------------------------------- */
+
+/* Well grounded: quiet by design. Success green on the dot only; no tinted
+   surface, because "this worked normally" does not deserve a banner. */
+.trust-surface[data-state="grounded"] .trust-dot {
+    background: var(--status-success);
+}
+
+/* Partly grounded: warning colour on the dot, still an untinted surface. */
+.trust-surface[data-state="partial"] .trust-dot {
+    background: var(--status-warning);
+}
+
+/* Mostly the model's own knowledge: the loud state.
+
+   A tinted surface plus a rule down the leading edge, so it reads as a
+   different KIND of row from the quiet ones even before the words are read.
+   `border-inline-start` rather than border-left so it stays on the leading
+   edge under RTL. */
+.trust-surface[data-state="unsourced"] {
+    background: var(--bg-warning);
+    border-inline-start: 3px solid var(--status-warning);
+}
+
+.trust-surface[data-state="unsourced"] .trust-toggle {
+    color: var(--text-primary);
+}
+
+.trust-surface[data-state="unsourced"] .trust-toggle:hover {
+    background: transparent;
+}
+
+.trust-surface[data-state="unsourced"] .trust-label {
+    font-weight: var(--font-weight-semibold, 600);
+}
+
+.trust-surface[data-state="unsourced"] .trust-caveat {
+    color: var(--text-primary);
+}
+
+/* The warning icon only appears in the unsourced state; in the other two the
+   dot alone is enough. */
+.trust-warn-icon { display: none; }
+
+.trust-surface[data-state="unsourced"] .trust-warn-icon {
+    display: inline-block;
+    color: var(--status-warning);
+}
+
+.trust-surface[data-state="unsourced"] .trust-dot {
+    display: none;
+}
+
+/* ---- Responsive ---------------------------------------------------------- */
+
+@media (max-width: 768px) {
+    .trust-toggle { padding: var(--space-2) var(--space-3); }
+    .trust-detail { padding: 0 var(--space-3) var(--space-3); }
+
+    /* On a phone the summary row has to survive without the reference count,
+       which is the least load-bearing part of it. */
+    .trust-count { display: none; }
+
+    .trust-source {
+        flex-wrap: wrap;
+        gap: var(--space-1) var(--space-2);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .trust-toggle,
+    .trust-chevron { transition: none; }
+}

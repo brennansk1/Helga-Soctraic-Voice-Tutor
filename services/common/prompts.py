@@ -360,8 +360,16 @@ def get_typed_socratic_prompt(question_type_key, context_text, conversation_hist
     if system_note:
         combined_note += f"\n{system_note}"
 
+    # B13: forward the aid policy. It used to be accepted here and dropped on
+    # the floor, which silently disabled the policy on the ENTIRE Socratic path
+    # (every tutor turn that is not a micro-lecture). Because
+    # _aid_prompt_block(None) means "legacy always-on", the symptom was not a
+    # missing grammar but an UNGATED one: a `none` decision still taught the
+    # model the diagram syntax, and a `generate` decision lost its per-turn
+    # nudge. Only the lecture path was actually policy-driven.
     return get_socratic_tutor_prompt(
         context_text, conversation_history,
+        aid_policy=aid_policy,
         system_note=combined_note,
         misconceptions=misconceptions,
         analogies=analogies,
@@ -682,6 +690,19 @@ def get_micro_lecture_prompt(topic, context_text, history=[], style_modifier="st
             f"Focus your explanation on these gaps."
         )
 
+    # GAP 7 continuity, same as the Socratic path. The FSM has always passed
+    # `prior_concepts=self.prior_concepts_summary` here, but the lecture prompt
+    # accepted the argument and never read it — so the lecturer, which is the
+    # mode that fires right after "I don't know", was the one mode that could
+    # not say "remember X from earlier". Kept identical in shape to
+    # get_socratic_tutor_prompt so the two modes describe history the same way.
+    prior_str = ""
+    if prior_concepts:
+        summaries = [f"{p.get('title', '?')} (Bloom {p.get('bloom_achieved', '?')})"
+                     for p in prior_concepts[-3:]]
+        prior_str = (f"\n\nPREVIOUS CONCEPTS COVERED: {', '.join(summaries)}. "
+                     f"You may reference these to build connections.")
+
     # Map question type to follow-up style so lecture flows into the right Socratic mode
     question_style_map = {
         "SCENARIO": "Describe a concrete real-world scenario and ask what the student thinks would happen.",
@@ -723,7 +744,7 @@ GRADE REGISTER: {profile['register']}
 
 Context:
 "{context_safe}"
-{history_str}{missing_str}
+{history_str}{missing_str}{prior_str}
 
 Task:
 1. Explain the concept clearly and simply in {lecture_sentences} sentences.

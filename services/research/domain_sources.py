@@ -28,6 +28,7 @@ No key, no login, no rate-limit tier for anything below.
 
 import logging
 import re
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,44 @@ try:  # container (flat)
     from syllabus_sources import _get_json
 except ImportError:  # imported as a package
     from services.research.syllabus_sources import _get_json
+
+
+# --- per-process result memo --------------------------------------------------
+#
+# These lookups run once per CONCEPT during hydration, and Wikidata serves every
+# domain, so a 12-concept module made 12 Wikidata calls. Whenever a lookup falls
+# back to the module or course subject — which is the common case for a concept
+# whose title is a pedagogical task — those calls are byte-identical, and each
+# one is a real round trip against a public API with no key and no rate-limit
+# tier of ours. The research service is a long-lived process, so a small memo
+# removes them.
+#
+# Deliberately NOT the diskcache used in research_server: this module is
+# imported by the core service too (dual import shape), and it must not depend
+# on a cache directory existing.
+
+_MEMO_TTL = 6 * 3600
+_MEMO_MAX = 512
+_memo = {}
+
+
+def _memoized(fn):
+    """Cache a source lookup's result for this process, briefly."""
+    def wrapper(query, limit=2, **kw):
+        key = (fn.__name__, query, limit)
+        hit = _memo.get(key)
+        now = time.time()
+        if hit and now - hit[0] < _MEMO_TTL:
+            return hit[1]
+        out = fn(query, limit=limit, **kw)
+        if len(_memo) >= _MEMO_MAX:
+            _memo.clear()          # crude, bounded, and never wrong
+        _memo[key] = (now, out)
+        return out
+    wrapper.__name__ = fn.__name__
+    wrapper.__doc__ = fn.__doc__
+    wrapper.__wrapped__ = fn
+    return wrapper
 
 
 # --- domain classification ---------------------------------------------------
@@ -75,6 +114,7 @@ def classify_domains(*texts):
 
 # --- sources -----------------------------------------------------------------
 
+@_memoized
 def met_museum(query, limit=3):
     """Metropolitan Museum of Art — objects with curatorial description.
 
@@ -103,6 +143,7 @@ def met_museum(query, limit=3):
     return out
 
 
+@_memoized
 def art_institute(query, limit=3):
     """Art Institute of Chicago — artworks with descriptive text."""
     data = _get_json("https://api.artic.edu/api/v1/artworks/search",
@@ -126,6 +167,7 @@ def art_institute(query, limit=3):
     return out
 
 
+@_memoized
 def loc_chronicling_america(query, limit=3):
     """Historical US newspapers via the loc.gov JSON API.
 
@@ -154,6 +196,7 @@ def loc_chronicling_america(query, limit=3):
     return out
 
 
+@_memoized
 def wikidata_facts(query, limit=1):
     """Structured entity facts — dates, classifications, relations.
 
@@ -194,6 +237,11 @@ def fetch_domain_sources(query, domains, per_source=2, budget=4):
 
     `budget` caps the total returned so a well-covered subject cannot drown the
     concept in citations — more sources is not more grounding.
+
+    Entries with no text are dropped here rather than downstream. A source
+    whose text never reaches the model cannot be cited (the consumer enforces
+    that), so returning it does nothing except consume `budget` and push a
+    usable source out of the result.
     """
     if not query:
         return []
@@ -204,7 +252,9 @@ def fetch_domain_sources(query, domains, per_source=2, budget=4):
         if "*" not in serves and not (set(serves) & set(domains or ())):
             continue
         try:
-            out.extend(fn(query, limit=per_source)[:per_source])
+            got = [r for r in (fn(query, limit=per_source) or [])
+                   if (r.get("text") or "").strip()]
+            out.extend(got[:per_source])
         except Exception as e:
             logger.debug(f"domain source {name} failed for {query!r}: {e}")
     return out[:budget]

@@ -104,11 +104,29 @@ class BackgroundOperations:
 
     # --- Task implementations ---
 
+    def _live_build_uid(self):
+        """The course_uid of the build running right now, if any.
+
+        The reaper's whole premise is "nothing is working on this any more".
+        The durable build record is the only cross-process answer to that
+        question — this runs in the RAG service, the build runs in core-logic,
+        so an in-memory flag is invisible here.
+        """
+        try:
+            from services.common import build_state
+            state = build_state.current()
+            if state and state.get("active"):
+                return state.get("course_uid")
+        except Exception as e:
+            logger.debug(f"build state unavailable to stale-course reaper: {e}")
+        return None
+
     def _cleanup_stale_courses(self):
         """Remove courses stuck in 'building' or 'skeleton' status for > 1 hour."""
         if not self.storage:
             return
         try:
+            live_uid = self._live_build_uid()
             courses = self.storage.courses.list_courses()
             # SQLite writes created_at via CURRENT_TIMESTAMP ("2026-08-05
             # 12:34:56", space separator); isoformat() produces a "T". Byte-wise
@@ -124,15 +142,29 @@ class BackgroundOperations:
                 created = course.get("created_at", "")
                 if status in ("building", "skeleton") and created and created.replace("T", " ")[:19] < cutoff:
                     uid = course.get("uid", "")
+                    if uid and uid == live_uid:
+                        logger.info(f"Skipping course {uid} — it is the build running right now")
+                        continue
                     logger.warning(f"Cleaning stale course '{course.get('title')}' ({uid}) — stuck in '{status}' since {created}")
                     # Mark as failed instead of deleting — user can see what happened
                     try:
                         full_course = self.storage.courses.get_course(uid)
-                        if full_course:
+                        # Re-read the status at the last possible moment. This
+                        # is a cross-process read-modify-write: list_courses()
+                        # ran a whole loop ago, and the hydrator's final
+                        # "ready" write lands in between. Writing back the row
+                        # we fetched earlier would stamp "failed" over a course
+                        # that had just finished successfully — the user's
+                        # completed course would show as a timeout.
+                        if full_course and full_course.get("status") in ("building", "skeleton"):
                             full_course["status"] = "failed"
                             full_course["error"] = "Course creation timed out (>1 hour)"
                             self.storage.courses.update_course(uid, full_course)
                             self.stats["cleaned_courses"] += 1
+                        elif full_course:
+                            logger.info(
+                                f"Course {uid} finished as '{full_course.get('status')}' "
+                                f"while the reaper was scanning — leaving it alone")
                     except Exception as e:
                         logger.warning(f"Failed to mark stale course {uid}: {e}")
         except Exception as e:

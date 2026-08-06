@@ -35,17 +35,43 @@
         return banner;
     }
 
+    // The record's stage names, in learner words. A banner that says
+    // "hydrate" is our vocabulary leaking; one that says nothing for twenty
+    // minutes reads as a hang.
+    var STAGE_LABEL = {
+        preflight: 'checking the model',
+        skeleton:  'planning the structure',
+        audit:     'checking coverage',
+        hydrate:   'writing the concepts',
+        assets:    'drawing the diagrams',
+        finalize:  'finishing up'
+    };
+
+    function progressText(state) {
+        // Concepts written out of concepts planned is the one count that means
+        // something during the long phase; modules only grow during the short one.
+        if (state.stage === 'hydrate' && state.concepts) {
+            return (state.hydrated || 0) + ' of ' + state.concepts + ' concepts written';
+        }
+        if (state.modules) return state.modules + ' modules so far';
+        return '';
+    }
+
     function show(state) {
         var el = ensureBanner();
         var mins = state.started_at
             ? Math.max(0, Math.round((Date.now() / 1000 - state.started_at) / 60))
             : 0;
+        var bits = [
+            STAGE_LABEL[state.stage] || '',
+            progressText(state),
+            mins ? mins + ' min' : ''
+        ].filter(Boolean);
         el.innerHTML =
             '<span class="build-banner-pulse" aria-hidden="true"></span>' +
             '<span class="build-banner-text">Building <strong>' +
                 esc(state.topic || 'your course') + '</strong>' +
-                (state.modules ? ' — ' + state.modules + ' modules so far' : '') +
-                (mins ? ' · ' + mins + ' min' : '') +
+                (bits.length ? ' — ' + esc(bits.join(' · ')) : '') +
             '</span>' +
             '<a class="build-banner-link" href="/build">Watch progress</a>';
         el.classList.add('is-visible');
@@ -85,6 +111,39 @@
         });
     }
 
+    // What to say when a build stops running. The record now distinguishes a
+    // finished course from a failed one (`ok`, `error`, `stale`), and this used
+    // to toast "Your course is ready." on EVERY transition out of active —
+    // including a build that raised in hydration, or one the stale reaper
+    // declared dead. Congratulating someone on a course that does not exist is
+    // worse than saying nothing: they go looking for it.
+    function announce(s) {
+        if (!window.showToast) return;
+        if (s && s.ok === false) {
+            var why = s.stale
+                ? 'the build stopped reporting'
+                : (s.error || 'the build did not finish');
+            window.showToast('Course build failed — ' + why, 'error');
+            return;
+        }
+        if (s && s.ok === true) {
+            var name = s.topic ? '"' + s.topic + '" is ready.' : 'Your course is ready.';
+            if (s.stubs) {
+                // A course that finished with stubs IS delivered, but saying so
+                // is the difference between a tutor and a chatbot.
+                window.showToast(name + ' ' + s.stubs + ' concept' +
+                                 (s.stubs === 1 ? '' : 's') +
+                                 ' could not be written.', 'warning');
+            } else {
+                window.showToast(name, 'success');
+            }
+            return;
+        }
+        // ok is absent: an older record, or a writer that never resolved it.
+        // Report the fact, claim nothing about the result.
+        window.showToast('The course build has finished.', 'info');
+    }
+
     function poll() {
         fetch('/api/build/status')
             .then(function (r) { return r.json(); })
@@ -94,9 +153,7 @@
                     show(s);
                     setLocked(true);
                 } else {
-                    if (wasActive && window.showToast) {
-                        window.showToast('Your course is ready.', 'success');
-                    }
+                    if (wasActive) announce(s);
                     wasActive = false;
                     hide();
                     setLocked(false);

@@ -450,6 +450,29 @@ def build_status():
         'course_uid': state.get('course_uid'),
         'stale': state.get('stale', False),
         'messages': (state.get('messages') or [])[-120:],
+        # Everything below was already recorded by build_state and thrown away
+        # here, which is why the UI could only ever say "a build is running".
+        #
+        # `ok` and `error` matter most: without them build-guard.js announced
+        # "Your course is ready." unconditionally — including for builds that
+        # raised. It now branches on these, so a failure is reported as one.
+        #
+        # `stage` is what makes the record legible mid-build. It also selects
+        # the staleness budget on the writer's side (hydrate gets 20 minutes
+        # because one concept legitimately takes minutes; preflight gets 5), so
+        # surfacing it lets the UI explain a long quiet stretch instead of
+        # looking hung.
+        #
+        # `stubs` is the honesty signal: concepts the model failed to produce
+        # that were counted anyway. A build can finish "successfully" with a
+        # third of its content missing, and this is the only field that says so.
+        'stage': state.get('stage'),
+        'pct': state.get('pct', 0),
+        'concepts': state.get('concepts', 0),
+        'hydrated': state.get('hydrated', 0),
+        'stubs': state.get('stubs', 0),
+        'ok': state.get('ok'),
+        'error': state.get('error'),
     })
 
 

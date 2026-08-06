@@ -381,7 +381,10 @@ function reattachToActiveBuild() {
                     moduleOrder: [],
                     conceptCount: 0,
                     hydratedCount: 0,
-                    totalConcepts: 0
+                    totalConcepts: 0,
+                    warnings: [],
+                    finished: false,
+                    courseUid: d.course_uid || null
                 };
             }
             if (typeof setPhase === 'function') setPhase(d.phase || 'skeleton');
@@ -417,18 +420,21 @@ function setupCreationSocket(topic) {
         if (!statusEl) return;  // modal not open — nothing to do
 
         // --- B6.4: structured pipeline-stage events (preferred over free-text) ---
-        // Additive + safe: only runs when the backend sends data.event; otherwise
-        // we fall through to the legacy string parsing below. Migrating backend
-        // call sites to send_pipeline_stage() lets us retire the brittle parsing.
+        // The FSM emits these at every real phase boundary (send_pipeline_stage),
+        // so stage/pct/uid are read straight off the wire instead of being
+        // guessed from prose. Free-text parsing stays below only for the
+        // fine-grained STRUCT/AUDIT/CHECK stream, which has no structured
+        // equivalent yet.
         if (data.event && data.event.type === 'PIPELINE_STAGE') {
-            var ev = data.event;
-            var bar = document.getElementById('qc-progress-bar');
-            statusEl.textContent = data.message || ev.stage;
-            if (ev.stage === 'ERROR') statusEl.classList.add('qc-status-error');
-            var pct = ev.stage === 'DONE' ? 100 : ev.pct;
-            if (bar && typeof pct === 'number') bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+            handlePipelineStage(data.event, data.message);
             return;  // handled structurally — skip legacy string parsing
         }
+
+        // Once the build has ended, free text must not repaint the status line.
+        // The pipeline's `finally` block emits "Restarting Systems..." AFTER
+        // the DONE stage; without this the completion card sits under a status
+        // line implying the build is still running.
+        if (buildState.finished) return;
 
         // --- STRUCT events: build the tree ---
         if (msg.startsWith('STRUCT:')) {
@@ -458,6 +464,11 @@ function setupCreationSocket(topic) {
                 var dTitle = parts.slice(4).join(':');
                 updateHydrationStatus(dUid, 'DONE', dTitle);
                 statusEl.textContent = 'Hydrated: ' + dTitle;
+            } else if (sType === 'WARN') {
+                // These six are the ONLY signal that the course is below the
+                // level it claims or still carries confirmed-false claims.
+                // They used to enter this branch, match nothing, and vanish.
+                recordBuildWarning(parts.slice(2).join(':'));
             }
         }
         else if (msg.startsWith('SYLLABUS:PHASE:')) {
@@ -494,13 +505,12 @@ function setupCreationSocket(topic) {
             statusEl.textContent = 'Concepts written — running quality checks…';
         }
         else if (msg === 'COURSE_COMPLETE') {
-            // Only the exact COURSE_COMPLETE signal closes the modal.
-            // Loose matches on "successfully" or "System Idle" previously
-            // fired during service restarts / preflight, triggering the
-            // completion card mid-build with stale data from an old course.
-            // Read the active topic from the shared var, not the closure,
-            // so repeat builds in the same tab use the current course name.
-            showCompletion(window._currentCreationTopic || topic);
+            // NOT a build signal. Its only emitter is the TEACHING loop: it
+            // means a LEARNER just finished studying a course. Treating it as
+            // build completion cost two bugs — this modal never closed on a
+            // real build (the pipeline never sends it), and finishing a course
+            // in another tab painted a false "course built" card here.
+            // Build completion is the PIPELINE_STAGE DONE event, handled above.
         }
         else if (!msg.startsWith('CHECK:') && !msg.startsWith('CPROG:') && !msg.startsWith('PEDAGOGY:') && !msg.startsWith('QTYPE:')) {
             statusEl.textContent = msg;
@@ -524,6 +534,108 @@ function setupCreationSocket(topic) {
     return socket;
 }
 
+// B6.4 consumer. `stage` is authoritative: the FSM emits it at the actual
+// phase boundary, so nothing here has to infer progress from wording.
+var STAGE_PHASE = {
+    PREFLIGHT: 'skeleton',
+    SKELETON:  'skeleton',
+    AUDIT:     'skeleton',
+    HYDRATE:   'hydrate',
+    FINALIZE:  'hydrate',
+    DONE:      'complete'
+};
+
+function handlePipelineStage(ev, message) {
+    var statusEl = document.getElementById('qc-progress-status');
+    var bar = document.getElementById('qc-progress-bar');
+    if (!statusEl) return;  // modal not open
+
+    if (ev.stage === 'ERROR') {
+        buildState.finished = true;
+        statusEl.classList.add('qc-status-error');
+        statusEl.style.color = 'var(--status-error)';
+        statusEl.textContent = message || 'Build failed.';
+        addLogEntry(ev.detail || message || 'Build failed', 'error');
+        if (window.showToast) window.showToast('Course build failed', 'error');
+        return;
+    }
+
+    statusEl.textContent = message || ev.stage;
+    var phase = STAGE_PHASE[ev.stage];
+    if (phase) setPhase(phase);
+
+    var pct = ev.stage === 'DONE' ? 100 : ev.pct;
+    if (bar && typeof pct === 'number') {
+        bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+    }
+    if (ev.course_uid) buildState.courseUid = ev.course_uid;
+
+    if (ev.stage === 'DONE') {
+        buildState.finished = true;
+        showCompletion(ev.topic || window._currentCreationTopic, ev);
+    }
+}
+
+// STRUCT:WARN:<KIND>[:<detail>] — the build's quality caveats.
+var WARN_TEXT = {
+    CONCEPT_STUB:    function (d) { return 'Content could not be written for "' + d + '" — it was left as a stub'; },
+    DEPTH_MISS:      function (d) { return '"' + d + '" is thinner than the level you asked for'; },
+    DEPTH_SUMMARY:   function (d) { return d ? d.charAt(0).toUpperCase() + d.slice(1) : 'Some concepts are below the requested level'; },
+    FACT_UNRESOLVED: function (d) { return '"' + d + '" still contains a claim Helga could not verify'; },
+    FACT_SUMMARY:    function (d) { return d + ' concepts still contain confirmed-false claims'; },
+    LEVEL_GAP:       function (d) { return 'The course reads ' + d + ' levels away from the one it claims'; }
+};
+
+function recordBuildWarning(payload) {
+    var idx = payload.indexOf(':');
+    var kind = idx === -1 ? payload : payload.slice(0, idx);
+    var detail = idx === -1 ? '' : payload.slice(idx + 1);
+    var text = WARN_TEXT[kind] ? WARN_TEXT[kind](detail)
+                               : (kind + (detail ? ': ' + detail : ''));
+    buildState.warnings.push({ kind: kind, detail: detail, text: text });
+    addLogEntry(text, 'warn');
+    var treeEl = document.getElementById('qc-progress-tree');
+    if (treeEl && window.ProgressTree && ProgressTree.addWarningNode) {
+        ProgressTree.addWarningNode(treeEl, text);
+    }
+}
+
+// Rendered on the completion card. A course that is below its stated level or
+// carries unverified claims is still delivered — but saying so is the whole
+// difference between a tutor and a chatbot.
+function renderBuildWarnings() {
+    var host = document.getElementById('qc-complete-summary');
+    if (!host || !buildState.warnings.length) return;
+    var counts = {};
+    buildState.warnings.forEach(function(w) { counts[w.kind] = (counts[w.kind] || 0) + 1; });
+    var note = document.createElement('div');
+    note.className = 'build-warn';
+    note.style.cssText = 'margin-top:0.5rem;color:var(--status-warning);font-size:0.85rem;text-align:left;';
+    var lines = [];
+    // Summary warnings state the whole-course verdict; per-concept ones are
+    // collapsed to a count so the card stays readable on a 200-concept build.
+    buildState.warnings.forEach(function(w) {
+        if (w.kind === 'DEPTH_SUMMARY' || w.kind === 'FACT_SUMMARY' || w.kind === 'LEVEL_GAP') {
+            lines.push(w.text);
+        }
+    });
+    ['CONCEPT_STUB', 'DEPTH_MISS', 'FACT_UNRESOLVED'].forEach(function(k) {
+        if (!counts[k]) return;
+        var label = { CONCEPT_STUB: 'concept(s) could not be written',
+                      DEPTH_MISS: 'concept(s) below the requested level',
+                      FACT_UNRESOLVED: 'concept(s) with unverified claims' }[k];
+        lines.push(counts[k] + ' ' + label);
+    });
+    // i-warning mask icon, never a glyph: emoji are drawn by the OS, ignore
+    // the theme and are banned across this UI (see icons.css).
+    note.innerHTML =
+        '<strong><span class="i i-warning" aria-hidden="true"></span> ' +
+        'Quality notes on this course</strong><ul style="margin:0.25rem 0 0 1rem;">' +
+        lines.map(function (l) { return '<li>' + escapeHtml(l) + '</li>'; }).join('') +
+        '</ul>';
+    host.parentNode.insertBefore(note, host.nextSibling);
+}
+
 function updateDepthEstimate() {
     var scope = parseInt(document.getElementById('qc-scope').value);
     var mastery = parseInt(document.getElementById('qc-mastery').value);
@@ -545,15 +657,41 @@ var buildState = {
     moduleOrder: [],
     conceptCount: 0,
     hydratedCount: 0,
-    totalConcepts: 0
+    totalConcepts: 0,
+    warnings: [],       // STRUCT:WARN:* — quality caveats on the built course
+    finished: false,    // set by the DONE / ERROR pipeline stage
+    courseUid: null     // carried by the DONE stage; no title-guessing needed
+};
+
+// The phase names the BACKEND uses. `hydration` (creation_status) and
+// `hydrate` (the UI's own vocabulary) both mean the middle phase; the old
+// ternary tested only for 'hydrate', so a reattach mid-hydration — and every
+// 'audit' or 'initializing' poll — fell through to index 2 and drew the build
+// as COMPLETE while it was still writing concepts.
+var PHASE_INDEX = {
+    initializing: 0,
+    skeleton: 0,
+    audit: 0,
+    hydrate: 1,
+    hydration: 1,
+    finalize: 1,
+    complete: 2,
+    done: 2
 };
 
 function setPhase(phase) {
+    var phaseIdx = PHASE_INDEX[String(phase || '').toLowerCase()];
+    if (phaseIdx === undefined) {
+        // Fail loudly and stand still. Guessing "complete" for an unknown
+        // phase is how a half-built course got advertised as finished.
+        console.warn('[setPhase] Unknown build phase "' + phase +
+                     '" — leaving the phase indicator where it is.');
+        return;
+    }
     buildState.phase = phase;
     var dots = ['phase-skeleton', 'phase-hydrate', 'phase-complete'];
     var labels = ['phase-label-skeleton', 'phase-label-hydrate', 'phase-label-complete'];
     var lines = document.querySelectorAll('.phase-line');
-    var phaseIdx = phase === 'skeleton' ? 0 : phase === 'hydrate' ? 1 : 2;
 
     dots.forEach(function(id, i) {
         var el = document.getElementById(id);
@@ -621,12 +759,17 @@ function addLogEntry(msg, type) {
     logsEl.scrollTop = logsEl.scrollHeight;
 }
 
-function showCompletion(topic) {
-    // Sanity guard: if the caller fired completion with no build progress
-    // (e.g., a stray status_update arriving before any STRUCT events),
-    // bail so we don't paint a fake success card with stale data.
-    if (!buildState.moduleOrder || buildState.moduleOrder.length === 0) {
-        console.warn('[showCompletion] Ignoring completion trigger — buildState is empty (no modules seen yet).');
+// `info` is the DONE pipeline event (course_uid, topic, modules, concepts).
+// It is the authority on what was built: a tab that reattached mid-build never
+// saw the STRUCT events and so has no local counts to report.
+function showCompletion(topic, info) {
+    info = info || {};
+    // Sanity guard: if the caller fired completion with no evidence at all —
+    // no modules seen locally AND no counts on the event — bail rather than
+    // paint a fake success card with stale data.
+    var hasCounts = typeof info.modules === 'number' || typeof info.concepts === 'number';
+    if (!hasCounts && (!buildState.moduleOrder || buildState.moduleOrder.length === 0)) {
+        console.warn('[showCompletion] Ignoring completion trigger — no build evidence (no modules seen, no counts on the event).');
         return;
     }
 
@@ -638,22 +781,22 @@ function showCompletion(topic) {
     document.getElementById('qc-progress-actions').style.display = 'block';
 
     var titleEl = document.getElementById('qc-complete-title');
-    if (titleEl) titleEl.textContent = topic + ' — Ready!';
+    if (titleEl) titleEl.textContent = (topic || 'Course') + ' — Ready!';
 
-    // Use the live buildState counts — they're accurate because the STRUCT
-    // events populated them during the build. The old fallback that fetched
-    // /api/courses and picked courses[0] as a last resort would show stats
-    // from an unrelated course when the buildState was stale.
+    // Prefer the counts the builder itself reported; fall back to what this
+    // tab observed. The old fallback that fetched /api/courses and picked
+    // courses[0] would show stats from an unrelated course.
     var summary = document.getElementById('qc-complete-summary');
     if (summary) {
-        var modCount = buildState.moduleOrder.length;
-        var conCount = buildState.totalConcepts;
+        var modCount = typeof info.modules === 'number' ? info.modules : buildState.moduleOrder.length;
+        var conCount = typeof info.concepts === 'number' ? info.concepts : buildState.totalConcepts;
         if (modCount > 0 && conCount > 0) {
             summary.textContent = modCount + ' modules, ' + conCount + ' concepts generated';
         } else {
             summary.textContent = 'Course created';
         }
     }
+    renderBuildWarnings();
 
     // Trigger confetti
     if (window.showConfetti) window.showConfetti();
@@ -683,7 +826,9 @@ async function submitQuickCreate(submitBtn) {
     }
 
     // Reset state
-    buildState = { phase: 'skeleton', modules: {}, moduleOrder: [], conceptCount: 0, hydratedCount: 0, totalConcepts: 0 };
+    buildState = { phase: 'skeleton', modules: {}, moduleOrder: [], conceptCount: 0,
+                   hydratedCount: 0, totalConcepts: 0, warnings: [], finished: false,
+                   courseUid: null };
 
     // Smooth transition from form to progress phase
     var formPhase = document.getElementById('qc-form-phase');
@@ -787,6 +932,18 @@ async function submitQuickCreate(submitBtn) {
         var self = this;
         self.classList.add('is-loading');
         self.disabled = true;
+        // The DONE stage names the course it built. Use it — the title match
+        // below is a guess that lands on the wrong course whenever two courses
+        // share a word.
+        if (buildState.courseUid) {
+            fetch('/api/set_active_course', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uid: buildState.courseUid, title: topic })
+            }).catch(function() {});
+            window.location.href = '/learn?course_uid=' + encodeURIComponent(buildState.courseUid);
+            return;
+        }
         try {
             var resp = await fetch('/api/courses');
             var data = await resp.json();

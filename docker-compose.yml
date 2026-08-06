@@ -22,10 +22,33 @@ services:
       # STT runs natively on the host (Nemotron-MLX/ANE) by default, like Ollama;
       # set STT_URL=http://helga-stt:5001 to use the containerized faster-whisper fallback.
       - STT_URL=${STT_URL:-http://host.docker.internal:5001}
+      # /deps is where the shared packages below are mounted. It exists because
+      # this service, unlike core and rag, bind-mounts its own source directly
+      # over /app — so nesting a mount at /app/services/... would make Docker
+      # materialise empty `services/web-ui/services/` directories in the repo
+      # on the host. A separate root plus PYTHONPATH keeps the working tree
+      # clean and does not depend on mount ordering.
+      - PYTHONPATH=/deps
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./services/web-ui:/app
+      # auth.py and parent_api.py do `from services.common.storage import ...`,
+      # but this service's layout puts app.py at /app (not /app/services/web-ui
+      # like core and rag), so the sys.path.insert in auth.py resolved to "/"
+      # and there was no services/ package anywhere on the path. The container
+      # was in a crash loop on `ModuleNotFoundError: No module named 'services'`
+      # at import time — same root cause as the missing tools/ mount on
+      # core-logic: the code's import graph is wider than the paths the
+      # container was given. services/ has no __init__.py, so it resolves as a
+      # namespace package under /deps exactly as it does under /app for core.
+      - ./services/common:/deps/services/common
+      # storage.mastery_overview (called by app.py's mastery route) lazily
+      # imports services.core.fsrs_engine and, on ImportError, sets engine=None
+      # — which quietly drops the `retention` field from every concept in the
+      # parent dashboard rather than failing. fsrs_engine imports only math and
+      # logging, so this mount costs no packages and no image change.
+      - ./services/core:/deps/services/core:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
@@ -36,7 +59,14 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256M
+          # 256M -> 384M. This is the one service whose usage could not be
+          # measured (it was crash-looping, so `docker stats` reported 0B), and
+          # an unmeasured limit should err high: it terminates TLS-less uploads
+          # and runs the /library preview through pypdf + Pillow, so a single
+          # large book decodes in-process. gevent's greenlet stacks sit on top
+          # of that. 256M was the tightest cap in the file on the service with
+          # the least predictable peak.
+          memory: 384M
     networks:
       - internal
 
@@ -76,6 +106,13 @@ services:
       - ./logs:/app/logs
       - ./services/core:/app/services/core
       - ./services/common:/app/services/common
+      # course_builder imports tools.syllabus_check (quality gate criterion 6).
+      # These bind mounts REPLACE the image's filesystem at their paths, so
+      # mounting only core and common left /app/tools missing even after the
+      # Dockerfile COPYs it — the import would fail here specifically, in the
+      # dev setup that is the one everybody actually runs. Read-only because
+      # the service reads the module and must never write to the repo's tools/.
+      - ./tools:/app/tools:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5003/health"]
@@ -86,6 +123,13 @@ services:
     deploy:
       resources:
         limits:
+          # KEPT at 512M. Measured 103 MiB idle (20%), but idle is not the
+          # sizing case: this is the course-build service and its peak holds a
+          # whole course structure plus hydrated concept text, with tiktoken,
+          # sympy, scikit-learn and pypdf resident, across up to
+          # FSM_REGISTRY_MAX=64 live sessions. 5x headroom over idle is the
+          # right shape for a spiky workload; an OOM here kills a build that
+          # took minutes.
           memory: 512M
     networks:
       - internal
@@ -110,6 +154,23 @@ services:
       - ./logs:/app/logs
       - ./services/rag:/app/services/rag
       - ./services/common:/app/services/common
+      # librarian.py imports services.core in four places that are NOT guarded
+      # by try/except — catalog_admin.transition_catalog_course (the admin
+      # transition route), course_builder.SkeletonBuilder (wizard preview),
+      # course_builder.ContentHydrator (wizard hydration) — plus three guarded
+      # fsrs_engine call sites. `docker exec helga-rag-engine python -c "import
+      # services.core.fsrs_engine"` returns ModuleNotFoundError today, so the
+      # unguarded ones 500 and the guarded ones silently downgrade FSRS
+      # scheduling to fixed intervals.
+      #
+      # Mounting rather than COPYing: whether rag should reach into core at all
+      # or call it over HTTP is an architecture question this file should not
+      # answer by baking the coupling into the image. The mount makes the
+      # imports that already exist actually resolve. It needs no new packages —
+      # the whole chain (course_builder -> depth_contract, scaffolding,
+      # llm_utils, storage) imports nothing third-party at module scope beyond
+      # `requests`, which rag already has.
+      - ./services/core:/app/services/core:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5002/health"]
@@ -120,7 +181,14 @@ services:
     deploy:
       resources:
         limits:
-          memory: 768M
+          # 768M -> 384M. The 768M was sized for the sentence-transformers era;
+          # services/rag/requirements.txt has since REMOVED that (and with it
+          # the whole PyTorch chain) because embeddings now come from Ollama
+          # over HTTP. Nothing heavy loads in-process any more, and it measures
+          # 36 MiB resident — 4.7% of the old cap. 384M is ~10x observed and
+          # still leaves room for the real spike path, pypdf/Pillow reading a
+          # wizard source document.
+          memory: 384M
     networks:
       - internal
 
@@ -157,6 +225,17 @@ services:
     deploy:
       resources:
         limits:
+          # KEPT at 2048M, deliberately. An audit flagged this as "2048M for a
+          # 319 MB model", which reads the weights and not the runtime: this
+          # container runs TTS_BACKEND=torch (kokoro==0.9.4 -> PyTorch), and a
+          # loaded torch CPU process is ~1.2-1.8 GB resident whatever the model
+          # weighs. The 82M-parameter file is the smallest part of the total.
+          # Sizing this to the weights would OOM the fallback in exactly the
+          # situation it exists for. It also costs nothing at rest: this
+          # service is behind `profiles: ["portable"]` and does not start on a
+          # plain `docker compose up`, so the cap is never charged unless
+          # someone deliberately runs the fallback. The host MLX deployment is
+          # the default and is not governed by this block at all.
           memory: 2048M
     networks:
       - internal
@@ -179,7 +258,13 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256M
+          # 256M -> 384M, i.e. UP. This was the only container anywhere near
+          # its cap: measured 191 MiB, 74.7% of 256M, while every Helga service
+          # sat under 21%. searxng is uwsgi with several worker processes and
+          # is fanned out to concurrently during research/hydration, which is
+          # precisely when the remaining 65 MiB would go. The audit assumed the
+          # waste was here; the measurement says the risk was.
+          memory: 384M
     networks:
       - internal
 
@@ -208,7 +293,11 @@ services:
     deploy:
       resources:
         limits:
-          memory: 384M
+          # 384M -> 256M. Measured 59 MiB (15% of the old cap). The dependency
+          # set is flask + aiohttp + diskcache + trafilatura; nothing here holds
+          # a model. 256M is ~4x observed, sized so that lxml parsing one large
+          # fetched page — the only real spike — still fits.
+          memory: 256M
     networks:
       - internal
 

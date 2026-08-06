@@ -165,6 +165,78 @@ def _wikipedia_sections(subject):
             if x.get("line") and _is_content_chapter(x["line"])]
 
 
+# Category names that describe the ARTICLE rather than the subject. Wikipedia
+# carries dozens of these on every page ("Articles with short description",
+# "CS1 maint: url-status", "Webarchive template wayback links"); handing them
+# to a syllabus search is the same failure as the `prop=links` experiment
+# recorded in curriculum_research — noise the model cannot distinguish from
+# signal.
+_MAINTENANCE_CATEGORY = re.compile(
+    r"^(articles?|pages?|wikipedia|cs1|category|all |use |webarchive|"
+    r"short description|commons|wikidata|good articles|featured|"
+    r"engvarb|harv|isbn|infobox|redirects?|template|portal)",
+    re.I)
+
+
+def discover_broader_subjects(topic, limit=3):
+    """Parent disciplines for a narrow topic, from Wikipedia's categories.
+
+    (Named `discover_` rather than `broader_subjects` only because
+    `subject_outline` takes a parameter of that name — a function shadowed by
+    an argument in the one place it is most likely to be needed is a trap.)
+
+    A NARROW TOPIC HAS NO BOOK OF ITS OWN, and that is the case that produced
+    the 42%-coverage course: "the pythagorean theorem" matches no Wikibook, so
+    unguided generation was all there was. `subject_outline` has always
+    accepted `broader_subjects` for exactly this, but nothing ever passed it,
+    so the parameter — and the fix it represents — was dead.
+
+    Categories are used rather than `prop=links` deliberately. Links come back
+    alphabetically, which is how "Actinide chemistry" ended up adjacent to cell
+    biology; categories are a curated classification, so
+    "the pythagorean theorem" yields Euclidean geometry / Theorems about right
+    triangles / Trigonometry — the discipline a real textbook is written about.
+
+    Returns [] on any failure: broadening is an improvement to grounding, never
+    a precondition for it.
+    """
+    data = _get_json(WIKIPEDIA_API, {
+        "action": "query", "prop": "categories", "titles": topic,
+        "cllimit": 50, "clshow": "!hidden", "redirects": 1, "format": "json",
+    })
+    if not data:
+        return []
+    out = []
+    for page in ((data.get("query") or {}).get("pages") or {}).values():
+        for cat in page.get("categories") or []:
+            name = (cat.get("title") or "").split(":", 1)[-1].strip()
+            if not name or _MAINTENANCE_CATEGORY.match(name):
+                continue
+            # "Theorems about right triangles" is a subject; "1970 births" and
+            # "Articles containing proofs" are not. Length is a crude but
+            # effective filter against category prose.
+            if len(name) > 60 or any(ch.isdigit() for ch in name):
+                continue
+            if name.lower() != (topic or "").lower() and name not in out:
+                out.append(name)
+    return out[:limit]
+
+
+def vocabulary_line(vocabulary, limit=12):
+    """The terminology line, rendered in ONE place.
+
+    `subject_outline` has always returned `vocabulary` — Wikipedia section
+    headings, kept as a weak terminology signal — and `format_for_prompt` was
+    the only thing that rendered it. Nothing called `format_for_prompt`, so the
+    field was computed on every build and read by nobody. Both formatters now
+    share this, so collecting it and using it cannot drift apart again.
+    """
+    terms = [t for t in (vocabulary or []) if t][:limit]
+    if not terms:
+        return ""
+    return "Terminology seen in reference material: " + ", ".join(terms)
+
+
 def subject_outline(topic, broader_subjects=None, min_chapters=4):
     """How this subject is actually organised, from open textbooks.
 
@@ -233,7 +305,7 @@ def format_for_prompt(outline, max_chapters=40):
         if len(o["chapters"]) > max_chapters:
             parts.append(f"  ... and {len(o['chapters']) - max_chapters} more")
 
-    if outline.get("vocabulary"):
-        parts.append("\nTerminology seen in reference material: "
-                     + ", ".join(outline["vocabulary"][:12]))
+    vocab = vocabulary_line(outline.get("vocabulary"))
+    if vocab:
+        parts.append("\n" + vocab)
     return "\n".join(parts)

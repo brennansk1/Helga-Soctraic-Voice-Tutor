@@ -92,18 +92,63 @@ var ProgressTree = (function() {
     }
 
     /**
+     * Human wording for STRUCT:WARN:<KIND>[:<detail>].
+     *
+     * These six are the only signal a learner ever gets that the course they
+     * are about to study is below the level it claims, or still contains a
+     * claim the fact-checker could not resolve. They used to be dropped on the
+     * floor by every consumer of the status stream.
+     */
+    var WARN_TEXT = {
+        CONCEPT_STUB:    function (d) { return 'Could not write "' + d + '" — left as a stub'; },
+        DEPTH_MISS:      function (d) { return '"' + d + '" is thinner than the level requested'; },
+        DEPTH_SUMMARY:   function (d) { return d || 'Some concepts are below the requested level'; },
+        FACT_UNRESOLVED: function (d) { return '"' + d + '" has a claim that could not be verified'; },
+        FACT_SUMMARY:    function (d) { return d + ' concepts still contain confirmed-false claims'; },
+        LEVEL_GAP:       function (d) { return 'Course reads ' + d + ' levels from the one it claims'; }
+    };
+
+    function escHtml(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;',
+                     '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+
+    /**
+     * Render a build warning as a tree entry. Marked with the i-warning mask
+     * icon from icons.css (never a glyph — emoji are drawn by the OS, ignore
+     * the theme and are banned across this UI), and coloured inline because
+     * the tree stylesheet has no warning variant. A warning that is
+     * indistinguishable from ordinary progress is not a warning.
+     */
+    function addWarningNode(treeEl, text) {
+        if (!treeEl) return;
+        var placeholder = treeEl.querySelector('.build-tree-placeholder');
+        if (placeholder) placeholder.remove();
+        var node = document.createElement('div');
+        node.className = 'tree-node warn';
+        node.style.color = 'var(--status-warning)';
+        node.innerHTML = '<span class="i i-warning" aria-hidden="true"></span> ' +
+                         escHtml(text);
+        treeEl.appendChild(node);
+        treeEl.scrollTop = treeEl.scrollHeight;
+    }
+
+    /**
      * Process a STRUCT: status message and update the tree accordingly.
      * Returns an object with metadata about what was processed.
      *
      * @param {string} msg - The full status message (e.g. "STRUCT:MODULE:Introduction")
      * @param {HTMLElement} treeEl - The tree container element
      * @param {HTMLElement} [statusEl] - Optional status text element to update
-     * @returns {Object} { type, uid, title, isDone, isHydrating }
+     * @returns {Object} { type, uid, title, isDone, isHydrating, isWarning }
      */
     function handleStructMessage(msg, treeEl, statusEl) {
         var parts = msg.split(':');
         var sType = parts[1];
-        var result = { type: sType, uid: null, title: '', isDone: false, isHydrating: false };
+        var result = { type: sType, uid: null, title: '', isDone: false,
+                       isHydrating: false, isWarning: false };
 
         if (sType === 'MODULE') {
             var modTitle = parts.slice(2).join(':');
@@ -142,6 +187,13 @@ var ProgressTree = (function() {
             result.isDone = true;
             updateHydrationStatus(treeEl, dUid, 'DONE', dTitle);
             if (statusEl) statusEl.textContent = 'Hydrated: ' + dTitle;
+        } else if (sType === 'WARN') {
+            var kind = parts[2] || '';
+            var detail = parts.slice(3).join(':');
+            result.isWarning = true;
+            result.title = WARN_TEXT[kind] ? WARN_TEXT[kind](detail)
+                                           : (kind + (detail ? ': ' + detail : ''));
+            addWarningNode(treeEl, result.title);
         }
 
         return result;
@@ -166,6 +218,7 @@ var ProgressTree = (function() {
     // Public API
     return {
         addTreeNode: addTreeNode,
+        addWarningNode: addWarningNode,
         updateHydrationStatus: updateHydrationStatus,
         handleStructMessage: handleStructMessage,
         updateProgressBar: updateProgressBar

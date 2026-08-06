@@ -3,6 +3,7 @@ import shutil
 import json
 import sqlite3
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -56,9 +57,24 @@ def clean_failed_courses(data_dir: str = "/app/data"):
                     # Unknown status — preserve but log warning
                     logger.warning(f"Course '{name}' has unknown status '{status}', preserving.")
             except (json.JSONDecodeError, IOError) as e:
-                # Corrupted structure.json — remove
-                should_remove = True
+                # An unparseable structure.json is NOT evidence that the course
+                # is junk. The likeliest cause is a torn write — the file was
+                # being rewritten at the instant we read it — and every concept
+                # markdown under content/ is still perfectly good. Deleting the
+                # whole directory on that signal destroys a finished course.
+                # An IOError is weaker still: transient (permissions, EMFILE)
+                # and says nothing at all about the contents.
+                #
+                # Quarantine instead: copy the unreadable file aside for
+                # inspection, leave the course in place, and let a human or a
+                # rebuild decide. Nothing is deleted on a guess.
+                _quarantine_structure(structure_path, e)
                 status = f"corrupted ({e})"
+                logger.error(
+                    f"Course '{name}' has an unreadable structure.json ({e}); "
+                    f"preserving the directory. If this persists it needs a "
+                    f"rebuild, but a single bad read is usually a torn write."
+                )
 
         if should_remove:
             logger.info(f"Auto-cleaner removing course '{name}' (status: {status})")
@@ -78,6 +94,23 @@ def clean_failed_courses(data_dir: str = "/app/data"):
         logger.info(f"Auto-cleaner: {removed_count} removed, {preserved_count} preserved.")
     else:
         logger.debug(f"Auto-cleaner: No incomplete courses found. {preserved_count} preserved.")
+
+
+def _quarantine_structure(structure_path: str, err: Exception):
+    """Copy an unreadable structure.json aside without disturbing the original.
+
+    A COPY, not a move: if the file is unreadable because a writer is midway
+    through replacing it, moving it would turn a transient state into a
+    permanent loss — exactly the failure mode this replaced.
+    """
+    try:
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        dest = f"{structure_path}.corrupt.{stamp}"
+        if not os.path.exists(dest):
+            shutil.copy2(structure_path, dest)
+            logger.warning(f"Quarantined unreadable structure.json to {dest} ({err})")
+    except Exception as e:
+        logger.warning(f"Could not quarantine {structure_path}: {e}")
 
 
 def _cleanup_sqlite(db_path: str, course_uid: str):

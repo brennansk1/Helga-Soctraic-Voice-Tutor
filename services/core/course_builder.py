@@ -41,6 +41,19 @@ DATA_ROOT = os.getenv("DATA_ROOT", "/app/data")
 # Concurrency guard: only one course build can run at a time (P2-13)
 _build_lock = threading.Lock()
 
+# Per-concept research timeouts.
+#
+# 15s was sized for a path that was effectively cached: lookups were keyed on
+# the MODULE title, so every concept after the first in a module hit a warm
+# disk cache — which is also why grounding came back byte-identical across a
+# module. Research is now concept-specific with a fallback ladder, so the first
+# call for each concept is a genuine uncached lookup and 15s is tight. A
+# timeout here is not free: it silently degrades the concept to llm-only.
+RESEARCH_TIMEOUT = float(os.getenv("HELGA_RESEARCH_TIMEOUT", "25"))
+# The broadened retry searches a wider query, so it has more to do.
+RESEARCH_BROADEN_TIMEOUT = float(
+    os.getenv("HELGA_RESEARCH_BROADEN_TIMEOUT", "30"))
+
 # Minimum title length enforced across the pipeline. Any title shorter than
 # this gets rejected by the normalizer, flagged by the auditor for rename,
 # and skipped by the hydrator. All three stages must share the same value
@@ -353,6 +366,41 @@ def compute_course_params(scope=2, mastery=2, starting_from=1):
     }
 
 
+# The inference window the builder is writing into. The runner starts the model
+# with `-c 16384` (see services/common/scaffolding.py, which documents the same
+# number and the caps that were sized for the old 4,096). Nothing here SETS the
+# window — this is only the figure prompts are measured against, so that a
+# prompt which has grown past the context is reported instead of being silently
+# truncated at the tail (where the output-format instruction lives, which is
+# exactly the part whose loss is hardest to diagnose).
+CONTEXT_TOKENS = int(os.getenv("HELGA_CONTEXT_TOKENS", "16384"))
+
+
+def _log_prompt_budget(label: str, prompt: str, max_output_tokens: int = 0):
+    """Record what a generation prompt actually costs, and warn before it bites.
+
+    A prompt that overflows the window does not error — the server drops the
+    tail and the model answers a question it only partly received. Measuring is
+    cheap and the alternative is diagnosing a silent truncation from its
+    symptoms, so every structured builder call reports its size.
+
+    ~4 characters per token is the usual English-prose approximation; it is
+    close enough to catch an overflow, which is the only thing this is for.
+    """
+    est = len(prompt) // 4
+    budget = CONTEXT_TOKENS - max(0, max_output_tokens)
+    pct = (100.0 * est / CONTEXT_TOKENS) if CONTEXT_TOKENS else 0.0
+    msg = (f"[PROMPT] {label}: {len(prompt)} chars ~= {est} tok "
+           f"({pct:.0f}% of {CONTEXT_TOKENS}); output reserve {max_output_tokens}")
+    if est >= budget:
+        logger.warning(msg + " — OVER BUDGET, the tail will be truncated")
+    elif est >= budget * 0.75:
+        logger.info(msg + " — approaching the window")
+    else:
+        logger.debug(msg)
+    return est
+
+
 # Legacy single-depth compatibility: map depth 1-5 to scope=depth, mastery=depth, starting_from=1
 DEPTH_PROFILES = {
     1: {
@@ -485,6 +533,11 @@ class SkeletonBuilder:
         self.hierarchy = []
         self.model = None
         self.fallback_count = 0  # WIZ-3: Track how many items used LLM fallback titles
+        # Claim token for the durable build record (services/common/build_state).
+        # None means this builder owns no record — every build_state call then
+        # runs unowned, which the module treats as "no claim".
+        self._build_id = None
+        self._callback_teed = False
 
         # Use provided storage or create one
         if storage:
@@ -950,17 +1003,11 @@ class SkeletonBuilder:
         except Exception:
             build_state = None
 
-        if build_state:
-            build_state.start(topic, source=getattr(self, "build_source", "topic"))
-            # Every status event now also lands in the durable record.
-            _original_cb = self.status_callback
-
-            def _tee(message):
-                self._record_progress(message)
-                if _original_cb:
-                    _original_cb(message)
-            self.status_callback = _tee
-
+        # THE LOCK COMES FIRST. start() used to run before it, and the early
+        # `return None` below skips the `finally` — so a build that _build_lock
+        # rejected still overwrote the running build's record on its way out
+        # (wrong topic in the banner, timer reset), and the FIRST build's
+        # eventual finish() then marked the SECOND one complete.
         if not _build_lock.acquire(blocking=False):
             msg = "Another course is already being built. Please wait for it to finish."
             logger.warning(msg)
@@ -968,29 +1015,57 @@ class SkeletonBuilder:
                 self.status_callback(f"ERROR: {msg}")
             return None
 
+        if build_state:
+            self._build_id = build_state.start(
+                topic, source=getattr(self, "build_source", "topic"))
+            if not self._build_id:
+                # The record is already claimed. _build_lock — which we hold —
+                # remains the authority on whether to build, so this is
+                # informational: we proceed unowned rather than refusing work
+                # the lock has already permitted.
+                logger.warning(
+                    "build_state.start refused for %r; proceeding without a "
+                    "durable record", topic)
+            # Every status event this builder emits also lands on disk. The
+            # counting that _record_progress did by hand now happens inside
+            # build_state.note(), under that module's lock — the manual
+            # current()-then-update() was an unlocked read-modify-write.
+            #
+            # Once per instance: build() on a reused builder would otherwise
+            # stack a second tee on the first and record every message twice,
+            # inflating the module and concept counters the UI displays.
+            if not getattr(self, "_callback_teed", False):
+                self.status_callback = build_state.tee(
+                    self.status_callback, build_id=self._build_id)
+                self._callback_teed = True
+
         try:
-            return self._build_inner(topic, max_depth, module_depths)
+            uid = self._build_inner(topic, max_depth, module_depths)
+        except Exception as e:
+            # The skeleton is ~5% of the pipeline, so it does NOT get to call
+            # finish() — but a skeleton that RAISED ends the whole build, and
+            # the owner upstream can only learn that from the exception it is
+            # about to receive. Record the failure here so the record never
+            # reads "still building" for a build that has already died.
+            if build_state:
+                build_state.fail(e, build_id=getattr(self, "_build_id", None))
+            raise
         finally:
             _build_lock.release()
-            if build_state:
-                build_state.finish()
 
-    def _record_progress(self, message):
-        """Mirror a status event into the durable build record.
-
-        The Socket.IO stream only reaches a browser that is currently on the
-        page. A learner who navigates to Courses and back had no way to see
-        what happened while they were away, even though the same build was
-        still running server-side.
-        """
-        try:
-            from services.common import build_state
-            build_state.note(message)
-            if str(message).startswith("STRUCT:MODULE:"):
-                st = build_state.current() or {}
-                build_state.update(modules=(st.get("modules") or 0) + 1)
-        except Exception:
-            pass
+        if build_state:
+            if uid:
+                # NOT finish(): the pipeline owner calls that, once, after
+                # hydration and assets. Announcing completion here is what made
+                # the UI toast "Your course is ready." at 5%.
+                build_state.update(course_uid=uid,
+                                   build_id=getattr(self, "_build_id", None))
+                build_state.stage("audit", pct=30,
+                                  build_id=getattr(self, "_build_id", None))
+            else:
+                build_state.fail("skeleton generation failed",
+                                 build_id=getattr(self, "_build_id", None))
+        return uid
 
     def _build_inner(
         self, topic: str, max_depth: int = 2, module_depths: Dict[str, int] = None
@@ -1159,6 +1234,7 @@ class SkeletonBuilder:
                     self.status_callback(
                         f"LOG: Retrying module generation (attempt {attempt}/{max_retries})..."
                     )
+            _log_prompt_budget("modules", current_prompt, _scaf.MODULE_JSON_TOKENS)
             new_batch = llm_generate_json(
                 current_prompt,
                 sys_prompt=raw_sys,
@@ -1281,6 +1357,9 @@ class SkeletonBuilder:
         self._build_substructures_progressive(
             module_refs, max_depth, topic, modules,
             module_bloom_targets=module_bloom_targets,
+            # The same evidence that shaped the modules must reach the leaves.
+            # It used to stop here, one level above where hollowness is decided.
+            curriculum_evidence=_syllabus_evidence_block,
         )
 
         # WIZ-3: Record fallback count in course metadata
@@ -1415,6 +1494,91 @@ class SkeletonBuilder:
                 f"CHECK:SYLLABUS_EVIDENCE:{n} chapters / {srcs} sources")
         return format_brief(brief)
 
+    # How many characters of BRIEF LINES reach each level below the module
+    # prompt (the header and the framing sentence are ~250-350 chars on top).
+    #
+    # Sized against the 16,384-token window, measured rather than assumed. On a
+    # deliberately large brief (2 syllabi x 30 chapters, a Wikiversity course
+    # and 8 canonical texts = 3,304 chars) with worst-case surrounding context
+    # — a scope-5 course, ~110 accumulated titles, ten modules of hierarchy
+    # summary — the resulting prompts measure:
+    #     units     12,284 chars ~= 3,071 tok   19% of the window
+    #     lessons    3,982 chars ~=   995 tok    6%
+    #     concepts   4,439 chars ~= 1,109 tok    7%
+    # against a 1,200-token output reserve. There is room; the constraint that
+    # bites first is the units prompt's own accumulated-title list, not this.
+    # Every call logs its real size through _log_prompt_budget(), so a prompt
+    # that grows past the window is reported instead of silently truncated.
+    EVIDENCE_CHARS = {"unit": 3000, "lesson": 2000, "concept": 1500}
+
+    # The brief's own closing instructions ("HOW TO USE THIS — SYNTHESISE, DO
+    # NOT COPY") argue about the SHAPE OF THE WHOLE COURSE — cut to scope,
+    # re-sequence, pitch at a level. Those decisions are taken in the module
+    # prompt and are already made by the time a lesson is being written, so
+    # below that level they are ~700 chars of instruction the model cannot act
+    # on. They are replaced with a per-level framing instead.
+    _EVIDENCE_FRAMING = {
+        "unit": ("USE AS EVIDENCE, NOT AS A TEMPLATE. Units must carve this "
+                 "module's scope into sub-areas the sources show are REAL parts "
+                 "of the subject. Select and re-sequence; never lift a chapter "
+                 "list."),
+        "lesson": ("USE AS EVIDENCE, NOT AS A TEMPLATE. Lessons should teach "
+                   "material these sources treat as load-bearing, narrowed to "
+                   "this unit. Do not reproduce chapter titles verbatim."),
+        "concept": ("USE AS EVIDENCE, NOT AS A TEMPLATE. Prefer concepts these "
+                    "sources show are genuinely part of the subject over ones "
+                    "invented to fill the lesson — a lesson padded with plausible "
+                    "-sounding inventions is the hollow-course failure this "
+                    "research exists to prevent. Do not reproduce chapter titles "
+                    "verbatim."),
+    }
+
+    def _evidence_digest(self, block: str, level: str) -> str:
+        """Trim the phase-1 curriculum brief for a sub-structure prompt.
+
+        WHY THIS EXISTS
+        ---------------
+        The brief was reaching exactly ONE prompt — the module prompt — and the
+        research apparatus it comes from was built to stop courses being
+        substantively hollow. Hollowness is decided at the LEAF: concepts are
+        what gets hydrated, and concepts are what syllabus coverage measures.
+        Generating them from title + lesson title + Bloom level alone meant the
+        evidence stopped one level above the decision it was gathered for.
+
+        The digest is not a summary — no LLM is involved. It keeps the source
+        lines (which book, which chapters) and drops the whole-course framing,
+        then truncates on a "; " boundary so a chapter title is never halved: a
+        half-title reads as a real topic name and can be adopted as one.
+
+        Returns "" when there is no evidence, so callers concatenate nothing.
+        """
+        if not block:
+            return ""
+        cap = self.EVIDENCE_CHARS.get(level, 1500)
+        kept, used = [], 0
+        for line in block.splitlines():
+            if line.startswith("HOW TO USE THIS"):
+                break
+            if not line.strip():
+                continue
+            room = cap - used
+            if room <= 0:
+                break
+            if len(line) > room:
+                cut = line[:room].rsplit("; ", 1)[0]
+                # A stub of a line is worse than no line: it truncates mid-list
+                # and the remainder reads as the complete list.
+                if len(cut) < 60:
+                    break
+                line = cut + "; ..."
+            kept.append(line)
+            used += len(line) + 1
+        if not kept:
+            return ""
+        framing = self._EVIDENCE_FRAMING.get(level, self._EVIDENCE_FRAMING["concept"])
+        return ("### CURRICULUM EVIDENCE — how this subject is really organised:\n"
+                + "\n".join(kept) + "\n" + framing)
+
     def _record_syllabus_check(self, course_dict):
         """Attach the criterion-6 verdict to the course. Never raises.
 
@@ -1519,7 +1683,7 @@ class SkeletonBuilder:
 
     def _build_substructures_progressive(
         self, module_refs, max_depth, topic, all_modules_metadata,
-        module_bloom_targets=None,
+        module_bloom_targets=None, curriculum_evidence="",
     ):
         """
         Chunked hierarchical generation for reliable structure building.
@@ -1530,6 +1694,12 @@ class SkeletonBuilder:
         3. Generate Concepts per Lesson (individual calls)
 
         This provides frequent progress updates and keeps each LLM call focused.
+
+        `curriculum_evidence` is the phase-1 research brief. It is threaded all
+        the way to the concepts prompt on purpose: concepts are the leaves that
+        get hydrated and the unit syllabus coverage is scored against, so
+        evidence that reaches only the module prompt cannot affect the number
+        it was gathered to move.
         """
         # QB-1 FIX: DEPTH_PROFILES base counts come from the legacy single-depth
         # system and explode when scope=5 is used with low mastery (e.g. 4×3×2 =
@@ -1570,6 +1740,22 @@ class SkeletonBuilder:
         )
         mastery_constraint = self.course_params.get("mastery_writing", "")
         mastery_label = self.course_params.get("mastery_label", "Understanding")
+
+        # Digest the brief ONCE per build rather than per lesson — the trimming
+        # is deterministic and the same three strings are reused for every
+        # module, unit and lesson.
+        ev_unit = self._evidence_digest(curriculum_evidence, "unit")
+        ev_lesson = self._evidence_digest(curriculum_evidence, "lesson")
+        ev_concept = self._evidence_digest(curriculum_evidence, "concept")
+        if curriculum_evidence:
+            logger.info(
+                f"[SKELETON] curriculum evidence threaded to sub-structures: "
+                f"brief={len(curriculum_evidence)} chars -> unit={len(ev_unit)}, "
+                f"lesson={len(ev_lesson)}, concept={len(ev_concept)}")
+        else:
+            logger.warning(
+                "[SKELETON] no curriculum evidence — units, lessons and concepts "
+                "are being generated UNGUIDED, from recall alone")
 
         # Track full hierarchy for "mergy context" to avoid repetition
         planned_hierarchy_summary = []
@@ -1663,6 +1849,7 @@ class SkeletonBuilder:
                 f"{prev_context_str}\n\n"
                 f"### ALREADY USED TITLES — DO NOT REUSE OR PARAPHRASE:\n"
                 f"{used_titles_str}\n\n"
+                + (f"{ev_unit}\n\n" if ev_unit else "") +
                 f"### TASK: Generate exactly {base_units} Units for this module.\n"
                 f"### CONSTRAINTS:\n"
                 f"- {level_constraint}\n"
@@ -1679,6 +1866,7 @@ class SkeletonBuilder:
                 f"Match unit complexity to mastery level {self.mastery}/5. "
                 f"Return strict JSON array only. Use real terminology from {topic} — never invent terms."
             )
+            _log_prompt_budget(f"units[{m_title[:30]}]", units_prompt, 1200)
             units_data = llm_generate_json(
                 units_prompt,
                 sys_prompt=sys_msg,
@@ -1767,6 +1955,7 @@ class SkeletonBuilder:
                     f"Bloom Level: {mastery_label}\n\n"
                     f"### SIBLING UNITS (lessons must NOT overlap with these units' topics):\n{sibling_units_str}\n\n"
                     f"### ALL LESSONS ALREADY IN THIS COURSE (do NOT repeat or paraphrase):\n{prev_lessons_str}\n\n"
+                    + (f"{ev_lesson}\n\n" if ev_lesson else "") +
                     f"Generate exactly {base_lessons} lessons for '{u_title}'.\n"
                     f"Each lesson must cover a GENUINELY DIFFERENT aspect — different event, period, method, or perspective.\n"
                     f"TITLE RULES:\n"
@@ -1781,6 +1970,7 @@ class SkeletonBuilder:
                     f"Match complexity to mastery level {self.mastery}/5. "
                     f"Return strict JSON array only."
                 )
+                _log_prompt_budget(f"lessons[{u_title[:30]}]", lessons_prompt, 1200)
                 lessons_data = llm_generate_json(
                     lessons_prompt,
                     sys_prompt=lessons_sys,
@@ -1876,14 +2066,26 @@ class SkeletonBuilder:
                             f"- Good: 'Do-Calculus Rules', 'G-estimation', 'Structural Nested Mean Models'"),
                     }.get(_mod_bloom, "- Use appropriate technical names from the field.")
 
+                    # The concepts prompt used to be the ONLY level with neither
+                    # the module's scope nor any curriculum evidence: a concept
+                    # was generated from its own title, its lesson's title and a
+                    # Bloom number. Concepts are the leaves that get hydrated
+                    # and the unit syllabus coverage is measured in, so this was
+                    # precisely where the evidence was missing and precisely
+                    # where hollowness is decided.
                     concepts_prompt = (
                         f"Course: {topic}\n"
                         f"Module: {m_title} (Module {module_dict.get('ordinal',1)}/{len(module_refs)})\n"
+                        f"Module Scope (STAY WITHIN THIS): {positive_scope_str}\n"
                         f"Unit: {u_title} | Lesson: {l_title}\n"
                         f"Bloom Level: {_mod_bloom} ({_mod_bloom_label})\n\n"
                         f"### SIBLING LESSONS (concepts must NOT overlap with these):\n{sibling_lessons_str}\n\n"
                         f"### ALL CONCEPTS ALREADY IN THIS COURSE (do NOT repeat, rephrase, or paraphrase ANY):\n{prev_concepts_str}\n\n"
+                        + (f"{ev_concept}\n\n" if ev_concept else "") +
                         f"Generate exactly {base_concepts} concepts for '{l_title}'.\n\n"
+                        f"SCOPE BOUNDARY: every concept must fall inside this module's scope "
+                        f"({positive_scope_str}) — material belonging to another module is a defect here, "
+                        f"not a bonus.\n\n"
                         f"ZERO TOLERANCE FOR REDUNDANCY:\n"
                         f"- Before writing each concept, ask: 'Does this teach something GENUINELY NEW that no existing concept covers?'\n"
                         f"- Two concepts are duplicates if a student who mastered one would already know the other.\n"
@@ -1902,6 +2104,7 @@ class SkeletonBuilder:
                         f"Every concept must be UNIQUE — if you can't think of {base_concepts} truly distinct concepts for this lesson, generate fewer rather than padding with synonyms. "
                         f"Return strict JSON array only."
                     )
+                    _log_prompt_budget(f"concepts[{l_title[:30]}]", concepts_prompt, 1200)
                     concepts_data = llm_generate_json(
                         concepts_prompt,
                         sys_prompt=concepts_sys,
@@ -2103,6 +2306,16 @@ class ContentHydrator:
         self.db_path = db_path
         self.provider = None  # Content providers removed — LLM-only generation
         self.status_callback = status_callback
+        # Hydration is the bulk of a build. Teeing here is what makes the
+        # durable record span the whole pipeline instead of stopping at the
+        # skeleton (~5%), which is what let the UI announce completion while
+        # hydration had not started. note() is a no-op when no build record is
+        # active, so the wizard/librarian hydration path is unaffected.
+        try:
+            from services.common import build_state
+            self.status_callback = build_state.tee(self.status_callback)
+        except Exception as e:
+            logger.debug(f"build_state tee unavailable: {e}")
         self.course_depth = course_depth
         self.mastery_level = mastery if mastery is not None else course_depth
         self.used_source_ids = set()
@@ -2114,10 +2327,17 @@ class ContentHydrator:
         self.max_depth_retries = int(os.getenv("HELGA_DEPTH_RETRIES", "2"))
         self.topic_domain = None  # set by hydrate(); beats guessing from a string
         self._contract_failures = []
+        # The verdict lists are appended from every hydration worker, and
+        # _revalidate_after_fact_check also REMOVES from them, which a plain
+        # append cannot be relied on to survive.
+        self._verdict_lock = threading.Lock()
         # A2: below this, grounding is too thin to present as verified. Set 0
         # to disable the retry+marker behaviour entirely.
         self.confidence_floor = float(os.getenv("HELGA_CONFIDENCE_FLOOR", "0.5"))
         self._low_confidence_concepts = []
+        # Concepts whose research call never completed — distinct from concepts
+        # the research found nothing for. See the comment at the call site.
+        self._research_errors = []
         # A3: text of a user-supplied document (EPUB/markdown/text). When set,
         # concepts are grounded in the user's OWN material rather than only in
         # web research. Previously uploaded files were never read at all.
@@ -2151,8 +2371,27 @@ class ContentHydrator:
     def close(self):
         pass
 
+    def _build_stage(self, name, pct):
+        """Announce a pipeline phase to the durable build record.
+
+        Best-effort and silent when no build is active — the wizard and the
+        librarian both call hydrate() outside a recorded build.
+        """
+        try:
+            from services.common import build_state
+            build_state.stage(name, pct=pct)
+        except Exception as e:
+            logger.debug(f"build_state stage({name}) skipped: {e}")
+
     def hydrate(self, course_uid: str):
         """Hydrate all concepts in a course with content from sources + LLM."""
+        # Declare the stage BEFORE the work starts. build_state picks its
+        # staleness budget per stage, and hydration's is 20 minutes precisely
+        # because one concept (research + generate + fact-check retry + depth
+        # retry) legitimately takes minutes. Left unmarked, a slow-but-healthy
+        # hydration gets reaped as dead and the UI unlocks mid-build.
+        self._build_stage("hydrate", 40)
+
         course = self.storage.courses.get_course(course_uid)
         if not course:
             logger.error(f"Course {course_uid} not found for hydration")
@@ -2169,6 +2408,7 @@ class ContentHydrator:
         self._contract_failures = []
         self._low_confidence_concepts = []
         self._fact_failures = []
+        self._research_errors = []
 
         # Build hierarchy context, concept list, and prerequisite map from JSON
         concept_list = []
@@ -2178,6 +2418,15 @@ class ContentHydrator:
         # Pre-compute prerequisites: for each concept, the titles of preceding concepts
         all_concept_titles_in_order = []
         prerequisite_map = {}
+        # Every concept in the course, whether or not THIS run touches it. The
+        # verdicts below are claims about the course, so this — not the size of
+        # one run's work queue — is what they are measured against.
+        course_total_concepts = 0
+        already_hydrated = 0
+        # Every concept uid in the course, in syllabus order. The course-level
+        # verdicts read the WHOLE course's content; `concept_list` is only what
+        # this run has to do.
+        all_concept_uids_in_order = []
 
         for module in course.get("modules", []):
             source_file = module.get("source_file", "")
@@ -2186,6 +2435,8 @@ class ContentHydrator:
                     for concept in lesson.get("concepts", []):
                         uid = concept["uid"]
                         title = concept["title"]
+                        course_total_concepts += 1
+                        all_concept_uids_in_order.append(uid)
                         # Build prerequisite list from prior concepts in syllabus order
                         prerequisite_map[uid] = list(all_concept_titles_in_order[-5:])
                         all_concept_titles_in_order.append(title)
@@ -2195,11 +2446,22 @@ class ContentHydrator:
                         bloom_level = concept.get("bloom_level", self.mastery_level)
                         depth_level = concept.get("depth_level", self.mastery_level)
 
-                        # Check if already hydrated
+                        # Check if already hydrated.
+                        #
+                        # A "[Hydration failed]" stub is longer than 100 chars,
+                        # so a length test alone counted every stub as finished
+                        # work: a re-run skipped exactly the concepts that need
+                        # redoing, and the run then measured its verdicts
+                        # against the handful of concepts left — a resume with
+                        # one concept remaining reported "100% met,
+                        # level_verified: true" for a course that was mostly
+                        # stubs. A stub is a failure to retry, not content.
                         existing_content = self.storage.courses.get_concept_content(
                             course_uid, uid
                         )
-                        if existing_content and len(existing_content) > 100:
+                        if (existing_content and len(existing_content) > 100
+                                and "[Hydration failed]" not in existing_content):
+                            already_hydrated += 1
                             continue
 
                         user_note = concept.get("user_note", "") or module.get("user_note", "")
@@ -2220,7 +2482,9 @@ class ContentHydrator:
                             module_source_map[uid] = source_file
 
         logger.info(
-            f"Starting hydration for {len(concept_list)} concepts in '{course_title}'"
+            f"Starting hydration for {len(concept_list)} concepts in "
+            f"'{course_title}' ({already_hydrated}/{course_total_concepts} "
+            f"already have real content)"
         )
 
         hydrated_count = 0
@@ -2274,6 +2538,15 @@ class ContentHydrator:
             reference_material = ""
             research_sources = []
             research_confidence = 0.0
+            # A FAILED LOOKUP AND AN EMPTY ONE ARE NOT THE SAME THING, and this
+            # is where they became indistinguishable: on any exception the three
+            # variables above keep their empty defaults, which is byte-identical
+            # to a successful search that found nothing. Downstream, both render
+            # as "Limited sources — the grounding pass found little", which is
+            # true of one and false of the other. A concept whose research
+            # NEVER RAN must not be reported as a concept with no sources
+            # available; the first is our failure, the second is the subject's.
+            research_failed = None
             try:
                 research_resp = requests.post(
                     f"{research_url}/api/research_concept",
@@ -2286,8 +2559,10 @@ class ContentHydrator:
                         # mastery>=3/>=4 queries never fired during creation).
                         "mastery": self.mastery_level,
                     },
-                    timeout=15,
+                    timeout=RESEARCH_TIMEOUT,
                 )
+                if research_resp.status_code != 200:
+                    research_failed = f"HTTP {research_resp.status_code}"
                 if research_resp.status_code == 200:
                     research_data = research_resp.json()
                     reference_material = research_data.get("combined_text", "")
@@ -2305,7 +2580,16 @@ class ContentHydrator:
                         self.status_callback(
                             f"HYDRATE:SOURCES:{title}|{summary}|{research_confidence:.2f}")
             except Exception as research_err:
+                research_failed = f"{type(research_err).__name__}: {research_err}"
                 logger.warning(f"  [RESEARCH] Unavailable for '{title}': {research_err}")
+
+            if research_failed:
+                with self._verdict_lock:
+                    self._research_errors.append(
+                        {"uid": uid, "title": title, "error": research_failed[:200]})
+                if self.status_callback:
+                    self.status_callback(
+                        f"STRUCT:WARN:RESEARCH_UNREACHABLE:{title}")
 
             # A2: make source_confidence load-bearing. It was computed, stored
             # and displayed but nothing ever acted on it — in the sample course
@@ -2332,10 +2616,14 @@ class ContentHydrator:
                             "mastery": self.mastery_level,
                             "broaden": True,
                         },
-                        timeout=20,
+                        timeout=RESEARCH_BROADEN_TIMEOUT,
                     )
                     if broad.status_code == 200:
                         bd = broad.json()
+                        # The broadened search reaching the service at all
+                        # settles the "unreachable vs nothing found" question,
+                        # whatever it returns.
+                        research_failed = None
                         if bd.get("confidence", 0.0) > research_confidence:
                             reference_material = bd.get("combined_text", "") or reference_material
                             research_sources = bd.get("sources", []) or research_sources
@@ -2444,6 +2732,7 @@ class ContentHydrator:
             # the verdict never implies more coverage than was actually checked.
             if (not is_fallback and self.fact_check_enabled
                     and self._should_fact_check(idx)):
+                _pre_fact_check = structured_md
                 structured_md = self._apply_fact_check(
                     structured_md, title, course_title, complexity_role,
                     source_type, h_ctx, research_sources, research_confidence,
@@ -2451,16 +2740,40 @@ class ContentHydrator:
                     prerequisite_titles, research_structured, content_to_use,
                     uid,
                 )
+                # The fact-check can return a WHOLLY REGENERATED document, and
+                # it regenerates against the false claim, not against the depth
+                # contract. So a concept that had just been validated (or
+                # repaired through up to two depth retries) could be replaced by
+                # one that no longer meets its level, and nothing looked again —
+                # the recorded verdict described a document that had been
+                # thrown away. Re-validate the replacement.
+                if self.enforce_depth and structured_md != _pre_fact_check:
+                    self._revalidate_after_fact_check(
+                        structured_md, uid, title, course_title,
+                        research_sources)
 
             # A2: an honest marker on thin content. Previously a 0.0-confidence
             # concept was visually identical to a well-sourced one.
             if low_confidence:
-                structured_md += (
-                    "\n\n> **Limited sources.** The grounding pass found little "
-                    "corroborating material for this concept "
-                    f"(confidence {research_confidence:.2f}), so it leans more "
-                    "on the model's own knowledge. Treat specifics with extra "
-                    "care and verify before relying on them.\n")
+                # Say which of the two happened. "The grounding pass found
+                # little" is false when the grounding pass never ran, and a
+                # learner reading it would conclude the subject is thinly
+                # documented rather than that our service was down.
+                if research_failed:
+                    structured_md += (
+                        "\n\n> **Unverified — grounding unavailable.** The "
+                        "research pass could not be reached for this concept "
+                        f"({research_failed.split(':')[0]}), so nothing was "
+                        "checked against outside sources and this rests "
+                        "entirely on the model's own knowledge. This is a gap "
+                        "on our side, not a sign that sources are scarce.\n")
+                else:
+                    structured_md += (
+                        "\n\n> **Limited sources.** The grounding pass found little "
+                        "corroborating material for this concept "
+                        f"(confidence {research_confidence:.2f}), so it leans more "
+                        "on the model's own knowledge. Treat specifics with extra "
+                        "care and verify before relying on them.\n")
 
             # Append research citations
             if research_sources:
@@ -2513,10 +2826,21 @@ class ContentHydrator:
             if self.status_callback:
                 self.status_callback(f"STRUCT:HYDRATED:{uid}:{source_type}:{title}")
 
-            # Update counters atomically
+            # Update counters atomically.
+            #
+            # A STUB IS A FAILURE. This used to increment hydrated_count for a
+            # "[Hydration failed]" document and never touch failed_count, so a
+            # course where every single concept stubbed arrived at the abort
+            # gate below with failed_count == 0, sailed past the >50% test, and
+            # was written out as status "ready" — a course of placeholders
+            # presented as a finished one. That is the exact
+            # structurally-clean-but-substantively-empty failure this pipeline
+            # exists to catch, and the pipeline was producing it itself.
             with _counter_lock:
                 if is_fallback:
                     hydration_fallback_count += 1
+                    failed_count += 1
+                    return
                 hydrated_count += 1
 
                 # A course is NOT enterable until the whole build has run.
@@ -2581,9 +2905,43 @@ class ContentHydrator:
         hydration_elapsed = time.perf_counter() - hydration_start_time
         logger.info(f"  [TIMING] Hydration completed in {hydration_elapsed:.1f}s")
 
+        # THREE DIFFERENT DENOMINATORS, and conflating them is what produced
+        # false verdicts:
+        #   total_concepts        what THIS run attempted
+        #   verified              what THIS run actually validated
+        #   course_total_concepts every concept in the course
+        # The failure rate is a property of this run. The level/fact/grounding
+        # verdicts are claims about the COURSE, so they must say how much of the
+        # course they cover — otherwise a resume with one concept left reports
+        # "100% met, level_verified: true" on a course that is mostly stubs.
         total_concepts = len(concept_list)
+        verified = hydrated_count
+        # Whether THIS RUN validated the whole course — not whether the course
+        # is now fully populated. The concepts a resume skipped were validated
+        # by an earlier run, and this run is about to OVERWRITE that run's
+        # verdict with one computed from its own handful of concepts. Crediting
+        # the skipped ones here is what let a resume with one concept left
+        # write "100% met, level_verified: true" over a verdict that had
+        # covered all 36.
+        full_course_run = verified >= course_total_concepts
 
-        # AUTO-9: Abort if >50% of concepts failed hydration
+        # A course with no concepts at all was never verified by anything: the
+        # abort gate, all four verdicts and the asset phase were skipped by
+        # their `> 0` guards, and it still reached status "ready". An empty
+        # course is a failed build, not a finished one.
+        if course_total_concepts == 0:
+            course["status"] = "failed"
+            self.storage.courses.update_course(course_uid, course)
+            msg = (f"Course '{course_title}' contains no concepts — nothing to "
+                   f"hydrate and nothing verified. Marked as failed.")
+            logger.error(msg)
+            if self.status_callback:
+                self.status_callback(f"ERROR: {msg}")
+            raise CourseCreationError(msg)
+
+        # AUTO-9: Abort if >50% of concepts failed hydration. Stubs now count as
+        # failures (see the counter block above), so a fully-stubbed run trips
+        # this instead of shipping.
         if total_concepts > 0 and failed_count > total_concepts * 0.5:
             course["status"] = "failed"
             self.storage.courses.update_course(course_uid, course)
@@ -2606,66 +2964,101 @@ class ContentHydrator:
         # doesn't produce a college-level course" complaint. We record the
         # verdict rather than silently shipping, so the UI and the golden-course
         # gate can both see it.
-        if self.enforce_depth and total_concepts > 0:
+        #
+        # `concepts_total` is the WHOLE COURSE, not this run: the number is read
+        # as a claim about the course, and it used to be len(concept_list),
+        # which on a resume is only the leftovers. `met_pct` is the share of
+        # what was actually validated, and `level_verified` additionally
+        # requires that the validation covered the whole course — a course is
+        # not "verified at level 4" because the single concept a resume happened
+        # to redo passed.
+        if self.enforce_depth and verified > 0:
             missed = len(self._contract_failures)
-            met_pct = round(100 * (total_concepts - missed) / total_concepts, 1)
+            met_pct = round(100 * (verified - missed) / verified, 1)
             course["depth_contract"] = {
                 "mastery": self.mastery_level,
                 "domain": self.topic_domain,
-                "concepts_total": total_concepts,
+                "concepts_total": course_total_concepts,
+                "concepts_verified": verified,
+                "concepts_unverified": max(0, course_total_concepts - verified),
+                "verified_pct": round(100 * verified / course_total_concepts, 1),
                 "concepts_missing_contract": missed,
+                # Of what was verified this run.
                 "met_pct": met_pct,
-                # Below this the course is not credibly at its stated level.
-                "level_verified": met_pct >= 80.0,
+                # Below this the course is not credibly at its stated level —
+                # and a partial run cannot make the claim at all.
+                "level_verified": bool(met_pct >= 80.0 and full_course_run),
+                "partial_verification": not full_course_run,
                 "failures": self._contract_failures[:25],
             }
             if missed:
                 logger.warning(
-                    f"[DEPTH] {missed}/{total_concepts} concepts missed the "
-                    f"mastery-{self.mastery_level} contract ({met_pct}% met)")
+                    f"[DEPTH] {missed}/{verified} verified concepts missed the "
+                    f"mastery-{self.mastery_level} contract ({met_pct}% met; "
+                    f"{verified}/{course_total_concepts} of the course verified)")
                 if self.status_callback:
                     self.status_callback(
-                        f"STRUCT:WARN:DEPTH_SUMMARY:{missed}/{total_concepts} "
+                        f"STRUCT:WARN:DEPTH_SUMMARY:{missed}/{verified} "
                         f"concepts below level {self.mastery_level}")
+            if not full_course_run:
+                logger.warning(
+                    f"[DEPTH] partial run: only {verified}/{course_total_concepts} "
+                    f"concepts were validated this run — level_verified withheld")
 
         # A1: course-level factual verdict. A course still carrying confirmed
         # false claims must not be presented as verified at its level.
-        if self.fact_check_enabled and total_concepts > 0:
+        #
+        # clean_pct is the share of CHECKED concepts that came back clean. It
+        # used to divide by this run's concept count while `bad` came from a
+        # sampled subset, which mixed two populations and always flattered the
+        # course; on a resume it divided by the leftovers as well.
+        if self.fact_check_enabled and self._fact_checked_count > 0:
             bad = len(self._fact_failures)
+            checked = self._fact_checked_count
             course["fact_check"] = {
-                "concepts_total": total_concepts,
-                "concepts_checked": self._fact_checked_count,
+                "concepts_total": course_total_concepts,
+                "concepts_checked": checked,
                 "sample_fraction": getattr(self, "fact_check_sample", 1.0),
+                "coverage_pct": round(100 * checked / course_total_concepts, 1),
                 "concepts_with_false_claims": bad,
-                "clean_pct": round(100 * (total_concepts - bad) / total_concepts, 1),
+                "clean_pct": round(100 * (checked - bad) / checked, 1),
+                "partial_verification": not full_course_run,
                 "failures": self._fact_failures[:25],
             }
             if bad:
                 logger.warning(
-                    f"[FACT] {bad}/{total_concepts} concepts still contain "
-                    f"confirmed-false claims after regeneration")
+                    f"[FACT] {bad}/{checked} checked concepts still contain "
+                    f"confirmed-false claims after regeneration "
+                    f"({checked}/{course_total_concepts} of the course checked)")
                 if self.status_callback:
                     self.status_callback(
-                        f"STRUCT:WARN:FACT_SUMMARY:{bad}/{total_concepts}")
+                        f"STRUCT:WARN:FACT_SUMMARY:{bad}/{checked}")
 
         # Gate criterion 2: does the course READ at the level it claims?
         # The depth contract checks markers, the fact-checker checks truth;
         # neither asks whether the material is actually pitched where it was
         # sold. Judged blind — level hints are stripped first.
-        if total_concepts > 0 and self.level_calibration_enabled:
+        #
+        # Judged on the WHOLE course's bodies, not this run's. Reading a
+        # resume's three leftover concepts and pronouncing on the course was the
+        # same partial-run error as above, and here it was invisible because the
+        # verdict carries no denominator of its own.
+        if course_total_concepts > 0 and self.level_calibration_enabled:
             try:
                 from services.common.level_calibration import calibrate
                 bodies = []
-                for c in concept_list:
+                for _uid in all_concept_uids_in_order:
                     try:
                         b = self.storage.courses.get_concept_content(
-                            course_uid, c[0] if isinstance(c, (list, tuple)) else c)
-                        if b:
+                            course_uid, _uid)
+                        if b and "[Hydration failed]" not in b:
                             bodies.append(b)
                     except Exception:
                         continue
                 verdict = calibrate(bodies, self.mastery_level)
                 if verdict:
+                    verdict["concepts_judged"] = len(bodies)
+                    verdict["concepts_total"] = course_total_concepts
                     course["level_calibration"] = verdict
                     if not verdict["calibrated"]:
                         logger.warning(
@@ -2680,20 +3073,42 @@ class ContentHydrator:
 
         # A2: course-level grounding verdict, so thin sourcing is visible at a
         # glance instead of only per-concept.
-        if total_concepts > 0:
+        #
+        # Grounding is only observed while a concept is being hydrated, so this
+        # can only speak for the concepts this run hydrated. It says so, instead
+        # of dividing by a run-sized number and reading as a whole-course claim.
+        if verified > 0:
             weak = len(self._low_confidence_concepts)
+            unreachable = len(self._research_errors)
             course["grounding"] = {
                 "confidence_floor": self.confidence_floor,
-                "concepts_total": total_concepts,
+                "concepts_total": course_total_concepts,
+                "concepts_measured": verified,
                 "concepts_below_floor": weak,
-                "well_grounded_pct": round(
-                    100 * (total_concepts - weak) / total_concepts, 1),
+                # Reported separately from `concepts_below_floor` on purpose:
+                # a concept nobody could look up is our outage, and a concept
+                # with genuinely thin sources is a fact about the subject.
+                # Collapsed into one number they are indistinguishable, and the
+                # first one silently disappears into "this topic is obscure".
+                "concepts_research_unreachable": unreachable,
+                "well_grounded_pct": round(100 * (verified - weak) / verified, 1),
+                "partial_verification": not full_course_run,
                 "low_confidence": self._low_confidence_concepts[:25],
+                "research_errors": self._research_errors[:25],
             }
             if weak:
                 logger.warning(
-                    f"[GROUNDING] {weak}/{total_concepts} concepts below "
-                    f"confidence floor {self.confidence_floor}")
+                    f"[GROUNDING] {weak}/{verified} concepts hydrated this run "
+                    f"are below confidence floor {self.confidence_floor} "
+                    f"({verified}/{course_total_concepts} of the course)")
+            if unreachable:
+                logger.error(
+                    f"[GROUNDING] the research service was unreachable for "
+                    f"{unreachable}/{verified} concepts — those are ungrounded "
+                    f"because of an outage, not because sources are scarce")
+                if self.status_callback:
+                    self.status_callback(
+                        f"CHECK:RESEARCH:WARN:unreachable for {unreachable}/{verified} concepts")
 
         # ---- PHASE 3: ASSET COLLECTION -------------------------------------
         # Runs after the content and its verdicts, before the course is
@@ -2704,7 +3119,10 @@ class ContentHydrator:
         #
         # Strictly degradable: a course with no pictures is a course, so any
         # failure here is logged and the build continues.
-        if total_concepts > 0:
+        if course_total_concepts > 0:
+            # Asset collection is quiet for long stretches (one constrained
+            # generation per diagram), so it needs its own staleness budget.
+            self._build_stage("assets", 80)
             try:
                 from services.core.asset_collector import AssetCollector
                 if self.status_callback:
@@ -2751,9 +3169,15 @@ class ContentHydrator:
             if os.path.exists(content_dir)
             else []
         )
-        summary_msg = f"Course hydration complete: {hydrated_count}/{total_concepts} succeeded, {failed_count} failed. {len(md_files)} .md files written."
+        summary_msg = (
+            f"Course hydration complete: {hydrated_count}/{total_concepts} "
+            f"succeeded, {failed_count} failed. "
+            f"{verified + already_hydrated}/{course_total_concepts} concepts in "
+            f"the course now have real content. {len(md_files)} .md files written.")
         if hydration_fallback_count > 0:
-            summary_msg += f" {hydration_fallback_count} concept(s) used fallback stub content."
+            summary_msg += (
+                f" {hydration_fallback_count} concept(s) fell back to stub content "
+                f"and are counted as failures, not as hydrated.")
         logger.info(summary_msg)
         if self.status_callback:
             self.status_callback(f"LOG: {summary_msg}")
@@ -2761,6 +3185,55 @@ class ContentHydrator:
                 self.status_callback(
                     "CHECK:HYDRATION:WARN:Some concepts failed to hydrate."
                 )
+
+    def _revalidate_after_fact_check(self, md, uid, title, course_title,
+                                     research_sources):
+        """Re-check the depth contract on a document the fact-check replaced.
+
+        The correction is KEPT either way. Reverting to the pre-correction draft
+        would trade a confirmed-false claim for a structural marker, which is a
+        bad trade: a wrong statement at the right level is worse than a right
+        statement at the wrong one. What changes is the RECORD — the contract
+        verdict must describe the document that actually shipped, and it was
+        describing one that had been discarded.
+
+        Also clears an earlier failure when the regenerated document now meets
+        the contract, so a repair is not still reported as a miss.
+        """
+        try:
+            ok, problems, _ = validate_concept(
+                md, self.mastery_level, course_title, self.topic_domain,
+                sources=research_sources)
+        except Exception as e:
+            logger.warning(f"  [DEPTH] post-fact-check validation failed for "
+                           f"'{title}': {e}")
+            return
+        with self._verdict_lock:
+            existing = next(
+                (f for f in self._contract_failures if f.get("uid") == uid), None)
+            if ok:
+                if existing:
+                    self._contract_failures.remove(existing)
+                    logger.info(
+                        f"  [DEPTH] '{title}' now meets the contract after "
+                        f"fact-check regeneration")
+                return
+            if existing:
+                existing["problems"] = problems
+                existing["after_fact_check"] = True
+                return
+            self._contract_failures.append({
+                "uid": uid, "title": title, "problems": problems,
+                # Distinguishable in the failures list: this concept DID meet
+                # its contract, and the accuracy repair cost it.
+                "after_fact_check": True,
+            })
+        logger.warning(
+            f"  [DEPTH] '{title}' met its contract before the fact-check and "
+            f"misses it after regeneration ({'; '.join(problems)}) — the "
+            f"corrected text is kept, the verdict records the loss")
+        if self.status_callback:
+            self.status_callback(f"STRUCT:WARN:DEPTH_MISS_AFTER_FACT:{title}")
 
     def _preprocess_research(self, combined_text):
         """Bucket research text into facts, examples, and edge cases for structured LLM injection.
@@ -3356,16 +3829,51 @@ Generate ONLY the sections below. Do NOT generate Metadata, Learning Objectives,
 
 class SyllabusAuditor:
     """
-    Second-pass LLM Auditor to prune, rename, and reorder course structure
-    before expensive content hydration begins.
+    Second-pass LLM Auditor to prune and rename course structure before
+    expensive content hydration begins.
     Now operates on JSON structure instead of KuzuDB.
+
+    WHAT THE AUDIT IS ALLOWED TO DO
+    -------------------------------
+    Prune and rename. Not rebuild. The audit is a single unconstrained-ish LLM
+    call handed 100+ uids and asked to echo the ones it objects to, and it was
+    trusted absolutely: no uid was checked for existence, no ceiling limited how
+    much one call could remove, and `module` was a deletable type — so one
+    hallucinated uid silently removed an entire module and every unit, lesson
+    and concept under it, and the audit then REPORTED that deletion as an
+    applied fix whether or not anything had been removed.
+
+    Three guards now sit between the model and the structure:
+      * a uid enum in the JSON schema, so a uid that is not in this course
+        cannot be generated in the first place;
+      * an existence check at apply time, so what is reported is what happened;
+      * a deletion cap measured in concepts, so no single audit can gut a
+        course, and modules are not deletable at all.
     """
+
+    # A structural audit prunes at the margins. Anything larger is the audit
+    # disagreeing with the course rather than correcting it, and the course was
+    # built by the module/unit/lesson/concept phases against the scope, the
+    # Bloom ramp and the curriculum evidence — the audit sees none of that.
+    AUDIT_MAX_DELETE_FRACTION = float(os.getenv("HELGA_AUDIT_MAX_DELETE", "0.25"))
+    # Floor: a course must still be a course afterwards.
+    AUDIT_MIN_CONCEPTS = int(os.getenv("HELGA_AUDIT_MIN_CONCEPTS", "3"))
+    # Modules are renameable but NOT deletable. Deleting one discards a whole
+    # branch of the Bloom progression, which nothing downstream can rebuild.
+    DELETABLE_TYPES = frozenset({"unit", "lesson", "concept"})
 
     def __init__(
         self, db_path: str = None, status_callback=None, storage: StorageManager = None
     ):
         self.db_path = db_path
         self.status_callback = status_callback
+        # Mirror the audit into the durable build record — see the note in
+        # ContentHydrator.__init__. A no-op when no build is active.
+        try:
+            from services.common import build_state
+            self.status_callback = build_state.tee(self.status_callback)
+        except Exception as e:
+            logger.debug(f"build_state tee unavailable: {e}")
         if storage:
             self.storage = storage
         else:
@@ -3527,12 +4035,26 @@ class SyllabusAuditor:
                     total_concepts += len(lesson.get("concepts", []))
         return total_modules, total_units, total_lessons, total_concepts
 
-    def audit(self, course_uid: str, target_depth: int = 2):
+    def audit(self, course_uid: str, target_depth: int = 2, mastery: int = None):
+        """Audit a course skeleton.
+
+        `mastery` is the ladder the audit judges complexity against, and it is
+        preferred over `target_depth` — falling back to the course's own stored
+        mastery, then to target_depth for legacy callers.
+
+        WHY THEY ARE NOT THE SAME NUMBER: scope, mastery and starting_from are
+        three INDEPENDENT sliders (compute_course_params). The only caller,
+        fsm_logic, passes `target_depth=depth`, and `depth` is derived from
+        scope — so on any course where the learner set a broad scope and a
+        modest mastery (or the reverse) the audit was reading
+        DEPTH_PROFILES[scope]["academic_level"] and DELETING or RENAMING
+        concepts for "complexity mismatch" against a ladder the course was never
+        built to. The hydrator, the depth contract and level calibration all use
+        mastery; the auditor was the odd one out, and it is the only one of them
+        that destroys structure.
+        """
         if self.status_callback:
             self.status_callback("SYLLABUS:AUDIT:STARTING")
-        logger.info(
-            f"Starting Syllabus Audit for course {course_uid} at depth {target_depth}"
-        )
 
         course = self.storage.courses.get_course(course_uid)
         if not course:
@@ -3540,6 +4062,19 @@ class SyllabusAuditor:
             return
 
         topic = course.get("title", "Unknown Topic")
+
+        if mastery is None:
+            mastery = course.get("mastery")
+        try:
+            audit_level = int(mastery) if mastery is not None else int(target_depth)
+        except (TypeError, ValueError):
+            audit_level = int(target_depth)
+        audit_level = max(1, min(5, audit_level))
+        logger.info(
+            f"Starting Syllabus Audit for course {course_uid} at mastery "
+            f"{audit_level}/5 (caller passed target_depth={target_depth}, "
+            f"course records mastery={course.get('mastery')})"
+        )
 
         # Count before audit for comparison
         before_mods, before_units, before_lessons, before_concepts = self._count_structure(course)
@@ -3593,8 +4128,13 @@ class SyllabusAuditor:
         if self.status_callback:
             self.status_callback("AUDIT:PASS2:LLM_REVIEW:STARTING")
 
-        profile = DEPTH_PROFILES.get(target_depth, DEPTH_PROFILES[2])
-        target_context = profile["academic_level"]
+        # Judge against the MASTERY ladder — the same one the hydrator, the
+        # depth contract and level calibration use. DEPTH_PROFILES is indexed by
+        # the legacy single-depth number and its "academic_level" answers a
+        # different question; see the docstring on audit().
+        m_profile = MASTERY_PROFILES.get(audit_level, MASTERY_PROFILES[2])
+        target_context = m_profile["label"]
+        level_guidance = m_profile["vocabulary"]
 
         # Build compact hierarchy from the now-deduped structure
         hierarchy = self._get_compact_hierarchy(course)
@@ -3623,8 +4163,14 @@ class SyllabusAuditor:
             level = module.get("level", m_idx)
             bloom_summary += f"  Module {m_idx} '{module['title']}': complexity_level={level}\n"
 
+        # The deletion budget, computed BEFORE the call so it can be stated in
+        # the prompt. A model told the ceiling proposes fewer over-budget fixes
+        # than one that discovers it by having them refused.
+        delete_budget = self._delete_budget(before_concepts - dedup_count)
+
         prompt = (
-            f"Topic: {topic}\nDepth: {target_depth}/5 ({target_context})\n\n"
+            f"Topic: {topic}\n"
+            f"Mastery: {audit_level}/5 ({target_context}) — {level_guidance}\n\n"
             f"### MODULE SCOPE BOUNDARIES:\n{scope_summary}\n"
             f"### MODULE COMPLEXITY LEVELS (lower=simpler, higher=advanced):\n{bloom_summary}\n"
             f"### HIERARCHY (after automated dedup — {dedup_count} duplicates already removed):\n{hierarchy}\n\n"
@@ -3635,33 +4181,72 @@ class SyllabusAuditor:
             "term or property name. Example: 'Identifying Confounders' → 'Confounder Detection Methods'.\n\n"
             "2. SCOPE VIOLATIONS: Concepts that clearly belong in a DIFFERENT module based on "
             "the scope boundaries above → DELETE them. Be conservative — only delete clear violations.\n\n"
-            "3. BLOOM PROGRESSION: Early modules (level 1-2) should cover definitional/conceptual "
-            "material. Later modules (level 3+) should cover application, analysis, and synthesis. "
-            "If a high-complexity concept appears in a low-level module, RENAME it to match that "
-            "module's level, or DELETE if it truly doesn't fit.\n\n"
+            f"3. COMPLEXITY MATCH: this course is pitched at mastery {audit_level}/5 "
+            f"({target_context}: {level_guidance}). Early modules (level 1-2) should cover "
+            "definitional/conceptual material and later modules (level 3+) application, analysis "
+            "and synthesis. If a concept is far off the module's level, RENAME it to match; "
+            "DELETE only if it genuinely does not belong in this course at all.\n\n"
             "4. REMAINING SEMANTIC DUPLICATES: If you spot concepts with different titles that "
             "teach the same thing (e.g. 'Causal Graphs' and 'Directed Acyclic Graphs in Causation') "
-            "→ DELETE the less specific one.\n\n"
-            "5. EMPTY OR STUB LESSONS: Lessons with 0 or 1 concepts after our dedup pass may "
-            "need their remaining concept moved to a neighboring lesson → use MOVE action.\n\n"
+            "→ DELETE the less specific one. Titles that differ only by an ordinal or a side "
+            "('World War I' / 'World War II', 'Left Ventricle' / 'Right Ventricle') are NOT "
+            "duplicates.\n\n"
+            "5. EMPTY LESSONS: a lesson showing (0 concepts) is a hole in the learning path → "
+            "DELETE that lesson. A lesson with 1 concept is thin but valid — leave it alone. "
+            "There is no move and no reorder action; do not ask for one.\n\n"
             "### OUTPUT FORMAT: JSON Array of fix objects. Return [] if structure is clean.\n"
-            "Valid actions: 'rename', 'delete'\n"
+            "Valid actions: 'rename', 'delete'.\n"
+            "'rename' may target a module, unit, lesson or concept. "
+            "'delete' may target ONLY a unit, lesson or concept — a module is never deletable.\n"
+            f"HARD LIMIT: your deletions may remove at most {delete_budget} concepts in total "
+            "(deleting a lesson or unit removes everything inside it, and all of that counts). "
+            "Fixes past that limit are refused, so spend the budget on the clearest defects.\n"
+            "Every 'uid' MUST be copied exactly from the hierarchy above. A uid that is not in "
+            "the hierarchy is discarded.\n"
             "Each fix: {\"action\": \"rename\"|\"delete\", \"type\": \"module\"|\"unit\"|\"lesson\"|\"concept\", "
             "\"uid\": \"the_uid\", \"new_title\": \"...\" (for rename only), \"reason\": \"brief explanation\"}\n\n"
             "Be thorough. Check EVERY concept title. Return ALL fixes needed.\n"
         )
 
-        raw_fixes = llm_generate(
+        # Constrain the uid to the uids that actually exist.
+        #
+        # This call hands the model 100+ uids and asks it to echo back the ones
+        # it objects to; echoing a long hex string is exactly what a model gets
+        # wrong, and an invented `mod_xxxxxxxx` used to delete a whole module.
+        # An enum in the schema means a uid that is not in this course cannot be
+        # DECODED, let alone applied — a guard at the generator rather than a
+        # check afterwards. (llm_generate_json passes the schema to Ollama's
+        # `format`; see services/common/llm_utils.py.)
+        known_uids = self._all_uids(course)
+        fix_schema = {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["rename", "delete"]},
+                    "type": {"type": "string",
+                             "enum": ["module", "unit", "lesson", "concept"]},
+                    "uid": {"type": "string", "enum": known_uids},
+                    "new_title": {"type": "string"},
+                    "reason": {"type": "string"},
+                },
+                "required": ["action", "type", "uid", "reason"],
+            },
+        }
+        _log_prompt_budget("audit", prompt, 2000)
+        fixes = llm_generate_json(
             prompt,
             sys_prompt=(
                 "You are a Senior Curriculum Editor performing a rigorous quality audit. "
                 "Return ONLY a valid JSON array of fix objects. No commentary outside the JSON. "
                 "Be aggressive about renaming vague titles — every concept should have a specific, "
-                "teachable name that a student could look up in a textbook."
+                "teachable name that a student could look up in a textbook. "
+                "Be conservative about deleting: renaming is reversible, deleting is not."
             ),
             max_tokens=2000,
+            expected_type="list",
+            schema=fix_schema,
         )
-        fixes = extract_python_list(raw_fixes)
 
         rename_count = 0
         llm_delete_count = 0
@@ -3670,26 +4255,35 @@ class SyllabusAuditor:
             if self.status_callback:
                 self.status_callback(f"AUDIT:PASS2:FIXING:{len(fixes)}_ISSUES")
 
-            # Count by action type for reporting
             for fix in fixes:
-                action = fix.get("action", "")
+                if not isinstance(fix, dict):
+                    continue
                 reason = fix.get("reason", "")
                 if reason:
-                    logger.info(f"  LLM fix: {action} {fix.get('type','')} "
-                                f"{fix.get('uid','')} — {reason}")
+                    logger.info(f"  LLM fix: {fix.get('action','')} "
+                                f"{fix.get('type','')} {fix.get('uid','')} — {reason}")
 
-            applied_count = self._apply_fixes(course_uid, course, fixes)
+            # Counted from what was APPLIED, not from what was proposed. The
+            # counts used to come from a second walk over `fixes`, so a fix that
+            # was skipped — invalid type, missing node, over budget — was still
+            # reported to the learner as a rename or a deletion that happened.
+            report = self._apply_fixes(course_uid, course, fixes,
+                                       delete_budget=delete_budget)
+            rename_count = report["renamed"]
+            llm_delete_count = report["deleted_concepts"]
 
-            # Count renames vs deletes from what was applied
-            for fix in fixes:
-                action = fix.get("action", "")
-                if action == "rename":
-                    rename_count += 1
-                elif action == "delete":
-                    llm_delete_count += 1
-
-            logger.info(f"Pass 2 complete: applied {applied_count}/{len(fixes)} LLM fixes "
-                        f"({rename_count} renames, {llm_delete_count} deletes)")
+            logger.info(
+                f"Pass 2 complete: applied {report['applied']}/{len(fixes)} LLM fixes "
+                f"({rename_count} renames, {report['deleted_nodes']} node deletions "
+                f"removing {llm_delete_count} concepts). "
+                f"Refused: {report['skipped_missing']} hallucinated uid(s), "
+                f"{report['skipped_module_delete']} module deletion(s), "
+                f"{report['skipped_over_budget']} over the {delete_budget}-concept cap, "
+                f"{report['skipped_other']} other.")
+            if report["skipped_missing"]:
+                if self.status_callback:
+                    self.status_callback(
+                        f"AUDIT:WARN:UNKNOWN_UIDS:{report['skipped_missing']}")
         else:
             logger.info("Pass 2 complete: LLM found no additional issues")
 
@@ -3707,6 +4301,14 @@ class SyllabusAuditor:
             f"Final structure: {total_modules} modules, {total_concepts} concepts "
             f"(was {before_concepts})"
         )
+        # The two numbers must agree. They disagreed for as long as deletions
+        # were counted from what the model PROPOSED, and the reported figure was
+        # the one nobody could check against the structure.
+        if before_concepts - total_concepts != total_deleted:
+            logger.warning(
+                f"Audit accounting mismatch: reported {total_deleted} deletions "
+                f"but the structure lost {before_concepts - total_concepts} "
+                f"concepts")
 
         if self.status_callback:
             self.status_callback(f"AUDIT:COMPLETE:{total_modules}:{total_concepts}")
@@ -3772,58 +4374,192 @@ class SyllabusAuditor:
                         }
         return hierarchy
 
-    def _apply_fixes(self, course_uid: str, course: dict, fixes: List[Dict]) -> int:
-        """Apply audit fixes directly to JSON structure. Returns count of applied fixes."""
+    def _delete_budget(self, concepts_now: int) -> int:
+        """How many concepts one audit may remove.
+
+        Without a ceiling a single LLM call could take the course apart: every
+        proposed deletion was applied, `module` was deletable, and one
+        hallucinated module uid removes every unit, lesson and concept beneath
+        it. The cap is expressed in CONCEPTS because that is what a learner
+        loses, whatever node the delete names.
+        """
+        if concepts_now <= self.AUDIT_MIN_CONCEPTS:
+            return 0
+        by_fraction = int(concepts_now * self.AUDIT_MAX_DELETE_FRACTION)
+        by_floor = concepts_now - self.AUDIT_MIN_CONCEPTS
+        return max(0, min(by_fraction, by_floor))
+
+    def _all_uids(self, course: dict) -> List[str]:
+        """Every uid in the course, for the audit call's uid enum."""
+        uids = []
+        for module in course.get("modules", []):
+            uids.append(module.get("uid", ""))
+            for unit in module.get("units", []):
+                uids.append(unit.get("uid", ""))
+                for lesson in unit.get("lessons", []):
+                    uids.append(lesson.get("uid", ""))
+                    for concept in lesson.get("concepts", []):
+                        uids.append(concept.get("uid", ""))
+        return [u for u in uids if u]
+
+    def _find_node(self, course: dict, node_type: str, uid: str):
+        """The node with this uid AND this type, or None."""
+        for module in course.get("modules", []):
+            if node_type == "module" and module.get("uid") == uid:
+                return module
+            for unit in module.get("units", []):
+                if node_type == "unit" and unit.get("uid") == uid:
+                    return unit
+                for lesson in unit.get("lessons", []):
+                    if node_type == "lesson" and lesson.get("uid") == uid:
+                        return lesson
+                    for concept in lesson.get("concepts", []):
+                        if node_type == "concept" and concept.get("uid") == uid:
+                            return concept
+        return None
+
+    def _concept_weight(self, node_type: str, node: dict) -> int:
+        """How many concepts deleting this node would remove.
+
+        A delete addressed at a lesson or a unit is not one deletion — it is
+        every leaf underneath. Charging only the named node against the budget
+        would let "delete this unit" slip through a cap sized for concepts.
+        """
+        if node_type == "concept":
+            return 1
+        if node_type == "lesson":
+            return len(node.get("concepts", []))
+        if node_type == "unit":
+            return sum(len(l.get("concepts", []))
+                       for l in node.get("lessons", []))
+        return sum(len(l.get("concepts", []))
+                   for u in node.get("units", [])
+                   for l in u.get("lessons", []))
+
+    def _apply_fixes(self, course_uid: str, course: dict, fixes: List[Dict],
+                     delete_budget: int = None) -> dict:
+        """Apply audit fixes to the JSON structure.
+
+        Returns a REPORT, not a bare count: {"applied", "renamed",
+        "deleted_nodes", "deleted_concepts", "skipped_*"}. The caller used to
+        count renames and deletes by walking the model's proposals again, which
+        counted fixes that were never applied — the audit reported deletions
+        that had not happened and there was no way to notice from the outside.
+        """
         VALID_TYPES = {"module", "unit", "lesson", "concept"}
-        applied = 0
+        report = {"applied": 0, "renamed": 0, "deleted_nodes": 0,
+                  "deleted_concepts": 0, "skipped_missing": 0,
+                  "skipped_module_delete": 0, "skipped_over_budget": 0,
+                  "skipped_other": 0}
         had_deletes = False
 
+        if delete_budget is None:
+            delete_budget = self._delete_budget(self._count_structure(course)[3])
+
         for fix in fixes:
+            if not isinstance(fix, dict):
+                report["skipped_other"] += 1
+                continue
             action = fix.get("action")
-            f_type = fix.get("type", "").lower()
+            f_type = (fix.get("type") or "").lower()
             uid = fix.get("uid")
 
             if f_type not in VALID_TYPES:
                 logger.warning(
                     f"Auditor: Skipping fix with invalid type '{f_type}' (uid: {uid})"
                 )
+                report["skipped_other"] += 1
                 continue
 
             if action == "rename":
                 new_title = fix.get("new_title")
-                if uid and new_title:
-                    # Check that the rename doesn't introduce a new collision
-                    new_lower = new_title.lower().strip()
-                    if hasattr(self, "_all_titles") and new_lower in self._all_titles:
-                        logger.warning(
-                            f"Auditor: Skipping rename to '{new_title}' — would create duplicate."
-                        )
-                        continue
-                    logger.info(f"Auditor: Renaming {f_type} {uid} -> {new_title}")
-                    self._rename_node(course, f_type, uid, new_title)
-                    if hasattr(self, "_all_titles"):
-                        self._all_titles.add(new_lower)
-                    applied += 1
-                    if self.status_callback:
-                        self.status_callback(
-                            f"LOG: Audit renamed {f_type}: {new_title}"
-                        )
+                if not (uid and new_title):
+                    report["skipped_other"] += 1
+                    continue
+                # Check that the rename doesn't introduce a new collision
+                new_lower = new_title.lower().strip()
+                if hasattr(self, "_all_titles") and new_lower in self._all_titles:
+                    logger.warning(
+                        f"Auditor: Skipping rename to '{new_title}' — would create duplicate."
+                    )
+                    report["skipped_other"] += 1
+                    continue
+                # Rename only what exists. This was a filter with no existence
+                # check and no return value, so a rename of a hallucinated uid
+                # was a silent no-op that still incremented the applied count.
+                if not self._rename_node(course, f_type, uid, new_title):
+                    logger.warning(
+                        f"Auditor: rename refused — no {f_type} with uid {uid} "
+                        f"exists in this course")
+                    report["skipped_missing"] += 1
+                    continue
+                logger.info(f"Auditor: Renamed {f_type} {uid} -> {new_title}")
+                if hasattr(self, "_all_titles"):
+                    self._all_titles.add(new_lower)
+                report["applied"] += 1
+                report["renamed"] += 1
+                if self.status_callback:
+                    self.status_callback(
+                        f"LOG: Audit renamed {f_type}: {new_title}"
+                    )
 
             elif action == "delete":
-                if uid:
-                    logger.info(f"Auditor: Deleting {f_type} {uid}")
-                    self._delete_node(course, f_type, uid)
-                    had_deletes = True
-                    applied += 1
-                    if self.status_callback:
-                        self.status_callback(f"LOG: Audit deleted {f_type} {uid}")
+                if not uid:
+                    report["skipped_other"] += 1
+                    continue
+                if f_type not in self.DELETABLE_TYPES:
+                    logger.warning(
+                        f"Auditor: delete refused — {f_type} {uid} is not a "
+                        f"deletable type. Deleting a module discards a whole "
+                        f"branch of the Bloom progression on the strength of one "
+                        f"echoed uid.")
+                    report["skipped_module_delete"] += 1
+                    continue
+                node = self._find_node(course, f_type, uid)
+                if node is None:
+                    logger.warning(
+                        f"Auditor: delete refused — no {f_type} with uid {uid} "
+                        f"exists in this course (hallucinated uid)")
+                    report["skipped_missing"] += 1
+                    continue
+                weight = self._concept_weight(f_type, node)
+                if report["deleted_concepts"] + weight > delete_budget:
+                    logger.warning(
+                        f"Auditor: delete refused — removing {f_type} "
+                        f"'{node.get('title', uid)}' would cost {weight} concept(s) "
+                        f"and the audit has already spent "
+                        f"{report['deleted_concepts']}/{delete_budget}")
+                    report["skipped_over_budget"] += 1
+                    continue
+                if not self._delete_node(course, f_type, uid):
+                    logger.warning(
+                        f"Auditor: delete of {f_type} {uid} found the node but "
+                        f"removed nothing — not counted as applied")
+                    report["skipped_other"] += 1
+                    continue
+                logger.info(
+                    f"Auditor: Deleted {f_type} {uid} ({weight} concept(s))")
+                had_deletes = True
+                report["applied"] += 1
+                report["deleted_nodes"] += 1
+                report["deleted_concepts"] += weight
+                if self.status_callback:
+                    self.status_callback(f"LOG: Audit deleted {f_type} {uid}")
 
             elif action == "reorder":
+                # NOT offered by the audit prompt and not in the response
+                # schema, so nothing the model returns reaches here. Kept for
+                # programmatic callers that build a fix list themselves.
                 new_ord = fix.get("new_ordinal")
-                if uid and new_ord is not None:
-                    logger.info(f"Auditor: Reordering {f_type} {uid} to {new_ord}")
-                    self._reorder_node(course, f_type, uid, new_ord)
-                    applied += 1
+                if uid and new_ord is not None and self._reorder_node(
+                        course, f_type, uid, new_ord):
+                    logger.info(f"Auditor: Reordered {f_type} {uid} to {new_ord}")
+                    report["applied"] += 1
+                else:
+                    report["skipped_other"] += 1
+            else:
+                logger.warning(f"Auditor: unknown action '{action}' — skipped")
+                report["skipped_other"] += 1
 
         # Renumber ordinals after any deletes to avoid gaps (e.g., [1, 3] → [1, 2])
         if had_deletes:
@@ -3831,7 +4567,7 @@ class SyllabusAuditor:
 
         # Save updated course
         self.storage.courses.update_course(course_uid, course)
-        return applied
+        return report
 
     def _rescue_short_titles(self, course: dict) -> int:
         """Find and rename any node whose title is shorter than MIN_TITLE_LEN.
@@ -3983,66 +4719,71 @@ class SyllabusAuditor:
 
         return renamed
 
-    def _rename_node(self, course: dict, node_type: str, uid: str, new_title: str):
-        """Find and rename a node in the JSON structure."""
-        for module in course.get("modules", []):
-            if node_type == "module" and module["uid"] == uid:
-                module["title"] = new_title
-                return
-            for unit in module.get("units", []):
-                if node_type == "unit" and unit["uid"] == uid:
-                    unit["title"] = new_title
-                    return
-                for lesson in unit.get("lessons", []):
-                    if node_type == "lesson" and lesson["uid"] == uid:
-                        lesson["title"] = new_title
-                        return
-                    for concept in lesson.get("concepts", []):
-                        if node_type == "concept" and concept["uid"] == uid:
-                            concept["title"] = new_title
-                            return
+    def _rename_node(self, course: dict, node_type: str, uid: str,
+                     new_title: str) -> bool:
+        """Rename a node. True if the node existed and was renamed.
 
-    def _delete_node(self, course: dict, node_type: str, uid: str):
-        """Find and delete a node from the JSON structure."""
+        The return value is the point: this used to walk the tree and return
+        None whether or not it found anything, and the caller counted the fix as
+        applied regardless.
+        """
+        node = self._find_node(course, node_type, uid)
+        if node is None:
+            return False
+        node["title"] = new_title
+        return True
+
+    def _delete_node(self, course: dict, node_type: str, uid: str) -> bool:
+        """Delete a node. True if the node existed and was removed.
+
+        This used to be a bare list filter with no existence check and no
+        result. Deleting a uid that is not in the course removed nothing and
+        reported success, so the audit log recorded deletions the structure
+        never received — and there was no way to tell that from the outside,
+        because the reported count came from the model's proposals rather than
+        from the tree.
+        """
         if node_type == "module":
+            before = len(course.get("modules", []))
             course["modules"] = [
-                m for m in course.get("modules", []) if m["uid"] != uid
+                m for m in course.get("modules", []) if m.get("uid") != uid
             ]
-            return
+            return len(course["modules"]) < before
         for module in course.get("modules", []):
             if node_type == "unit":
+                before = len(module.get("units", []))
                 module["units"] = [
-                    u for u in module.get("units", []) if u["uid"] != uid
+                    u for u in module.get("units", []) if u.get("uid") != uid
                 ]
+                if len(module["units"]) < before:
+                    return True
             for unit in module.get("units", []):
                 if node_type == "lesson":
+                    before = len(unit.get("lessons", []))
                     unit["lessons"] = [
-                        l for l in unit.get("lessons", []) if l["uid"] != uid
+                        l for l in unit.get("lessons", []) if l.get("uid") != uid
                     ]
+                    if len(unit["lessons"]) < before:
+                        return True
                 for lesson in unit.get("lessons", []):
                     if node_type == "concept":
+                        before = len(lesson.get("concepts", []))
                         lesson["concepts"] = [
-                            c for c in lesson.get("concepts", []) if c["uid"] != uid
+                            c for c in lesson.get("concepts", [])
+                            if c.get("uid") != uid
                         ]
+                        if len(lesson["concepts"]) < before:
+                            return True
+        return False
 
-    def _reorder_node(self, course: dict, node_type: str, uid: str, new_ordinal: int):
-        """Find and reorder a node in the JSON structure."""
-        for module in course.get("modules", []):
-            if node_type == "module" and module["uid"] == uid:
-                module["ordinal"] = new_ordinal
-                return
-            for unit in module.get("units", []):
-                if node_type == "unit" and unit["uid"] == uid:
-                    unit["ordinal"] = new_ordinal
-                    return
-                for lesson in unit.get("lessons", []):
-                    if node_type == "lesson" and lesson["uid"] == uid:
-                        lesson["ordinal"] = new_ordinal
-                        return
-                    for concept in lesson.get("concepts", []):
-                        if node_type == "concept" and concept["uid"] == uid:
-                            concept["ordinal"] = new_ordinal
-                            return
+    def _reorder_node(self, course: dict, node_type: str, uid: str,
+                      new_ordinal: int) -> bool:
+        """Set a node's ordinal. True if the node existed."""
+        node = self._find_node(course, node_type, uid)
+        if node is None:
+            return False
+        node["ordinal"] = new_ordinal
+        return True
 
     def _renumber_ordinals(self, course: dict):
         """Re-sequence ordinals after deletions to avoid gaps like [1, 3] → [1, 2]."""
