@@ -888,6 +888,17 @@ class MnemosyneFSM:
         try:
             from services.common.visual_aids import parse_concept_aids
             self._concept_aids = parse_concept_aids(self.current_context or "")
+            
+            # A1: Surface Phase 3 assets.json manifest aids if available
+            manifest = getattr(self, "_asset_manifest", None)
+            node = getattr(self, "current_lesson_node", None)
+            if manifest and node:
+                uid = node.get("uid")
+                if uid:
+                    manifest_aids = manifest.get("concepts", {}).get(uid, {})
+                    if manifest_aids:
+                        self._concept_aids.update(manifest_aids)
+            
             if self._concept_aids:
                 logging.info(f"Loaded {len(self._concept_aids)} pre-built visual aid(s): "
                              f"{sorted(self._concept_aids)}")
