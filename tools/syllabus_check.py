@@ -217,6 +217,33 @@ def coverage(topics, outline, model=None):
         return None
 
     analysis = _field(d, "topics", "topics_analysis", default=[]) or []
+
+    # ACCEPT THE TOPIC-KEYED SHAPE TOO.
+    #
+    # The schema asks for a list under "topics_analysis". The model instead
+    # returns the topics as TOP-LEVEL KEYS:
+    #
+    #     {"qubit representation": {...}, "superposition principle": {...},
+    #      "sequencing_problems": [...]}
+    #
+    # The list came back empty, every topic scored un-introduced, and the
+    # strict rubric reported 0% core / 0% secondary on a course containing
+    # worked examples — a number that reads as a damning finding and is purely
+    # a shape mismatch. This is the third time today a judge was blamed for a
+    # key name: "covered_topics" vs "covered", and before that a silent judge
+    # scored 0% instead of reporting itself unavailable.
+    if not analysis and isinstance(d, dict):
+        recovered = []
+        for key, val in d.items():
+            if key in ("sequencing_problems", "sequencing") or not isinstance(val, dict):
+                continue
+            entry = dict(val)
+            entry.setdefault("topic", key)
+            recovered.append(entry)
+        if recovered:
+            logger.info(f"[SYLLABUS] recovered {len(recovered)} topic-keyed "
+                        f"entries the schema did not produce as a list")
+            analysis = recovered
     seq = [str(x) for x in (_field(d, "sequencing_problems", "sequencing", default=[]) or [])]
 
     def _toks(x):
