@@ -412,9 +412,9 @@ def _reject_reason(fig, repeats):
 def _score(fig):
     """Higher is more likely to be a real teaching figure."""
     score = 0
-    if fig["label"]:
+    if fig.get("label"):
         score += 10                      # "Figure 3.2" — the author said so
-    if len(fig["caption"]) > 25:
+    if len(fig.get("caption") or "") > 25:
         score += 5
     if fig["width"] >= 400 and fig["height"] >= 300:
         score += 3

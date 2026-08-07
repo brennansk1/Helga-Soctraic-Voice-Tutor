@@ -174,22 +174,10 @@
                     %}aria-current="page" {% endif %}>Home</a>
                 <a href="/courses" class="nav-link {% if request.path == '/courses' %}active{% endif %}" {% if
                     request.path=='/courses' %}aria-current="page" {% endif %}>Courses</a>
+                <a href="/library" class="nav-link {% if request.path == '/library' %}active{% endif %}" {% if
+                    request.path=='/library' %}aria-current="page" {% endif %}>Library</a>
                 <a href="/learn" class="nav-link {% if request.path == '/learn' %}active{% endif %}" {% if
                     request.path=='/learn' %}aria-current="page" {% endif %}>Learn</a>
-                {# A5.1 — six destinations, down from nine.
-
-                   The count was not the problem; the grouping was. Quiz,
-                   Review and Schedule are the SAME activity at three different
-                   moments (on-demand, due-now, upcoming), so choosing between
-                   them required the learner to understand our FSRS model. They
-                   are now three states of Practice.
-
-                   Status is an operator tool, not a learner tool — it lives in
-                   Settings. Palace operates on the same course as Learn and is
-                   a mode inside it, not a separate destination.
-
-                   This also fixes a visible layout break: nine links wrapped
-                   onto a second row at 1280px, orphaning the settings icon. #}
                 <a href="/progress" class="nav-link {% if request.path == '/progress' %}active{% endif %}" {% if
                     request.path=='/progress' %}aria-current="page" {% endif %}>Progress</a>
                 <a href="/practice" class="nav-link {% if request.path in ['/practice', '/quiz', '/test', '/review', '/schedule'] %}active{% endif %}" {% if
@@ -198,21 +186,17 @@
                     request.path in ['/settings', '/status'] %}aria-current="page" {% endif %}>Settings</a>
             </nav>
             <div class="header-utils">
-                {#  A5.2 — Ask is a persistent affordance, not a tab. A question
-                    is something you have while in the middle of something else;
-                    making it a destination means leaving the thing that
-                    prompted it. Cmd/Ctrl-K opens it too. #}
                 <button id="ask-open-btn" class="ask-open-btn" type="button"
-                        aria-label="Ask Helga a question" title="Ask Helga  (\u2318K)">
+                        aria-label="Ask Helga a question" title="Ask Helga (\u2318K)">
                     <span class="i i-chat" aria-hidden="true"></span>
                     <span class="ask-open-label">Ask</span>
                 </button>
             <div class="gamification-bar hidden" id="gamification-bar">
                 <span class="xp-badge" id="xp-counter">0 XP</span>
                 <span class="level-badge" id="level-badge">Lv 1</span>
-                <span class="streak-badge" id="streak-counter">&#128293; 0</span>
+                <span class="streak-badge" id="streak-counter"><span class="i i-fire"></span> 0</span>
                 <span class="daily-goal-dots" id="daily-goal-dots" title="Daily goal progress"></span>
-            </div>
+            </div>  </div>
             <button id="header-theme-toggle" class="header-theme-toggle" aria-label="Toggle light/dark theme" title="Toggle theme">
                 <!-- Moon: shown in light mode -->
                 <svg class="theme-icon theme-icon-moon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>

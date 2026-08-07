@@ -241,3 +241,212 @@
     .trust-toggle,
     .trust-chevron { transition: none; }
 }
+
+/* ============================================================================
+ * Build verdicts — the other three checks
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * The trust surface above shipped with one of the four build-time verdicts:
+ * grounding confidence. The other three — the fact check with independent
+ * confirmation, the depth contract, and the blind level-calibration judge —
+ * were computed on every build, written into structure.json, and read by
+ * nothing. `grep -rn 'fact_check' services/web-ui/` returned zero hits. A
+ * course that failed its fact check was presented to the learner in exactly
+ * the same chrome as one that passed it.
+ *
+ * DESIGN INTENT — the same asymmetry as the block above, deliberately
+ * -------------------------------------------------------------------
+ * Almost every course has SOMETHING: a sampled fact check, a partial depth
+ * verification, a handful of thinly-sourced concepts. If all of that is loud,
+ * none of it is. So there are exactly two volumes here:
+ *
+ *   LOUD  — a check that RAN and FAILED: a confirmed-false claim that survived
+ *           its rewrite, or a course under the depth contract's own 80% floor.
+ *           Error colour, tinted surface, opens itself.
+ *   QUIET — everything else, including "not assessed". Muted text, one line, no
+ *           tint. Not assessed is never dressed as a pass, but it is also not
+ *           an accusation.
+ *
+ * Colours are existing tokens (--status-error/-warning/-success, --bg-danger,
+ * --bg-warning), all of which carry dark-mode values in style.css:104-129.
+ * ==========================================================================*/
+
+/* ---- Per-concept check rows (inside .trust-detail) ----------------------- */
+
+.trust-checks {
+    list-style: none;
+    margin: 0 0 var(--space-3);
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    max-width: 68ch;
+}
+
+.trust-checks.hidden { display: none; }
+
+.trust-check {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+
+/* Same tag treatment as .trust-type, so a check row and a source row read as
+   members of one list rather than two unrelated components. */
+.trust-check-label {
+    flex: 0 0 auto;
+    min-width: 5.5rem;
+    padding: 1px var(--space-2);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    color: var(--text-secondary);
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+}
+
+.trust-check-text { min-width: 0; }
+
+.trust-check.is-fail {
+    color: var(--text-primary);
+}
+
+.trust-check.is-fail .trust-check-label {
+    border-color: var(--status-error);
+    color: var(--status-error);
+}
+
+.trust-check.is-caution .trust-check-label {
+    border-color: var(--status-warning);
+    color: var(--status-warning);
+}
+
+.trust-check.is-pass .trust-check-label {
+    border-color: var(--status-success);
+    color: var(--status-success);
+}
+
+/* "Checked but not this concept", "verified for 8 of 12". Deliberately the
+   plainest row of the four: an unknown is not a finding. */
+.trust-check.is-unknown .trust-check-label {
+    opacity: 0.75;
+}
+
+/* ---- The fourth surface state: a confirmed-false claim ------------------- */
+
+/* Worse than `unsourced`, and it gets its own colour to say so. Weak grounding
+   means the content is UNSUPPORTED; this means part of it was checked and found
+   WRONG. Sharing the warning amber with thin sourcing would have flattened that
+   distinction into one shade of "be careful". */
+.trust-surface[data-state="flagged"] {
+    background: var(--bg-danger);
+    border-inline-start: 3px solid var(--status-error);
+}
+
+.trust-surface[data-state="flagged"] .trust-toggle,
+.trust-surface[data-state="flagged"] .trust-caveat {
+    color: var(--text-primary);
+}
+
+.trust-surface[data-state="flagged"] .trust-toggle:hover {
+    background: transparent;
+}
+
+.trust-surface[data-state="flagged"] .trust-label {
+    font-weight: var(--font-weight-semibold, 600);
+}
+
+.trust-surface[data-state="flagged"] .trust-dot { display: none; }
+
+.trust-surface[data-state="flagged"] .trust-warn-icon {
+    display: inline-block;
+    color: var(--status-error);
+}
+
+/* ---- Course card verdict (courses grid) --------------------------------- */
+
+.course-card-quality {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    margin: var(--space-2) 0 0;
+    font-size: var(--font-size-xs);
+    line-height: 1.45;
+    color: var(--text-secondary);
+}
+
+.course-card-quality .i {
+    flex: 0 0 auto;
+    align-self: center;
+}
+
+/* The only card state that gets a surface of its own. Matched to the tinted
+   `unsourced` treatment above so "flagged" means the same thing in the grid as
+   it does inside a concept. */
+.course-card-quality.is-failed {
+    padding: var(--space-2);
+    border-radius: var(--border-radius-sm);
+    background: var(--bg-danger);
+    border-inline-start: 3px solid var(--status-error);
+    color: var(--text-primary);
+}
+
+.course-card-quality.is-failed .i { color: var(--status-error); }
+
+.course-card-quality.is-verified .i { color: var(--status-success); }
+
+/* Caution and unassessed are muted single lines on purpose — see the header
+   note. `is-caution` is truncated because its headline is a full sentence and
+   the `title` attribute carries the whole thing on hover. */
+.course-card-quality.is-caution span,
+.course-card-quality.is-unassessed span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.course-card-quality.is-unassessed { opacity: 0.75; }
+
+/* ---- Course-level banner on the learn path ------------------------------ */
+
+.path-quality-banner {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-5);
+    background: var(--bg-danger);
+    border-inline-start: 3px solid var(--status-error);
+    color: var(--text-primary);
+    font-size: var(--font-size-xs);
+    line-height: 1.5;
+}
+
+.path-quality-banner.hidden { display: none; }
+
+.path-quality-banner .i {
+    flex: 0 0 auto;
+    color: var(--status-error);
+}
+
+/* ---- Path node carrying a confirmed-false claim ------------------------- */
+
+/* Mirrors .path-node.low-confidence in style.css, in error rather than warning
+   colour, and wins over it: a node can be both, and "wrong" outranks "thin". */
+.path-node.fact-flagged .path-node-inner {
+    border-color: var(--status-error);
+    box-shadow: 0 0 0 2px rgba(224, 125, 106, 0.3);
+}
+
+.node-label-meta.is-flagged {
+    color: var(--status-error);
+    font-weight: var(--font-weight-semibold, 600);
+}
+
+@media (max-width: 768px) {
+    .path-quality-banner { padding: var(--space-2) var(--space-3); }
+    .trust-check { flex-wrap: wrap; gap: var(--space-1) var(--space-2); }
+}

@@ -83,10 +83,10 @@ def resolve(role=TUTOR):
 
     if role == BUILD:
         return (_clean(os.getenv("HELGA_BUILD_URL")) or base,
-                _clean(os.getenv("HELGA_BUILD_MODEL")) or model)
+                _clean(os.getenv("HELGA_BUILD_MODEL")) or "qwen3.5:9b")
     if role == TUTOR:
         return (_clean(os.getenv("HELGA_TUTOR_URL")) or base,
-                _clean(os.getenv("HELGA_TUTOR_MODEL")) or model)
+                _clean(os.getenv("HELGA_TUTOR_MODEL")) or "qwen3.5:4b")
     return base, model
 
 

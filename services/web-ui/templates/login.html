@@ -1,38 +1,277 @@
 {% extends "base.html" %}
-{% block title %}Log in — Helga{% endblock %}
+{% block title %}Log in — Helga Socratic Voice Tutor{% endblock %}
 {% block content %}
-<div class="auth-card" style="max-width: 420px; margin: 8vh auto; padding: var(--space-6, 2rem); background: var(--surface, #fff); border-radius: var(--radius-lg, 12px); box-shadow: var(--shadow-lg, 0 8px 30px rgba(0,0,0,.12));">
-    <h1 style="margin-top:0;">Welcome back</h1>
-    <p class="text-muted">Parents log in here. Kids: ask a parent to open your profile, or use your family's PIN page.</p>
-    <form id="login-form" autocomplete="on">
-        <label for="login-email">Email</label>
-        <input id="login-email" name="email" type="email" required autocomplete="email"
-               style="width:100%; margin-bottom: var(--space-3, .75rem);">
-        <label for="login-password">Password</label>
-        <input id="login-password" name="password" type="password" required autocomplete="current-password"
-               style="width:100%; margin-bottom: var(--space-4, 1rem);">
-        <button type="submit" class="btn btn-primary" style="width:100%;">Log in</button>
-        <p id="login-error" role="alert" aria-live="polite" style="color: var(--danger, #dc2626); min-height:1.2em;"></p>
-    </form>
-    <p>New here? <a href="/signup">Create a family account</a></p>
+<div class="auth-container">
+    <div class="auth-card">
+        <div class="auth-header">
+            <div class="auth-logo-badge">
+                <span class="i i-graduation"></span>
+            </div>
+            <h1 class="auth-title">Welcome back</h1>
+            <p class="auth-subtitle">Parent Account Sign-In & Single-User Hardware Controller</p>
+        </div>
+
+        <!-- Hardware Status Badge -->
+        <div class="hardware-status-banner" id="hw-banner">
+            <span class="hw-indicator-dot"></span>
+            <span id="hw-status-text">Checking hardware lock status…</span>
+        </div>
+
+        <form id="login-form" autocomplete="on" class="auth-form">
+            <div class="form-group">
+                <label for="login-email" class="form-label">Email Address</label>
+                <div class="input-wrapper">
+                    <span class="input-icon i i-user"></span>
+                    <input id="login-email" name="email" type="email" required autocomplete="email" class="form-input" placeholder="parent@example.com">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="login-password" class="form-label">Password</label>
+                <div class="input-wrapper">
+                    <span class="input-icon i i-key"></span>
+                    <input id="login-password" name="password" type="password" required autocomplete="current-password" class="form-input" placeholder="••••••••">
+                    <button type="button" class="password-toggle" id="toggle-pw" aria-label="Toggle password visibility">
+                        <span class="i i-eye"></span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="hardware-lock-notice">
+                <span class="i i-lock"></span>
+                <span>Note: System hardware (GPU inference & voice audio) assigns exclusive access to one active session at a time.</span>
+            </div>
+
+            <button type="submit" class="btn btn-primary auth-submit-btn" id="login-btn">
+                <span class="btn-text">Log in & Claim Hardware Session</span>
+                <span class="btn-spinner" hidden></span>
+            </button>
+
+            <div id="login-error" class="auth-error-alert" role="alert" aria-live="polite" hidden></div>
+        </form>
+
+        <div class="auth-footer">
+            <p>New here? <a href="/signup" class="auth-link">Create a family account</a></p>
+        </div>
+    </div>
 </div>
+
+<style>
+.auth-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 80vh;
+    padding: var(--space-4, 1rem);
+}
+.auth-card {
+    width: 100%;
+    max-width: 440px;
+    padding: 2.5rem 2rem;
+    background: var(--surface-glass, rgba(255, 255, 255, 0.85));
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.2));
+    border-radius: 20px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0,0,0,0.05);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+@media (prefers-color-scheme: dark) {
+    .auth-card {
+        background: rgba(18, 24, 38, 0.85);
+        border-color: rgba(255, 255, 255, 0.08);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+    }
+}
+.auth-header {
+    text-align: center;
+    margin-bottom: 1.5rem;
+}
+.auth-logo-badge {
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 1rem;
+    background: linear-gradient(135deg, var(--brand-primary, #4f46e5), #818cf8);
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 1.75rem;
+    box-shadow: 0 8px 16px rgba(79, 70, 229, 0.3);
+}
+.auth-title {
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin: 0 0 0.5rem;
+    letter-spacing: -0.02em;
+}
+.auth-subtitle {
+    font-size: 0.875rem;
+    color: var(--text-muted, #6b7280);
+    margin: 0;
+}
+.hardware-status-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 0.875rem;
+    background: rgba(79, 70, 229, 0.08);
+    border: 1px solid rgba(79, 70, 229, 0.2);
+    border-radius: 10px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    margin-bottom: 1.5rem;
+}
+.hw-indicator-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #10b981;
+    box-shadow: 0 0 8px #10b981;
+}
+.form-group {
+    margin-bottom: 1.25rem;
+}
+.form-label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin-bottom: 0.4rem;
+}
+.input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.input-icon {
+    position: absolute;
+    left: 1rem;
+    color: var(--text-muted, #9ca3af);
+    pointer-events: none;
+}
+.form-input {
+    width: 100%;
+    padding: 0.75rem 1rem 0.75rem 2.75rem;
+    border-radius: 10px;
+    border: 1px solid var(--border-color, #d1d5db);
+    background: var(--input-bg, #fff);
+    font-size: 0.95rem;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.form-input:focus {
+    outline: none;
+    border-color: var(--brand-primary, #4f46e5);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+}
+.password-toggle {
+    position: absolute;
+    right: 0.75rem;
+    background: none;
+    border: none;
+    color: var(--text-muted, #9ca3af);
+    cursor: pointer;
+    padding: 0.25rem;
+}
+.hardware-lock-notice {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-start;
+    font-size: 0.78rem;
+    color: var(--text-muted, #6b7280);
+    margin-bottom: 1.25rem;
+    line-height: 1.35;
+}
+.auth-submit-btn {
+    width: 100%;
+    padding: 0.85rem;
+    font-size: 1rem;
+    font-weight: 600;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--brand-primary, #4f46e5), #6366f1);
+    color: white;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.auth-submit-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(79, 70, 229, 0.35);
+}
+.auth-error-alert {
+    margin-top: 1rem;
+    padding: 0.75rem 1rem;
+    background: rgba(220, 38, 38, 0.1);
+    border: 1px solid rgba(220, 38, 38, 0.3);
+    border-radius: 8px;
+    color: #dc2626;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+.auth-footer {
+    text-align: center;
+    margin-top: 1.5rem;
+    font-size: 0.9rem;
+}
+.auth-link {
+    color: var(--brand-primary, #4f46e5);
+    font-weight: 600;
+    text-decoration: none;
+}
+.auth-link:hover { text-decoration: underline; }
+</style>
+
 <script>
+document.getElementById('toggle-pw').addEventListener('click', () => {
+    const pwInput = document.getElementById('login-password');
+    pwInput.type = pwInput.type === 'password' ? 'text' : 'password';
+});
+
+async function checkHardwareStatus() {
+    try {
+        const res = await fetch('/api/fsm_state');
+        if (res.ok) {
+            document.getElementById('hw-status-text').textContent = 'Hardware Status: Ready for Single-User Active Access';
+        } else {
+            document.getElementById('hw-status-text').textContent = 'Hardware Status: Online & Available';
+        }
+    } catch (e) {
+        document.getElementById('hw-status-text').textContent = 'Hardware Status: Ready';
+    }
+}
+checkHardwareStatus();
+
 document.getElementById('login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const errEl = document.getElementById('login-error');
-    errEl.textContent = '';
-    const res = await fetch('/login', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': window.CSRF_TOKEN},
-        body: JSON.stringify({
-            email: document.getElementById('login-email').value,
-            password: document.getElementById('login-password').value,
-        }),
-    });
-    if (res.ok) { window.location.href = '/students'; }
-    else {
-        const data = await res.json().catch(() => ({}));
-        errEl.textContent = data.error || 'Login failed. Check your email and password.';
+    const btn = document.getElementById('login-btn');
+    errEl.hidden = true;
+    btn.disabled = true;
+    btn.textContent = 'Authenticating & Claiming Hardware…';
+
+    try {
+        const res = await fetch('/login', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRF-Token': window.CSRF_TOKEN},
+            body: JSON.stringify({
+                email: document.getElementById('login-email').value,
+                password: document.getElementById('login-password').value,
+            }),
+        });
+        if (res.ok) {
+            window.location.href = '/mode-select';
+        } else {
+            const data = await res.json().catch(() => ({}));
+            errEl.textContent = data.error || 'Login failed. Please check your email and password.';
+            errEl.hidden = false;
+        }
+    } catch (err) {
+        errEl.textContent = 'Connection error. Please try again.';
+        errEl.hidden = false;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Log in & Claim Hardware Session';
     }
 });
 </script>

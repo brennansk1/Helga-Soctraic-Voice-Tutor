@@ -9,12 +9,13 @@
     <div class="action-bar">
         <div>
             <h1>My Courses</h1>
-            <p class="page-subtitle">Your library of learning paths</p>
+            <p class="page-subtitle">Your library of personalized learning paths</p>
         </div>
         <div class="action-buttons">
-            <button class="btn-alpine btn-alpine-primary" onclick="openQuickCreate()">Quick Create</button>
-            <button class="btn-alpine btn-alpine-secondary" onclick="window.location.href='/courses/new'">Build Custom</button>
-            <button class="btn-alpine btn-alpine-secondary" onclick="openImportModal()">Import a Book</button>
+            <button class="btn-alpine btn-alpine-primary" onclick="openQuickCreate()"><span class="i i-zap"></span> Quick Create</button>
+            <button class="btn-alpine btn-alpine-secondary" onclick="window.location.href='/library'"><span class="i i-search"></span> Search Public Books</button>
+            <button class="btn-alpine btn-alpine-secondary" onclick="openImportModal()"><span class="i i-upload"></span> Upload Book File</button>
+            <button class="btn-alpine btn-alpine-secondary" onclick="window.location.href='/courses/new'"><span class="i i-sliders"></span> Custom Builder</button>
         </div>
     </div>
 
@@ -357,7 +358,7 @@ function submitImport() {
             <!-- Completion Actions -->
             <div id="qc-progress-actions" style="display: none; margin-top: 1.25rem;">
                 <div class="build-complete-card">
-                    <div class="build-complete-icon">&#10003;</div>
+                    <div class="build-complete-icon"><span class="i i-check i-lg"></span></div>
                     <h3 id="qc-complete-title">Course Created!</h3>
                     <p id="qc-complete-summary" style="color: var(--text-secondary); margin: 0.5rem 0 1rem 0;"></p>
                     <button class="btn-alpine btn-alpine-primary" style="width: 100%;" id="qc-start-learning-btn">Start Learning</button>
@@ -376,9 +377,13 @@ function submitImport() {
     it registered after that line never attached. #}
 {% block page_scripts %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/courses.css') }}?v=6">
+<!-- The course cards now carry the build's own quality verdicts, and the
+     styles for them live with the rest of the trust language rather than being
+     duplicated here. -->
+<link rel="stylesheet" href="{{ url_for('static', filename='css/trust.css') }}?v=2">
 <script src="{{ url_for('static', filename='js/socket.io.min.js') }}"></script>
 <script src="{{ url_for('static', filename='js/progress-tree.js') }}?v=1"></script>
-<script src="{{ url_for('static', filename='js/courses.js') }}?v=6"></script>
+<script src="{{ url_for('static', filename='js/courses.js') }}?v=7"></script>
 <script>
 (function () {
     var SCOPE_MODULE_BASE       = [0, 3, 4, 6, 8, 11];   // index 1-5

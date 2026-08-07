@@ -279,9 +279,11 @@ def primary_source_lookup(query, limit=2):
                 abstract = _clean_abstract(item.get("abstract"))
                 if not doi or len(abstract) < PRIMARY_MIN_ABSTRACT:
                     continue
+                titles = item.get("title") or []
+                title_str = titles[0] if (titles and titles[0]) else "Untitled"
                 out.append({
                     "url": f"https://doi.org/{doi}",
-                    "title": (item.get("title") or ["Untitled"])[0][:200],
+                    "title": str(title_str)[:200],
                     "type": "journal",
                     "source": "Crossref",
                     "domain_tier": 1,

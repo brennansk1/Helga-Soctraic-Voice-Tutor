@@ -51,31 +51,22 @@ def _sid(student_id: Optional[str]) -> str:
 
 def _atomic_write_json(path: str, payload: Any, indent: int = 2):
     """Write JSON via a temp file + os.replace so a reader never sees half a file.
-
-    structure.json has many writers: the hydration worker threads and the main
-    hydrate thread in course_builder, the syllabus auditor, the librarian, and
-    background_ops — across TWO processes (core-logic and rag), with no lock.
-    A plain open(path, "w") truncates first, so a crash or a slow dump leaves a
-    window in which the file on disk is not valid JSON.
-
-    That window is not a recoverable inconvenience here. course_cleaner.py
-    classifies an unparseable structure.json as `corrupted` and shutil.rmtree()s
-    the entire course directory — content markdown included. A torn write does
-    not degrade a course, it DESTROYS it.
-
-    os.replace() is atomic on POSIX, so every reader sees either the whole old
-    document or the whole new one. Same pattern as build_state._atomic_write;
-    the fsync additionally makes it hold across a hard power loss, which costs
-    ~1ms on a file written a few dozen times per build.
-
-    This makes each write all-or-nothing. It does NOT serialise writers: two
-    processes that each read -> mutate -> write still lose one of the two edits
-    (last writer wins). Fixing that needs a lock or a version column and a
-    compare-and-swap in every caller, which is a cross-service change.
+    Uses fcntl advisory locking on POSIX to prevent cross-process race conditions.
     """
     directory = os.path.dirname(path) or "."
     os.makedirs(directory, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=directory, suffix=".tmp")
+    lock_path = path + ".lock"
+    
+    # Inter-process lock acquisition
+    lock_fd = None
+    try:
+        import fcntl
+        lock_fd = open(lock_path, "w")
+        fcntl.flock(lock_fd, fcntl.LOCK_EX)
+    except (ImportError, OSError):
+        lock_fd = None
+
     try:
         with os.fdopen(fd, "w") as f:
             json.dump(payload, f, indent=indent)
@@ -88,6 +79,14 @@ def _atomic_write_json(path: str, payload: Any, indent: int = 2):
         except OSError:
             pass
         raise
+    finally:
+        if lock_fd:
+            try:
+                import fcntl
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                lock_fd.close()
+            except OSError:
+                pass
 
 
 class _ThreadLocalDB:

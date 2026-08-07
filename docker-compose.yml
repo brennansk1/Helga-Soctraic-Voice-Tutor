@@ -87,8 +87,17 @@ services:
     environment:
       - OLLAMA_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3.5:9b}
+      - LLM_MODEL=${LLM_MODEL:-qwen3.5:9b}
+      - HELGA_BUILD_MODEL=${HELGA_BUILD_MODEL:-qwen3.5:9b}
+      - HELGA_TUTOR_MODEL=${HELGA_TUTOR_MODEL:-qwen3.5:4b}
+      # Zero-Swap Optimization & FlashAttention Settings
+      - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS:-1}
+      - OLLAMA_KV_CACHE_TYPE=${OLLAMA_KV_CACHE_TYPE:-q8_0}
+      - OLLAMA_FLASH_ATTENTION=${OLLAMA_FLASH_ATTENTION:-1}
+      - IMAGE_WORKERS=${IMAGE_WORKERS:-2}
       # B23.1: GPU gate cap — must equal the host's OLLAMA_NUM_PARALLEL
       - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-4}
+      - HELGA_BG_SLOTS=${HELGA_BG_SLOTS:-2}
       # B15.6: per-student FSM registry sizing
       - FSM_REGISTRY_MAX=${FSM_REGISTRY_MAX:-64}
       - FSM_IDLE_TTL=${FSM_IDLE_TTL:-1800}

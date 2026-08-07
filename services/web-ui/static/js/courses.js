@@ -31,6 +31,58 @@ function escapeHtml(str) {
 
 let coursesBuildingPollTimer = null;
 
+/**
+ * Build-time quality verdicts, keyed by course uid.
+ *
+ * Served by /api/course_quality, which reads structure.json directly — rag's
+ * course list carries none of this (see the endpoint's comment in app.py).
+ * Fetched alongside the course list rather than before it: the verdicts
+ * decorate a card, they must never be the reason the grid fails to appear.
+ */
+async function loadCourseQuality() {
+    try {
+        const resp = await fetch('/api/course_quality');
+        if (!resp.ok) return {};
+        const data = await resp.json();
+        return (data && data.courses) || {};
+    } catch (e) {
+        console.warn('[courses] quality verdicts unavailable:', e);
+        return {};
+    }
+}
+
+/**
+ * One line per card, describing what the build's own checks concluded.
+ *
+ * The asymmetry is the point. A course that took a check and FAILED it gets a
+ * tinted row that reads as a different kind of element. A course with minor
+ * caveats, and a course too old to have been checked at all, get a single line
+ * of muted text — because almost every course has something, and a grid where
+ * every card is flagged is a grid with no flags in it.
+ */
+function qualityRow(quality) {
+    if (!quality || !quality.verdict) return '';
+    const headline = escapeHtml(quality.headline || '');
+    switch (quality.verdict) {
+        case 'failed':
+            return `<div class="course-card-quality is-failed">`
+                 + `<span class="i i-warning" aria-hidden="true"></span>`
+                 + `<span>${headline}</span></div>`;
+        case 'caution':
+            return `<div class="course-card-quality is-caution" title="${headline}">`
+                 + `<span>Checked, with caveats — ${headline}</span></div>`;
+        case 'verified':
+            return `<div class="course-card-quality is-verified" title="${headline}">`
+                 + `<span class="i i-check" aria-hidden="true"></span>`
+                 + `<span>Passed its build checks</span></div>`;
+        default:
+            // "unassessed" is NOT a pass. It is quiet, but it is still said, so
+            // a learner can tell an unchecked course from a checked one.
+            return `<div class="course-card-quality is-unassessed" title="${headline}">`
+                 + `<span>Quality checks were not run on this course</span></div>`;
+    }
+}
+
 async function loadCourses() {
     const grid = document.getElementById('courses-grid');
     // Abort if the API hangs — prevents infinite "Loading courses..." state
@@ -38,7 +90,9 @@ async function loadCourses() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     try {
+        const qualityReady = loadCourseQuality();
         const resp = await fetch('/api/courses', { signal: controller.signal });
+        const qualityByUid = await qualityReady;
         clearTimeout(timeoutId);
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const data = await resp.json();
@@ -60,8 +114,12 @@ async function loadCourses() {
         // Phase 3 output, surfaced where a learner chooses a course. Silent
         // when a course has none — an older course predating asset collection
         // should look normal, not deficient.
+        // `assets` never arrived on the course-list payload either (rag's
+        // /api/courses copies six fields and this is not one of them), so this
+        // chip has been dead since it was written. It comes off the quality
+        // endpoint now, which reads structure.json first-hand.
         const assetChip = (course) => {
-            const a = course.assets;
+            const a = (qualityByUid[course.uid] || {}).assets || course.assets;
             if (!a || !a.collected) return '';
             const parts = [];
             if (a.diagrams) parts.push(a.diagrams + ' diagram' + (a.diagrams === 1 ? '' : 's'));
@@ -117,6 +175,7 @@ async function loadCourses() {
                              <span>${stats.concepts || 0} concepts</span>
                              ${assetChip(course)}`}
                     </div>
+                    ${isEmpty || isBuilding ? '' : qualityRow(qualityByUid[course.uid])}
                     ${isEmpty ? '' : `
                     <div class="course-card-progress">
                         <div class="alpine-progress"><div class="alpine-progress-fill" style="width: ${progress}%;"></div></div>
@@ -583,7 +642,13 @@ var WARN_TEXT = {
     DEPTH_SUMMARY:   function (d) { return d ? d.charAt(0).toUpperCase() + d.slice(1) : 'Some concepts are below the requested level'; },
     FACT_UNRESOLVED: function (d) { return '"' + d + '" still contains a claim Helga could not verify'; },
     FACT_SUMMARY:    function (d) { return d + ' concepts still contain confirmed-false claims'; },
-    LEVEL_GAP:       function (d) { return 'The course reads ' + d + ' levels away from the one it claims'; }
+    LEVEL_GAP:       function (d) { return 'The course reads ' + d + ' levels away from the one it claims'; },
+    // Detail arrives pre-formatted as "<n>/<verified> concepts incomplete",
+    // matching DEPTH_SUMMARY's convention.
+    SECTIONS_SUMMARY: function (d) {
+        return d ? d.charAt(0).toUpperCase() + d.slice(1) + ' — required sections the model never wrote'
+                 : 'Some concepts are missing required sections';
+    }
 };
 
 function recordBuildWarning(payload) {

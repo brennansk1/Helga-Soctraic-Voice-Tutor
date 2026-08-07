@@ -58,7 +58,8 @@ except ImportError:                     # pragma: no cover - Windows/dev only
 
 logger = logging.getLogger(__name__)
 
-DATA_ROOT = os.getenv("DATA_ROOT", "/app/data")
+_default_root = "/app/data" if os.path.exists("/app/data") and os.access("/app/data", os.W_OK) else os.path.abspath("data")
+DATA_ROOT = os.getenv("DATA_ROOT", _default_root)
 STATE_PATH = os.path.join(DATA_ROOT, "build_state.json")
 LOCK_PATH = STATE_PATH + ".lock"
 

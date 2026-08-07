@@ -285,6 +285,71 @@ P0 = correctness bug shipping wrong behavior; P1 = high-value capability/securit
 
 ---
 
+## TIER X — EXTERNAL REVIEW FINDINGS (2026-08-06)
+
+Seven reviewers on a **different model family** (Gemini via Antigravity) against
+commit `9b36530`. Full detail and evidence marks in
+`docs/EXTERNAL_REVIEW_2026-08-06.md`. Marks below: ✔ verified · ✘ refuted ·
+? unverified.
+
+```
+├─ X1  Verdicts computed and DISCARDED ............................. ✔ 🔴 P0
+│  │   grep 'fact_check|depth_contract' services/web-ui/ -> 0 hits.
+│  │   fact-check, level calibration, depth contract, grounding all
+│  │   written to structure.json; the UI reads NONE of them. A course
+│  │   that failed its fact check looks identical to one that passed.
+│  ├─ X1.1  Surface verdicts on /courses and the concept view ....... 🔨 in progress
+│  └─ X1.2  _last_injected_sections is a write with no read ......... ✔ 🔨 in progress
+│           course_builder.py:3821 — one occurrence repo-wide. The
+│           "misses are now recorded" claim was FALSE.
+├─ X2  Depth contract measures SYNTAX, not rigour .................. ✔ 🔴 P0
+│  │   depth_contract.py:42 — checks for the WORD "Definition".
+│  │   `**Step 1**` around trivial arithmetic satisfies worked_example.
+│  │   Consequence observed in real output: con_4c467f98.md:29-32 is a
+│  │   structurally perfect, mathematically INCOHERENT worked example.
+│  ├─ X2.1  Replace regex with atomic binary extraction ............. ? ⬜ needs golden set
+│  └─ X2.2  Test any replacement vs the known adversarial cases ..... ⬜
+├─ X3  Pedagogy defects (found independently by 2 reviewers) ........ ✔ 🟠 P1
+│  ├─ X3.1  "I don't know" -> lecture abandons scaffolding .......... ✔ 🔨 in progress
+│  │        prompts.py:645. Also a keyword collision: "I'm UNSURE why
+│  │        step 2 works" is a precise question routed to a lecture.
+│  ├─ X3.2  "Fill In The Gaps" overrides the Socratic rules ......... ✔ 🔨 in progress
+│  │        prompts.py:508 — and it silently defeats grounding.
+│  └─ X3.3  Hint ladder inverted for novices ........................ ✔ 🔨 in progress
+│           prompts.py:46 — worked example is "last resort"; the
+│           expertise-reversal effect says novices need it FIRST.
+├─ X4  Regressions introduced BY the overhaul ...................... ? 🟠 P1
+│  ├─ X4.1  storage.py:870 cache-poisoning window .................. ? ⬜
+│  ├─ X4.2  storage.py:1052 degraded path made fatal ............... ? ⬜
+│  └─ X4.3  reaper fix is correct on SQLite path ONLY .............. ? ⬜
+│           course_builder.py:1101 writes created_at in LOCAL time.
+├─ X5  Build time regressed 2.5x .................................. ✔ 🟠 P1
+│  │   qwen3:14b 151s -> ~383s/concept; 12-concept course 30 -> 77 min.
+│  │   Cause: grounding 1500 -> 20000 chars (prefill scales with input).
+│  └─ X5.1  Sweep RESEARCH_REMAINDER_CHARS 4k/8k/20k for the knee ... ⬜
+├─ X6  Reason-before-format (scratchpad) ........................... ? 🔨 in progress
+│      arXiv 2408.02442 (verified): format constraints consume
+│      reasoning capacity, worse on small models. HYPOTHESIS — must be
+│      validated with tools/model_gate.py before being trusted.
+└─ X7  REFUTED claims (do not re-raise) ............................ ✘
+   ├─ X7.1  "level-3 course fails its claim" ....................... ✘
+   │        The reviewed course is mastery:2. The level-3 claim is
+   │        UNTESTED — no level-3 course exists on disk.
+   └─ X7.2  "FSRS decay silently disabled" ......................... ✘
+            Every writer emits a bare date; parses fine on 3.9 and 3.11.
+```
+
+**Confirmed SOUND — do not re-review:** scaffolding flag override works both
+directions; a stub counts as failure while ungrounded-but-genuine content counts
+as success (a research outage cannot trip the abort gate); `_course_lock` covers
+in-process workers; no SQL injection; `_ThreadLocalDB`; `build_state._atomic_write`.
+
+**Evidence base gap:** one mastery-2 course is the entire evidence base for a
+five-level product. Generating a level-3 and a level-5 course is a prerequisite
+for testing the level claims at all.
+
+---
+
 ## RESEARCH-DRIVEN UPGRADE ROADMAP (fused with audit)
 
 Each item ties a research recommendation to the audit node it fixes.

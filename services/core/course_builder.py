@@ -4,6 +4,7 @@ import logging
 import re
 import ast
 import json
+import hashlib
 import uuid
 import random
 import requests
@@ -53,6 +54,57 @@ RESEARCH_TIMEOUT = float(os.getenv("HELGA_RESEARCH_TIMEOUT", "25"))
 # The broadened retry searches a wider query, so it has more to do.
 RESEARCH_BROADEN_TIMEOUT = float(
     os.getenv("HELGA_RESEARCH_BROADEN_TIMEOUT", "30"))
+
+# --- free-text reasoning before formatted output -----------------------------
+# HYPOTHESIS. NOT VALIDATED ON THIS PIPELINE. Default OFF, and it must stay off
+# until `tools/model_gate.py` has been run both ways on the same model.
+#
+# What was observed: an accreditation review pulled
+# data/courses/course_2b9df59e/content/con_4c467f98.md:29-32 — a "worked
+# example" that carries **Step 1/2/3**, states a = 3, b = 4, computes 9 + 16 =
+# 25 and concludes c = 5, all inside a concept about *partial* squares that the
+# arithmetic never touches. Every structural check passed: the headings are
+# there, the steps are numbered, the numbers are internally consistent. The
+# REASONING does not follow, and nothing we measure can see that.
+#
+# The suspected mechanism is "Let Me Speak Freely? A Study on the Impact of
+# Format Restrictions on Performance" (arXiv:2408.02442), which reports that
+# forcing output into a fixed format consumes reasoning capacity, more so on
+# smaller models. Our concept generator is format-restricted in exactly that
+# way: a 9-11 section template with named headings, plus a hard word band the
+# validator rejects on. The model must satisfy the shape while it works out the
+# mathematics, and the shape is what survives.
+#
+# The proposed remedy is the paper's: let the model reason in free prose FIRST,
+# then write the formatted answer. Here that is a leading "Working Notes"
+# section which is stripped before anything else sees the document.
+#
+# Reasons to distrust this until measured:
+#   * one paper, no rebuttal literature found, and it evaluates JSON-mode and
+#     format-restricting instructions on benchmark tasks, not markdown lesson
+#     templates on a local 9B;
+#   * it costs decode tokens on the single most expensive call in the build
+#     (~380s/concept today), and the notes are thrown away;
+#   * a model that spends its budget on notes and truncates the lesson makes
+#     things strictly worse — the generator's 40-word floor is applied to the
+#     STRIPPED text so that failure at least shows up as a retry.
+SCRATCHPAD_ENABLED = os.getenv(
+    "HELGA_SCRATCHPAD", "0").strip().lower() in ("1", "true", "yes", "on")
+
+# Deliberately not in services/common/scaffolding.py. That module is scoped to
+# helpers built for a 1.5B model in a 4k window and now being turned OFF because
+# their premises are gone; this is a new experiment being turned ON. Same
+# convention (one env var, an individual switch, the reason recorded next to
+# it), different question.
+SCRATCHPAD_HEADING = "Working Notes"
+
+# The notes may be emitted with any heading level — the model already drifts
+# between `#` and `##` in real output (see the evidence file above, which uses
+# `#`) — and may be repeated, so the substitution is global.
+_SCRATCHPAD_RE = re.compile(
+    r"^[ \t]*#{1,6}[ \t]*(?:working notes|scratchpad|reasoning)\b"
+    r".*?(?=^[ \t]*#{1,6}[ \t]+|\Z)",
+    re.IGNORECASE | re.DOTALL | re.MULTILINE)
 
 # Minimum title length enforced across the pipeline. Any title shorter than
 # this gets rejected by the normalizer, flagged by the auditor for rename,
@@ -307,8 +359,9 @@ def preset_summary(key):
     concepts = params["total_concepts_approx"]
     try:
         from services.core.depth_contract import DEPTH_CONTRACTS
-        required = DEPTH_CONTRACTS.get(p["mastery"], {}).get("required", [])
-    except Exception:
+        required = DEPTH_CONTRACTS.get(p.get("mastery", 1), {}).get("required", [])
+    except Exception as e:
+        logger.warning(f"Failed to resolve depth contract for preset '{key}': {e}")
         required = []
     return {
         "key": key,
@@ -2358,6 +2411,14 @@ class ContentHydrator:
             self.fact_check_sample = 0.34
         self._fact_checked_count = 0
         self._fact_failures = []
+        # Sections the model never wrote, per concept that shipped. Stub
+        # injection is off by default now (scaffolding.STUB_MISSING_SECTIONS),
+        # which stopped a 45-word response from LOOKING like a complete
+        # document — but it left a document with three missing sections and one
+        # with none still indistinguishable to everything downstream. This is
+        # the verdict that separates them; see the roll-up in hydrate().
+        self._missing_sections = []
+        self._doc_missing = {}
         # Gate criterion 2. Costs one LLM call per sampled concept.
         self.level_calibration_enabled = os.getenv(
             "HELGA_LEVEL_CALIBRATION", "1").lower() not in ("0", "false", "no")
@@ -2409,6 +2470,8 @@ class ContentHydrator:
         self._low_confidence_concepts = []
         self._fact_failures = []
         self._research_errors = []
+        self._missing_sections = []
+        self._doc_missing = {}
 
         # Build hierarchy context, concept list, and prerequisite map from JSON
         concept_list = []
@@ -2751,6 +2814,21 @@ class ContentHydrator:
                     self._revalidate_after_fact_check(
                         structured_md, uid, title, course_title,
                         research_sources)
+
+            # Which required sections the model never wrote, for the draft that
+            # actually shipped. Read HERE — after every regeneration path has
+            # chosen its winner, and BEFORE the confidence marker and the
+            # Sources block mutate the text and invalidate the lookup key.
+            #
+            # A "[Hydration failed]" stub never went through the validator, so
+            # it has no entry; it is already counted as a failure above.
+            _missing_here = self._missing_for_doc(structured_md)
+            if _missing_here:
+                with self._verdict_lock:
+                    self._missing_sections.append({
+                        "uid": uid, "title": title,
+                        "missing": [h.lstrip("# ").strip() for h in _missing_here],
+                    })
 
             # A2: an honest marker on thin content. Previously a 0.0-confidence
             # concept was visually identical to a well-sourced one.
@@ -3109,6 +3187,64 @@ class ContentHydrator:
                 if self.status_callback:
                     self.status_callback(
                         f"CHECK:RESEARCH:WARN:unreachable for {unreachable}/{verified} concepts")
+
+        # Structural completeness: sections the MODEL never wrote.
+        #
+        # This used to be recorded only in `_last_injected_sections`, an
+        # attribute with no reader anywhere in the tree — so a run in which the
+        # model omitted 36 sections and a run in which it omitted none produced
+        # identical course records. Turning stub injection off by default
+        # (scaffolding.STUB_MISSING_SECTIONS) stopped us MANUFACTURING the
+        # missing sections; it did not make their absence legible. This does.
+        #
+        # Measured on one 6-concept gate run: Ministral needed 36 injections and
+        # Mistral-Small needed 1, and both shipped courses that read as
+        # "complete" everywhere downstream.
+        #
+        # Only concepts this run hydrated can be counted — a resume does not
+        # regenerate the rest, so their misses are unknown here rather than
+        # zero. `partial_verification` says so, exactly as the other verdicts do.
+        if verified > 0:
+            by_concept = {}
+            sections_missing_total = 0
+            with self._verdict_lock:
+                for rec in self._missing_sections:
+                    by_concept[rec["uid"]] = {
+                        "title": rec["title"],
+                        "missing": rec["missing"],
+                        "count": len(rec["missing"]),
+                    }
+                    sections_missing_total += len(rec["missing"])
+            incomplete = len(by_concept)
+            course["missing_sections"] = {
+                # Whether the gaps were papered over with placeholder text. A
+                # reader of this verdict needs to know which of the two
+                # documents they are looking at.
+                "stub_injection": bool(_scaf.STUB_MISSING_SECTIONS),
+                "concepts_total": course_total_concepts,
+                "concepts_measured": verified,
+                "concepts_incomplete": incomplete,
+                "sections_missing_total": sections_missing_total,
+                "complete_pct": round(100 * (verified - incomplete) / verified, 1),
+                "partial_verification": not full_course_run,
+                # Keyed by concept uid, and ONLY concepts with at least one
+                # missing section — absence from this map means the model wrote
+                # every required heading. Capped like the other verdicts'
+                # detail lists so a bad run cannot bloat structure.json;
+                # `concepts_incomplete` is always the true count.
+                "by_concept": dict(list(by_concept.items())[:50]),
+            }
+            if incomplete:
+                logger.warning(
+                    f"[SECTIONS] {incomplete}/{verified} hydrated concepts are "
+                    f"missing {sections_missing_total} required section(s) the "
+                    f"model never wrote"
+                    + (" (placeholders were injected)"
+                       if _scaf.STUB_MISSING_SECTIONS else ""))
+                if self.status_callback:
+                    self.status_callback(
+                        f"STRUCT:WARN:SECTIONS_SUMMARY:{incomplete}/{verified} "
+                        f"concepts incomplete")
 
         # ---- PHASE 3: ASSET COLLECTION -------------------------------------
         # Runs after the content and its verdicts, before the course is
@@ -3634,6 +3770,13 @@ Prior concepts: {prereq_str}
             f"checked automatically and a document outside the band is "
             f"rejected. Keep every section terse to stay inside it; do not pad."
         )
+        if SCRATCHPAD_ENABLED:
+            # The band is enforced AFTER the notes are stripped, so counting
+            # them against it would make the budget unmeetable in a way the
+            # model cannot see.
+            total_budget_note += (
+                f" The '{SCRATCHPAD_HEADING}' section is removed before this "
+                f"is measured and does NOT count toward the budget.")
 
         # Sections the DEPTH CONTRACT requires at higher levels but the base
         # template never asked for.
@@ -3667,8 +3810,29 @@ say what is being assumed.]"""
 [One non-trivial problem the learner should attempt, with enough setup to be
 answerable. Do NOT include the solution.]"""
 
+        # Free-text reasoning ahead of the formatted answer. See
+        # SCRATCHPAD_ENABLED at module level for the evidence, the mechanism and
+        # why this is off by default. Order matters: it is FIRST so it is
+        # decoded first, which is the entire point — reasoning that comes after
+        # the answer cannot change the answer.
+        scratchpad_section = ""
+        if SCRATCHPAD_ENABLED:
+            scratchpad_section = f"""## {SCRATCHPAD_HEADING}
+[NOT part of the lesson. This section is deleted before anyone reads the
+document and does not count toward the length budget. Work here FIRST, in
+ordinary prose, before writing a single heading below.
+If this concept involves a calculation, a derivation or a worked example: choose
+the numbers here, carry the work through to the answer, and check that each step
+follows from the one before AND that the quantities are the ones "{title}" is
+actually about. If the check fails, fix it here — then write the corrected
+version into the sections below.
+If it involves no calculation, state in one or two sentences what distinguishes
+"{title}" from the concepts next to it, and write to that.]
+
+"""
+
         # Build the LLM-generated section template
-        section_template = f"""## Mastery Criteria
+        section_template = f"""{scratchpad_section}## Mastery Criteria
 At Bloom {bloom_level} ({bloom_label}), the student demonstrates mastery by:
 {mastery_criteria_hint}
 Grade 3 requires: [Write one sentence describing the specific threshold for THIS concept]
@@ -3732,12 +3896,25 @@ Generate ONLY the sections below. Do NOT generate Metadata, Learning Objectives,
                 # concept-list truncation bugs found earlier.
                 _sections = section_template.count("\n## ") + 1
                 _budget = max(2500, 400 * _sections + int(_wmax * 1.6))
+                if SCRATCHPAD_ENABLED:
+                    # The section count already bought ~400 tokens for it; free
+                    # reasoning is wordier than a templated section, and the one
+                    # way this change can do real damage is by starving the
+                    # lesson to pay for notes we then delete.
+                    _budget += 300
                 llm_output = llm_generate(
                     user_prompt,
                     sys_prompt=sys_prompt,
                     max_tokens=_budget,
                     progress_callback=self.status_callback,
                 )
+                # Strip BEFORE anything measures this text. The notes must not
+                # reach the 40-word usability floor (a document that is all
+                # notes is a failed generation and should retry), the missing-
+                # section check (notes that quote "## Key Facts" would satisfy
+                # it without the section existing), the depth contract's word
+                # band, the fact-checker, or the learner.
+                llm_output = self._strip_scratchpad(llm_output, title)
                 # Accept any substantive response and let the validator repair
                 # gaps, rather than discarding it wholesale.
                 #
@@ -3773,6 +3950,42 @@ Generate ONLY the sections below. Do NOT generate Metadata, Learning Objectives,
                 logger.warning(f"  [MARKDOWN] Failed {title} (att {attempt + 1}): {e}")
 
         return static_header + "\n## Core Explanation\n[Hydration failed]\n"
+
+    def _strip_scratchpad(self, llm_output: str, title: str) -> str:
+        """Remove the free-text reasoning section from a generated concept.
+
+        The notes exist so the model can work the problem before it formats the
+        answer (see SCRATCHPAD_ENABLED at module level). They are working-out,
+        not teaching material, and they are the only part of this document that
+        was never checked by anything — so they must not survive to storage.
+
+        A no-op when the switch is off, so the A/B is a single env var.
+        """
+        if not SCRATCHPAD_ENABLED or not llm_output:
+            return llm_output
+
+        stripped = _SCRATCHPAD_RE.sub("", llm_output).lstrip()
+        if stripped == llm_output.lstrip():
+            # The model ignored the instruction, or wrote the notes under a
+            # heading we do not recognise. Either way this concept got the token
+            # cost of the experiment and none of its benefit, which is exactly
+            # what a gate run has to be able to see.
+            logger.warning(
+                f"  [SCRATCHPAD] '{title}': no '{SCRATCHPAD_HEADING}' section "
+                f"found — reasoning-first had no effect on this concept")
+            return llm_output
+
+        # Belt and braces: the heading regex only catches ATX headings. If the
+        # marker still appears as bold text or a list item, working-out is about
+        # to be published as lesson content.
+        if SCRATCHPAD_HEADING.lower() in stripped.lower():
+            logger.warning(
+                f"  [SCRATCHPAD] '{title}': '{SCRATCHPAD_HEADING}' still "
+                f"present after stripping — check the stored document")
+        logger.debug(
+            f"  [SCRATCHPAD] '{title}': removed "
+            f"{len(llm_output.split()) - len(stripped.split())} words of notes")
+        return stripped
 
     def _chunk_text(self, text: str, chunk_size: int = 300) -> List[str]:
         """Split text into chunks of approximately chunk_size words."""
@@ -3818,13 +4031,48 @@ Generate ONLY the sections below. Do NOT generate Metadata, Learning Objectives,
         # patched. Without this a document that needed 36 injections and one
         # that needed none are indistinguishable downstream — which is exactly
         # how a weak model scored like a strong one on the gate.
+        #
+        # `_last_injected_sections` is the last attempt only, and for two years
+        # it was the ONLY record — a write with no reader anywhere in the tree,
+        # so it made nothing visible. It is kept as a debugging convenience; the
+        # durable record is the doc-keyed map below.
         self._last_injected_sections = list(missing)
 
         if _scaf.STUB_MISSING_SECTIONS:
             for section_header in missing:
                 content += f"\n{required_sections[section_header]}"
 
+        # Attach the miss to THIS document rather than to the concept.
+        #
+        # One concept can be generated up to five times (three generate
+        # attempts, then depth-contract retries, then a fact-check
+        # regeneration), and the document that ships is not necessarily the last
+        # one produced — _enforce_depth_contract keeps whichever attempt had the
+        # fewest problems. A per-concept "last write wins" field would therefore
+        # describe a draft that was thrown away. Keying on the returned document
+        # means _hydrate_one can look up the miss for the draft it actually
+        # kept, whichever that turns out to be.
+        self._note_missing_for_doc(content, missing)
+
         return content
+
+    @staticmethod
+    def _doc_key(md: str) -> str:
+        """Short stable key for a generated document. Hashed rather than using
+        the markdown itself so the map does not hold a copy of every draft."""
+        return hashlib.sha1((md or "").encode("utf-8", "replace")).hexdigest()
+
+    def _note_missing_for_doc(self, md: str, missing: list):
+        with self._verdict_lock:
+            # Bounded: a build generates at most a few hundred drafts, but this
+            # object outlives a single hydrate() on the wizard path.
+            if len(self._doc_missing) > 2000:
+                self._doc_missing.clear()
+            self._doc_missing[self._doc_key(md)] = list(missing)
+
+    def _missing_for_doc(self, md: str) -> list:
+        with self._verdict_lock:
+            return list(self._doc_missing.get(self._doc_key(md), []))
 
 
 class SyllabusAuditor:

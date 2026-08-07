@@ -329,7 +329,45 @@ function _classifyGrounding(trust, graphNode) {
     return conf >= TRUST_STRONG ? 'grounded' : 'partial';
 }
 
+/**
+ * The build's own verdicts for THIS concept, if the learn page managed to load
+ * them. Set by learn.html from /api/course_quality; absent on any other page,
+ * and absent whenever that fetch failed — in which case the surface falls back
+ * to grounding alone, exactly as it behaved before.
+ */
+function _conceptChecks(conceptUid) {
+    const q = window.__courseQuality;
+    if (!q || !conceptUid) return null;
+    const per = (q.concepts || {})[conceptUid] || {};
+    return {
+        concept: per,
+        // Course-level context. Needed to phrase a clean result honestly: the
+        // fact checker samples (34% by default), so "not flagged" and "checked
+        // and clean" are different statements and must not share wording.
+        course: q.checks || {}
+    };
+}
+
+/**
+ * Which check, if any, outranks the grounding verdict for the header.
+ *
+ * A claim the fact checker confirmed false — and that survived the corrective
+ * rewrite — is a worse defect than thin sourcing, so it takes the headline.
+ * Everything else stays in the detail panel, where it supports the concept text
+ * instead of competing with it.
+ */
+function _escalateForChecks(grounding, checks) {
+    if (!checks) return grounding;
+    const fact = checks.concept.fact;
+    if (fact && fact.state === 'fail') return 'flagged';
+    return grounding;
+}
+
 const TRUST_COPY = {
+    flagged: {
+        label: 'Contains a claim checked and found false',
+        caveat: 'During the build, a claim in this concept was flagged, independently confirmed false, and then rewritten — and the rewrite still did not clear the check. Read this concept as a draft: verify anything specific in it against a source you trust before relying on it.'
+    },
     grounded: {
         label: 'Well grounded',
         caveat: 'This concept was built from the references below, and the research pass found them to agree.'
@@ -343,6 +381,94 @@ const TRUST_COPY = {
         caveat: 'The research pass found little corroborating material for this concept, so it leans on what the model already knew. The ideas are usually sound, but treat specific figures, dates, names and results as unverified — check them before you rely on or repeat them.'
     }
 };
+
+/**
+ * The other two checks, as rows in the detail panel.
+ *
+ * Grounding already owns the header, so it is not repeated here. Each row is
+ * rendered only when the check actually ran for this course — a check that
+ * never ran is reported as not assessed, at the bottom, and never as a pass.
+ */
+function _renderTrustChecks(checks) {
+    if (!checks) return '';
+    const per = checks.concept || {};
+    const course = checks.course || {};
+    const rows = [];
+    const notAssessed = [];
+
+    const row = (state, label, text) =>
+        '<li class="trust-check is-' + state + '">'
+        + '<span class="trust-check-label">' + _trustEscape(label) + '</span>'
+        + '<span class="trust-check-text">' + _trustEscape(text) + '</span></li>';
+
+    // --- Fact check ---
+    const factCourse = course.fact;
+    if (!factCourse || factCourse.state === 'absent') {
+        notAssessed.push('fact check');
+    } else if (per.fact && per.fact.state === 'fail') {
+        rows.push(row('fail', 'Fact check',
+            per.fact.remaining === 1
+                ? 'One claim here was confirmed false and survived the rewrite'
+                : per.fact.remaining + ' claims here were confirmed false and survived the rewrite'));
+    } else if (per.fact) {
+        rows.push(row('caution', 'Fact check',
+            'A false claim was found and this concept was rewritten; the re-check could not confirm the fix'));
+    } else if (factCourse.sampled) {
+        // The checker reads a SAMPLE of the course. Silence about this concept
+        // is not a clean bill of health, and must not be worded as one.
+        rows.push(row('unknown', 'Fact check',
+            'Not flagged, but only ' + factCourse.checked + ' of ' +
+            factCourse.total + ' concepts in this course were checked'));
+    } else {
+        rows.push(row('pass', 'Fact check', 'No false claims found in this concept'));
+    }
+
+    // --- Depth contract ---
+    const depthCourse = course.depth;
+    if (!depthCourse || depthCourse.state === 'absent') {
+        notAssessed.push('depth contract');
+    } else if (per.depth && per.depth.state === 'fail') {
+        const problems = (per.depth.problems || []).join('; ');
+        rows.push(row('fail', 'Depth',
+            problems || 'This concept missed the depth contract for its level'));
+    } else if (depthCourse.partial) {
+        rows.push(row('unknown', 'Depth',
+            'Depth was verified for ' + depthCourse.verified + ' of ' +
+            depthCourse.total + ' concepts in this course'));
+    } else {
+        rows.push(row('pass', 'Depth', 'Meets the depth contract for this level'));
+    }
+
+    // --- Sections the model never wrote ---
+    // Unlike the two above, absence from the build's map is a POSITIVE result:
+    // only concepts with a gap are listed, so "not in the map" means every
+    // required heading was written. The exception is a resumed build, which
+    // only measured its own concepts — then silence really is silence.
+    const sectionsCourse = course.sections;
+    if (!sectionsCourse || sectionsCourse.state === 'absent') {
+        notAssessed.push('completeness check');
+    } else if (per.sections && per.sections.state === 'fail') {
+        const missing = (per.sections.missing || []).join(', ');
+        rows.push(row('fail', 'Sections',
+            (missing ? 'Never written: ' + missing : per.sections.count + ' required sections were never written')
+            + (sectionsCourse.stub_injection
+                ? ' — placeholder text was written in their place' : '')));
+    } else if (sectionsCourse.partial) {
+        rows.push(row('unknown', 'Sections',
+            'Completeness was measured for ' + sectionsCourse.measured + ' of ' +
+            sectionsCourse.total + ' concepts in this course'));
+    } else {
+        rows.push(row('pass', 'Sections', 'Every required section was written'));
+    }
+
+    if (notAssessed.length) {
+        rows.push('<li class="trust-check is-unknown">'
+            + '<span class="trust-check-label">Not assessed</span>'
+            + '<span class="trust-check-text">This course was built without a '
+            + _trustEscape(notAssessed.join(' or ')) + '</span></li>');
+    }
+    return rows.join('');
+}
 
 /* Remembers the last concept + state rendered, so the 2-second state poll does
  * not rebuild this DOM (and re-collapse a panel the learner just opened) on
@@ -363,29 +489,37 @@ function updateTrustSurface(state) {
     }
 
     const trust = parseTrustFromMarkdown(node.text);
+    const checks = _conceptChecks(state.current_lesson_uid);
     const grounding = _classifyGrounding(trust, node);
+    const surfaceState = _escalateForChecks(grounding, checks);
+    const checksHtml = _renderTrustChecks(checks);
 
     // If the markdown carried no trust information at all AND the FSM has no
     // confidence for this concept, say nothing rather than inventing a verdict.
     // An absent Sources block is not evidence of an unsourced concept — it can
     // equally mean the concept markdown has not loaded yet.
+    //
+    // A build verdict counts as a signal in its own right: it is recorded per
+    // concept at build time and does not depend on the markdown having arrived.
     const hasAnySignal = trust.sources.length > 0
         || trust.confidence !== null
         || trust.limitedMarker
         || typeof node.source_confidence === 'number'
-        || !!node.llm_fallback;
+        || !!node.llm_fallback
+        || !!checksHtml;
     if (!hasAnySignal) {
         wrap.classList.add('hidden');
         _trustLastKey = null;
         return;
     }
 
-    const key = (state.current_lesson_uid || '') + '|' + grounding + '|' + trust.sources.length;
+    const key = (state.current_lesson_uid || '') + '|' + surfaceState + '|'
+        + trust.sources.length + '|' + checksHtml.length;
     if (key === _trustLastKey) return;
     _trustLastKey = key;
 
-    const copy = TRUST_COPY[grounding];
-    wrap.dataset.state = grounding;
+    const copy = TRUST_COPY[surfaceState];
+    wrap.dataset.state = surfaceState;
     wrap.classList.remove('hidden');
 
     const labelEl = document.getElementById('trust-label');
@@ -401,6 +535,15 @@ function updateTrustSurface(state) {
 
     const caveatEl = document.getElementById('trust-caveat');
     if (caveatEl) caveatEl.textContent = copy.caveat;
+
+    // The build's other verdicts sit between the caveat and the reference list:
+    // they are the same kind of thing as the grounding score in the header, and
+    // belong beside it rather than in a second component elsewhere on the page.
+    const checksEl = document.getElementById('trust-checks');
+    if (checksEl) {
+        checksEl.innerHTML = checksHtml;
+        checksEl.classList.toggle('hidden', !checksHtml);
+    }
 
     const listEl = document.getElementById('trust-sources');
     if (listEl) {
@@ -429,7 +572,15 @@ function updateTrustSurface(state) {
     // Weak grounding opens itself. The learner should not have to go looking for
     // the one state that actually changes how they ought to read the page; the
     // other two stay collapsed so evidence never crowds out the concept.
-    setTrustExpanded(grounding === 'unsourced');
+    //
+    // A concept-level check FAILURE opens it for the same reason. A caution or
+    // a partial-coverage note does not: those are true of most concepts in most
+    // courses, and a panel that is always open is a panel nobody reads.
+    const perConcept = checks ? checks.concept : {};
+    const hardFail = (perConcept.fact && perConcept.fact.state === 'fail')
+        || (perConcept.depth && perConcept.depth.state === 'fail')
+        || (perConcept.sections && perConcept.sections.state === 'fail');
+    setTrustExpanded(surfaceState === 'unsourced' || surfaceState === 'flagged' || !!hardFail);
 }
 
 function setTrustExpanded(expanded) {
@@ -562,11 +713,11 @@ function renderMarkdown(text) {
     closeLists();
     s = out.join('');
 
-    // 7. Restore fenced code blocks
-    s = s.replace(/\x00CB(\d+)\x00/g, (_, i) => codeBlocks[Number(i)] || '');
+    // 7. Restore fenced code blocks safely escaping $ replacement patterns
+    s = s.replace(/\x00CB(\d+)\x00/g, (_, i) => (codeBlocks[Number(i)] || '').replace(/\$/g, '$$$$'));
 
-    // 8. Restore KaTeX-rendered math (extracted in step 0).
-    s = s.replace(/\x00MATH(\d+)\x00/g, (_, i) => mathSpans[Number(i)] || '');
+    // 8. Restore KaTeX-rendered math safely
+    s = s.replace(/\x00MATH(\d+)\x00/g, (_, i) => (mathSpans[Number(i)] || '').replace(/\$/g, '$$$$'));
     return s;
 }
 

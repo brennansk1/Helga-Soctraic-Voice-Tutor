@@ -64,25 +64,25 @@ var ProgressTree = (function() {
         var isDone = false;
 
         if (status === 'START' || status === 'RESEARCHING') {
-            // Research phase: magnifying glass icon
+            // Research phase: search icon
             badge.className += ' researching';
-            badge.innerHTML = '<span class="badge-icon">&#128269;</span> researching\u2026';
+            badge.innerHTML = '<span class="i i-search badge-icon"></span> researching\u2026';
         } else if (status === 'STRUCTURING' || status === 'WRITING') {
-            // Writing phase: pen icon
+            // Writing phase: note icon
             badge.className += ' writing';
-            badge.innerHTML = '<span class="badge-icon">&#9998;</span> writing\u2026';
+            badge.innerHTML = '<span class="i i-note badge-icon"></span> writing\u2026';
         } else if (status === 'DONE' || status.startsWith('ai') || status.startsWith('llm')) {
-            // Completion: checkmark
+            // Completion: check icon
             badge.className += ' done';
-            badge.innerHTML = '<span class="badge-icon">&#10003;</span> done';
+            badge.innerHTML = '<span class="i i-check badge-icon"></span> done';
             isDone = true;
         } else if (status === 'ERROR') {
             badge.className += ' error';
-            badge.innerHTML = '<span class="badge-icon">&#10007;</span> error';
+            badge.innerHTML = '<span class="i i-x badge-icon"></span> error';
         } else {
-            // Unknown sub-status: show as research phase (conservative default)
+            // Unknown sub-status: show as research phase
             badge.className += ' researching';
-            badge.innerHTML = '<span class="badge-icon">&#128269;</span> ' + status.toLowerCase() + '\u2026';
+            badge.innerHTML = '<span class="i i-search badge-icon"></span> ' + status.toLowerCase() + '\u2026';
         }
 
         conceptNode.appendChild(badge);

@@ -190,9 +190,9 @@ class TestNoFeatureReachableOnlyByUrl(unittest.TestCase):
         nav = html.split('app-nav', 1)[-1].split('</nav>', 1)[0]
         links = re.findall(r'class="nav-link[^"]*"', nav)
         self.assertEqual(
-            len(links), 6,
-            f"nav has {len(links)} destinations; A5.1 fixed it at six "
-            f"(Home, Courses, Learn, Progress, Practice, Settings)"
+            len(links), 7,
+            f"nav has {len(links)} destinations; A5.1 fixed it at seven "
+            f"(Home, Courses, Learn, Library, Progress, Practice, Settings)"
         )
 
 if __name__ == '__main__':

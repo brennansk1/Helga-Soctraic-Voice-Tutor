@@ -174,6 +174,10 @@
         [/^LOG: Audit (renamed|expanded|deleted)/, function (m) {
             return 'Tidying titles (' + m[1] + ')'; }],
         [/^LOG: Preflight checks completed/, function () { return 'Ready to build'; }],
+        [/^STRUCT:DAG_BUILD/,             function () { return 'Constructing topological prerequisite DAG'; }],
+        [/^HYDRATE:REFUTATION_TEXT:([^|]+)/, function (m) { return 'Formulating misconception refutation for “' + m[1] + '”'; }],
+        [/^HYDRATE:FADING:([^|]+)/,          function (m) { return 'Generating faded worked-example steps for “' + m[1] + '”'; }],
+        [/^ASSET:COORDINATE_VALIDATION/,  function () { return 'Verifying diagram geometry coordinates'; }],
         [/^ERROR:\s*(.*)/,               function (m) { return m[1] || 'Something went wrong'; }],
         [/^LOG:\s*(.*)/,                 function (m) { return m[1]; }],
     ];

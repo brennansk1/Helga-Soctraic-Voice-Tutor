@@ -51,8 +51,11 @@ USAGE
 import argparse
 import json
 import os
+import logging
 import re
 import sys
+
+logger = logging.getLogger(__name__)
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
@@ -200,6 +203,33 @@ def coverage(topics, outline, model=None):
                 return True
         return False
 
+    # SILENCE IS NOT A VERDICT.
+    #
+    # `covered` is derived from what the judge listed. If the judge returns an
+    # empty response — under load, on a timeout, or when a constrained
+    # generation is cut short — `cov` is [] and every topic falls through to
+    # `missing`. _summarise then reports 0% coverage and INADEQUATE, which is
+    # the WORST possible score manufactured out of no information at all.
+    #
+    # Measured: this exact course scored 0% at build time with all 11 topics
+    # "missing" (including "Hadamard transform", for which a full concept had
+    # been written), and 55% when the identical function was re-run against
+    # the identical structure minutes later. The difference was judge
+    # availability, not course content.
+    #
+    # A real "nothing is covered" verdict still names what is absent, so `mis`
+    # is populated. Both lists empty means the judge said nothing — that is an
+    # instrument outage, and the contract for this function is to report it as
+    # unmeasured rather than to invent a failing grade.
+    #
+    # Same defect as the HelgaBench judge, where a missing key was read as
+    # `int(data.get(d, 0))` and clamped to 1.
+    if not cov and not mis:
+        logger.warning(
+            "[SYLLABUS] judge returned neither covered nor missing topics — "
+            "treating as NOT MEASURED rather than 0%% coverage")
+        return None
+
     covered = [t for t in topics if _is_covered(t)]
     missing = [t for t in topics if not _is_covered(t)]
     return {"covered": covered, "missing": missing, "sequencing": seq,
@@ -217,10 +247,19 @@ def check_structure(struct, reference_text=None, model=None):
         outline = outline_of(struct)
         if not outline:
             return {"error": "empty outline"}
+        topics = core_topics(reference_text, struct.get("title"),
+                             struct.get("mastery"), model=model) or []
+        if not topics:
+            return {"error": "judge could not derive core topics"}
+        cov = coverage(topics, outline, model=model)
+        # `or {"covered": [], "missing": []}` used to sit here, which turned a
+        # judge outage into a scored 0% — the one thing this function's
+        # docstring promises it will never do. An unmeasurable run is an error,
+        # not a grade.
+        if cov is None:
+            return {"error": "judge unavailable — coverage not measured"}
         return _summarise(
-            coverage(core_topics(reference_text, struct.get("title"),
-                                 struct.get("mastery"), model=model) or [],
-                     outline, model=model) or {"covered": [], "missing": []},
+            cov,
             uid=struct.get("uid"), title=struct.get("title"),
             mastery=struct.get("mastery"),
             grounding=("external" if reference_text
