@@ -89,7 +89,21 @@ services:
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3.5:9b}
       - LLM_MODEL=${LLM_MODEL:-qwen3.5:9b}
       - HELGA_BUILD_MODEL=${HELGA_BUILD_MODEL:-qwen3.5:9b}
-      - HELGA_TUTOR_MODEL=${HELGA_TUTOR_MODEL:-qwen3.5:4b}
+      # TUTOR was qwen3.5:4b, chosen for ~0.4s turn latency. Latency was
+      # optimised; ACCURACY was never measured. HelgaBench with a self-tested
+      # judge, repeat 3, n=15 dialogues per model:
+      #
+      #     model            OVERALL   accuracy
+      #     qwen3.5:4b         2.99      2.93 (sd 1.61 — erratic)
+      #     qwen3.5:9b         3.41      3.93
+      #     qwen3:14b          4.34      5.00 (sd 0.00 — perfect, 15/15)
+      #
+      # The smallest trustworthy difference at this sample size is 0.26; the
+      # 4b-to-14b gap is 1.35, five times that. A tutor that states wrong facts
+      # to a learner fails at the one thing it exists to do, and 2.93 with sd
+      # 1.61 means not merely worse but INCONSISTENT — right and wrong on the
+      # same material.
+      - HELGA_TUTOR_MODEL=${HELGA_TUTOR_MODEL:-qwen3:14b-q4_K_M}
       # Zero-Swap Optimization & FlashAttention Settings
       - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS:-1}
       - OLLAMA_KV_CACHE_TYPE=${OLLAMA_KV_CACHE_TYPE:-q8_0}
