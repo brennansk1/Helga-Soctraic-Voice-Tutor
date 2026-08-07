@@ -30,18 +30,18 @@ TOPICS = ["qubit states", "Hadamard transform", "Grover search algorithm"]
 class TestSilentJudge(unittest.TestCase):
     def test_empty_judge_response_is_not_measured(self):
         """Both lists empty = the judge said nothing = instrument outage."""
-        with patch.object(fact_check, "_post", return_value={"covered": [], "missing": []}):
+        with patch.object(fact_check, "_post", return_value={"topics_analysis": []}):
             self.assertIsNone(sc.coverage(TOPICS, "MODULE: Qubits"))
 
     def test_genuine_nothing_covered_still_scores(self):
         """A real verdict NAMES what is absent, so it must still be graded —
         otherwise a genuinely hollow course would be reported as unmeasurable."""
         with patch.object(fact_check, "_post",
-                          return_value={"covered": [], "missing": TOPICS}):
+                          return_value={"topics_analysis": [{"topic": t, "legacy_covered": False, "introduced": False, "practiced": False, "assessed": False, "evidence": ""} for t in TOPICS]}):
             result = sc.coverage(TOPICS, "MODULE: Unrelated")
         self.assertIsNotNone(result)
-        self.assertEqual(result["covered"], [])
-        self.assertEqual(len(result["missing"]), 3)
+        self.assertEqual(len([t for t in result["topics_analysis"] if t["legacy_covered"]]), 0)
+        self.assertEqual(len([t for t in result["topics_analysis"] if not t["legacy_covered"]]), 3)
 
     def test_check_structure_reports_error_not_zero(self):
         with patch.object(sc, "core_topics", return_value=TOPICS), \
@@ -59,7 +59,10 @@ class TestSilentJudge(unittest.TestCase):
     def test_real_coverage_still_computes(self):
         with patch.object(sc, "core_topics", return_value=TOPICS), \
              patch.object(fact_check, "_post", return_value={
-                 "covered": ["Hadamard transform"], "missing": TOPICS[:1]}):
+                 "topics_analysis": [
+                     {"topic": "Hadamard transform", "legacy_covered": True, "introduced": True, "practiced": True, "assessed": True, "evidence": ""},
+                     {"topic": TOPICS[0], "legacy_covered": False, "introduced": False, "practiced": False, "assessed": False, "evidence": ""}
+                 ]}):
             r = sc.check_structure(STRUCT)
         self.assertNotIn("error", r)
         self.assertGreater(r["coverage_pct"], 0)

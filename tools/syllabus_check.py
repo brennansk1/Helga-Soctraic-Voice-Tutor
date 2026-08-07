@@ -78,30 +78,58 @@ COURSES_DIR = os.path.join(_ROOT, "data", "courses")
 
 _TOPICS_SCHEMA = {
     "type": "object",
-    "properties": {"topics": {"type": "array", "items": {"type": "string"}}},
+    "properties": {
+        "topics": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "topic": {"type": "string"},
+                    "is_core": {"type": "boolean"}
+                },
+                "required": ["topic", "is_core"]
+            }
+        }
+    },
     "required": ["topics"],
 }
 
-_TOPICS_SYSTEM = """List the CORE topics a real course on this subject must cover,
+_TOPICS_SYSTEM = """List the CORE and SECONDARY topics a real course on this subject must cover,
 taken from the reference material. 8-15 topics, short noun phrases, using the
-reference's own terminology. Return STRICT JSON: {"topics": ["...", "..."]}"""
+reference's own terminology. Mark each as either core (is_core: true, i.e. a Tier I fundamental) or secondary (is_core: false, i.e. a Tier II/optional topic).
+Return STRICT JSON."""
 
 _COVER_SCHEMA = {
     "type": "object",
     "properties": {
-        "covered": {"type": "array", "items": {"type": "string"}},
-        "missing": {"type": "array", "items": {"type": "string"}},
+        "topics": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "topic": {"type": "string"},
+                    "introduced": {"type": "boolean"},
+                    "practiced": {"type": "boolean"},
+                    "assessed": {"type": "boolean"},
+                    "evidence": {"type": "string"},
+                    "legacy_covered": {"type": "boolean"}
+                },
+                "required": ["topic", "introduced", "practiced", "assessed", "evidence", "legacy_covered"]
+            }
+        },
         "sequencing_problems": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["covered", "missing"],
+    "required": ["topics"],
 }
 
 _COVER_SYSTEM = """You are given a list of required topics and a course outline.
 
-Split the topics into two lists: those the outline GENUINELY teaches, and those
-it does not. A topic only counts as covered if the outline actually teaches it —
-a vaguely similar title does not count. Every topic given to you must appear in
-exactly one of the two lists.
+For each topic, provide:
+1. legacy_covered: true if the outline mentions or teaches the topic (the old definition of covered).
+2. introduced: true if the course explicitly introduces or explains the topic.
+3. practiced: true if there is a worked example or exercise for the topic.
+4. assessed: true if there is a question or check whose answer requires the topic.
+5. evidence: A short snippet of evidence for your judgement.
 
 Also list any SEQUENCING problems: a concept taught before something it needs.
 
@@ -163,12 +191,15 @@ def core_topics(reference_text, subject, mastery, model=None):
     out = []
     for t in raw:
         if isinstance(t, str) and t.strip():
-            out.append(t.strip())
+            out.append({"topic": t.strip(), "is_core": True})
         elif isinstance(t, dict):
             # Tolerate {"name": ...} / {"topic": ...} shapes.
             v = _field(t, "topic", "name", "title")
             if v:
-                out.append(str(v).strip())
+                is_core = t.get("is_core", True)
+                if "tier" in t and str(t["tier"]).lower() == "secondary":
+                    is_core = False
+                out.append({"topic": str(v).strip(), "is_core": is_core})
     return out
 
 
@@ -177,80 +208,75 @@ def coverage(topics, outline, model=None):
     from services.common.fact_check import _post, _field
     if not topics:
         return None
-    listing = "\n".join(f"- {t}" for t in topics)
+    listing = "\n".join(f"- {t['topic'] if isinstance(t, dict) else t}" for t in topics)
     d = _post([{"role": "system", "content": _COVER_SYSTEM},
                {"role": "user", "content":
                 f"REQUIRED TOPICS:\n{listing}\n\nCOURSE OUTLINE:\n{outline[:6000]}"}],
               schema=_COVER_SCHEMA, max_tokens=1200, model=model)
     if not d:
         return None
-    # ACCEPT THE MODEL'S OWN KEY NAMES.
-    #
-    # The schema asks for "covered"/"missing" and the model returns
-    # "covered_topics"/"missing_topics". Both lists then parsed as empty, the
-    # judge looked dead, and criterion 6 reported NOT MEASURED on a run where
-    # it had in fact correctly identified Deutsch-Jozsa and Shor as covered.
-    # An entire course-quality investigation ran on the belief that the judge
-    # was unavailable; it was a field-name mismatch.
-    cov = [str(x) for x in (_field(d, "covered", "present",
-                                   "covered_topics", default=[]) or [])]
-    mis = [str(x) for x in (_field(d, "missing", "absent",
-                                   "missing_topics", default=[]) or [])]
-    seq = [str(x) for x in (_field(d, "sequencing_problems", "sequencing",
-                                   default=[]) or [])]
-    # Match on token overlap, not exact strings. The model rewords topics as it
-    # echoes them back ("Potential outcomes" -> "Potential outcomes framework"),
-    # and exact matching scored a COMPLETE outline at 71% by declaring plainly
-    # present topics missing. An instrument that undercounts good courses is as
-    # useless as one that overrates bad ones.
+
+    analysis = _field(d, "topics", "topics_analysis", default=[]) or []
+    seq = [str(x) for x in (_field(d, "sequencing_problems", "sequencing", default=[]) or [])]
+
     def _toks(x):
         return {w for w in re.findall(r"[a-z0-9]+", x.lower()) if len(w) > 2}
 
-    cov_toks = [_toks(c) for c in cov if c]
+    analysis_by_toks = []
+    for item in analysis:
+        t_name = _field(item, "topic", "name", default="")
+        analysis_by_toks.append((_toks(t_name), item))
 
-    def _is_covered(topic):
-        tt = _toks(topic)
-        if not tt:
-            return False
-        for ct in cov_toks:
-            if not ct:
-                continue
+    def _get_analysis(topic_name):
+        tt = _toks(topic_name)
+        if not tt: return None
+        for ct, item in analysis_by_toks:
+            if not ct: continue
             overlap = len(tt & ct) / len(tt)
             if overlap >= 0.6:
-                return True
-        return False
+                return item
+        return None
 
-    # SILENCE IS NOT A VERDICT.
-    #
-    # `covered` is derived from what the judge listed. If the judge returns an
-    # empty response — under load, on a timeout, or when a constrained
-    # generation is cut short — `cov` is [] and every topic falls through to
-    # `missing`. _summarise then reports 0% coverage and INADEQUATE, which is
-    # the WORST possible score manufactured out of no information at all.
-    #
-    # Measured: this exact course scored 0% at build time with all 11 topics
-    # "missing" (including "Hadamard transform", for which a full concept had
-    # been written), and 55% when the identical function was re-run against
-    # the identical structure minutes later. The difference was judge
-    # availability, not course content.
-    #
-    # A real "nothing is covered" verdict still names what is absent, so `mis`
-    # is populated. Both lists empty means the judge said nothing — that is an
-    # instrument outage, and the contract for this function is to report it as
-    # unmeasured rather than to invent a failing grade.
-    #
-    # Same defect as the HelgaBench judge, where a missing key was read as
-    # `int(data.get(d, 0))` and clamped to 1.
-    if not cov and not mis:
+    if not analysis:
         logger.warning(
-            "[SYLLABUS] judge returned neither covered nor missing topics — "
+            "[SYLLABUS] judge returned no topic analysis — "
             "treating as NOT MEASURED rather than 0%% coverage")
         return None
 
-    covered = [t for t in topics if _is_covered(t)]
-    missing = [t for t in topics if not _is_covered(t)]
-    return {"covered": covered, "missing": missing, "sequencing": seq,
-            "model_missing": mis}
+    result_topics = []
+    for t in topics:
+        t_name = t["topic"] if isinstance(t, dict) else t
+        is_core = t["is_core"] if isinstance(t, dict) else True
+        item = _get_analysis(t_name)
+        if item:
+            legacy = _field(item, "legacy_covered", "covered", default=False)
+            intro = _field(item, "introduced", default=False)
+            prac = _field(item, "practiced", default=False)
+            ass = _field(item, "assessed", default=False)
+            ev = _field(item, "evidence", default="")
+            result_topics.append({
+                "topic": t_name,
+                "is_core": is_core,
+                "legacy_covered": legacy,
+                "introduced": intro,
+                "practiced": prac,
+                "assessed": ass,
+                "evidence": ev,
+                "is_covered_strict": intro and prac and ass
+            })
+        else:
+            result_topics.append({
+                "topic": t_name,
+                "is_core": is_core,
+                "legacy_covered": False,
+                "introduced": False,
+                "practiced": False,
+                "assessed": False,
+                "evidence": "Not found in analysis.",
+                "is_covered_strict": False
+            })
+
+    return {"topics_analysis": result_topics, "sequencing": seq}
 
 
 def check_structure(struct, reference_text=None, model=None):
@@ -307,23 +333,53 @@ def check(uid, reference_text=None, model=None, url=None):
 
 # Coverage below this is a real hole in the curriculum, not a stylistic gap.
 MIN_COVERAGE = int(os.getenv("HELGA_MIN_COVERAGE_PCT", "70"))
+CORE_MIN_COVERAGE = int(os.getenv("HELGA_CORE_MIN_COVERAGE_PCT", "100"))
+SECONDARY_MIN_COVERAGE = int(os.getenv("HELGA_SECONDARY_MIN_COVERAGE_PCT", "80"))
+LEGACY_COVERAGE_METRIC = os.getenv("HELGA_LEGACY_COVERAGE_METRIC", "0") == "1"
 
 
 def _summarise(cov, uid=None, title=None, mastery=None, grounding=None):
     """Compute the verdict IN CODE. Never ask the model for an overall call —
     asked directly, it rated a gutted outline ADEQUATE."""
-    covered, missing = cov["covered"], cov["missing"]
-    total = len(covered) + len(missing)
-    pct = round(100 * len(covered) / total) if total else 0
+    topics_analysis = cov["topics_analysis"]
+    
+    core_topics = [t for t in topics_analysis if t["is_core"]]
+    secondary_topics = [t for t in topics_analysis if not t["is_core"]]
+    
+    def _pct(topics, key):
+        if not topics: return 100
+        return round(100 * sum(1 for t in topics if t[key]) / len(topics))
+
+    # calculate strict metrics
+    core_strict_pct = _pct(core_topics, "is_covered_strict")
+    secondary_strict_pct = _pct(secondary_topics, "is_covered_strict")
+    total_strict_pct = _pct(topics_analysis, "is_covered_strict")
+    
+    # calculate legacy metrics
+    total_legacy_pct = _pct(topics_analysis, "legacy_covered")
+
+    use_legacy = LEGACY_COVERAGE_METRIC
+    
+    if use_legacy:
+        # legacy evaluation ignores core vs secondary for verdict, just uses MIN_COVERAGE
+        verdict = "ADEQUATE" if (len(topics_analysis) and total_legacy_pct >= MIN_COVERAGE and not cov.get("sequencing")) else "INADEQUATE"
+    else:
+        verdict = "ADEQUATE" if (core_strict_pct >= CORE_MIN_COVERAGE and secondary_strict_pct >= SECONDARY_MIN_COVERAGE and not cov.get("sequencing")) else "INADEQUATE"
+
+    missing = [t["topic"] for t in topics_analysis if not t["legacy_covered" if use_legacy else "is_covered_strict"]]
+
     return {
         "course": uid, "title": title, "mastery": mastery,
         "grounding": grounding,
-        "topics_checked": total,
-        "coverage_pct": pct,
+        "topics_checked": len(topics_analysis),
+        "coverage_pct": total_legacy_pct if use_legacy else total_strict_pct,
+        "coverage_legacy_pct": total_legacy_pct,
+        "coverage_strict_pct": total_strict_pct,
+        "core_strict_pct": core_strict_pct,
+        "secondary_strict_pct": secondary_strict_pct,
         "missing": missing,
         "sequencing": cov.get("sequencing") or [],
-        "verdict": ("ADEQUATE" if total and pct >= MIN_COVERAGE
-                    and not cov.get("sequencing") else "INADEQUATE"),
+        "verdict": verdict,
     }
 
 
@@ -408,7 +464,8 @@ def main():
 
     print(f"Course : {r['title']} (mastery {r['mastery']})")
     print(f"Grounding: {r['grounding']}")
-    print(f"Coverage : {r['coverage_pct']}%")
+    print(f"Coverage (Strict): {r['coverage_strict_pct']}% (Core: {r['core_strict_pct']}%, Secondary: {r['secondary_strict_pct']}%)")
+    print(f"Coverage (Legacy): {r['coverage_legacy_pct']}%")
     print(f"Topics checked: {r['topics_checked']}")
     if r["missing"]:
         print("Missing core topics:")

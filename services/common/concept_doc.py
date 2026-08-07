@@ -167,7 +167,9 @@ _EMIT_ORDER = [
     "Mastery Criteria", "Exercise",
 ]
 
-DEFAULT_BUDGET = {"lecture": 2400, "socratic": 3600, "grading": 1600}
+import os
+STRICT_SOCRATIC_BUDGET = os.getenv("HELGA_STRICT_SOCRATIC_BUDGET") == "1"
+DEFAULT_BUDGET = {"lecture": 2400, "socratic": 1500 if STRICT_SOCRATIC_BUDGET else 3600, "grading": 1600}
 
 # The preamble is normally one `# Title` line. The cap is there so a malformed
 # document with everything above the first heading cannot spend the whole
