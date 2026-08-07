@@ -230,18 +230,29 @@ worst possible verdict out of no information.
 
 ---
 
-## 9. External anchors
+## 9. External anchors — RESEARCHED 2026-08-07
 
-`[EXTERNAL — PENDING]` — a research pass is gathering citable standards for:
+Full per-claim sources, URLs and verification status live in `docs/research/`
+(5 files, ~960 lines). Highlights:
 
-- curriculum coverage thresholds (ABET / ACM CS2023 core vs elective)
-- pedagogical soundness criteria (Cognitive Load Theory, Mayer, Rosenshine, Bloom)
-- readability bands per level (Flesch-Kincaid, Dale-Chall, Lexile)
-- published AI-tutor rubrics, especially how they score a tutor that ACCEPTS a
-  misconception
-- measured hallucination rates for LLM-generated educational content and what
-  error rate is considered acceptable
+| Anchor | Number | Use |
+|---|---|---|
+| ACM CS2013 coverage | **100% of Tier I core, ≥80% of Tier II** | Our flat 70% treats core and periphery alike — split it (§4b B1) |
+| ABET Computing Criterion 5 | ≥30 semester credit hours of fundamental + advanced | Scope sanity for a "full survey" preset |
+| Alignment reliability | **ICC > 0.75 excellent; κ > 0.61 substantial** | `syllabus_check` currently reports no reliability at all |
+| Mayer multimedia | ***d* = 1.35**; modality 1.00; temporal contiguity 1.31 | Text-only forfeits these entirely — the case for B13 |
+| Text-only principles | *g* ≈ 0.33–0.43 pooled (29 reviews) | The ceiling on perfecting prose |
+| Multi-turn harm | **17.7% → 77.8%** single- vs multi-turn | Turn-level eval measures the wrong object |
+| Socratic collapse | **60–71%** of dialogues on a plain prompt | Needs a trajectory metric |
+| Sycophancy variance | framing **η² < 0.01**; model choice **> 0.95** | Prompt-layer fixes have no leverage |
+| Hollow-coverage | **100% coverage at κ = 0.076** | A mention-counting metric reads hollow as covered |
+| Verbosity vs hallucination | 350-word answers hallucinate **~2×** 219-word ones | The word band is a hallucination amplifier by construction |
 
-This section will be filled in with source + URL + how each becomes an automated
-check. Anything that cannot be sourced credibly will be marked as such rather
-than invented.
+**The load-bearing finding for us:** *"LLMs can reliably recognize cognitive
+hierarchy but struggle to distinguish between simply mentioning a concept and
+genuinely teaching it."* That is our exact failure mode, published — and it
+means criterion 6 needs an introduced/practiced/assessed rubric, not a bigger
+judge alone.
+
+Five widely-circulated numbers were checked and found fabricated or corrupted;
+they are listed in `MODE_A_STATUS.md` §4b D so they are not re-imported.

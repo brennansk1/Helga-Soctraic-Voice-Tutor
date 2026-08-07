@@ -265,6 +265,60 @@ All core done-criteria are **100% VERIFIED**. The following polish tasks represe
 
 ---
 
+## 4b. Evidence-backed work queue (from the 2026-08-07 standards research)
+
+Full sources, verification status and per-claim URLs are in `docs/research/`
+(5 files, ~960 lines). Every number below is `[V-PDF]` or `[V]` in those files
+unless marked otherwise. Several widely-circulated figures were checked and
+found **fabricated or corrupted** — they are listed at the end so nobody
+re-imports them.
+
+The research was asked one question directly: *is our ceiling in the
+architecture, or in the bugs?* It found **five architectural ceilings**. That is
+the case for scoping an overhaul rather than continuing to tune.
+
+### A. Ceilings — these cannot be fixed by prompt or parameter
+
+| # | Finding | Evidence | Task |
+|---|---|---|---|
+| **A1** | **Text-only concepts forfeit the largest effect in the literature.** Mayer's multimedia principle is *d* = 1.35 across 13/13 tests; modality 1.00; temporal contiguity 1.31 — all require a second channel. The seven text-applicable principles pool to only *g* ≈ 0.33–0.43. | Mayer; Noetel meta-analysis of 29 reviews | Finish **B13 visuals-in-teaching**. The model is already multimodal and Phase 3 now emits 20 diagrams per course — they are generated and not yet *taught with*. Biggest single available win. |
+| **A2** | **The single global FSM session makes expertise reversal unimplementable.** Worked examples that help novices measurably HURT experienced learners; the remedy is fading guidance as a function of learner state. | Kalyuga et al. | Fix **B6.3 per-user session state**. Currently filed as a multi-user annoyance; it is actually a pedagogy blocker. Until then all scaffolding is pinned to one point on a curve that should move. |
+| **A3** | **Turn-level evaluation reports a passing system that fails in use.** Pedagogical harm rises **17.7% single-turn → 77.8% multi-turn**; a plain "be Socratic" prompt collapses in **60–71%** of dialogues. | SafeTutors; Collapse Rate literature | Add a **trajectory-level** metric to HelgaBench: score the dialogue arc, not the turn. Current dimensions can pass while the arc collapses. |
+| **A4** | **Sycophancy has no prompt-layer fix.** Feedback framing explained **η² < 0.01** of over-validation variance; model choice explained **> 0.95**. Best-of-n is worth 5–9pp, SFT 4.6pp. | NC State; BrokenMath | Stop treating Socratic restraint as a prompt problem. Independently corroborated here: swapping the tutor model moved accuracy **2.93 → 5.00**. Published fix that works is architectural — action masking with "zero violations by construction". |
+| **A5** | **The 70% coverage floor is fully satisfiable by a hollow course.** *"LLMs can reliably recognize cognitive hierarchy but struggle to distinguish between simply mentioning a concept and genuinely teaching it."* One course scored **100% coverage at κ = 0.076 — chance level.** | Curriculum Cartographer `[V-PDF]` | Replace binary coverage with **introduced / practiced / assessed**; count "covered" only when all three hold. This matches our own logged finding that ~50% of concepts are hollow — the METRIC is part of the problem, not just the generator. |
+
+### B. Calibration changes — cheap, and our current numbers are wrong
+
+| # | Task | Why |
+|---|---|---|
+| **B1** | Split the coverage floor: **~100% of a named core set, ~80% of the rest**. | CS2013 required 100% of Tier I and ≥80% of Tier II. A flat 70% treats Shor's algorithm as equally optional to a footnote. |
+| **B2** | Hold `syllabus_check` to published reliability bars: **ICC > 0.75**, **Cohen's κ > 0.61**. | Conventional thresholds (Landis & Koch / Cicchetti) used by the alignment literature. We currently have no reliability measure at all. |
+| **B3** | Decide deliberately how Socratic mode **consumes** the concept doc rather than dumping it. | The 900–1600 word band is a hallucination amplifier by construction — 350-word answers hallucinate ~2× as often as 219-word ones. The band is right for a READING artifact (human STEM lessons average 1,744 words) and wrong for TUTORING: the tutor that won the Harvard RCT was told to use "no more than a few sentences, to avoid cognitive overload." |
+
+### C. Instrument reliability — blocking everything above
+
+| # | Task | Why |
+|---|---|---|
+| **C1** | **The coverage judge returns an empty response on a free GPU.** Measured 2026-08-07 on `course_6a6a7954` with nothing else running. | `syllabus_check` now correctly reports NOT MEASURED instead of a manufactured 0% — but the number still cannot be obtained. Criterion 6 is unusable until the judge is reliable, and it is the only criterion with external ground truth. Try a larger judge or a checklist-per-topic call instead of one batch call. |
+| **C2** | Re-run each instrument's self-test before quoting any number from it. | Five instrument defects were found on 2026-08-06/07, four sharing one shape: manufacturing the worst possible verdict out of no information. |
+
+### D. Numbers that are FABRICATED or CORRUPTED — do not re-import
+
+Checked and could not be substantiated. Recorded so they are not pulled back in
+from a blog post or an LLM summary:
+
+- "Khanmigo 0.34 SD ETR&D RCT" — no DOI; appears only on SEO farms
+- "63.7% agreement with incorrect beliefs" — unlocatable
+- "$5,000 per Texas factual error" — absent from the current statute
+- "500 errors per physics textbook" — it is 500 *pages* of errors
+- Rosenshine "24 vs 8 questions" — not in the 2012 article
+
+A source fetch also returned **a completely different paper's title** for the
+Curriculum Cartographer PDF; local `pdftotext` extraction was needed to confirm
+the real figures. Treat single-pass PDF fetch summaries as unreliable.
+
+---
+
 ## 5. Known environmental constraints
 
 - **~30s per LLM call** on qwen3.5:9b → ~2 min/concept → a 12-concept course
