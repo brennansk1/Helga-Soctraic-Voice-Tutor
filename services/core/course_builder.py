@@ -1264,6 +1264,42 @@ class SkeletonBuilder:
         # Real chapter lists for this subject, fetched before generation.
         _syllabus_evidence_block = self._syllabus_evidence(topic)
 
+        # TOPIC-FIRST: name the curriculum BEFORE choosing the modules.
+        #
+        # The skeleton allocated by COGNITIVE LEVEL and let the model discover
+        # topics along the way. With a Bloom ramp of 1,2,2,3,3,4 for mastery 3,
+        # five of six modules are Remember/Understand/Apply — so every named
+        # algorithm in the subject competed for a single Analyze slot. Coverage
+        # was lost at module-allocation time, before any naming decision was
+        # made, which is why prompt fixes alone could not recover it.
+        #
+        # The same instrument that GRADES coverage can supply the checklist,
+        # from the same phase-1 syllabi. Grading a course against topics the
+        # generator was never shown measures a gap we chose to create.
+        #
+        # Advisory, not a schema: the module count is fixed by scope, so a
+        # 15-topic checklist cannot force 15 modules. It tells the model what
+        # must be covered SOMEWHERE, and Bloom then orders it.
+        _canonical_topics = []
+        try:
+            from tools.syllabus_check import core_topics as _core_topics
+            _canonical_topics = _core_topics(
+                _syllabus_evidence_block or None, topic, self.mastery) or []
+        except Exception as e:
+            logger.info(f"[SKELETON] canonical topic list unavailable: {e}")
+        if _canonical_topics:
+            logger.info(f"[SKELETON] required topics: "
+                        f"{', '.join(_canonical_topics[:12])}")
+            if self.status_callback:
+                self.status_callback(
+                    f"RESEARCH:TOPICS:{len(_canonical_topics)} core topics identified")
+        _topic_requirement = ("" if not _canonical_topics else (
+            "REQUIRED COVERAGE — a real course on this subject teaches these. "
+            "Every one must appear in some module's 'scope', under the name "
+            "given here (these are the field's own names; do not paraphrase "
+            "them). Distribute them across modules by difficulty:\n"
+            + "\n".join(f"  - {t}" for t in _canonical_topics[:15]) + "\n\n"))
+
         # Structured prompt with explicit progression schedule
         prompt = (
             f"Topic: {topic}\n"
@@ -1298,6 +1334,7 @@ class SkeletonBuilder:
             "5. Every module's 'scope' must list at least 3 SPECIFIC named topics — "
             "the names the field actually uses, including eponyms "
             "(e.g. \"Grover's algorithm\", not \"amplitude amplification method\").\n\n"
+            + _topic_requirement
             + (f"\n{_syllabus_evidence_block}\n\n"
                if _syllabus_evidence_block else "") +
             "ANTI-COPY WARNING: The example below shows JSON FORMAT ONLY. "
