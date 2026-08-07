@@ -329,29 +329,43 @@ services:
   # reached at host.docker.internal:5001 like Ollama — see services/stt/README.md.
   # The block below is the CONTAINERIZED FALLBACK (faster-whisper, CPU). To use it,
   # uncomment and set STT_URL=http://helga-stt:5001 for the web-ui service.
-  # stt:
-  #   build: services/stt
-  #   container_name: helga-stt
-  #   ports:
-  #     - "5001:5001"
-  #   environment:
-  #     - STT_BACKEND=faster-whisper
-  #     - STT_MODEL=distil-large-v3
-  #   volumes:
-  #     - ./data/hf_cache:/root/.cache/huggingface
-  #   restart: unless-stopped
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
-  #     interval: 30s
-  #     timeout: 5s
-  #     retries: 3
-  #     start_period: 30s
-  #   deploy:
-  #     resources:
-  #       limits:
-  #         memory: 2048M
-  #   networks:
-  #     - internal
+  # Offline STT — Learn voice input.
+  #
+  # PRIMARY deployment is NATIVE on the host (Nemotron-3.5-ASR via MLX/ANE) at
+  # host.docker.internal:5001, like Ollama. This block is the CONTAINERISED
+  # FALLBACK (faster-whisper, CPU).
+  #
+  # It was fully written and left COMMENTED OUT while two comments above told
+  # you to "set STT_URL=http://helga-stt:5001 to use the containerized
+  # fallback" — a service that did not exist, so `docker compose up stt`
+  # answered "no such service". Now defined behind the same `portable` profile
+  # as the TTS fallback: the default `docker compose up` is unchanged, and
+  #     docker compose --profile portable up -d stt
+  # gives you voice input with no host process.
+  stt:
+    profiles: ["portable"]
+    build: services/stt
+    container_name: helga-stt
+    ports:
+      - "5001:5001"
+    environment:
+      - STT_BACKEND=faster-whisper
+      - STT_MODEL=distil-large-v3
+    volumes:
+      - ./data/hf_cache:/root/.cache/huggingface
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 2048M
+    networks:
+      - internal
 
 networks:
   internal:
