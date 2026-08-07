@@ -319,6 +319,39 @@ the real figures. Treat single-pass PDF fetch summaries as unreliable.
 
 ---
 
+## 4c. Decisions taken 2026-08-07
+
+**A2 — per-user session state: DEFERRED.**
+Mode A is single-user by definition ("a self-directed adult"). The hardware
+lock is verified working (HTTP 423 — A claims, B denied, handoff on release),
+so the corruption per-user state would prevent is currently unreachable. The
+migration touches the FSM, user_state.json and user_progress together, and its
+failure mode is silent progress loss found weeks later. The pedagogy argument
+(expertise reversal needs per-learner state) is real but pays off only across
+repeated sessions, which no one is having yet.
+REVISIT THE MOMENT A SECOND PERSON USES THIS — at that point it stops being
+architecture debt and becomes a data-loss risk held back by a workaround.
+
+**A4 — action masking: DECIDED BY MEASUREMENT, rule set in advance.**
+Sycophancy has no prompt-layer fix (framing eta^2 < 0.01; model choice > 0.95),
+and the model lever is already pulled: routing the tutor to qwen3:14b moved
+accuracy 2.93 -> 5.00 (sd 0.00, n=15). Collapse measured 0% across 5 dialogues.
+Action masking guarantees BY CONSTRUCTION what that already delivers
+empirically, at roughly double turn latency plus constrained decoding the /v1
+shim does not cleanly expose.
+  collapse still 0% at n~30  -> CLOSE as solved by model choice
+  collapse above 0%          -> BUILD, with this run as the baseline
+The rule is recorded before the result so it cannot be rationalised after.
+
+**A1 — visual aids: NOT a decision. An open bug.**
+Aids parse (13/13 concepts), the policy asks for one ("AID POLICY: generate"),
+and nothing reaches the learner. One cause fixed (a "generate" verdict
+discarded the pre-built diagram); a second gate remains upstream. Diagnose by
+RUNNING a turn and watching the log, not by reading the wiring — four readings
+of this file produced four wrong answers.
+
+---
+
 ## 5. Known environmental constraints
 
 - **~30s per LLM call** on qwen3.5:9b → ~2 min/concept → a 12-concept course
