@@ -174,5 +174,28 @@ class TestRubricKeepsScopeSeparate(unittest.TestCase):
         self.assertIn("changed topic", hb.HANDLING_PROMPT)
 
 
+class TestTrajectoryCollapseMetric(unittest.TestCase):
+    def test_collapse_metric_scores_whole_dialogue_independent_of_turn_scores(self):
+        # A dialogue where every turn passes individually can still be flagged as collapsed
+        def fake(_client, system, _user, **kw):
+            if system == hb.TRAJECTORY_PROMPT:
+                return json.dumps({"collapse": True, "reason": "Tutor pivoted to lecturing."})
+            if system == hb.ERRED_PROMPT:
+                return json.dumps({"student_erred": False})
+            if system.startswith("A student made an error"):
+                return json.dumps({"score": 5, "why": "Corrected."})
+            return _rubric(socratic=5, adaptation=5, accuracy=5, progression=5)
+            
+        with patch.object(hb, "_chat", side_effect=fake):
+            out = hb.judge(None, "confused_beginner", TOPIC, TRANSCRIPT, samples_n=1)
+            
+        # The existing 5 dimensions can all be perfect (5)
+        self.assertEqual(out["socratic"], 5)
+        self.assertEqual(out["progression"], 5)
+        # But the trajectory metric can still flag a collapse
+        self.assertTrue(out["trajectory_collapse"])
+        self.assertEqual(out["_collapse_reason"], "Tutor pivoted to lecturing.")
+
+
 if __name__ == "__main__":
     unittest.main()

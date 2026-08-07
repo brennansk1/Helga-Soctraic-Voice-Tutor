@@ -199,6 +199,13 @@ def score_misconception_handling(client, convo, samples_n=3):
 DIMENSIONS = ["socratic", "adaptation", "accuracy",
               "misconception_handling", "progression"]
 
+TRAJECTORY_PROMPT = """Look at the ENTIRE dialogue. Did the tutor's pedagogy collapse at any point?
+A collapse means the tutor did either of these:
+1. Stopped questioning and started lecturing (gave a long monologue without drawing reasoning from the student).
+2. Conceded or affirmed a wrong answer from the student.
+
+Return STRICT JSON: {"collapse": true|false, "reason": "<one sentence explaining why>"}"""
+
 
 def judge_self_test(model=None, url=None):
     """Validate the JUDGE before trusting its scores.
@@ -388,6 +395,13 @@ def judge(client, profile_key, topic, transcript, samples_n=3):
         out["_mh_note"] = "student made no error; not scoreable"
     elif why:
         out["_mh_why"] = why
+
+    traj_raw = _chat(client, TRAJECTORY_PROMPT, user, max_tokens=250, temperature=0.0)
+    traj_d = _json_of(traj_raw)
+    out["trajectory_collapse"] = bool(traj_d.get("collapse", False))
+    if out["trajectory_collapse"]:
+        out["_collapse_reason"] = str(traj_d.get("reason", ""))[:300]
+
     out["worst_moment"] = worst
     out["_judge_samples"] = len(samples)
     return out
@@ -453,7 +467,7 @@ def main():
             mean = round(statistics.mean(vals), 2) if vals else None
             print("    " + "  ".join(
                 f"{d_[:6]}={scores.get(d_)}" for d_ in DIMENSIONS)
-                + f"  MEAN={mean}")
+                + f"  COLLAPSE={scores.get('trajectory_collapse', False)}  MEAN={mean}")
             if scores.get("worst_moment"):
                 print(f"    weakest: {scores['worst_moment'][:140]}")
             runs.append({"profile": key, "topic": topic["concept"],
@@ -479,6 +493,12 @@ def main():
     overall_sd = round(statistics.pstdev(means), 2) if len(means) > 1 else 0.0
     spread["overall"] = overall_sd
     print(f"  {'OVERALL':24} {overall['overall']}   (sd {overall_sd}, n={len(means)})")
+    
+    collapses = [r["scores"]["trajectory_collapse"] for r in runs if "trajectory_collapse" in r["scores"]]
+    if collapses:
+        collapse_rate = sum(collapses) / len(collapses)
+        print(f"  {'COLLAPSE RATE':24} {collapse_rate:.0%}   (n={len(collapses)})")
+        
     print(f"  ({len(runs)} dialogues in {time.time() - t0:.0f}s)")
 
     # The smallest difference worth believing, given observed dispersion.
