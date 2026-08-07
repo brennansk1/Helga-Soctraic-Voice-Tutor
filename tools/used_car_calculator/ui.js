@@ -1743,19 +1743,141 @@
 
   /* ---------------------------------------------------------- market io */
 
-  function loadMarketPayload(payload, label) {
-    var result = M.ingest(payload);
-    if (!result.ok) {
-      $('market-status').textContent = result.error;
+  var SCHEMA_FIELDS = [
+    ['year', true, 'model year, e.g. 2019'],
+    ['make', true, 'Toyota, Honda, Ford…'],
+    ['model', true, 'Camry, Accord, F-150…'],
+    ['miles', true, 'odometer reading'],
+    ['price', true, 'asking price'],
+    ['url', false, 'link to the listing — so you can open it'],
+    ['trim', false, 'SE, EX-L, Limited…'],
+    ['vin', false, '17 characters; omit rather than guess'],
+    ['title', false, 'clean, rebuilt/salvage, or lemon'],
+    ['accidents', false, 'none, minor, major, or unknown when no report was shown'],
+    ['owners', false, 'number of previous owners'],
+    ['seller', false, 'dealer or private'],
+    ['dealer', false, 'name of the seller'],
+    ['city', false, 'and state — for distance and local pricing'],
+    ['state', false, 'two-letter code'],
+    ['distance', false, 'miles from you, if the site shows it'],
+    ['daysOnMarket', false, 'a long-listed car is a negotiable car'],
+    ['priceDrop', false, 'how much it has already come down'],
+    ['mpg', false, 'combined, if stated'],
+    ['notes', false, 'anything else worth remembering']
+  ];
+
+  function renderSchemaHelp() {
+    setHTML($('market-schema'),
+      '<table class="ledger"><thead><tr><th>Field</th><th>Needed</th><th>What it is</th></tr></thead>' +
+      '<tbody>' + SCHEMA_FIELDS.map(function (f) {
+        return '<tr><td><code>' + esc(f[0]) + '</code></td><td>' +
+          (f[1] ? '<span class="req">required</span>' : '<span class="src">optional</span>') +
+          '</td><td class="src">' + esc(f[2]) + '</td></tr>';
+      }).join('') + '</tbody></table>' +
+      '<p class="block-note" style="margin:10px 0 0">Field names are matched loosely — ' +
+      '<code>mileage</code>, <code>odometer</code>, <code>listPrice</code>, <code>link</code> and ' +
+      'similar all work. Anything missing is simply left unknown rather than guessed.</p>');
+  }
+
+  /** A ready-made brief to hand an assistant, seeded with what is already on the page. */
+  function assistantPrompt() {
+    var wants = [];
+    if (val('in-brand') && val('in-model')) wants.push(val('in-brand') + ' ' + val('in-model'));
+    var maxPrice = numOrNull('in-price');
+    var state = val('in-state');
+    return [
+      'Find me used cars and return them as JSON I can paste into my deal analyzer.',
+      '',
+      wants.length ? 'Looking for: ' + wants.join(', ') + ' (adjust or widen as you see fit).'
+                   : 'Looking for: <say what you want here>.',
+      maxPrice ? 'Budget: around $' + fmtNum.format(maxPrice) + '.' : 'Budget: <your budget>.',
+      state ? 'Near: ' + state + ' — <add your ZIP and how far you will travel>.'
+            : 'Near: <your ZIP and how far you will travel>.',
+      '',
+      'Search widely — aim for 150 or more listings across several sites, dealers and private',
+      'sellers. The more you find, the better the valuation, because the tool builds each car\'s',
+      'comparables from the others.',
+      '',
+      'Return ONLY a JSON array. One object per car, with these fields:',
+      '',
+      '  required: year, make, model, miles, price',
+      '  strongly wanted: url (link to the listing), trim, vin, title, accidents, seller,',
+      '                   dealer, city, state, distance, daysOnMarket',
+      '',
+      'Rules:',
+      '- title is "clean", "rebuilt" (salvage/reconstructed) or "lemon".',
+      '- accidents is "none", "minor", "major", or "unknown" when no history report was shown.',
+      '  Use "unknown" rather than "none" if you did not actually see a report.',
+      '- Never invent a value. If you did not see it, leave the field out.',
+      '- Include the listing url for every car.',
+      '',
+      'Example of one entry:',
+      '{"url":"https://example.com/listing/123","year":2019,"make":"Toyota","model":"Camry",',
+      ' "trim":"SE","miles":52341,"price":18995,"title":"clean","accidents":"unknown",',
+      ' "seller":"dealer","dealer":"Example Motors","city":"Vienna","state":"VA","distance":12}'
+    ].join('\n');
+  }
+
+  function copyPrompt() {
+    var promptText = assistantPrompt();
+    var done = function (ok) {
+      $('market-status').textContent = ok
+        ? 'Prompt copied — paste it to your assistant, then paste its answer back here.'
+        : 'Could not reach the clipboard; the prompt is in the paste box instead.';
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(promptText).then(function () { done(true); }, function () {
+        $('market-paste').value = promptText;
+        done(false);
+      });
+    } else {
+      $('market-paste').value = promptText;
+      done(false);
+    }
+  }
+
+  /**
+   * Take listings from any accepted shape. `append` keeps what is already loaded, so several
+   * searches accumulate into one market the way the CLI's --merge does.
+   */
+  function loadMarketText(input, label, append) {
+    var parsed = typeof input === 'string' ? M.parseText(input) : { ok: true, data: input, form: 'file' };
+    if (!parsed.ok) {
+      $('market-status').textContent = parsed.error;
+      announce(parsed.error);
       return false;
     }
-    market.listings = result.listings;
-    market.meta = result.meta;
+    var result = M.ingest(parsed.data);
+    if (!result.ok) {
+      $('market-status').textContent = result.error;
+      announce(result.error);
+      return false;
+    }
+    if (!result.listings.length) {
+      $('market-status').textContent = 'Read ' + parsed.form + ', but no listing had all of ' +
+        'year, make, model, miles and price.';
+      return false;
+    }
+
+    var before = append ? market.listings.length : 0;
+    var combined = append ? market.listings.concat(result.listings) : result.listings;
+    var merged = M.dedupe(combined);
+    market.listings = merged;
+    market.meta = result.meta || market.meta;
     market.limit = 40;
-    saveJson(LISTINGS_STORE, { listings: result.listings, meta: result.meta });
-    $('market-status').textContent = fmtNum.format(result.listings.length) + ' listings from ' +
-      label + (result.duplicatesRemoved ? ' · ' + result.duplicatesRemoved + ' duplicates merged' : '') +
-      (result.rejected ? ' · ' + result.rejected + ' incomplete records skipped' : '');
+    saveJson(LISTINGS_STORE, { listings: merged, meta: market.meta });
+
+    var parts = [fmtNum.format(merged.length) + ' listings loaded'];
+    if (append) parts.push(fmtNum.format(merged.length - before) + ' new');
+    if (parsed.form && parsed.form !== 'file') parts.push('read as ' + parsed.form);
+    var dropped = (combined.length - merged.length);
+    if (dropped) parts.push(dropped + ' duplicate' + (dropped > 1 ? 's' : '') + ' merged');
+    if (result.rejected) parts.push(result.rejected + ' incomplete skipped');
+    var withUrl = merged.filter(function (l) { return l.url; }).length;
+    if (withUrl < merged.length) parts.push((merged.length - withUrl) + ' without a link');
+    $('market-status').textContent = parts.join(' · ') + (label ? ' · from ' + label : '');
+    announce(fmtNum.format(merged.length) + ' listings loaded and ranked.');
+
     scoreMarket();
     return true;
   }
@@ -1824,35 +1946,33 @@
     });
     $('btn-market-export').addEventListener('click', exportMarketCsv);
 
+    $('btn-market-prompt').addEventListener('click', copyPrompt);
+    $('btn-market-schema').addEventListener('click', function () {
+      var box = $('market-schema');
+      var open = box.style.display === 'none';
+      if (open) renderSchemaHelp();
+      box.style.display = open ? 'block' : 'none';
+      $('btn-market-schema').textContent = open ? 'Hide the fields' : 'Show the fields';
+    });
+
     $('btn-market-file').addEventListener('click', function () { $('market-file').click(); });
     $('market-file').addEventListener('change', function (event) {
       var file = event.target.files && event.target.files[0];
       if (!file) return;
       var reader = new FileReader();
-      reader.onload = function () {
-        try {
-          loadMarketPayload(JSON.parse(reader.result), file.name);
-        } catch (e) {
-          $('market-status').textContent = 'That file is not valid JSON: ' + e.message;
-        }
-      };
+      reader.onload = function () { loadMarketText(String(reader.result), file.name, false); };
       reader.readAsText(file);
+      event.target.value = '';           // let the same file be picked again
     });
 
-    $('btn-market-paste').addEventListener('click', function () {
-      var wrap = $('market-paste-wrap');
-      wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
-      if (wrap.style.display === 'block') $('market-paste').focus();
-    });
     $('btn-market-load-paste').addEventListener('click', function () {
-      var raw = $('market-paste').value.trim();
-      if (!raw) { $('market-status').textContent = 'Paste some JSON first.'; return; }
-      try {
-        if (loadMarketPayload(JSON.parse(raw), 'pasted JSON')) {
-          $('market-paste-wrap').style.display = 'none';
-        }
-      } catch (e) {
-        $('market-status').textContent = 'That is not valid JSON: ' + e.message;
+      if (loadMarketText($('market-paste').value, 'the paste box', false)) {
+        $('market-paste').value = '';
+      }
+    });
+    $('btn-market-append').addEventListener('click', function () {
+      if (loadMarketText($('market-paste').value, 'the paste box', true)) {
+        $('market-paste').value = '';
       }
     });
     $('btn-market-clear').addEventListener('click', function () {
@@ -1862,14 +1982,14 @@
       renderMarket();
     });
 
-    // Prefer the generated file; fall back to whatever was loaded here last time.
+    // listings.js is optional — generated by scrape_listings.py, never shipped.
     var generated = window.UCDA_LISTINGS;
     var stored = loadJson(LISTINGS_STORE, null);
     if (generated) {
-      loadMarketPayload(generated, 'listings.js' +
-        (generated.generated ? ' generated ' + String(generated.generated).slice(0, 10) : ''));
+      loadMarketText(generated, 'listings.js' +
+        (generated.generated ? ' generated ' + String(generated.generated).slice(0, 10) : ''), false);
     } else if (stored && stored.listings && stored.listings.length) {
-      loadMarketPayload(stored.listings, 'this browser');
+      loadMarketText(stored.listings, 'this browser', false);
     } else {
       renderMarket();
     }

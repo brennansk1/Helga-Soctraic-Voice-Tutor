@@ -191,8 +191,12 @@ label.f.invalid input, label.f.invalid select { border-bottom-color: var(--bad);
 .pick ol { margin: 0; padding-left: 18px; font-size: 12.5px; }
 .pick li { margin-bottom: 7px; }
 .pick .m { font-family: var(--mono); }
-#market-paste { width: 100%; min-height: 130px; font-family: var(--mono); font-size: 12px;
-  border: 1px solid var(--field-line); background: var(--paper); color: var(--ink); padding: 9px; }
+#market-paste { width: 100%; min-height: 120px; font-family: var(--mono); font-size: 12px;
+  border: 1px solid var(--field-line); background: var(--paper); color: var(--ink);
+  padding: 9px; border-radius: 0; resize: vertical; }
+#market-paste:focus { border-color: var(--s1); outline: 0; }
+#market-schema table { font-size: 12px; }
+#market-schema .req { color: var(--s2); font-weight: 700; }
 #market-empty { border-left: 3px solid var(--s1); background: var(--s1-wash); padding: 14px 16px; }
 #market-empty code { font-size: 12px; }
 
@@ -536,30 +540,35 @@ table.ledger { min-width: 320px; }
       </p>
 
       <div class="controls">
-        <button class="tiny" id="btn-market-file" type="button">Load listings file</button>
-        <input type="file" id="market-file" accept=".json,application/json" class="visually-hidden"
-               aria-label="Choose a listings JSON file">
-        <button class="tiny ghost" id="btn-market-paste" type="button">Paste JSON</button>
+        <button class="tiny solid" id="btn-market-prompt" type="button">Copy the prompt</button>
+        <button class="tiny" id="btn-market-file" type="button">Load a file</button>
+        <input type="file" id="market-file" accept=".json,.csv,.tsv,.txt,application/json,text/csv"
+               class="visually-hidden" aria-label="Choose a listings file">
         <button class="tiny ghost" id="btn-market-clear" type="button">Clear</button>
         <span class="src" id="market-status" role="status" aria-live="polite"></span>
       </div>
 
-      <div id="market-paste-wrap" style="display:none;margin-top:14px">
-        <label class="f"><span class="cap">Listings JSON</span>
-          <textarea id="market-paste" spellcheck="false"
-            placeholder='{"listings":[{"year":2019,"make":"Toyota","model":"Camry","miles":52341,"price":18995}]}'></textarea>
+      <div id="market-intake" style="margin-top:18px">
+        <label class="f"><span class="cap">Paste listings here</span>
+          <span class="hint">JSON, one object per line, or a CSV/TSV block — pasted straight from
+          your assistant, code fence and all</span>
+          <textarea id="market-paste" spellcheck="false" rows="8"
+            placeholder='[{"url":"https://…/listing/123","year":2019,"make":"Toyota","model":"Camry","miles":52341,"price":18995}]'></textarea>
         </label>
         <div class="controls" style="margin-top:10px">
-          <button class="tiny" id="btn-market-load-paste" type="button">Load pasted listings</button>
+          <button class="tiny solid" id="btn-market-load-paste" type="button">Load these listings</button>
+          <button class="tiny ghost" id="btn-market-append" type="button">Add to what is loaded</button>
+          <button class="tiny ghost" id="btn-market-schema" type="button">Show the fields</button>
         </div>
+        <div id="market-schema" style="display:none;margin-top:14px"></div>
       </div>
 
-      <div id="market-empty" style="margin-top:16px">
-        <b>No listings loaded.</b> Ask your assistant something like
-        <em>“find me 2018–2021 Camrys and Accords under $25,000 within 100 miles of 22102”</em>,
-        then have it run
-        <code>python3 scrape_listings.py --from-json found.json --merge</code>
-        and reload this page. Or paste its JSON above.
+      <div id="market-empty" style="margin-top:18px">
+        <b>Nothing loaded yet.</b> Press <b>Copy the prompt</b>, give it to your assistant along
+        with what you are shopping for, and paste back whatever it returns. Only five fields are
+        required — <code>year</code>, <code>make</code>, <code>model</code>, <code>miles</code>,
+        <code>price</code> — and a <code>url</code> so you can open the listing. Everything else
+        sharpens the ranking and can be left out.
       </div>
 
       <div id="market-live" style="display:none">

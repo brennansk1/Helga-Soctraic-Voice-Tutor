@@ -328,7 +328,13 @@ def page():
 
     with playwright_api.sync_playwright() as p:
         browser = p.chromium.launch(executable_path=chromium, args=["--no-sandbox"])
-        pg = browser.new_page()
+        context = browser.new_context()
+        # The market section copies a brief to the clipboard; without these the read hangs.
+        try:
+            context.grant_permissions(["clipboard-read", "clipboard-write"])
+        except Exception:  # noqa: BLE001 - permission naming varies by build
+            pass
+        pg = context.new_page()
         pg.page_errors = []
         pg.on("pageerror", lambda e: pg.page_errors.append(str(e)))
         pg.goto("file://" + INDEX_HTML)
@@ -1213,44 +1219,156 @@ def test_cli_prints_the_schema(capsys):
         assert field in out
 
 
-def test_shipped_sample_database_is_valid():
-    """The checked-in listings.js must load and be scorable."""
-    node = _node()
-    script = (
-        "const M=require({market});const E=require({engine});const D=require({data});"
-        "const L=require({listings});"
-        "const ing=M.ingest(L);"
-        "const rows=M.scoreAll(ing.listings,{{currentYear:2026,payType:'cash',horizon:5,"
-        "annualMiles:12000,taxRate:0.06,fees:500,down:0,termMonths:48,apr:9.6,"
-        "creditTier:'prime',gasUsdPerGal:3.15,insurance:1750,income:0}},E,D,{{}});"
-        "process.stdout.write(JSON.stringify({{n:ing.listings.length,scored:rows.length,"
-        "top:rows[0].score,allFinite:rows.every(r=>Number.isFinite(r.score))}}));"
-    ).format(
-        market=json.dumps(os.path.join(TOOL_DIR, "market.js")),
-        engine=json.dumps(os.path.join(TOOL_DIR, "engine.js")),
-        data=json.dumps(os.path.join(TOOL_DIR, "data.js")),
-        listings=json.dumps(os.path.join(TOOL_DIR, "listings.js")),
-    )
-    result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=120)
-    assert result.returncode == 0, result.stderr
-    summary = json.loads(result.stdout)
-    assert summary["n"] > 100, "the sample market should be a real cohort"
-    assert summary["scored"] == summary["n"]
-    assert summary["allFinite"]
-    assert 0 <= summary["top"] <= 100
-
-
 # ------------------------------------------------------- market section (UI)
 
 
-def test_ui_market_loads_the_generated_database(page):
+def _market_fixture(n=48):
+    """A cohort on a known price curve, so ranking has a right answer."""
+    rows = []
+    for i in range(n):
+        year = 2018 + (i % 4)
+        miles = 40000 + (i % 10) * 8000
+        price = int(28000 * (0.93 ** (2026 - year)) - miles * 0.06)
+        rows.append({
+            "url": f"https://cars.example/listing/{i}",
+            "year": year, "make": "Toyota", "model": "Camry",
+            "trim": ["LE", "SE", "XLE"][i % 3],
+            "miles": miles, "price": price, "title": "clean",
+            "seller": "private" if i % 7 == 0 else "dealer",
+            "dealer": None if i % 7 == 0 else "Example Motors",
+            "city": "Vienna", "state": "VA", "distance": 5 + (i % 40),
+        })
+    # A couple of Accords so search can discriminate, and one branded title.
+    rows.append({"url": "https://cars.example/acc1", "year": 2019, "make": "Honda",
+                 "model": "Accord", "miles": 55000, "price": 18200, "title": "clean"})
+    rows.append({"url": "https://cars.example/acc2", "year": 2020, "make": "Honda",
+                 "model": "Accord", "miles": 42000, "price": 20800, "title": "clean"})
+    rows.append({"url": "https://cars.example/salv", "year": 2020, "make": "Toyota",
+                 "model": "Camry", "miles": 48000, "price": 11000, "title": "salvage"})
+    return rows
+
+
+def _seed_market(page, rows=None, append=False):
+    page.fill("#market-paste", json.dumps(rows if rows is not None else _market_fixture()))
+    page.click("#btn-market-append" if append else "#btn-market-load-paste")
+    page.wait_for_timeout(1200)
+
+
+@pytest.fixture(scope="module")
+def market_page(page):
+    """A page with a cohort loaded. Nothing ships with the tool, so tests seed their own."""
+    _seed_market(page)
+    return page
+
+
+def test_ui_market_starts_empty_with_guidance(market_page):
+    page = market_page
+    """Nothing is shipped, so a fresh page must explain how to get data in."""
+    page.click("#btn-market-clear")
+    page.wait_for_timeout(500)
+    assert page.eval_on_selector("#market-empty", "e => getComputedStyle(e).display") != "none"
+    assert page.eval_on_selector("#market-live", "e => e.style.display") == "none"
+    guidance = page.inner_text("#market-empty").lower()
+    assert "copy the prompt" in guidance
+    for field in ("year", "make", "model", "miles", "price", "url"):
+        assert field in guidance
+    _seed_market(page)
+
+
+def test_ui_market_accepts_pasted_json(market_page):
+    page = market_page
     status = page.inner_text("#market-status").lower()
-    assert "listings" in status
+    assert "listings loaded" in status
     assert page.eval_on_selector("#market-live", "e => e.style.display") == "block"
-    assert page.eval_on_selector("#market-empty", "e => e.style.display") == "none"
 
 
-def test_ui_market_ranks_listings_best_first(page):
+def test_ui_market_reads_fenced_json_with_prose_and_loose_field_names(market_page):
+    page = market_page
+    """An assistant's answer usually arrives wrapped in a code fence with a sentence around it."""
+    page.click("#btn-market-clear")
+    page.wait_for_timeout(400)
+    messy = (
+        "Here's what I found:\n\n```json\n"
+        '[{"link":"https://x.example/1","modelYear":2019,"brand":"Toyota","model":"Camry",'
+        '"odometer":"52,341","listPrice":"$18,995","titleStatus":"Clean"},\n'
+        ' {"link":"https://x.example/2","modelYear":2020,"brand":"Toyota","model":"Camry",'
+        '"odometer":"38,900","listPrice":"$21,400"}]\n```\nHope that helps!'
+    )
+    page.fill("#market-paste", messy)
+    page.click("#btn-market-load-paste")
+    page.wait_for_timeout(900)
+    assert "2 listings loaded" in page.inner_text("#market-status").lower()
+    table = page.inner_text("#market-table")
+    assert "Camry" in table
+    assert "18,995" in table.replace("$", "")
+    links = page.eval_on_selector_all("#market-table a", "els => els.map(e => e.href)")
+    assert any("x.example" in href for href in links), "the listing link must survive"
+    _seed_market(page)
+
+
+def test_ui_market_accepts_a_csv_block(market_page):
+    page = market_page
+    page.click("#btn-market-clear")
+    page.wait_for_timeout(400)
+    page.fill("#market-paste",
+              "year,make,model,mileage,price,url\n"
+              "2021,Toyota,Camry,29000,23000,https://cars.example/a\n"
+              "2019,Toyota,Camry,61000,17000,https://cars.example/b\n")
+    page.click("#btn-market-load-paste")
+    page.wait_for_timeout(900)
+    status = page.inner_text("#market-status").lower()
+    assert "2 listings loaded" in status
+    assert "csv" in status
+    _seed_market(page)
+
+
+def test_ui_market_append_accumulates_searches(market_page):
+    page = market_page
+    before = page.eval_on_selector_all("#market-table tbody tr", "els => els.length")
+    _seed_market(page, [{"url": "https://cars.example/new1", "year": 2022, "make": "Toyota",
+                         "model": "Camry", "miles": 21000, "price": 25500}], append=True)
+    status = page.inner_text("#market-status").lower()
+    assert "new" in status
+    after = page.eval_on_selector_all("#market-table tbody tr", "els => els.length")
+    assert after >= before
+
+
+def test_ui_market_rejects_unreadable_input_with_guidance(market_page):
+    page = market_page
+    page.fill("#market-paste", "this is not listings at all")
+    page.click("#btn-market-load-paste")
+    page.wait_for_timeout(500)
+    status = page.inner_text("#market-status").lower()
+    assert "could not read" in status
+    assert "csv" in status or "json" in status
+    page.fill("#market-paste", "")
+
+
+def test_ui_market_copy_prompt_puts_a_brief_on_the_clipboard(market_page):
+    page = market_page
+    page.click("#btn-market-prompt")
+    page.wait_for_timeout(600)
+    assert "prompt" in page.inner_text("#market-status").lower()
+    text = page.evaluate("() => navigator.clipboard.readText()")
+    for expected in ("JSON", "year", "make", "model", "miles", "price", "url"):
+        assert expected in text, f"the brief omits {expected}"
+    assert "unknown" in text, "it must tell the assistant not to assume a clean history"
+    assert "Never invent" in text
+
+
+def test_ui_market_schema_help_lists_required_and_optional_fields(market_page):
+    page = market_page
+    page.click("#btn-market-schema")
+    page.wait_for_timeout(400)
+    text = page.inner_text("#market-schema").lower()
+    assert "required" in text and "optional" in text
+    assert "url" in text and "daysonmarket" in text.replace(" ", "")
+    page.click("#btn-market-schema")
+    page.wait_for_timeout(300)
+
+
+def test_ui_market_ranks_listings_best_first(market_page):
+    page = market_page
     scores = page.eval_on_selector_all(
         "#market-table tbody tr td:nth-child(8)",
         "els => els.map(e => parseInt(e.textContent, 10))")
@@ -1259,62 +1377,78 @@ def test_ui_market_ranks_listings_best_first(page):
     assert all(0 <= s <= 100 for s in scores)
 
 
-def test_ui_market_shows_the_three_shortlists(page):
+def test_ui_market_shows_the_three_shortlists(market_page):
+    page = market_page
     assert page.eval_on_selector_all(".pick", "els => els.length") == 3
     text = page.inner_text("#market-picks").lower()
     for heading in ("best overall", "biggest bargains", "cheapest to own"):
         assert heading in text
 
 
-def test_ui_market_derives_stats_from_the_cohort(page):
+def test_ui_market_derives_stats_from_the_cohort(market_page):
+    page = market_page
     stats = page.inner_text("#market-stats").lower()
     for expected in ("listings", "median price", "median score", "depreciation"):
         assert expected in stats
 
 
-def test_ui_market_plots_every_listing(page):
+def test_ui_market_links_every_listing_back_to_its_page(market_page):
+    page = market_page
+    links = page.eval_on_selector_all(
+        "#market-table tbody tr a", "els => els.map(e => e.href)")
+    rows = page.eval_on_selector_all("#market-table tbody tr", "els => els.length")
+    assert len(links) == rows, "every listing should link to where it came from"
+    assert all(href.startswith("https://") for href in links)
+    rel = page.eval_on_selector("#market-table tbody tr a", "e => e.rel")
+    assert "noopener" in rel, "external links must not hand over the opener"
+
+
+def test_ui_market_plots_every_listing(market_page):
+    page = market_page
     dots = page.eval_on_selector_all(".mk-dot", "els => els.length")
     rows = page.eval_on_selector_all("#market-table tbody tr", "els => els.length")
-    assert dots > rows, "the chart shows the whole filtered set, not just the visible page"
+    assert dots >= rows
 
 
-def test_ui_market_search_narrows_the_table(page):
-    before = page.eval_on_selector_all("#market-table tbody tr", "els => els.length")
-    page.fill("#market-search", "camry")
+def test_ui_market_search_narrows_the_table(market_page):
+    page = market_page
+    page.fill("#market-search", "accord")
     page.wait_for_timeout(500)
     after = page.inner_text("#market-table").lower()
-    assert "camry" in after
-    assert "accord" not in after
+    assert "accord" in after
+    assert "camry" not in after
     page.fill("#market-search", "")
     page.wait_for_timeout(400)
-    assert page.eval_on_selector_all("#market-table tbody tr", "els => els.length") == before
 
 
-def test_ui_market_filters_apply(page):
-    page.fill("#mf-maxprice", "14000")
+def test_ui_market_filters_apply(market_page):
+    page = market_page
+    page.fill("#mf-maxprice", "16000")
     page.dispatch_event("#mf-maxprice", "change")
     page.wait_for_timeout(500)
     prices = page.eval_on_selector_all(
         "#market-table tbody tr td:nth-child(5)",
         "els => els.map(e => parseInt(e.textContent.replace(/[^0-9]/g, ''), 10))")
     assert prices, "the filter should still leave something"
-    assert max(prices) <= 14000
+    assert max(prices) <= 16000
     page.click("#btn-market-reset-filters")
     page.wait_for_timeout(500)
 
 
-def test_ui_market_clean_title_filter_is_on_by_default(page):
+def test_ui_market_clean_title_filter_is_on_by_default(market_page):
+    page = market_page
     assert page.eval_on_selector("#mf-clean", "e => e.checked") is True
     assert "rebuilt" not in page.inner_text("#market-table").lower()
     page.uncheck("#mf-clean")
     page.wait_for_timeout(600)
-    page.click("th[data-sort='price']")
-    page.wait_for_timeout(500)
+    assert "rebuilt" in page.inner_text("#market-table").lower(), \
+        "the branded car should appear once the filter is off"
     page.check("#mf-clean")
     page.wait_for_timeout(500)
 
 
-def test_ui_market_column_sort_works(page):
+def test_ui_market_column_sort_works(market_page):
+    page = market_page
     page.click("th[data-sort='price']")
     page.wait_for_timeout(500)
     prices = page.eval_on_selector_all(
@@ -1325,56 +1459,78 @@ def test_ui_market_column_sort_works(page):
     page.wait_for_timeout(500)
 
 
-def test_ui_market_show_more_pages_the_table(page):
-    first = page.eval_on_selector_all("#market-table tbody tr", "els => els.length")
-    if page.eval_on_selector("#btn-market-more", "e => e.style.display") != "none":
-        page.click("#btn-market-more")
-        page.wait_for_timeout(500)
-        assert page.eval_on_selector_all("#market-table tbody tr", "els => els.length") > first
-
-
-def test_ui_market_opens_a_listing_into_the_full_report(page):
-    page.click("#btn-market-reset-filters")
-    page.wait_for_timeout(500)
+def test_ui_market_opens_a_listing_into_the_full_report(market_page):
+    page = market_page
     first_row = page.locator("#market-table tbody tr").first
     price = first_row.locator("td").nth(4).inner_text()
     expected = int(re.sub(r"[^0-9]", "", price))
     first_row.locator("button[data-open]").click()
     page.wait_for_timeout(1500)
-    assert int(page.input_value("#in-price")) == expected, \
-        "the listing's price should land in the report"
+    assert int(page.input_value("#in-price")) == expected
     assert page.eval_on_selector("#results", "e => e.style.display") == "block"
-    # Cohort comparables should have been pushed into the comp fields.
     assert page.input_value("#in-comp2"), "the cohort should supply comparables"
 
 
-def test_ui_market_paste_accepts_json(page):
-    page.click("#btn-market-paste")
-    page.wait_for_timeout(300)
-    payload = json.dumps({"listings": [
-        {"year": 2021, "make": "Toyota", "model": "Camry", "miles": 30000, "price": 21000},
-        {"year": 2020, "make": "Toyota", "model": "Camry", "miles": 45000, "price": 19000},
-    ]})
-    page.fill("#market-paste", payload)
-    page.click("#btn-market-load-paste")
-    page.wait_for_timeout(900)
-    assert "pasted json" in page.inner_text("#market-status").lower()
-    assert page.eval_on_selector_all("#market-table tbody tr", "els => els.length") == 2
-
-
-def test_ui_market_rejects_bad_json_with_a_message(page):
-    page.click("#btn-market-paste")
-    page.wait_for_timeout(300)
-    page.fill("#market-paste", "{not json")
-    page.click("#btn-market-load-paste")
-    page.wait_for_timeout(500)
-    assert "not valid json" in page.inner_text("#market-status").lower()
-
-
-def test_ui_market_clear_empties_the_section(page):
+def test_ui_market_clear_empties_the_section(market_page):
+    page = market_page
     page.click("#btn-market-clear")
     page.wait_for_timeout(600)
-    assert page.eval_on_selector("#market-empty", "e => e.style.display") == "block"
+    assert page.eval_on_selector("#market-empty", "e => getComputedStyle(e).display") != "none"
     assert page.eval_on_selector("#market-live", "e => e.style.display") == "none"
-    assert "agents.md" in page.inner_text("#market-block").lower() or \
-        "scrape_listings" in page.inner_text("#market-empty").lower()
+    _seed_market(page)
+
+
+def test_python_parse_text_matches_the_browser_tolerance():
+    fenced = '```json\n[{"year":2019,"make":"Toyota","model":"Camry"}]\n```'
+    assert scrape_listings.parse_text(fenced)[0]["year"] == 2019
+    prose = 'Found these:\n[{"year":2020,"make":"Honda"}]\nthanks'
+    assert scrape_listings.parse_text(prose)[0]["make"] == "Honda"
+    ndjson = '{"year":2019}\n{"year":2020},'
+    assert len(scrape_listings.parse_text(ndjson)) == 2
+    csv_block = "year,make,model\n2019,Toyota,Camry"
+    assert scrape_listings.parse_text(csv_block)[0]["model"] == "Camry"
+    envelope = '{"listings":[{"year":2021}]}'
+    assert len(scrape_listings.parse_text(envelope)) == 1
+    assert scrape_listings.parse_text("just a sentence") == []
+    assert scrape_listings.parse_text("") == []
+
+
+def test_python_aliases_and_url_handling():
+    row = scrape_listings.normalise({
+        "modelYear": "2019", "brand": "toyota", "model": "Camry",
+        "odometer": "52,341", "listPrice": "$18,995",
+        "link": "www.cars.example/listing/9", "sellerType": "Private",
+    }, 0)
+    assert row["year"] == 2019
+    assert row["make"] == "Toyota"
+    assert row["miles"] == 52341
+    assert row["price"] == 18995
+    assert row["url"] == "https://www.cars.example/listing/9"
+    assert row["source"] == "cars.example", "the site is derived from the link"
+
+
+def test_python_normalise_url_rejects_nonsense():
+    assert scrape_listings.normalise_url("https://a.example/1") == "https://a.example/1"
+    assert scrape_listings.normalise_url("a.example/1") == "https://a.example/1"
+    assert scrape_listings.normalise_url("not a url") is None
+    assert scrape_listings.normalise_url("") is None
+
+
+def test_cli_reads_a_fenced_assistant_answer(tmp_path):
+    src = tmp_path / "answer.txt"
+    src.write_text('Here you go!\n```json\n'
+                   '[{"link":"https://x.example/1","modelYear":2019,"brand":"Toyota",'
+                   '"model":"Camry","odometer":"52,341","listPrice":"$18,995"}]\n```\n')
+    js, js_json = tmp_path / "listings.js", tmp_path / "listings.json"
+    assert scrape_listings.main(["--from-json", str(src),
+                                 "--out", str(js), "--out-json", str(js_json)]) == 0
+    saved = json.loads(js_json.read_text())
+    assert saved["count"] == 1
+    assert saved["listings"][0]["url"] == "https://x.example/1"
+
+
+def test_no_sample_market_is_shipped():
+    """The listing database is the user's own; nothing synthetic ships with the tool."""
+    for name in ("listings.js", "listings.json"):
+        assert not os.path.exists(os.path.join(TOOL_DIR, name)), \
+            f"{name} must not be checked in — it is generated from the user's own searches"

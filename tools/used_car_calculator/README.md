@@ -14,14 +14,29 @@ from the data itself.
 The single-car report's weakest input is comparables, because you have to find them by hand.
 With a cohort loaded, that goes away.
 
-**Ask an assistant to go and find the cars.** `AGENTS.md` is the brief it follows — what to
-search, what to read, and the exact JSON to produce. Then:
+**Nothing ships with the tool** — the listing database is built from your own searches.
+
+Open the **Market** section and press **Copy the prompt**. Hand that to an assistant with
+web access along with what you are shopping for, then paste whatever comes back into the box
+and press Load. That is the whole loop; no shell required.
+
+The paste box is deliberately forgiving. It reads a bare JSON array, a `{"listings": […]}`
+envelope, JSON inside a markdown code fence, one object per line, or a CSV/TSV block — with
+or without prose around it. Field names are matched loosely, so `mileage`, `odometer`,
+`listPrice`, `link` and `modelYear` all resolve. **Add to what is loaded** accumulates
+several searches into one market, reconciling duplicates across sites.
+
+Only five fields are required — `year`, `make`, `model`, `miles`, `price` — plus a `url` so
+every ranked car links back to its listing. `AGENTS.md` is the full brief an assistant
+follows.
+
+If you prefer the shell:
 
 ```bash
 python3 scrape_listings.py --from-json found.json --query "Camry/Accord under 25k" --merge
 ```
 
-Reload `index.html` and the **Market** section ranks every one of them. For each car it finds
+Either way, the **Market** section ranks every listing. For each car it finds
 its peers in the cohort (same model, near year, near mileage, matching title class), adjusts
 each peer to that car's own mileage and model year, and prices from there — so a 120k-mile car
 is never valued off 40k-mile listings. Then it scores all of them through the same engine the
@@ -204,14 +219,14 @@ leaves its table untouched and is reported.
 ## Tests
 
 ```bash
-python3 -m pytest tests/test_used_car_calculator.py -v     # everything (117 tests)
-node --test 'tools/used_car_calculator/tests/*.test.js'    # engine + market (188 tests)
+python3 -m pytest tests/test_used_car_calculator.py -v     # everything (126 tests)
+node --test 'tools/used_car_calculator/tests/*.test.js'    # engine + market (202 tests)
 ```
 
-Three layers: 188 Node tests covering every formula, boundary and failure path in the engine
+Three layers: 202 Node tests covering every formula, boundary and failure path in the engine
 and the API client (with an injected fetch, so no network is touched); Python tests for the
 dataset builder, including a round-trip that proves a refreshed `data.js` is still loadable
-by the engine; and 77 headless-Chromium tests that drive the real UI — score rendering, chart
+by the engine; and 86 headless-Chromium tests that drive the real UI — score rendering, chart
 geometry, the loan-term table's monotonicity, the target-payment solver, trade-in tax rules,
 the service schedule, sensitivity ordering, the share-link round-trip, phone layout, WCAG
 contrast in both themes, keyboard/ARIA affordances, input validation, error recovery, the
@@ -228,7 +243,7 @@ The Playwright tests skip cleanly if Playwright or Chromium is absent.
 | `market.js` | cohort comparables, batch scoring, search/filter/sort, market statistics |
 | `scrape_listings.py` | listing ingest: JSON/CSV/stdin, robots-aware JSON-LD fetch, dedupe |
 | `AGENTS.md` | the brief an assistant follows when browsing for listings |
-| `listings.js` / `.json` | the generated listing database (a sample market ships with the tool) |
+| `listings.js` / `.json` | your generated listing database — git-ignored, never shipped |
 | `ui.js` | form wiring, SVG charts, live lookups, comparison table |
 | `engine.js` | every formula — pure functions, no DOM, no network |
 | `sources.js` | live API client with injectable fetch, 6s timeouts, silent fallback |

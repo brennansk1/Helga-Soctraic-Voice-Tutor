@@ -32,6 +32,23 @@
 
   /* ------------------------------------------------------------ normalising */
 
+  /** Keep only real http(s) links; a bare domain gets a scheme so it stays clickable. */
+  function normaliseUrl(value) {
+    var v = text(value);
+    if (!v) return null;
+    if (/^https?:\/\//i.test(v)) return v;
+    if (/^[\w.-]+\.[a-z]{2,}(\/|$)/i.test(v)) return 'https://' + v;
+    return null;
+  }
+
+  /** The site a listing came from, so duplicates across aggregators can be reconciled. */
+  function hostOf(url) {
+    if (!url) return null;
+    var match = String(url).match(/^https?:\/\/([^/?#]+)/i);
+    return match ? match[1].replace(/^www\./i, '') : null;
+  }
+
+
   var TITLE_WORDS = {
     salvage: 'rebuilt', rebuilt: 'rebuilt', reconstructed: 'rebuilt', branded: 'rebuilt',
     lemon: 'lemon', buyback: 'lemon', clean: 'clean', clear: 'clean'
@@ -59,37 +76,86 @@
    * Coerce one scraped record into the canonical shape. Anything unparseable becomes null
    * rather than a guess, and `ok` says whether the record has the minimum to be scored.
    */
-  function normaliseListing(raw, index) {
-    var year = num(raw.year, null);
-    var price = num(raw.price, null);
-    var miles = num(raw.miles !== undefined ? raw.miles : raw.mileage, null);
-    var make = titleCase(raw.make);
-    var model = text(raw.model);
-    var vin = text(raw.vin).toUpperCase() || null;
+  /** Field names an assistant might reasonably use, mapped onto ours. */
+  var ALIASES = {
+    year: ['year', 'modelYear', 'model_year', 'yr'],
+    make: ['make', 'brand', 'manufacturer'],
+    model: ['model', 'modelName', 'model_name'],
+    trim: ['trim', 'trimLevel', 'trim_level', 'version'],
+    miles: ['miles', 'mileage', 'odometer', 'odometerReading', 'miles_driven', 'km'],
+    price: ['price', 'askingPrice', 'asking_price', 'listPrice', 'list_price', 'cost'],
+    vin: ['vin', 'VIN', 'vehicleIdentificationNumber'],
+    url: ['url', 'link', 'href', 'listingUrl', 'listing_url', 'webpage', 'website', 'page'],
+    source: ['source', 'site', 'website_name', 'siteName', 'domain', 'marketplace'],
+    dealer: ['dealer', 'dealerName', 'dealer_name', 'sellerName', 'seller_name', 'store'],
+    city: ['city', 'town', 'locality'],
+    state: ['state', 'region', 'province'],
+    zip: ['zip', 'zipcode', 'zip_code', 'postalCode', 'postal_code'],
+    distance: ['distance', 'distanceMiles', 'miles_away', 'milesAway', 'radius'],
+    title: ['title', 'titleStatus', 'title_status', 'titleType'],
+    accidents: ['accidents', 'accidentHistory', 'accident_history', 'accident', 'damage'],
+    owners: ['owners', 'numOwners', 'num_owners', 'previousOwners', 'ownerCount'],
+    condition: ['condition', 'vehicleCondition'],
+    seller: ['seller', 'sellerType', 'seller_type', 'listedBy'],
+    daysOnMarket: ['daysOnMarket', 'days_on_market', 'daysListed', 'dom', 'age_days'],
+    priceDrop: ['priceDrop', 'price_drop', 'priceReduction', 'reduced'],
+    mpg: ['mpg', 'combinedMpg', 'combined_mpg', 'fuelEconomy'],
+    segment: ['segment', 'bodyStyle', 'body_style', 'bodyType', 'category'],
+    notes: ['notes', 'description', 'summary', 'comments', 'title_text', 'headline'],
+    id: ['id', 'listingId', 'listing_id', 'stockNumber', 'stock']
+  };
+
+  /** First non-empty value among a field's accepted names. */
+  function pick(raw, field) {
+    var names = ALIASES[field] || [field];
+    for (var i = 0; i < names.length; i++) {
+      var v = raw[names[i]];
+      if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+    }
+    // Last resort: a case-insensitive match on any key.
+    var lower = {};
+    Object.keys(raw).forEach(function (k) { lower[k.toLowerCase().replace(/[^a-z]/g, '')] = raw[k]; });
+    for (var j = 0; j < names.length; j++) {
+      var key = names[j].toLowerCase().replace(/[^a-z]/g, '');
+      if (lower[key] !== undefined && String(lower[key]).trim() !== '') return lower[key];
+    }
+    return undefined;
+  }
+
+  function normaliseListing(rawInput, index) {
+    var raw = rawInput || {};
+    var get = function (field) { return pick(raw, field); };
+    var year = num(get('year'), null);
+    var price = num(get('price'), null);
+    var miles = num(get('miles'), null);
+    var make = titleCase(get('make'));
+    var model = text(get('model'));
+    var vin = text(get('vin')).toUpperCase() || null;
+    if (vin && !/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) vin = null;   // a wrong VIN is worse than none
 
     var listing = {
-      id: text(raw.id) || vin || ('L' + index),
+      id: text(get('id')) || vin || ('L' + index),
       vin: vin,
-      year: year, make: make, model: model, trim: text(raw.trim) || null,
+      year: year, make: make, model: model, trim: text(get('trim')) || null,
       miles: miles, price: price,
-      title: normaliseTitle(raw.title || raw.titleStatus),
-      accidents: normaliseAccidents(raw.accidents || raw.accidentHistory),
-      owners: num(raw.owners, null),
-      condition: text(raw.condition).toLowerCase() || null,
-      seller: /private|owner|fsbo/i.test(text(raw.seller)) ? 'private' : 'dealer',
-      dealer: text(raw.dealer || raw.dealerName) || null,
-      city: titleCase(raw.city) || null,
-      state: text(raw.state).toUpperCase().slice(0, 2) || null,
-      zip: text(raw.zip) || null,
-      distance: num(raw.distance, null),
-      daysOnMarket: num(raw.daysOnMarket, null),
-      priceDrop: num(raw.priceDrop, null),
-      url: text(raw.url) || null,
-      source: text(raw.source) || null,
+      title: normaliseTitle(get('title')),
+      accidents: normaliseAccidents(get('accidents')),
+      owners: num(get('owners'), null),
+      condition: text(get('condition')).toLowerCase() || null,
+      seller: /private|owner|fsbo|individual/i.test(text(get('seller'))) ? 'private' : 'dealer',
+      dealer: text(get('dealer')) || null,
+      city: titleCase(get('city')) || null,
+      state: text(get('state')).toUpperCase().slice(0, 2) || null,
+      zip: text(get('zip')) || null,
+      distance: num(get('distance'), null),
+      daysOnMarket: num(get('daysOnMarket'), null),
+      priceDrop: num(get('priceDrop'), null),
+      url: normaliseUrl(get('url')),
+      source: text(get('source')) || hostOf(normaliseUrl(get('url'))),
       seenAt: text(raw.seenAt) || null,
-      mpg: num(raw.mpg, null),
-      segment: text(raw.segment) || null,
-      notes: text(raw.notes) || null
+      mpg: num(get('mpg'), null),
+      segment: text(get('segment')) || null,
+      notes: text(get('notes')) || null
     };
     listing.ok = !!(listing.year && listing.make && listing.model &&
       isNum(listing.price) && listing.price > 100 &&
@@ -106,8 +172,14 @@
     var byKey = {};
     var order = [];
     listings.forEach(function (l) {
-      var key = l.vin || [l.year, l.make.toLowerCase(), l.model.toLowerCase(),
-        Math.round(l.miles / 500), Math.round(l.price / 250)].join('|');
+      // A VIN is definitive. Failing that: a named dealer plus model-year and mileage
+      // identifies a car well enough that price is left out of the key deliberately — the
+      // same car listed at two different prices is precisely the duplicate worth catching.
+      // With no dealer to go on, price comes back in as the discriminator.
+      var base = [l.year, l.make.toLowerCase(), l.model.toLowerCase(), Math.round(l.miles / 500)];
+      var key = l.vin || (l.dealer
+        ? base.concat(l.dealer.toLowerCase()).join('|')
+        : base.concat([Math.round(l.price / 250), l.seller]).join('|'));
       if (!byKey[key]) {
         l.duplicates = [];
         byKey[key] = l;
@@ -363,6 +435,101 @@
   /* ------------------------------------------------------------- ingestion */
 
   /**
+   * Parse whatever an assistant actually hands you.
+   *
+   * Models emit listings in a dozen shapes: a bare array, a wrapped object, JSON inside a
+   * markdown fence, one object per line, a CSV block, or any of those with a sentence of
+   * prose in front. Rejecting all but one shape would push that cleanup onto the user for
+   * no reason, so this accepts the lot and reports which form it recognised.
+   */
+  function parseText(input) {
+    var raw = String(input === null || input === undefined ? '' : input).trim();
+    if (!raw) return { ok: false, error: 'Nothing to read — paste some listings first.' };
+
+    // Strip markdown code fences, with or without a language tag.
+    var fenced = raw.match(/```(?:[a-zA-Z]+)?\s*([\s\S]*?)```/);
+    if (fenced) raw = fenced[1].trim();
+
+    // Whole-document JSON.
+    try {
+      return { ok: true, data: JSON.parse(raw), form: 'JSON' };
+    } catch (e) { /* fall through */ }
+
+    // JSON with prose around it: take the outermost bracketed span.
+    var firstBrace = raw.indexOf('{');
+    var firstBracket = raw.indexOf('[');
+    var start = firstBracket === -1 ? firstBrace
+      : firstBrace === -1 ? firstBracket : Math.min(firstBrace, firstBracket);
+    if (start > -1) {
+      var closer = raw[start] === '[' ? ']' : '}';
+      var end = raw.lastIndexOf(closer);
+      if (end > start) {
+        try {
+          return { ok: true, data: JSON.parse(raw.slice(start, end + 1)), form: 'JSON in surrounding text' };
+        } catch (e) { /* fall through */ }
+      }
+    }
+
+    var lines = raw.split(/\r?\n/).map(function (l) { return l.trim(); })
+      .filter(function (l) { return l.length; });
+
+    // One JSON object per line, optionally comma-terminated.
+    var ndjson = [];
+    var allObjects = lines.length > 0 && lines.every(function (line) {
+      try {
+        var obj = JSON.parse(line.replace(/,$/, ''));
+        if (obj && typeof obj === 'object' && !Array.isArray(obj)) { ndjson.push(obj); return true; }
+      } catch (e) { /* not this form */ }
+      return false;
+    });
+    if (allObjects) return { ok: true, data: ndjson, form: 'one JSON object per line' };
+
+    // A delimited table with a header row.
+    var delimiter = lines[0].indexOf('\t') !== -1 ? '\t' : (lines[0].indexOf(',') !== -1 ? ',' : null);
+    if (delimiter && lines.length > 1) {
+      var table = parseDelimited(lines, delimiter);
+      if (table.length) return { ok: true, data: table, form: delimiter === '\t' ? 'TSV' : 'CSV' };
+    }
+
+    return {
+      ok: false,
+      error: 'Could not read that. Paste JSON (an array or a {"listings": [...]} object), ' +
+             'one JSON object per line, or a CSV/TSV block with a header row.'
+    };
+  }
+
+  /** Minimal delimited-text reader that understands quoted fields. */
+  function parseDelimited(lines, delimiter) {
+    function splitRow(line) {
+      var out = [], field = '', inQuotes = false;
+      for (var i = 0; i < line.length; i++) {
+        var ch = line[i];
+        if (inQuotes) {
+          if (ch === '"' && line[i + 1] === '"') { field += '"'; i++; }
+          else if (ch === '"') inQuotes = false;
+          else field += ch;
+        } else if (ch === '"') inQuotes = true;
+        else if (ch === delimiter) { out.push(field); field = ''; }
+        else field += ch;
+      }
+      out.push(field);
+      return out.map(function (v) { return v.trim(); });
+    }
+    var headers = splitRow(lines[0]).map(function (h) { return h.replace(/^\ufeff/, ''); });
+    if (headers.length < 2) return [];
+    var rows = [];
+    for (var i = 1; i < lines.length; i++) {
+      var cells = splitRow(lines[i]);
+      if (cells.length === 1 && !cells[0]) continue;
+      var record = {};
+      headers.forEach(function (h, j) { if (h) record[h] = cells[j]; });
+      rows.push(record);
+    }
+    return rows;
+  }
+
+
+  /**
    * Accept whatever shape the scrape produced: a bare array, or a wrapped
    * `{schema, generated, query, listings: [...]}` envelope.
    */
@@ -393,6 +560,7 @@
   return {
     SCHEMA_VERSION: SCHEMA_VERSION,
     normaliseListing: normaliseListing, normaliseTitle: normaliseTitle,
+    parseText: parseText, normaliseUrl: normaliseUrl, hostOf: hostOf, ALIASES: ALIASES,
     normaliseAccidents: normaliseAccidents,
     dedupe: dedupe, cohortComps: cohortComps, scoreAll: scoreAll,
     matchesQuery: matchesQuery, filterRows: filterRows, sortRows: sortRows,

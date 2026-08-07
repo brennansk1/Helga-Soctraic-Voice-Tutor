@@ -1,9 +1,9 @@
 # Used Car Deal Analyzer — Design
 
-**Status: BUILT (Rev 8).** This document specified the tool; it is now implemented and
-tested (305 tests, all passing). See `README.md` for usage, `§10` for where the build
-diverged from this spec, and `§11`–`§14` for the redesign, the accuracy work, the
-production-quality pass and the market layer.
+**Status: BUILT (Rev 9).** This document specified the tool; it is now implemented and
+tested (328 tests, all passing). See `README.md` for usage, `§10` for where the build
+diverged from this spec, and `§11`–`§15` for the redesign, the accuracy work, the
+production-quality pass, the market layer and the ingestion rework.
 
 **Rev 4** — as-built. Rev 3 specified the vetted candidate sources as concrete,
 implementation-ready specifications: exact endpoints and fields consumed (§3, Appendix A),
@@ -766,3 +766,53 @@ code, which is what they were for:
 - The hidden file input had no accessible name.
 
 **Test coverage: 305 — 188 Node, 117 pytest (77 headless-browser).**
+
+---
+
+## 15. Rev 9 — no sample data, and ingestion that meets the assistant halfway
+
+### 15.1 The sample market is gone
+
+Rev 8 shipped a 172-listing synthetic market so the feature worked on first open. That was a
+mistake: fabricated listings sitting inside a tool whose whole purpose is to tell you what is
+true invite exactly the confusion the rest of the report works to avoid, however clearly they
+are labelled. `listings.js` and `listings.json` are now git-ignored and never checked in —
+the database is built from the user's own searches, and a test asserts neither file is
+present in the repository.
+
+The empty state carries the weight instead: a **Copy the prompt** button that puts a complete
+brief on the clipboard — seeded with whatever make, model, budget and state are already on the
+page — a paste box, and the field list on request.
+
+### 15.2 Ingestion that accepts what models actually produce
+
+Requiring one exact JSON shape pushed cleanup onto the user for no reason. Both the browser
+(`market.parseText`) and the CLI (`scrape_listings.parse_text`) now accept:
+
+- a bare array, or a `{"listings": […]}` envelope
+- JSON inside a markdown code fence, with or without a language tag
+- JSON with a sentence of prose around it (the outermost bracketed span is taken)
+- one JSON object per line, comma-terminated or not
+- a CSV or TSV block with a header row, quoted fields included
+
+Field names are resolved through an alias table with a case- and punctuation-insensitive
+fallback, so `mileage`, `odometer`, `listPrice`, `link`, `modelYear`, `sellerType`,
+`days_on_market` and similar all land in the right place. The assistant writes what is
+natural; the tool adapts.
+
+### 15.3 The listing URL is first class
+
+`url` is normalised (a bare domain gains a scheme; anything that is not a link becomes
+null), the source site is **derived from it** when not supplied — which is what makes
+cross-aggregator dedupe work without the assistant having to name the site — and every row in
+the ranked table links back to its listing with `rel="noopener noreferrer"`. A test asserts
+one link per row, because a shortlist you cannot click through to is half a result.
+
+### 15.4 Testing without shipped data
+
+The market UI tests seed their own cohort through the paste box, which incidentally exercises
+the real ingestion path rather than a fixture shortcut. Two testing bugs surfaced and were
+fixed: an autouse fixture was starting Chromium for the pure-Python tests, and the
+copy-the-prompt test hung because the browser context had no clipboard permission.
+
+**Test coverage: 328 — 202 Node, 126 pytest (86 headless-browser).**

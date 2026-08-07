@@ -103,29 +103,143 @@ def _text(value: Any) -> str:
     return "" if value is None else str(value).strip()
 
 
+#: Field names an assistant might reasonably use, mapped onto ours.
+ALIASES: Dict[str, Sequence[str]] = {
+    "year": ("year", "modelYear", "model_year", "yr"),
+    "make": ("make", "brand", "manufacturer"),
+    "model": ("model", "modelName", "model_name"),
+    "trim": ("trim", "trimLevel", "trim_level", "version"),
+    "miles": ("miles", "mileage", "odometer", "odometerReading", "miles_driven"),
+    "price": ("price", "askingPrice", "asking_price", "listPrice", "list_price", "cost"),
+    "vin": ("vin", "VIN", "vehicleIdentificationNumber"),
+    "url": ("url", "link", "href", "listingUrl", "listing_url", "webpage", "website", "page"),
+    "source": ("source", "site", "siteName", "domain", "marketplace"),
+    "dealer": ("dealer", "dealerName", "dealer_name", "sellerName", "seller_name", "store"),
+    "city": ("city", "town", "locality"),
+    "state": ("state", "region", "province"),
+    "zip": ("zip", "zipcode", "zip_code", "postalCode", "postal_code"),
+    "distance": ("distance", "distanceMiles", "miles_away", "milesAway"),
+    "title": ("title", "titleStatus", "title_status", "titleType"),
+    "accidents": ("accidents", "accidentHistory", "accident_history", "accident", "damage"),
+    "owners": ("owners", "numOwners", "num_owners", "previousOwners", "ownerCount"),
+    "condition": ("condition", "vehicleCondition"),
+    "seller": ("seller", "sellerType", "seller_type", "listedBy"),
+    "daysOnMarket": ("daysOnMarket", "days_on_market", "daysListed", "dom"),
+    "priceDrop": ("priceDrop", "price_drop", "priceReduction"),
+    "mpg": ("mpg", "combinedMpg", "combined_mpg", "fuelEconomy"),
+    "segment": ("segment", "bodyStyle", "body_style", "bodyType", "category"),
+    "notes": ("notes", "description", "summary", "comments", "headline"),
+    "id": ("id", "listingId", "listing_id", "stockNumber", "stock"),
+}
+
+FENCE_RE = re.compile(r"```(?:[a-zA-Z]+)?\s*(.*?)```", re.DOTALL)
+
+
+def parse_text(raw: str) -> List[Dict[str, Any]]:
+    """Read listings out of whatever an assistant produced.
+
+    Accepts a JSON array or envelope, JSON wrapped in a markdown fence, JSON surrounded by
+    prose, one JSON object per line, or a delimited table with a header row. Rejecting all
+    but one shape would just push the cleanup onto the operator.
+    """
+    text = (raw or "").strip()
+    if not text:
+        return []
+
+    fenced = FENCE_RE.search(text)
+    if fenced:
+        text = fenced.group(1).strip()
+
+    def unwrap(payload: Any) -> List[Dict[str, Any]]:
+        if isinstance(payload, list):
+            return [r for r in payload if isinstance(r, dict)]
+        if isinstance(payload, dict):
+            return [r for r in payload.get("listings", []) if isinstance(r, dict)]
+        return []
+
+    try:
+        return unwrap(json.loads(text))
+    except json.JSONDecodeError:
+        pass
+
+    # JSON embedded in prose: take the outermost bracketed span.
+    starts = [i for i in (text.find("{"), text.find("[")) if i != -1]
+    if starts:
+        start = min(starts)
+        closer = "]" if text[start] == "[" else "}"
+        end = text.rfind(closer)
+        if end > start:
+            try:
+                return unwrap(json.loads(text[start:end + 1]))
+            except json.JSONDecodeError:
+                pass
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+
+    # One JSON object per line.
+    ndjson: List[Dict[str, Any]] = []
+    for line in lines:
+        try:
+            obj = json.loads(line.rstrip(","))
+        except json.JSONDecodeError:
+            ndjson = []
+            break
+        if not isinstance(obj, dict):
+            ndjson = []
+            break
+        ndjson.append(obj)
+    if ndjson:
+        return ndjson
+
+    # A delimited table.
+    if len(lines) > 1:
+        delimiter = "\t" if "\t" in lines[0] else ("," if "," in lines[0] else None)
+        if delimiter:
+            reader = csv.DictReader(lines, delimiter=delimiter)
+            rows = [dict(r) for r in reader]
+            if rows:
+                return rows
+    return []
+
+
+def _pick(record: Dict[str, Any], field: str) -> Any:
+    """First non-empty value among a field's accepted names, case-insensitively."""
+    for name in ALIASES.get(field, (field,)):
+        value = record.get(name)
+        if value not in (None, ""):
+            return value
+    folded = {re.sub(r"[^a-z]", "", k.lower()): v for k, v in record.items()}
+    for name in ALIASES.get(field, (field,)):
+        value = folded.get(re.sub(r"[^a-z]", "", name.lower()))
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def normalise_url(value: Any) -> Optional[str]:
+    """Keep real http(s) links; give a bare domain a scheme so it stays clickable."""
+    text = _text(value)
+    if not text:
+        return None
+    if re.match(r"^https?://", text, re.I):
+        return text
+    if re.match(r"^[\w.-]+\.[a-z]{2,}(/|$)", text, re.I):
+        return "https://" + text
+    return None
+
+
+def host_of(url: Optional[str]) -> Optional[str]:
+    if not url:
+        return None
+    netloc = urllib.parse.urlsplit(url).netloc
+    return netloc[4:] if netloc.startswith("www.") else (netloc or None)
+
+
 def normalise(record: Dict[str, Any], index: int, source: Optional[str] = None) -> Dict[str, Any]:
     """Coerce one record into the canonical schema, leaving unknowns as None."""
-    out: Dict[str, Any] = {key: None for key in FIELDS}
-    for key in FIELDS:
-        if key in record:
-            out[key] = record[key]
+    out: Dict[str, Any] = {key: _pick(record, key) for key in FIELDS}
 
-    # Accept common aliases from spreadsheet exports and scraped payloads.
-    aliases = {
-        "miles": ("mileage", "odometer", "miles_driven"),
-        "price": ("askingPrice", "listPrice", "price_usd"),
-        "dealer": ("dealerName", "seller_name"),
-        "url": ("link", "href", "listingUrl"),
-        "title": ("titleStatus", "title_status"),
-        "accidents": ("accidentHistory", "accident"),
-    }
-    for target, names in aliases.items():
-        if out.get(target) in (None, ""):
-            for name in names:
-                if record.get(name) not in (None, ""):
-                    out[target] = record[name]
-                    break
-
+    out["url"] = normalise_url(out["url"])
     out["year"] = int(_num(out["year"]) or 0) or None
     out["price"] = _num(out["price"])
     out["miles"] = _num(out["miles"])
@@ -139,7 +253,7 @@ def normalise(record: Dict[str, Any], index: int, source: Optional[str] = None) 
     if out["vin"] and not re.fullmatch(r"[A-HJ-NPR-Z0-9]{17}", out["vin"]):
         out["vin"] = None                       # a malformed VIN is worse than no VIN
     out["state"] = (_text(out["state"]).upper()[:2] or None)
-    out["source"] = _text(out["source"]) or source
+    out["source"] = _text(out["source"]) or host_of(out["url"]) or source
     out["seenAt"] = _text(out["seenAt"]) or date.today().isoformat()
     out["id"] = _text(out["id"]) or out["vin"] or f"L{index}"
     return out
@@ -157,12 +271,19 @@ def usable(listing: Dict[str, Any]) -> bool:
 def fingerprint(listing: Dict[str, Any]) -> str:
     if listing.get("vin"):
         return listing["vin"]
-    return "|".join([
+    # Failing a VIN: a named dealer plus model-year and mileage identifies a car well
+    # enough that price is deliberately left out — the same car listed at two prices is
+    # exactly the duplicate worth catching. With no dealer, price is the discriminator.
+    base = [
         str(listing.get("year")), _text(listing.get("make")).lower(),
         _text(listing.get("model")).lower(),
         str(int((listing.get("miles") or 0) // 500)),
-        str(int((listing.get("price") or 0) // 250)),
-    ])
+    ]
+    dealer = _text(listing.get("dealer")).lower()
+    if dealer:
+        return "|".join(base + [dealer])
+    return "|".join(base + [str(int((listing.get("price") or 0) // 250)),
+                            _text(listing.get("seller")).lower()])
 
 
 def dedupe(listings: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -395,9 +516,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     source = parser.add_argument_group("where the listings come from")
     source.add_argument("--from-json", metavar="PATH",
-                        help="a JSON array, or an object with a 'listings' array")
-    source.add_argument("--from-csv", metavar="PATH", help="a CSV whose headers match the schema")
-    source.add_argument("--stdin", action="store_true", help="read JSON from standard input")
+                        help="a file of listings: JSON, JSON in a markdown fence, one object "
+                             "per line, or a delimited table — all accepted")
+    source.add_argument("--from-csv", metavar="PATH", help="a CSV or TSV with a header row")
+    source.add_argument("--stdin", action="store_true",
+                        help="read listings from standard input, in any accepted form")
     source.add_argument("--fetch", nargs="+", metavar="URL",
                         help="fetch pages and extract schema.org vehicle data (robots-aware)")
 
@@ -438,15 +561,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     raw: List[Dict[str, Any]] = []
     if args.from_json:
-        with open(args.from_json, "r", encoding="utf-8") as handle:
-            payload = json.load(handle)
-        raw += payload.get("listings", []) if isinstance(payload, dict) else list(payload)
+        with open(args.from_json, "r", encoding="utf-8", errors="replace") as handle:
+            raw += parse_text(handle.read())
     if args.stdin:
-        payload = json.load(sys.stdin)
-        raw += payload.get("listings", []) if isinstance(payload, dict) else list(payload)
+        raw += parse_text(sys.stdin.read())
     if args.from_csv:
         with open(args.from_csv, "r", encoding="utf-8", errors="replace") as handle:
-            raw += list(csv.DictReader(handle))
+            raw += parse_text(handle.read())
     if args.fetch:
         raw += fetch_listings(args.fetch, delay=args.delay)
 

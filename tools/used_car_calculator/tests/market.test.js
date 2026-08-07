@@ -350,3 +350,154 @@ test('the whole pipeline survives a messy, realistic payload', () => {
     assert.ok(!r.error, r.error);
   });
 });
+
+/* ------------------------- tolerant ingestion: whatever an assistant emits */
+
+test('parseText reads plain JSON, an array or an envelope', () => {
+  assert.strictEqual(M.parseText('[{"a":1}]').form, 'JSON');
+  assert.deepStrictEqual(M.parseText('{"listings":[{"a":1}]}').data.listings.length, 1);
+});
+
+test('parseText unwraps a markdown code fence', () => {
+  const out = M.parseText('```json\n[{"year":2019}]\n```');
+  assert.ok(out.ok);
+  assert.strictEqual(out.data[0].year, 2019);
+});
+
+test('parseText finds JSON buried in prose', () => {
+  const out = M.parseText('Here is what I found:\n[{"year":2019,"make":"Toyota"}]\nHope that helps!');
+  assert.ok(out.ok);
+  assert.strictEqual(out.form, 'JSON in surrounding text');
+  assert.strictEqual(out.data[0].make, 'Toyota');
+});
+
+test('parseText accepts one JSON object per line', () => {
+  const out = M.parseText('{"year":2019}\n{"year":2020},\n{"year":2021}');
+  assert.ok(out.ok);
+  assert.strictEqual(out.form, 'one JSON object per line');
+  assert.strictEqual(out.data.length, 3);
+});
+
+test('parseText accepts a CSV block with quoted fields', () => {
+  const out = M.parseText('year,make,model,notes\n2019,Toyota,Camry,"one owner, new tyres"');
+  assert.ok(out.ok);
+  assert.strictEqual(out.form, 'CSV');
+  assert.strictEqual(out.data[0].notes, 'one owner, new tyres');
+});
+
+test('parseText accepts a TSV block', () => {
+  const out = M.parseText('year\tmake\tmodel\n2019\tToyota\tCamry');
+  assert.strictEqual(out.form, 'TSV');
+  assert.strictEqual(out.data[0].make, 'Toyota');
+});
+
+test('parseText explains itself when it cannot read the input', () => {
+  const out = M.parseText('this is just a sentence');
+  assert.strictEqual(out.ok, false);
+  assert.ok(out.error.includes('JSON'));
+  assert.strictEqual(M.parseText('').ok, false);
+  assert.strictEqual(M.parseText(null).ok, false);
+});
+
+test('field names are matched loosely, the way an assistant would write them', () => {
+  const l = M.normaliseListing({
+    modelYear: '2019', brand: 'toyota', model: 'Camry',
+    odometer: '52,341', listPrice: '$18,995', link: 'https://cars.example/l/1',
+    titleStatus: 'Clean', accidentHistory: 'No accidents reported',
+    sellerType: 'Private', numOwners: '2', days_on_market: '41'
+  }, 0);
+  assert.strictEqual(l.year, 2019);
+  assert.strictEqual(l.make, 'Toyota');
+  assert.strictEqual(l.miles, 52341);
+  assert.strictEqual(l.price, 18995);
+  assert.strictEqual(l.url, 'https://cars.example/l/1');
+  assert.strictEqual(l.title, 'clean');
+  assert.strictEqual(l.accidents, 'none');
+  assert.strictEqual(l.seller, 'private');
+  assert.strictEqual(l.owners, 2);
+  assert.strictEqual(l.daysOnMarket, 41);
+  assert.strictEqual(l.ok, true);
+});
+
+test('snake_case and odd casing still resolve', () => {
+  const l = M.normaliseListing({
+    'Model Year': 2020, 'MAKE': 'Honda', 'model': 'Accord',
+    'miles_driven': 30000, 'asking_price': 22000, 'listing_url': 'https://x.example/a'
+  }, 0);
+  assert.strictEqual(l.year, 2020);
+  assert.strictEqual(l.make, 'Honda');
+  assert.strictEqual(l.miles, 30000);
+  assert.strictEqual(l.price, 22000);
+  assert.strictEqual(l.url, 'https://x.example/a');
+});
+
+test('normaliseUrl keeps real links and repairs a bare domain', () => {
+  assert.strictEqual(M.normaliseUrl('https://a.example/1'), 'https://a.example/1');
+  assert.strictEqual(M.normaliseUrl('cars.example/listing/5'), 'https://cars.example/listing/5');
+  assert.strictEqual(M.normaliseUrl('not a url'), null);
+  assert.strictEqual(M.normaliseUrl(''), null);
+  assert.strictEqual(M.normaliseUrl(null), null);
+});
+
+test('the source is derived from the link when it is not given', () => {
+  const l = M.normaliseListing({
+    year: 2019, make: 'Toyota', model: 'Camry', miles: 50000, price: 18000,
+    url: 'https://www.cars.example/listing/7'
+  }, 0);
+  assert.strictEqual(l.source, 'cars.example', 'www. is dropped so duplicates reconcile');
+});
+
+test('a malformed VIN is discarded rather than trusted', () => {
+  assert.strictEqual(M.normaliseListing({ vin: 'NOT-A-VIN' }, 0).vin, null);
+  assert.strictEqual(M.normaliseListing({ vin: '4t1b11hk5ku123456' }, 0).vin, '4T1B11HK5KU123456');
+});
+
+test('normaliseListing survives null and empty records', () => {
+  assert.strictEqual(M.normaliseListing(null, 0).ok, false);
+  assert.strictEqual(M.normaliseListing({}, 0).ok, false);
+});
+
+test('a full messy paste goes end to end', () => {
+  const pasted = '```json\n' + JSON.stringify([
+    { link: 'https://a.example/1', modelYear: 2019, brand: 'Toyota', model: 'Camry',
+      odometer: '52,341', listPrice: '$18,995' },
+    { link: 'https://a.example/2', modelYear: 2020, brand: 'Toyota', model: 'Camry',
+      odometer: '38,900', listPrice: '$21,400' },
+    { link: 'https://a.example/3', modelYear: 2018, brand: 'Toyota', model: 'Camry',
+      odometer: '71,000', listPrice: '$15,900' },
+    { link: 'https://a.example/4', modelYear: 2019, brand: 'Toyota', model: 'Camry',
+      odometer: '60,100', listPrice: '$17,750' }
+  ]) + '\n```';
+  const parsed = M.parseText(pasted);
+  assert.ok(parsed.ok);
+  const ingested = M.ingest(parsed.data);
+  assert.strictEqual(ingested.listings.length, 4);
+  assert.ok(ingested.listings.every(l => l.url && l.source === 'a.example'));
+  const rows = M.scoreAll(ingested.listings, ASSUMPTIONS, E, DATA, {});
+  assert.strictEqual(rows.length, 4);
+  rows.forEach(r => assert.ok(Number.isFinite(r.score)));
+});
+
+test('dedupe keeps similar cars at different dealers apart', () => {
+  const listings = [
+    { year: 2019, make: 'Toyota', model: 'Camry', miles: 52000, price: 18995,
+      dealer: 'Alpha Motors', url: 'https://a.example/1' },
+    { year: 2019, make: 'Toyota', model: 'Camry', miles: 52100, price: 18995,
+      dealer: 'Beta Motors', url: 'https://b.example/2' }
+  ].map(M.normaliseListing);
+  assert.strictEqual(M.dedupe(listings).length, 2,
+    'two lots, two cars — only a shared seller or VIN means a duplicate');
+});
+
+test('dedupe still merges the same dealer car seen on two aggregators', () => {
+  const listings = [
+    { year: 2019, make: 'Toyota', model: 'Camry', miles: 52000, price: 19500,
+      dealer: 'Alpha Motors', url: 'https://a.example/1' },
+    { year: 2019, make: 'Toyota', model: 'Camry', miles: 52100, price: 18995,
+      dealer: 'Alpha Motors', url: 'https://b.example/2' }
+  ].map(M.normaliseListing);
+  const out = M.dedupe(listings);
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].price, 18995);
+  assert.strictEqual(out[0].duplicates.length, 1);
+});

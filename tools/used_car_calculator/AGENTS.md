@@ -84,24 +84,33 @@ Field notes:
 | `daysOnMarket` | a long-listed car is a negotiable car — capture it when shown |
 | `priceDrop` | dollars the price has already fallen, if shown |
 | `vin` | 17 characters. Omit rather than guess — the tool validates and discards malformed VINs. |
-| `source` | the site's hostname, so duplicates across aggregators can be reconciled |
+| `url` | **always include it.** It is how the user opens the car you found, and the site is derived from it, so duplicates across aggregators reconcile on their own. |
+| `source` | optional — taken from the `url` when you leave it out |
 
-## 4. Load it
+## 4. Hand it over
+
+**The simplest route needs no shell at all: paste your answer straight into the Market
+section's box and press Load.** It is deliberately forgiving — it will read a bare array, a
+`{"listings": […]}` envelope, JSON inside a markdown fence, one object per line, or a
+CSV/TSV block, with or without a sentence of prose around it. So you can simply reply
+normally and the user pastes the whole thing.
+
+Field names are matched loosely too: `mileage`, `odometer`, `listPrice`, `link`,
+`modelYear`, `sellerType` and similar all resolve. Use whatever is natural; do not
+contort your output to match.
+
+**Add to what is already there** with the *Add to what is loaded* button, so several
+searches accumulate into one market. Duplicates across sites are reconciled automatically —
+the cheaper sighting is kept and the other is recorded.
+
+If the user prefers the shell:
 
 ```bash
 python3 scrape_listings.py --from-json found.json --query "Camry/Accord under 25k" --merge
-```
-
-`--merge` adds to the existing database, so several searches accumulate into one market.
-Drop it to start fresh. Then open `index.html` and use the **Market** section.
-
-You can also pipe directly:
-
-```bash
 your-search | python3 scrape_listings.py --stdin --query "..."
 ```
 
-Or paste the JSON straight into the Market section's paste box — no shell needed.
+Both accept the same forgiving formats.
 
 ## 5. Fetching pages yourself
 
@@ -128,3 +137,5 @@ the tool's Sources panel.
 - The same car listed twice at two prices is a *finding*, not noise. Capture both; the tool
   keeps the cheapest and records the other.
 - Tell the user what you could not cover: a site you could not read, a region you skipped.
+- Every car carries its link. A ranked shortlist the user cannot click through to is
+  half a result.
