@@ -75,7 +75,16 @@ def wiki_search_title(query):
                 cache.set(key, title, expire=CACHE_TTL_SEARCH)
                 return title
     except Exception as e:
-        logger.debug(f"wiki search failed for {query!r}: {e}")
+        # TRANSIENT FAILURE IS NOT AN ANSWER.
+        #
+        # This used to fall through and cache "" for 24 hours, so one network
+        # blip taught the whole system that a real Wikipedia article does not
+        # exist — for every concept, in every build, until the TTL expired.
+        # `wiki_lookup` already gets this right and returns without caching;
+        # the two functions simply disagreed. Only a successful lookup that
+        # genuinely found nothing may be cached as a negative.
+        logger.warning(f"wiki search failed for {query!r} — not caching: {e}")
+        return None
     cache.set(key, "", expire=CACHE_TTL_SEARCH)
     return None
 
@@ -225,6 +234,7 @@ def textbook_lookup(query, limit=2):
         return cached
 
     out = []
+    had_error = False
     for slug, api, label in TEXTBOOK_SITES:
         if len(out) >= limit:
             break
@@ -237,7 +247,8 @@ def textbook_lookup(query, limit=2):
                 continue
             hits = ((r.json().get("query") or {}).get("search") or [])
         except Exception as e:
-            logger.debug(f"{label} search failed for {query!r}: {e}")
+            logger.warning(f"{label} search failed for {query!r}: {e}")
+            had_error = True
             continue
 
         for hit in hits:
@@ -262,7 +273,17 @@ def textbook_lookup(query, limit=2):
                 "text": text[:6000],
             })
 
-    cache.set(key, out, expire=CACHE_TTL_SEARCH)
+    # DO NOT CACHE "NOTHING FOUND" WHEN THE LOOKUP ITSELF FAILED.
+    #
+    # Every site error above is swallowed with `continue`, so a total network
+    # failure and a genuine "this subject has no open textbook" both arrive
+    # here as an empty list. Caching that for 24h teaches the whole pipeline
+    # that no textbook exists for the subject — across every later concept and
+    # every later build. Only a lookup that actually ran may record a negative.
+    if out or not had_error:
+        cache.set(key, out, expire=CACHE_TTL_SEARCH)
+    else:
+        logger.warning(f"textbook lookup for {query!r} errored — not caching empty")
     return out
 
 
@@ -317,6 +338,7 @@ def primary_source_lookup(query, limit=2):
         return cached or []
 
     out = []
+    had_error = False
     # 1. Crossref — all disciplines, returns a DOI. Ask for 3x and filter:
     #    abstract coverage is real but patchy, and a hit without one is unusable.
     try:
@@ -346,6 +368,7 @@ def primary_source_lookup(query, limit=2):
                 })
     except Exception as e:
         logger.debug(f"crossref lookup failed for {query!r}: {e}")
+        had_error = True
 
     # 2. arXiv — preprints, STEM-leaning. HTTPS: the http endpoint 301s.
     #    Parsed per <entry> rather than with three independent findall()s: the
@@ -381,7 +404,13 @@ def primary_source_lookup(query, limit=2):
                     })
         except Exception as e:
             logger.debug(f"arxiv lookup failed for {query!r}: {e}")
+        had_error = True
 
+    # Same contract as textbook_lookup: an errored lookup must not record
+    # "no primary literature exists for this subject" for the next 24 hours.
+    if not out and had_error:
+        logger.warning(f"primary lookup for {query!r} errored — not caching empty")
+        return out
     cache.set(key, out, expire=CACHE_TTL_SEARCH)
     return out
 
@@ -963,11 +992,20 @@ def health():
     except Exception:
         pass
 
+    # A DEPENDENCY-BLIND HEALTHCHECK IS HOW THIS SERVICE HID FOR WEEKS.
+    #
+    # This returned "healthy" with SearXNG unreachable, and Docker's
+    # healthcheck consumed that verdict — so the orchestrator reported a
+    # working system while grounding silently degraded. The Dockerfile carries
+    # the scar: "The container was diagnosed as 'SearXNG is down' for weeks.
+    # SearXNG was fine." Reporting a subsystem's state and then ignoring it in
+    # the verdict is the same mistake in a smaller box.
+    healthy = bool(searxng_reachable)
     return jsonify({
-        "status": "healthy",
+        "status": "healthy" if healthy else "degraded",
         "searxng_reachable": searxng_reachable,
         "cache_entries": len(cache),
-    })
+    }), (200 if healthy else 503)
 
 
 if __name__ == "__main__":

@@ -123,6 +123,13 @@ def outline_of(struct):
     for m in (struct or {}).get("modules", []) or []:
         lines.append(f"MODULE: {m.get('title')}")
         for u in m.get("units", []) or []:
+            # UNIT TITLES WERE DROPPED ENTIRELY. Any canonical topic name that
+            # landed on a unit was invisible to coverage scoring, so the judge
+            # was asked whether a course teaches something while being shown an
+            # outline with that level deleted. Cheap to include, and it is a
+            # level the generator actively names.
+            if u.get("title"):
+                lines.append(f"  UNIT: {u.get('title')}")
             for les in u.get("lessons", []) or []:
                 names = [c.get("title") for c in (les.get("concepts") or [])]
                 if names:

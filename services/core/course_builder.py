@@ -864,6 +864,21 @@ class SkeletonBuilder:
             "logic",
             "numeral",
             "algorithm",
+            # "quantum computing" matched NONE of the above, so a quantum
+            # course was classified non-STEM and got the generic example JSON
+            # ("[Named method/concept A]") instead of the STEM one
+            # ("[Real named theorem/method 1]") — losing the one template that
+            # asks for REAL named results.
+            "quantum",
+            "comput",          # computing / computation / computer
+            "chemistry",
+            "cryptograph",
+            "geometry",
+            "algebra",
+            "mechanic",        # quantum/classical mechanics
+            "theorem",
+            "circuit",
+            "network",
         ]
         is_stem = any(x in topic_l for x in stem_keywords)
 
@@ -913,22 +928,22 @@ class SkeletonBuilder:
         # IMPORTANT: Examples use CLEARLY ABSTRACT placeholders to demonstrate JSON FORMAT only.
         # Never use domain-realistic terms in examples — LLMs will copy them verbatim.
         example_json = """[
-    {"title": "[Specific Subtopic Area 1]", "level": 1, "rationale": "[Why this comes first]", "scope": ["[Named method/concept A]", "[Named method/concept B]", "[Named method/concept C]"]},
-    {"title": "[Specific Subtopic Area 2]", "level": 2, "rationale": "[Why this builds on module 1]", "scope": ["[Named method/concept D]", "[Named method/concept E]", "[Named method/concept F]"]},
-    {"title": "[Specific Subtopic Area 3]", "level": 3, "rationale": "[Why this is advanced]", "scope": ["[Named method/concept G]", "[Named method/concept H]", "[Named method/concept I]"]}
+    {"title": "[Specific Subtopic Area 1]", "level": 1, "scope": ["[Named method/concept A]", "[Named method/concept B]", "[Named method/concept C]"]},
+    {"title": "[Specific Subtopic Area 2]", "level": 2, "scope": ["[Named method/concept D]", "[Named method/concept E]", "[Named method/concept F]"]},
+    {"title": "[Specific Subtopic Area 3]", "level": 3, "scope": ["[Named method/concept G]", "[Named method/concept H]", "[Named method/concept I]"]}
 ]"""
         if is_stem:
             # STEM example: abstract format only — NO realistic terms that could bleed into output
             example_json = """[
-    {"title": "[Foundational Theory Area]", "level": 1, "rationale": "[Why foundational]", "scope": ["[Real named theorem/method 1]", "[Real named theorem/method 2]", "[Real named framework 3]"]},
-    {"title": "[Core Methods Area]", "level": 2, "rationale": "[Why this builds on foundations]", "scope": ["[Real named technique 1]", "[Real named technique 2]", "[Real named technique 3]"]},
-    {"title": "[Advanced Applications Area]", "level": 3, "rationale": "[Why this is advanced]", "scope": ["[Real named advanced method 1]", "[Real named advanced method 2]", "[Real named advanced method 3]"]}
+    {"title": "[Foundational Theory Area]", "level": 1, "scope": ["[Real named theorem/method 1]", "[Real named theorem/method 2]", "[Real named framework 3]"]},
+    {"title": "[Core Methods Area]", "level": 2, "scope": ["[Real named technique 1]", "[Real named technique 2]", "[Real named technique 3]"]},
+    {"title": "[Advanced Applications Area]", "level": 3, "scope": ["[Real named advanced method 1]", "[Real named advanced method 2]", "[Real named advanced method 3]"]}
 ]"""
         elif is_historical:
             example_json = """[
-    {"title": "[Specific Historical Period/Theme 1]", "level": 1, "rationale": "[Why this comes first chronologically/thematically]", "scope": ["[Specific event/figure/concept A]", "[Specific event/figure/concept B]", "[Specific event/figure/concept C]"]},
-    {"title": "[Specific Historical Period/Theme 2]", "level": 2, "rationale": "[Why this follows]", "scope": ["[Specific event/figure/concept D]", "[Specific event/figure/concept E]", "[Specific event/figure/concept F]"]},
-    {"title": "[Specific Historical Period/Theme 3]", "level": 3, "rationale": "[Why this is the culmination]", "scope": ["[Specific event/figure/concept G]", "[Specific event/figure/concept H]", "[Specific event/figure/concept I]"]}
+    {"title": "[Specific Historical Period/Theme 1]", "level": 1, "scope": ["[Specific event/figure/concept A]", "[Specific event/figure/concept B]", "[Specific event/figure/concept C]"]},
+    {"title": "[Specific Historical Period/Theme 2]", "level": 2, "scope": ["[Specific event/figure/concept D]", "[Specific event/figure/concept E]", "[Specific event/figure/concept F]"]},
+    {"title": "[Specific Historical Period/Theme 3]", "level": 3, "scope": ["[Specific event/figure/concept G]", "[Specific event/figure/concept H]", "[Specific event/figure/concept I]"]}
 ]"""
 
         return {
@@ -1025,6 +1040,45 @@ class SkeletonBuilder:
                 f"Insufficient {phase_name} generated for {parent_title} (expected >= {min_count}, got {len(items)})"
             )
             return False, issues
+
+        if phase_name == "modules":
+            # CATCH TRUNCATION THAT repair_json ALREADY PAPERED OVER.
+            #
+            # A module list cut off mid-array is closed by repair_json, parses
+            # cleanly, and arrives here with the right NUMBER of modules and a
+            # wrecked tail. Observed on a real build (course_56ddfe61):
+            #
+            #     M1-M4  scope: 3 topics each
+            #     M5     scope: ["Bell measurement"]
+            #     M6     scope: ["Grover's algorithm", "]"]
+            #
+            # That "]" is the repair scar — a closing bracket parsed as a topic
+            # name. Nothing downstream noticed: `len(items) >= min_count` passed
+            # because six modules were returned, and scope was never inspected.
+            # The advanced topics that belonged in that truncated tail — Shor,
+            # Deutsch-Jozsa, error correction, decoherence — never entered the
+            # course, and the coverage check that should have caught it scored
+            # the build at 0% for an unrelated reason.
+            #
+            # Raising the token budget is NOT the fix and would not have been:
+            # HELGA_LEAN defaults on, so MODULE_JSON_TOKENS was already 2400
+            # when this happened, not the 800 the comment there describes.
+            for m in items:
+                scope = m.get("scope")
+                if not isinstance(scope, list) or not scope:
+                    issues.append(
+                        f"Module '{m.get('title', '?')}' has no scope list — "
+                        f"output was probably truncated")
+                    continue
+                junk = [s for s in scope
+                        if not isinstance(s, str) or len(s.strip()) < 3
+                        or s.strip() in ("]", "[", "}", "{", ",", '"')]
+                if junk:
+                    issues.append(
+                        f"Module '{m.get('title', '?')}' scope contains repair "
+                        f"artefacts {junk!r} — output was truncated mid-array")
+            if issues:
+                return False, issues
 
         if phase_name == "concepts":
             for c in items:
@@ -1235,8 +1289,15 @@ class SkeletonBuilder:
             "No generic words (Basics/Overview/Advanced/Introduction/Fundamental).\n"
             "4. The 'scope' array concepts must MATCH THAT MODULE'S BLOOM LEVEL — "
             "Module 1 scope should be simple concepts, final module scope should be advanced.\n"
-            "5. Each module's 'rationale' must explain HOW it builds on the previous module "
-            "AND why this complexity level is appropriate at this point in the journey.\n\n"
+            # Rule 5 used to mandate a per-module 'rationale' paragraph. It was
+            # never read and never stored — `module_dict` has no such key and a
+            # grep for .get("rationale") across services/ and tools/ returns
+            # nothing. It was pure output cost on the one call whose tail was
+            # being truncated, so the budget it consumed came straight out of
+            # the advanced modules that went missing.
+            "5. Every module's 'scope' must list at least 3 SPECIFIC named topics — "
+            "the names the field actually uses, including eponyms "
+            "(e.g. \"Grover's algorithm\", not \"amplitude amplification method\").\n\n"
             + (f"\n{_syllabus_evidence_block}\n\n"
                if _syllabus_evidence_block else "") +
             "ANTI-COPY WARNING: The example below shows JSON FORMAT ONLY. "
@@ -1288,10 +1349,41 @@ class SkeletonBuilder:
                         f"LOG: Retrying module generation (attempt {attempt}/{max_retries})..."
                     )
             _log_prompt_budget("modules", current_prompt, _scaf.MODULE_JSON_TOKENS)
+            # SCHEMA-CONSTRAIN THE ONE CALL THAT DEMONSTRABLY TRUNCATES.
+            #
+            # A real build returned six modules whose scope arrays degraded
+            # 3,3,3,3,1,["Grover's algorithm","]"] — the trailing "]" being a
+            # repair_json scar from an array cut mid-flight. It parsed, so
+            # nothing downstream objected, and the advanced topics that lived in
+            # that tail never entered the course.
+            #
+            # llm_utils already supports this and the skeleton never used it
+            # (grep: zero `schema=` in this file before now). Note the
+            # distinction documented at llm_utils.py:582 — a SCHEMA constrains
+            # shape and is safe; Ollama's generic format:"json" changes the
+            # shape the model picks and broke course creation outright.
+            _module_schema = {
+                "type": "array",
+                "minItems": target_modules,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "level": {"type": "integer"},
+                        "scope": {
+                            "type": "array",
+                            "minItems": 3,
+                            "items": {"type": "string", "minLength": 3},
+                        },
+                    },
+                    "required": ["title", "scope"],
+                },
+            }
             new_batch = llm_generate_json(
                 current_prompt,
                 sys_prompt=raw_sys,
                 max_tokens=_scaf.MODULE_JSON_TOKENS,
+                schema=_module_schema,
                 progress_callback=self.status_callback,
             )
 
@@ -1434,7 +1526,7 @@ class SkeletonBuilder:
         # BEFORE the expensive hydration: a curriculum hole is an outline
         # defect, and finding it after 40 minutes of hydration teaches nothing
         # that finding it now does not.
-        self._record_syllabus_check(course_dict)
+        self._record_syllabus_check(course_dict, _syllabus_evidence_block)
 
         # Write course structure to JSON
         self.storage.courses.create_course(course_dict)
@@ -1575,15 +1667,23 @@ class SkeletonBuilder:
                  "module's scope into sub-areas the sources show are REAL parts "
                  "of the subject. Select and re-sequence; never lift a chapter "
                  "list."),
+        # "Do not reproduce chapter titles verbatim" was written to stop the
+        # model copying somebody else's course SEQUENCE. The model applied it
+        # to TOPIC NAMES: shown a Wikibooks chapter called "Grover's
+        # algorithm", it dutifully produced "Quadratic Amplitude
+        # Amplification" and "Oracle Query Cost Partitioning" instead. A
+        # learner finishing that course cannot name what they studied.
         "lesson": ("USE AS EVIDENCE, NOT AS A TEMPLATE. Lessons should teach "
                    "material these sources treat as load-bearing, narrowed to "
-                   "this unit. Do not reproduce chapter titles verbatim."),
+                   "this unit. Choose and re-sequence freely, but KEEP THE "
+                   "FIELD'S OWN NAME for any topic that has one — eponyms "
+                   "included. Renaming a standard topic hides it."),
         "concept": ("USE AS EVIDENCE, NOT AS A TEMPLATE. Prefer concepts these "
                     "sources show are genuinely part of the subject over ones "
-                    "invented to fill the lesson — a lesson padded with plausible "
-                    "-sounding inventions is the hollow-course failure this "
-                    "research exists to prevent. Do not reproduce chapter titles "
-                    "verbatim."),
+                    "invented to fill the lesson. Use the STANDARD NAME the "
+                    "field uses for each concept, including eponyms "
+                    "(\"Shor's algorithm\", \"Bell state\"). Invent a phrasing "
+                    "only when the concept genuinely has no established name."),
     }
 
     def _evidence_digest(self, block: str, level: str) -> str:
@@ -1632,7 +1732,7 @@ class SkeletonBuilder:
         return ("### CURRICULUM EVIDENCE — how this subject is really organised:\n"
                 + "\n".join(kept) + "\n" + framing)
 
-    def _record_syllabus_check(self, course_dict):
+    def _record_syllabus_check(self, course_dict, reference_text=None):
         """Attach the criterion-6 verdict to the course. Never raises.
 
         WHY THIS IS RECORDED AND NOT ENFORCED BY DEFAULT
@@ -1661,7 +1761,14 @@ class SkeletonBuilder:
             logger.info(f"[SYLLABUS] check unavailable, skipping: {e}")
             return
 
-        result = check_structure(course_dict)
+        # GRADE AGAINST THE SYLLABI WE ALREADY FETCHED.
+        #
+        # This was called with no reference_text, so grounding fell back to
+        # "model-knowledge (WEAK — same model family wrote the course)": the
+        # model that wrote the course also decided what a course on the subject
+        # ought to contain. The real syllabi gathered in phase 1 were sitting in
+        # a local variable one call away and were never handed over.
+        result = check_structure(course_dict, reference_text=reference_text)
         course_dict["syllabus_check"] = result
 
         if result.get("error"):
@@ -2103,13 +2210,15 @@ class SkeletonBuilder:
 
                     # Bloom-appropriate concept naming guidance
                     naming_guide = {
-                        1: (f"- Use SIMPLE, DESCRIPTIVE names a beginner would understand.\n"
-                            f"- Good: 'What Causes What', 'Confusing Correlation with Causation', 'Controlled Experiments'\n"
-                            f"- Bad: 'D-Separation', 'SUTVA', 'Propensity Score' (too technical for this level)\n"
+                        1: (f"- Keep names PLAIN, but keep the field's real term when one exists.\n"
+                            f"- Good: 'Correlation vs Causation', 'Controlled Experiments', 'Qubit'\n"
+                            f"- If a topic has a standard name, USE IT and explain it simply —\n"
+                            f"  a beginner who never hears the word cannot look it up later.\n"
                             f"- Each concept should be explainable in one simple sentence."),
-                        2: (f"- Use clear names that introduce key ideas. Technical terms OK if standard vocabulary.\n"
-                            f"- Good: 'Confounding Variables', 'Randomized Experiments', 'Correlation vs Causation'\n"
-                            f"- Bad: 'Instrumental Variable Estimation', 'G-computation Algorithm' (too advanced)"),
+                        2: (f"- Use the standard name for each idea; introduce it plainly.\n"
+                            f"- Good: 'Confounding Variables', 'Superposition', 'Bell State'\n"
+                            f"- Pitch the EXPLANATION to this level, not the NAME. Simplifying a\n"
+                            f"  name away is how a course teaches a topic without naming it."),
                         3: (f"- Use proper technical names from the field.\n"
                             f"- Good: 'Propensity Score Matching', 'Randomized Controlled Trials', 'Back-Door Criterion'\n"
                             f"- Each concept should be a real, named method or framework."),

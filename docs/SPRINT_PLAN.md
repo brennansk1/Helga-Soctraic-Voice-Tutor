@@ -663,6 +663,16 @@ every concept wastes latency and dilutes confidence with irrelevant hits.
 |---|---|---|
 | **Open Library / Internet Archive** | any subject | canonical texts + full-text search; feeds A5.7 below |
 | **Met Museum**, **Art Institute of Chicago** | art, art history, design | primary artefacts *with curatorial explanation* — the right material for the domain |
+> **CORRECTION (2026-08-07).** Two entries below were verified DEAD and must
+> not be re-added from this table:
+> * **Chronicling America** — the legacy API was retired in 2025. The live
+>   integration uses `loc.gov/collections/...` instead (`domain_sources.py`).
+> * **Data USA** — 404s. It is wired nowhere and should stay that way.
+>
+> Open Library's `search.json` also hangs (the site itself answers in 0.18s)
+> and is deliberately unused. Anyone working from this table without reading
+> `services/research/domain_sources.py` will re-add a dead endpoint.
+
 | **Library of Congress / Chronicling America** | history, journalism, US politics | primary historical sources, which history genuinely is taught from |
 | **Data USA** | statistics, economics, social science | real datasets to reason about, not prose |
 | **Stanford Encyclopedia of Philosophy** | philosophy, ethics, logic | peer-reviewed encyclopedia; already Tier 1 but never queried |
