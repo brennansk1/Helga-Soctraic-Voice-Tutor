@@ -184,8 +184,18 @@ def coverage(topics, outline, model=None):
               schema=_COVER_SCHEMA, max_tokens=1200, model=model)
     if not d:
         return None
-    cov = [str(x) for x in (_field(d, "covered", "present", default=[]) or [])]
-    mis = [str(x) for x in (_field(d, "missing", "absent", default=[]) or [])]
+    # ACCEPT THE MODEL'S OWN KEY NAMES.
+    #
+    # The schema asks for "covered"/"missing" and the model returns
+    # "covered_topics"/"missing_topics". Both lists then parsed as empty, the
+    # judge looked dead, and criterion 6 reported NOT MEASURED on a run where
+    # it had in fact correctly identified Deutsch-Jozsa and Shor as covered.
+    # An entire course-quality investigation ran on the belief that the judge
+    # was unavailable; it was a field-name mismatch.
+    cov = [str(x) for x in (_field(d, "covered", "present",
+                                   "covered_topics", default=[]) or [])]
+    mis = [str(x) for x in (_field(d, "missing", "absent",
+                                   "missing_topics", default=[]) or [])]
     seq = [str(x) for x in (_field(d, "sequencing_problems", "sequencing",
                                    default=[]) or [])]
     # Match on token overlap, not exact strings. The model rewords topics as it
