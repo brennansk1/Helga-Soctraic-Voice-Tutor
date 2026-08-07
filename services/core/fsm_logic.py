@@ -953,14 +953,35 @@ class MnemosyneFSM:
         self._last_aid_decision = decision
         logging.info(f"AID POLICY: {decision.action} — {decision.reason}")
 
-        if decision.action == "reuse":
+        # "generate" MUST ALSO SURFACE A PRE-BUILT AID.
+        #
+        # Only "reuse" was handled, so a "generate" verdict fell straight
+        # through and nothing reached the transcript. Observed on a live turn:
+        #
+        #     AID POLICY: generate — score 6 — lecture (prose already failed);
+        #                 visual subject
+        #
+        # The policy correctly decided a diagram was warranted, the concept had
+        # BOTH an "opening" and a "misconception:0" aid parsed and loaded, and
+        # the learner saw nothing. Phase 3 spends ~10 minutes per course drawing
+        # these; every one was unreachable through the branch the policy
+        # actually takes.
+        #
+        # Session-time generation is a separate feature (B13). Until it exists,
+        # "generate" means "a diagram belongs here" — and if one was already
+        # drawn at build time for that slot, showing it is strictly better than
+        # showing nothing.
+        if decision.action in ("reuse", "generate"):
             aid = self._concept_aids.get(decision.slot)
             if aid:
                 self._aid_sink(dict(aid))
                 self._aid_ids_this_concept.add(decision.slot)
-            else:
+            elif decision.action == "reuse":
                 logging.warning(f"Aid policy chose slot '{decision.slot}' but it "
                                 "is not loaded; falling back to no diagram")
+            else:
+                logging.info(f"Aid policy asked to generate '{decision.slot}'; "
+                             "no pre-built aid for that slot, so none shown")
         return decision
 
     def _note_aids_shown(self, aids):
