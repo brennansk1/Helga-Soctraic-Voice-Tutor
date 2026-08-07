@@ -352,6 +352,92 @@ of this file produced four wrong answers.
 
 ---
 
+## 4d. THE PRESET GATE — the bar Mode A is actually finished against
+
+**Mode A is done when every preset has produced a real course that is good at
+its own level.** Not one course. Not a course that passes the mechanical
+contract. Eight courses, one per preset, each audited against what that preset
+PROMISES a learner.
+
+Nothing below is satisfied today. One course exists (`course_6a6a7954`,
+mastery 3) and its level has never been audited.
+
+### The caveat that governs every check: this is a NODE-BASED course
+
+Helga is the Duolingo of a college course. The delivery format is SUPPOSED to
+differ from a university syllabus, and penalising that difference is measuring
+the wrong thing. When auditing, IGNORE:
+
+* lesson length, pacing, weeks, credit hours, semester structure
+* assessment style — there is no final exam and there should not be
+* the fact that a "module" is minutes of interaction, not a fortnight of lectures
+* sequencing being a graph of small nodes rather than chapters
+
+What a preset promises is DEPTH, RIGOUR and COVERAGE at its level. What it does
+NOT promise is the shape of a university course. `syllabus_check` already
+encodes this in its docstring; the same restraint applies to every check here.
+
+The failure this gate defends against is the opposite one: a course that is
+node-shaped AND shallow, where "it is micro-lessons by design" becomes the
+excuse for a level-3 course reading like a level-1 one.
+
+### Per-preset bar
+
+Each row needs a REAL generated course. The mastery column selects the depth
+contract; the promise column is what a learner was sold.
+
+| Preset | scope/mastery/from | Promise the course must keep | Built? | Level audited? |
+|---|---|---|---|---|
+| Quick Overview | 2/1/1 | Shape of the subject, plain language, no prerequisites | no | no |
+| High School | 3/2/1 | Solid grounding, worked examples, assumes no background | no | no |
+| College Course | 3/3/2 | Formal definitions, worked problems, real sources | **partial** (`course_6a6a7954`) | **NO** |
+| Advanced Undergraduate | 3/4/3 | Named results, derivations, primary literature | no | no |
+| Graduate Seminar | 2/5/4 | Proofs, exercises, research sources, expert register | no | no |
+| Full Discipline Survey | 5/3/1 | Breadth over depth — the whole field | no | no |
+| Refresher | 3/3/4 | Skips introductions, restarts at application level | no | no |
+| Deep Dive | 1/5/3 | One narrow topic, as far as it goes | no | no |
+
+### What each course must clear
+
+1. **Depth contract** — every concept, `depth_contract.validate_concept` at that
+   mastery. Mechanical and already enforced (19/22 on the one course built).
+2. **Level calibration** — `tools/level_audit.py`, judged BLIND with level hints
+   stripped. **This is the check that answers "does a College Course actually
+   look like one", and it has never been run.**
+3. **Coverage** — `tools/syllabus_check.py`. Core topics named, not merely
+   implied. Strict rubric (introduced/practiced/assessed) preferred over the
+   legacy single flag.
+4. **Grounding** — real, RELEVANT sources; confidence earned from a textbook or
+   primary source rather than a pile of web pages.
+5. **Substance** — `tools/substance_check.py`: is the rigour real, or are the
+   markers present without the content behind them?
+
+### The discriminating test — the one that actually matters
+
+Passing the bar per preset is necessary and NOT sufficient. The presets are only
+real if they are DIFFERENT:
+
+> Build the same topic at mastery 1, 3 and 5. Audit all three blind.
+> If the judge cannot reliably tell them apart, the presets are cosmetic.
+
+That is a more serious failure than any coverage number, and there is a recorded
+reason to suspect it: the calibration note in `depth_contract.py` records that
+every level once converged on ~770 words. The word bands were widened to fix it;
+nothing has since confirmed the CONTENT differentiates. The research adds a
+second reason — LLMs "reliably recognize cognitive hierarchy", meaning a model
+will happily label a concept level 3 while writing it at level 1.
+
+A College Course that looks like one only means something if a Quick Overview
+does not.
+
+### Cost, stated honestly
+
+Eight builds at ~50 minutes each is a night of unattended GPU, plus the audits.
+The mastery 1/3/5 discrimination test is three of those eight, so it should run
+FIRST — if the levels do not separate, building the other five proves nothing.
+
+---
+
 ## 5. Known environmental constraints
 
 - **~30s per LLM call** on qwen3.5:9b → ~2 min/concept → a 12-concept course
