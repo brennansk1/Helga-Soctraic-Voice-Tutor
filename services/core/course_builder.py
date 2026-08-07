@@ -2289,7 +2289,27 @@ class SkeletonBuilder:
                         self.fallback_count += 1
                         logger.warning(f"  [FALLBACK] Using fallback concept for lesson '{l_title}' — LLM returned empty.")
 
-                    concepts_data = concepts_data[:base_concepts]
+                    # FLATTEN ONE LEVEL, AND SKIP WHAT IS NOT A DICT.
+                    #
+                    # The concept call is unconstrained, and a model asked for
+                    # "a JSON array" sometimes returns [[{...}, {...}]] — an
+                    # array containing an array. The loop below assumed every
+                    # element was a dict and died on `.get`, taking the whole
+                    # build down after the skeleton had already been paid for:
+                    #     AttributeError: 'list' object has no attribute 'get'
+                    # A malformed batch should cost its own concepts, not the
+                    # course.
+                    _flat = []
+                    for _item in (concepts_data or []):
+                        if isinstance(_item, list):
+                            _flat.extend(x for x in _item if isinstance(x, dict))
+                        elif isinstance(_item, dict):
+                            _flat.append(_item)
+                        else:
+                            logger.warning(
+                                f"  [CONCEPTS] discarding non-object entry "
+                                f"{type(_item).__name__} in '{l_title}'")
+                    concepts_data = _flat[:base_concepts]
 
                     concept_titles = []
                     for c_idx, concept_data in enumerate(concepts_data, 1):
