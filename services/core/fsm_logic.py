@@ -2423,6 +2423,11 @@ class MnemosyneFSM:
         if affect_note:
             system_note = f"{system_note}\n{affect_note}" if system_note else affect_note
 
+        # B3: Concise bounds based on Harvard RCT evidence
+        if os.getenv("HELGA_STRICT_SOCRATIC_BUDGET") == "1":
+            concise_note = "Keep your response to no more than a few sentences."
+            system_note = f"{system_note}\n{concise_note}" if system_note else concise_note
+
         logging.info(f"Teaching Mode Selected: {teaching_mode}")
         self.send_status_update(f"Mode: {teaching_mode}...", progress=70)
 
