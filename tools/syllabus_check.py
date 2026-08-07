@@ -365,6 +365,76 @@ SECONDARY_MIN_COVERAGE = int(os.getenv("HELGA_SECONDARY_MIN_COVERAGE_PCT", "80")
 LEGACY_COVERAGE_METRIC = os.getenv("HELGA_LEGACY_COVERAGE_METRIC", "0") == "1"
 
 
+def observed_flags(topic, concept_bodies):
+    """introduced / practiced / assessed, computed IN CODE from the documents.
+
+    WHY NOT ASK THE JUDGE
+    ---------------------
+    The rubric was first asked of the model directly, and a 9B judge cannot
+    make the distinction. Measured output, self-contradictory inside a single
+    object:
+
+        {"legacy_covered": true, "introduced": false, "practiced": false,
+         "assessed": false,
+         "evidence": "The outline mentions 'Bloch Sphere Coordinates' ..."}
+
+    It marks the topic covered, cites evidence that the course teaches it, and
+    sets introduced=false in the same breath — so the strict rubric reported
+    0% core / 0% secondary on a course full of worked examples.
+
+    The research warned about this failure in the OPPOSITE direction: LLMs
+    over-credit a mention as teaching (100% coverage at kappa = 0.076). Either
+    way the model cannot draw the line, so this repo's own rule applies —
+    compute the verdict in code and never ask the model for an overall call.
+
+    The three flags map onto sections the pipeline already guarantees:
+
+        introduced  the topic is named in a concept title, Core Explanation
+                    or Key Facts
+        practiced   it appears in Worked Example / Real-World Examples —
+                    the section the depth contract already requires
+        assessed    it appears in Mastery Criteria, Socratic Hooks or an
+                    exercise — where a learner is asked to produce something
+
+    Substring matching is deliberate and matches how `_is_covered` already
+    works: the generator rewords topics as it teaches them.
+    """
+    toks = {w for w in re.findall(r"[a-z0-9]+", (topic or "").lower())
+            if len(w) > 3}
+    if not toks:
+        return {"introduced": False, "practiced": False, "assessed": False}
+
+    def _mentions(text):
+        low = (text or "").lower()
+        hit = sum(1 for t in toks if t in low)
+        return hit * 2 >= len(toks)          # half the topic's content words
+
+    intro = practiced = assessed = False
+    for body in concept_bodies:
+        sections = {}
+        current = "_"
+        for line in (body or "").splitlines():
+            if line.startswith("## "):
+                current = line[3:].strip().lower()
+                sections[current] = []
+            else:
+                sections.setdefault(current, []).append(line)
+        joined = {k: "\n".join(v) for k, v in sections.items()}
+
+        def _sec(*names):
+            return "\n".join(joined.get(n, "") for n in names)
+
+        if _mentions(_sec("_", "core explanation", "key facts")):
+            intro = True
+        if _mentions(_sec("real-world examples", "worked example", "examples")):
+            practiced = True
+        if _mentions(_sec("mastery criteria", "socratic hooks", "exercise",
+                          "exercises")):
+            assessed = True
+
+    return {"introduced": intro, "practiced": practiced, "assessed": assessed}
+
+
 def _summarise(cov, uid=None, title=None, mastery=None, grounding=None):
     """Compute the verdict IN CODE. Never ask the model for an overall call —
     asked directly, it rated a gutted outline ADEQUATE."""
