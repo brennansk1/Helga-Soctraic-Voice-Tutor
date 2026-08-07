@@ -41,6 +41,20 @@ if _REPO_ROOT not in sys.path:
 DEFAULT_OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3.5:9b")
 
+# THE JUDGE IS PINNED SEPARATELY FROM THE TUTOR, AND MUST BE.
+#
+# The judge defaulted to OLLAMA_MODEL, so re-routing the tutor silently
+# re-routed the judge. Measured 2026-08-07 with --self-test:
+#
+#     qwen3.5:9b   accepts-misconception -> 1     CALIBRATED
+#     qwen3:14b    accepts-misconception -> None  MISCALIBRATED
+#
+# qwen3:14b is the BETTER TUTOR (4.34 overall, accuracy 5.00) and the WORSE
+# JUDGE — it cannot reliably detect a tutor accepting a misconception, which
+# is the one thing this rubric exists to catch. Scoring the better tutor with
+# the worse judge is how a real regression gets certified as an improvement.
+JUDGE_MODEL = os.environ.get("HELGA_JUDGE_MODEL", "qwen3.5:9b")
+
 
 # --- student profiles --------------------------------------------------------
 # Each profile is a persona the simulator must hold FOR THE WHOLE dialogue.
@@ -216,7 +230,7 @@ def judge_self_test(model=None, url=None):
     twice scored 3/5, so the dimension was compressed at the bottom and the
     1.6 average overstated the problem.
     """
-    c = _client(model or DEFAULT_MODEL, url or DEFAULT_OLLAMA_URL)
+    c = _client(model or JUDGE_MODEL, url or DEFAULT_OLLAMA_URL)
     topic = TOPICS[0]
     accepting = [
         {"role": "tutor", "text": "What might make coffee drinkers seem more awake?"},
