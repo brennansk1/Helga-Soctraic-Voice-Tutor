@@ -136,6 +136,14 @@ _OFF_TOPIC_PREFIXES = ("pinyin/", "wikijunior:", "subject:", "shelf:",
                        "wikibooks:", "wikiversity:", "portal:", "school:")
 
 
+# Mentions of the subject-defining word per 10,000 characters. A page that
+# TEACHES a subject returns to its name repeatedly; one that merely mentions it
+# does not. Calibrated against the observed failure: the Mirad grammar page
+# scored far below this for "quantum", while genuine quantum textbook chapters
+# clear it comfortably.
+MIN_ANCHOR_DENSITY = 1.0
+
+
 def _is_relevant(query, title, text):
     """Does this page actually teach the subject, or merely mention the word?"""
     low_title = (title or "").lower()
@@ -153,6 +161,53 @@ def _is_relevant(query, title, text):
     present = {t for t in terms if t in body}
     if len(present) * 2 < len(terms):
         return False
+
+    # THE DISTINCTIVE TERM MUST BE THERE, AND RAW COUNTS DO NOT SCALE.
+    #
+    # "Mirad Grammar/Word Families" — a page about a CONSTRUCTED LANGUAGE —
+    # was cited as a textbook on 8 of 22 concepts of a quantum computing
+    # course, and the course still reported Source confidence 1.00. The page
+    # is 208,000 characters, and a document that large contains almost any
+    # ordinary word many times:
+    #
+    #     _is_relevant("Quantum State Notation Families", ...) -> True
+    #     _is_relevant("Word Families", ...)                   -> True
+    #
+    # Two independent holes let it through:
+    #
+    #   * Half the words being present is satisfied by GENERIC vocabulary
+    #     alone ("state", "notation", "families"). The one word that actually
+    #     names the subject — "quantum" — was never required.
+    #   * A raw count of >= 3 is trivial in a 200k-character page. The same
+    #     threshold means completely different things at 3k and at 200k, so it
+    #     grows MORE permissive exactly as pages get longer and more general.
+    #
+    # The fix is DENSITY, applied to half the query's terms.
+    #
+    # An earlier attempt used the longest term as a "subject anchor", on the
+    # theory that longer words are the topical ones. That is not true and the
+    # measurement said so: for "Quantum State Notation Families" the longest
+    # words are "notation" and "families" (8) while the word that names the
+    # subject, "quantum", is 7 — so the anchor landed on generic vocabulary
+    # and the page passed anyway.
+    #
+    # Measured on the two pages, per 10,000 characters:
+    #
+    #                        quantum  qubit  entanglement  state
+    #   Mirad grammar          0.00   0.00      0.00        0.91
+    #   real quantum chapter   2.65   2.60      2.42       16.97
+    #
+    # The discriminator is not which term is longest — it is that a page
+    # teaching a subject uses SEVERAL of its terms densely, while an unrelated
+    # page scrapes past on one common word. So: count how many query terms
+    # clear the density bar, and require at least half of them to do it. This
+    # mirrors the presence rule above, with substance instead of mere presence.
+    dense = sum(1 for t in terms
+                if 10_000.0 * body.count(t) / max(len(body), 1)
+                >= MIN_ANCHOR_DENSITY)
+    if dense * 2 < len(terms):
+        return False
+
     return max((body.count(t) for t in present), default=0) >= 3
 
 
@@ -164,7 +219,7 @@ def textbook_lookup(query, limit=2):
     # Version the key. When the extraction or filtering logic changes, entries
     # cached under the old behaviour are wrong, not merely old — the relevance
     # filter shipped and "Pinyin/Cell (biology)" kept being served from cache.
-    key = cache_key("textbook", f"v2|{query}|{limit}")
+    key = cache_key("textbook", f"v3|{query}|{limit}")
     cached = cache.get(key)
     if cached is not None:
         return cached
@@ -256,7 +311,7 @@ def primary_source_lookup(query, limit=2):
     # v2: entries cached under the old shape have no "text", so every one of
     # them would now be discarded as uncitable. Version the key rather than
     # serving a week of results that cannot be used.
-    key = cache_key("primary", f"v2|{query}|{limit}")
+    key = cache_key("primary", f"v3|{query}|{limit}")
     cached = cache.get(key)
     if cached is not None:
         return cached or []
