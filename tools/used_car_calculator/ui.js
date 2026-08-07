@@ -1492,6 +1492,14 @@
 
   var M = window.UCDA_MARKET;
   var LISTINGS_STORE = 'ucda_listings_v1';
+
+  /** Where this copy of the tool is set up to shop. City-level only — no address. */
+  var DEFAULT_STATE = 'UT';
+  var SEARCH_AREA = {
+    town: 'Pleasant Grove', county: 'Utah County', zip: '84062',
+    radiusMiles: 40,
+    nearby: 'Lehi, American Fork, Orem, Provo, Spanish Fork and the south end of Salt Lake County'
+  };
   var market = { listings: [], rows: [], view: [], meta: null, sort: 'score', limit: 40 };
 
   function marketAssumptions() {
@@ -1785,14 +1793,24 @@
     if (val('in-brand') && val('in-model')) wants.push(val('in-brand') + ' ' + val('in-model'));
     var maxPrice = numOrNull('in-price');
     var state = val('in-state');
+    var where = state === DEFAULT_STATE
+      ? 'Near: ' + SEARCH_AREA.town + ', ' + SEARCH_AREA.county + ', ' + DEFAULT_STATE +
+        ' (' + SEARCH_AREA.zip + ') — anywhere within about ' + SEARCH_AREA.radiusMiles +
+        ' miles is fine, which covers ' + SEARCH_AREA.nearby + '.'
+      : state ? 'Near: ' + state + ' — <add your ZIP and how far you will travel>.'
+              : 'Near: <your ZIP and how far you will travel>.';
     return [
       'Find me used cars and return them as JSON I can paste into my deal analyzer.',
       '',
       wants.length ? 'Looking for: ' + wants.join(', ') + ' (adjust or widen as you see fit).'
                    : 'Looking for: <say what you want here>.',
       maxPrice ? 'Budget: around $' + fmtNum.format(maxPrice) + '.' : 'Budget: <your budget>.',
-      state ? 'Near: ' + state + ' — <add your ZIP and how far you will travel>.'
-            : 'Near: <your ZIP and how far you will travel>.',
+      where,
+      state === DEFAULT_STATE
+        ? 'Worth checking locally: KSL Cars (Utah\'s big classifieds site, lots of private ' +
+          'sellers), plus the national aggregators and the dealer groups along the I-15 ' +
+          'corridor between Lehi and Provo.'
+        : '',
       '',
       'Search widely — aim for 150 or more listings across several sites, dealers and private',
       'sellers. The more you find, the better the valuation, because the tool builds each car\'s',
@@ -2014,7 +2032,8 @@
       return '<option' + (s === 'Midsize car' ? ' selected' : '') + '>' + esc(s) + '</option>';
     }).join('');
     $('in-state').innerHTML = US_STATES.map(function (s) {
-      return '<option value="' + s + '">' + (s || '—') + '</option>';
+      return '<option value="' + s + '"' + (s === DEFAULT_STATE ? ' selected' : '') + '>' +
+        (s || '—') + '</option>';
     }).join('');
     $('in-model').value = 'Camry';
     refreshModelList();

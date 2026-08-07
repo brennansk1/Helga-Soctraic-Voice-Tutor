@@ -1534,3 +1534,49 @@ def test_no_sample_market_is_shipped():
     for name in ("listings.js", "listings.json"):
         assert not os.path.exists(os.path.join(TOOL_DIR, name)), \
             f"{name} must not be checked in — it is generated from the user's own searches"
+
+
+# ------------------------------------------------- local configuration (Utah)
+
+
+def _fresh_page(page):
+    """A pristine load. Earlier tests persist their inputs, so defaults must be
+    checked against a browser that has never been used."""
+    page.evaluate("() => localStorage.clear()")
+    page.goto("file://" + INDEX_HTML)
+    page.wait_for_timeout(900)
+    return page
+
+
+def test_ui_defaults_to_the_configured_state(page):
+    page = _fresh_page(page)
+    assert page.input_value("#in-state") == "UT", "this copy is set up for Utah"
+    note = page.inner_text("#state-note").lower()
+    assert "sales tax" in note and "inspection" in note
+
+
+def test_ui_prompt_is_seeded_with_the_search_area(page):
+    page = _fresh_page(page)
+    page.click("#btn-market-prompt")
+    page.wait_for_timeout(700)
+    text = page.evaluate("() => navigator.clipboard.readText()")
+    assert "Pleasant Grove" in text
+    assert "Utah County" in text
+    assert "84062" in text
+    assert "KSL" in text, "the local classifieds site should be suggested"
+
+
+def test_no_personal_data_in_the_tool():
+    """Nothing in the shipped tool should identify a person or a home address."""
+    banned = re.compile(
+        r"\b[\w.+-]+@(?!noreply\.|example\.)[\w-]+\.[\w.]+"      # any real-looking email
+        r"|\b\d{1,5}\s+(?:N|S|E|W|North|South|East|West)\s+\d+\s+(?:N|S|E|W)\b"  # Utah grid address
+        r"|session_[A-Za-z0-9]{10,}",                            # session identifiers
+        re.I)
+    for name in sorted(os.listdir(TOOL_DIR)):
+        path = os.path.join(TOOL_DIR, name)
+        if not os.path.isfile(path) or name.startswith("."):
+            continue
+        text = open(path, encoding="utf-8", errors="replace").read()
+        hits = [h for h in banned.findall(text) if "noreply@anthropic.com" not in h]
+        assert not hits, f"{name} contains what looks like personal data: {hits[:3]}"

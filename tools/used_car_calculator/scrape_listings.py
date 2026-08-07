@@ -56,7 +56,7 @@ DEFAULT_JSON = os.path.join(HERE, "listings.json")
 
 SCHEMA_VERSION = 1
 USER_AGENT = ("UsedCarDealAnalyzer/1.0 (personal car shopping; "
-              "https://github.com/brennansk1/Helga-Soctraic-Voice-Tutor)")
+              "https://github.com/brennansk1/Car-Calculator---Utah-County)")
 REQUEST_DELAY_SECONDS = 2.0
 
 #: Fields the browser tool understands. Anything else is carried through in `notes`.
