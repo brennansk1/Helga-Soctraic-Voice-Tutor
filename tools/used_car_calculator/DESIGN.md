@@ -1,9 +1,9 @@
 # Used Car Deal Analyzer — Design
 
-**Status: BUILT (Rev 7).** This document specified the tool; it is now implemented and
-tested (245 tests, all passing). See `README.md` for usage, `§10` for where the build
-diverged from this spec, and `§11`–`§13` for the redesign, the accuracy work and the
-production-quality pass layered on top of the original scope.
+**Status: BUILT (Rev 8).** This document specified the tool; it is now implemented and
+tested (305 tests, all passing). See `README.md` for usage, `§10` for where the build
+diverged from this spec, and `§11`–`§14` for the redesign, the accuracy work, the
+production-quality pass and the market layer.
 
 **Rev 4** — as-built. Rev 3 specified the vetted candidate sources as concrete,
 implementation-ready specifications: exact endpoints and fields consumed (§3, Appendix A),
@@ -698,3 +698,71 @@ Anything typed by hand still wins over a state default.
 - Document metadata: description, theme-color for both schemes, and an inline SVG favicon.
 
 **Test coverage: 245 — 159 Node, 86 pytest (64 headless-browser).**
+
+---
+
+## 14. Rev 8 — the market layer
+
+The single-car report's weakest input was always comparables: the user had to find them by
+hand, and most people entered one or none, which left the price component of the score
+neutral. Rev 8 fixes that by changing the unit of work from one car to a market.
+
+### 14.1 Division of labour
+
+Scraping does not belong in a `file://` page — no server, no CORS, no credentials. So it
+happens outside, and the browser only reasons about listings it is handed:
+
+| Stage | Where | What |
+|---|---|---|
+| Find and read listings | An assistant with web access | Follows `AGENTS.md`; emits JSON in a documented schema |
+| Normalise, dedupe, persist | `scrape_listings.py` | Aliases, type coercion, VIN validation, cross-source dedupe; writes `listings.js` (loadable from `file://`) and `listings.json` |
+| Comparables, scoring, ranking | `market.js` in the browser | Uses the same `engine.js` as the single-car report — one source of truth for scoring |
+
+Three independent ways in, so no step is a hard dependency: the generated `listings.js`, a
+file picker, or a paste box.
+
+### 14.2 Cohort comparables
+
+For each listing, peers are drawn from the cohort — same make and model, within a year and
+mileage band, **matching title class** (a branded title is never priced off clean-title
+peers, or the reverse). Each peer is then adjusted to the target's own mileage using the
+engine's price-per-mile slope and to its model year using the depreciation curve, before
+averaging. Without that adjustment a high-mileage car would be valued off low-mileage
+listings, which is the exact error the manual-comp workflow invited.
+
+The net widens in three documented steps (±1 year/±20k, ±2/±40k, ±3/±60k) and reports which
+one it used; below three peers it declines to guess and says "thin data" in the table.
+Cohort comps are still asking prices, so the asking-to-transaction haircut still applies.
+
+### 14.3 Ranking on the buyer's terms
+
+`scoreAll` runs every listing through `analyze()` with the buyer's own state, financing,
+driving and horizon — so the ranking answers "which of these is best *for me*", not "which
+is best in the abstract". Changing any of those inputs re-scores the whole market. All the
+existing machinery applies unchanged: hard caps, findings, cost of ownership, state costs.
+
+Output: three shortlists (best overall, biggest bargains, cheapest to own), a searchable and
+sortable table, cohort statistics including a least-squares price-vs-mileage slope — the
+market telling you its own depreciation rate — and a scatter plot with that trend line, where
+a filled dot is a car priced under the trend for its mileage.
+
+### 14.4 Ethics and terms
+
+`--fetch` extracts schema.org `Vehicle` JSON-LD, which sites publish precisely so machines
+can read their inventory. It checks `robots.txt` per origin and refuses disallowed paths,
+waits two seconds between requests, and identifies itself honestly. Sites that render
+listings only in JavaScript are out of scope for it by design — the assistant reads those.
+Terms-of-use compliance is stated as the operator's responsibility in both the module
+docstring and the README, and official APIs are recommended where they exist.
+
+### 14.5 Two bugs the existing gates caught
+
+The accessibility and contrast suites written in Rev 7 immediately failed against the new
+code, which is what they were for:
+
+- The market table baked **resolved** colours into inline styles, so a theme switch left
+  light-mode green on a dark background at 2.75:1. Inline styles now reference the CSS
+  custom property, and the market redraws on theme change.
+- The hidden file input had no accessible name.
+
+**Test coverage: 305 — 188 Node, 117 pytest (77 headless-browser).**

@@ -1385,6 +1385,10 @@
     'in-annualmiles', 'in-horizon', 'in-state', 'in-gas', 'in-insurance', 'in-income',
     'in-trade-value', 'in-trade-payoff'];
   var CHECK_IDS = ['in-recalls-verified', 'in-comp-bias'];
+  /** Changing any of these changes how every listing would be owned, so the market re-scores. */
+  var MARKET_INPUTS = ['in-state', 'in-paytype', 'in-down', 'in-credit', 'in-apr', 'in-term',
+    'in-tax', 'in-fees', 'in-annualmiles', 'in-horizon', 'in-gas', 'in-insurance',
+    'in-income', 'in-comp-bias'];
 
   function collectForm() {
     var out = {};
@@ -1479,6 +1483,398 @@
       '<span class="src">' + esc(DATA.states.verifyNote) + '</span></p>');
   }
 
+
+  /* ==================================================================== market
+   * Ranking a whole cohort of scraped listings through the same engine.
+   * Scraping happens outside the browser (scrape_listings.py / AGENTS.md); this only
+   * reasons about listings already loaded.
+   * ================================================================= */
+
+  var M = window.UCDA_MARKET;
+  var LISTINGS_STORE = 'ucda_listings_v1';
+  var market = { listings: [], rows: [], view: [], meta: null, sort: 'score', limit: 40 };
+
+  function marketAssumptions() {
+    var form = readForm();
+    // The buyer's own circumstances, not the individual car's.
+    return {
+      currentYear: form.currentYear, state: form.state,
+      payType: form.payType, down: form.down, creditTier: form.creditTier, apr: form.apr,
+      termMonths: form.termMonths, taxRate: form.taxRate, fees: form.fees,
+      annualMiles: form.annualMiles, horizon: form.horizon,
+      gasUsdPerGal: form.gasUsdPerGal, insurance: form.insurance, income: form.income,
+      ppi: 'planned', records: 'yes', applyCompBias: form.applyCompBias
+    };
+  }
+
+  function readFilters() {
+    return {
+      query: val('market-search'),
+      maxPrice: numOrNull('mf-maxprice'), maxMiles: numOrNull('mf-maxmiles'),
+      minYear: numOrNull('mf-minyear'), minScore: numOrNull('mf-minscore'),
+      maxDistance: numOrNull('mf-maxdist'),
+      seller: val('mf-seller') || null,
+      cleanOnly: $('mf-clean').checked,
+      noCriticals: $('mf-nocrit').checked
+    };
+  }
+
+  function scoreMarket() {
+    if (!market.listings.length) return;
+    market.rows = M.scoreAll(market.listings, marketAssumptions(), E, DATA, {});
+    renderMarket();
+  }
+
+  function renderMarket() {
+    $('market-empty').style.display = market.listings.length ? 'none' : 'block';
+    $('market-live').style.display = market.listings.length ? 'block' : 'none';
+    if (!market.listings.length) return;
+
+    market.view = M.sortRows(M.filterRows(market.rows, readFilters()), market.sort);
+    renderMarketStats();
+    renderMarketPicks();
+    renderMarketChart();
+    renderMarketTable();
+  }
+
+  function renderMarketStats() {
+    var all = M.marketStats(market.rows);
+    var shown = M.marketStats(market.view);
+    var stats = [
+      ['Listings', fmtNum.format(market.view.length) +
+        (market.view.length !== market.rows.length ? ' of ' + fmtNum.format(market.rows.length) : '')],
+      ['Median price', shown.medianPrice === null ? '—' : usd(shown.medianPrice)],
+      ['Median miles', shown.medianMiles === null ? '—' : fmtNum.format(Math.round(shown.medianMiles))],
+      ['Median score', shown.medianScore === null ? '—' : Math.round(shown.medianScore)],
+      ['Depreciation', all.usdPerThousandMiles
+        ? usd(all.usdPerThousandMiles) + ' / 1k mi' : '—'],
+      ['Private sellers', Math.round(all.privateShare * 100) + '%'],
+      ['Branded titles', fmtNum.format(all.branded)]
+    ];
+    setHTML($('market-stats'), stats.map(function (s) {
+      return '<div class="stat"><span class="cap">' + esc(s[0]) + '</span><span class="v">' +
+        esc(s[1]) + '</span></div>';
+    }).join(''));
+  }
+
+  function pickLine(r) {
+    var l = r.listing;
+    return '<span class="m">' + esc(l.year) + ' ' + esc(l.make) + ' ' + esc(l.model) +
+      (l.trim ? ' ' + esc(l.trim) : '') + '</span> — <span class="m">' + usd(l.price) + '</span>, ' +
+      fmtNum.format(l.miles) + ' mi, score <b class="m">' + r.score + '</b>' +
+      (r.saving > 0 ? ' · <span class="m">' + usd(r.saving) + '</span> under fair value' : '') +
+      '<br><button class="tiny ghost" data-open="' + esc(l.id) + '">Open full report</button>';
+  }
+
+  function renderMarketPicks() {
+    var picks = M.shortlist(market.view, 3);
+    var groups = [
+      ['Best overall', picks.best, 'highest deal score on your terms'],
+      ['Biggest bargains', picks.bargains, 'furthest below their fair value'],
+      ['Cheapest to own', picks.cheapestToOwn, 'lowest all-in monthly cost']
+    ];
+    setHTML($('market-picks'), groups.map(function (g) {
+      return '<div class="pick"><h4>' + esc(g[0]) + '</h4>' +
+        (g[1].length
+          ? '<ol>' + g[1].map(function (r) { return '<li>' + pickLine(r) + '</li>'; }).join('') + '</ol>'
+          : '<p class="block-note" style="margin:0">Nothing matches the current filters.</p>') +
+        '</div>';
+    }).join(''));
+  }
+
+  function renderMarketTable() {
+    var rows = market.view.slice(0, market.limit);
+    var cols = [
+      ['#', null], ['Vehicle', null], ['Year', 'year'], ['Miles', 'miles'], ['Price', 'price'],
+      ['Fair value', null], ['Vs fair', 'saving'], ['Score', 'score'],
+      ['All-in/mo', 'monthly'], ['$/mi', 'cpm'], ['Away', 'distance'], ['', null]
+    ];
+    $('market-table-head').textContent = 'Ranked listings — ' +
+      fmtNum.format(market.view.length) + ' match';
+
+    setHTML($('market-table'),
+      '<thead><tr>' + cols.map(function (c) {
+        return '<th' + (c[1] ? ' data-sort="' + c[1] + '" tabindex="0" role="button" aria-sort="' +
+          (market.sort === c[1] ? 'descending' : 'none') + '"' : '') + '>' + esc(c[0]) + '</th>';
+      }).join('') + '</tr></thead><tbody>' +
+      rows.map(function (r, i) {
+        var l = r.listing;
+        var flags = '';
+        if (l.title !== 'clean') flags += '<span class="badge bad">' + esc(l.title) + '</span>';
+        if (r.criticals) flags += '<span class="badge bad">' + r.criticals + ' critical</span>';
+        if (l.seller === 'private') flags += '<span class="badge">private</span>';
+        if (l.daysOnMarket >= 60) flags += '<span class="badge warn">' + l.daysOnMarket + 'd listed</span>';
+        if (l.priceDrop) flags += '<span class="badge good">−' + usd(l.priceDrop) + '</span>';
+        if (l.duplicates && l.duplicates.length) {
+          flags += '<span class="badge warn">also listed higher</span>';
+        }
+        return '<tr><td class="rank">' + (i + 1) + '</td>' +
+          '<td class="veh">' + esc([l.make, l.model, l.trim].filter(Boolean).join(' ')) + flags +
+          '<span class="sub">' + esc([l.dealer || 'Private seller', l.city, l.state]
+            .filter(Boolean).join(' · ')) +
+          (l.url ? ' · <a href="' + esc(l.url) + '" target="_blank" rel="noopener noreferrer">listing</a>' : '') +
+          '</span></td>' +
+          '<td>' + esc(l.year) + '</td>' +
+          '<td>' + fmtNum.format(l.miles) + '</td>' +
+          '<td>' + usd(l.price) + '</td>' +
+          '<td>' + (r.comps.n ? usd(r.fair) : '<span class="src">thin data</span>') + '</td>' +
+          '<td style="color:var(' + (r.saving > 0 ? '--ok' : '--ink-2') + ')">' +
+            (r.saving > 0 ? '−' + usd(r.saving) : '+' + usd(-r.saving)) + '</td>' +
+          '<td><b>' + r.score + '</b></td>' +
+          '<td>' + usd(r.monthly) + '</td>' +
+          '<td>' + fmtUSD2.format(r.cpm) + '</td>' +
+          '<td>' + (l.distance === null ? '—' : Math.round(l.distance) + ' mi') + '</td>' +
+          '<td><button class="tiny ghost" data-open="' + esc(l.id) + '">Open</button></td></tr>';
+      }).join('') + '</tbody>');
+
+    $('btn-market-more').style.display = market.view.length > market.limit ? 'inline-block' : 'none';
+    $('btn-market-more').textContent = 'Show more (' +
+      fmtNum.format(market.view.length - market.limit) + ' left)';
+  }
+
+  /** Price against mileage for the whole cohort, with the market's own trend line. */
+  function renderMarketChart() {
+    var rows = market.view;
+    if (rows.length < 2) { setHTML($('market-chart'), ''); return; }
+    var narrow = narrowScreen();
+    var W = chartW(), H = narrow ? 230 : 300, padL = narrow ? 58 : 74, padR = 18,
+        padT = 14, padB = 34;
+    var miles = rows.map(function (r) { return r.listing.miles; });
+    var prices = rows.map(function (r) { return r.listing.price; });
+    var maxX = Math.max.apply(null, miles) * 1.05 || 1;
+    var maxY = Math.max.apply(null, prices) * 1.08 || 1;
+    var x = function (v) { return padL + (W - padL - padR) * (v / maxX); };
+    var y = function (v) { return padT + (H - padT - padB) * (1 - v / maxY); };
+
+    var svg = '';
+    var stepY = Math.max(Math.ceil(maxY / 4 / 1000) * 1000, 1000);
+    for (var g = 0; g <= maxY; g += stepY) {
+      svg += '<line x1="' + padL + '" y1="' + y(g) + '" x2="' + (W - padR) + '" y2="' + y(g) +
+        '" stroke="' + css('--rule') + '" stroke-width="1"/><text x="' + (padL - 9) + '" y="' +
+        (y(g) + 4) + '" text-anchor="end" font-size="10" fill="' + css('--ink-3') + '">' +
+        usd(g) + '</text>';
+    }
+    var stepX = Math.max(Math.ceil(maxX / 5 / 10000) * 10000, 10000);
+    for (var gx = 0; gx <= maxX; gx += stepX) {
+      svg += '<text x="' + x(gx) + '" y="' + (H - 10) + '" text-anchor="middle" font-size="10" fill="' +
+        css('--ink-3') + '">' + Math.round(gx / 1000) + 'k</text>';
+    }
+
+    var stats = M.marketStats(rows);
+    if (stats.slope) {
+      var x1 = 0, x2 = maxX;
+      var y1 = clamp(stats.intercept + stats.slope * x1, 0, maxY);
+      var y2 = clamp(stats.intercept + stats.slope * x2, 0, maxY);
+      svg += '<line x1="' + x(x1) + '" y1="' + y(y1) + '" x2="' + x(x2) + '" y2="' + y(y2) +
+        '" stroke="' + css('--s2') + '" stroke-width="2" stroke-linecap="round"/>';
+    }
+
+    // Dots below the trend line are cars priced under the market for their mileage.
+    rows.forEach(function (r, i) {
+      var under = stats.slope
+        ? r.listing.price < stats.intercept + stats.slope * r.listing.miles : false;
+      svg += '<circle class="mk-dot" data-i="' + i + '" cx="' + x(r.listing.miles).toFixed(1) +
+        '" cy="' + y(r.listing.price).toFixed(1) + '" r="' + (r.score >= 75 ? 5.5 : 4) +
+        '" fill="' + (under ? css('--s1') : 'none') + '" stroke="' + css('--s1') +
+        '" stroke-width="1.5" opacity="' + (under ? 0.9 : 0.55) + '"/>';
+    });
+
+    setHTML($('market-chart'), '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" ' +
+      'aria-label="Asking price against mileage for every matching listing, with the market trend line" ' +
+      'style="min-width:' + (narrow ? 0 : 560) + 'px">' + svg + '</svg>');
+
+    var tip = $('market-tip');
+    var rig = tip.closest('.chart-rig');
+    Array.prototype.forEach.call($('market-chart').querySelectorAll('.mk-dot'), function (dot) {
+      dot.addEventListener('mousemove', function (e) {
+        var r = rows[parseInt(dot.dataset.i, 10)];
+        var l = r.listing;
+        tip.style.display = 'block';
+        tip.innerHTML = '<div class="h">' + esc([l.year, l.make, l.model].join(' ')) + '</div>' +
+          '<div class="r"><span>Price</span><b>' + usd(l.price) + '</b></div>' +
+          '<div class="r"><span>Miles</span><b>' + fmtNum.format(l.miles) + '</b></div>' +
+          '<div class="r"><span>Score</span><b>' + r.score + '</b></div>' +
+          '<div class="r"><span>Vs fair</span><b>' + (r.saving > 0 ? '−' : '+') +
+          usd(Math.abs(r.saving)) + '</b></div>';
+        var box = rig.getBoundingClientRect();
+        tip.style.left = clamp(e.clientX - box.left + 14, 0, Math.max(box.width - 200, 0)) + 'px';
+        tip.style.top = (e.clientY - box.top + 14) + 'px';
+      });
+      dot.addEventListener('mouseleave', function () { tip.style.display = 'none'; });
+    });
+  }
+
+  /** Push a listing into the single-car form and run the full report on it. */
+  function openListing(id) {
+    var row = market.rows.filter(function (r) { return r.listing.id === id; })[0];
+    if (!row) return;
+    var l = row.listing;
+    $('in-name').value = [l.year, l.make, l.model, l.trim].filter(Boolean).join(' ') +
+      (l.dealer ? ' — ' + l.dealer : '');
+    $('in-year').value = l.year;
+    var make = Object.keys(DATA.brands).filter(function (b) {
+      return b.toLowerCase() === String(l.make).toLowerCase();
+    })[0];
+    $('in-brand').value = make || 'Other';
+    refreshModelList();
+    $('in-model').value = l.model;
+    if (l.segment && DATA.segments[l.segment]) $('in-segment').value = l.segment;
+    $('in-miles').value = l.miles;
+    $('in-price').value = l.price;
+    $('in-title').value = l.title;
+    $('in-accidents').value = l.accidents;
+    $('in-owners').value = l.owners || 1;
+    if (l.vin) $('in-vin').value = l.vin;
+    // The cohort's own comparables become the three comp fields.
+    var comps = row.comps.comps.slice().sort(function (a, b) { return a - b; });
+    var pick = comps.length
+      ? [comps[Math.floor(comps.length * 0.25)], comps[Math.floor(comps.length * 0.5)],
+         comps[Math.floor(comps.length * 0.75)]]
+      : [];
+    ['in-comp1', 'in-comp2', 'in-comp3'].forEach(function (id2, i) {
+      $(id2).value = pick[i] ? Math.round(pick[i]) : '';
+    });
+    persistForm();
+    setStatus('Loaded ' + $('in-name').value + ' from the market, with ' + row.comps.n +
+      ' cohort comparables.');
+    announce('Loaded listing into the report.');
+    refreshLive().then(run);
+  }
+
+  /* ---------------------------------------------------------- market io */
+
+  function loadMarketPayload(payload, label) {
+    var result = M.ingest(payload);
+    if (!result.ok) {
+      $('market-status').textContent = result.error;
+      return false;
+    }
+    market.listings = result.listings;
+    market.meta = result.meta;
+    market.limit = 40;
+    saveJson(LISTINGS_STORE, { listings: result.listings, meta: result.meta });
+    $('market-status').textContent = fmtNum.format(result.listings.length) + ' listings from ' +
+      label + (result.duplicatesRemoved ? ' · ' + result.duplicatesRemoved + ' duplicates merged' : '') +
+      (result.rejected ? ' · ' + result.rejected + ' incomplete records skipped' : '');
+    scoreMarket();
+    return true;
+  }
+
+  function exportMarketCsv() {
+    if (!market.view.length) return;
+    var cols = ['rank', 'score', 'year', 'make', 'model', 'trim', 'miles', 'price',
+      'fairValue', 'vsFair', 'monthlyAllIn', 'costPerMile', 'seller', 'dealer', 'city',
+      'state', 'distance', 'daysOnMarket', 'title', 'accidents', 'vin', 'url'];
+    var quote = function (v) { return '"' + String(v === null || v === undefined ? '' : v).replace(/"/g, '""') + '"'; };
+    var lines = [cols.map(quote).join(',')];
+    market.view.forEach(function (r, i) {
+      var l = r.listing;
+      lines.push([i + 1, r.score, l.year, l.make, l.model, l.trim, l.miles, l.price,
+        Math.round(r.fair), Math.round(-r.saving), Math.round(r.monthly), r.cpm.toFixed(3),
+        l.seller, l.dealer, l.city, l.state, l.distance, l.daysOnMarket, l.title,
+        l.accidents, l.vin, l.url].map(quote).join(','));
+    });
+    var blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'market-shortlist.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+  }
+
+  function initMarket() {
+    if (!M) return;
+
+    // Delegated so the handlers survive every re-render of the table and picks.
+    $('market-block').addEventListener('click', function (event) {
+      var openBtn = event.target.closest && event.target.closest('[data-open]');
+      if (openBtn) { openListing(openBtn.dataset.open); return; }
+      var th = event.target.closest && event.target.closest('th[data-sort]');
+      if (th) { market.sort = th.dataset.sort; renderMarket(); }
+    });
+    $('market-block').addEventListener('keydown', function (event) {
+      var th = event.target.closest && event.target.closest('th[data-sort]');
+      if (th && (event.key === 'Enter' || event.key === ' ')) {
+        event.preventDefault();
+        market.sort = th.dataset.sort;
+        renderMarket();
+      }
+    });
+
+    ['market-search', 'mf-maxprice', 'mf-maxmiles', 'mf-minyear', 'mf-minscore',
+     'mf-maxdist', 'mf-seller', 'mf-clean', 'mf-nocrit'].forEach(function (id) {
+      var el = $(id);
+      if (!el) return;
+      el.addEventListener('input', function () { market.limit = 40; renderMarket(); });
+      el.addEventListener('change', function () { market.limit = 40; renderMarket(); });
+    });
+
+    $('btn-market-reset-filters').addEventListener('click', function () {
+      ['market-search', 'mf-maxprice', 'mf-maxmiles', 'mf-minyear', 'mf-minscore', 'mf-maxdist']
+        .forEach(function (id) { $(id).value = ''; });
+      $('mf-seller').value = '';
+      $('mf-clean').checked = true;
+      $('mf-nocrit').checked = false;
+      market.limit = 40;
+      renderMarket();
+    });
+    $('btn-market-more').addEventListener('click', function () {
+      market.limit += 60;
+      renderMarketTable();
+    });
+    $('btn-market-export').addEventListener('click', exportMarketCsv);
+
+    $('btn-market-file').addEventListener('click', function () { $('market-file').click(); });
+    $('market-file').addEventListener('change', function (event) {
+      var file = event.target.files && event.target.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function () {
+        try {
+          loadMarketPayload(JSON.parse(reader.result), file.name);
+        } catch (e) {
+          $('market-status').textContent = 'That file is not valid JSON: ' + e.message;
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    $('btn-market-paste').addEventListener('click', function () {
+      var wrap = $('market-paste-wrap');
+      wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
+      if (wrap.style.display === 'block') $('market-paste').focus();
+    });
+    $('btn-market-load-paste').addEventListener('click', function () {
+      var raw = $('market-paste').value.trim();
+      if (!raw) { $('market-status').textContent = 'Paste some JSON first.'; return; }
+      try {
+        if (loadMarketPayload(JSON.parse(raw), 'pasted JSON')) {
+          $('market-paste-wrap').style.display = 'none';
+        }
+      } catch (e) {
+        $('market-status').textContent = 'That is not valid JSON: ' + e.message;
+      }
+    });
+    $('btn-market-clear').addEventListener('click', function () {
+      market.listings = []; market.rows = []; market.view = [];
+      saveJson(LISTINGS_STORE, null);
+      $('market-status').textContent = 'Cleared.';
+      renderMarket();
+    });
+
+    // Prefer the generated file; fall back to whatever was loaded here last time.
+    var generated = window.UCDA_LISTINGS;
+    var stored = loadJson(LISTINGS_STORE, null);
+    if (generated) {
+      loadMarketPayload(generated, 'listings.js' +
+        (generated.generated ? ' generated ' + String(generated.generated).slice(0, 10) : ''));
+    } else if (stored && stored.listings && stored.listings.length) {
+      loadMarketPayload(stored.listings, 'this browser');
+    } else {
+      renderMarket();
+    }
+  }
+
   /* ------------------------------------------------------------- init */
 
   function refreshModelList() {
@@ -1536,6 +1932,8 @@
         if (el.id === 'in-tax') el.dataset.touched = '1';
         if (FORM_IDS.indexOf(el.id) !== -1 || CHECK_IDS.indexOf(el.id) !== -1) persistForm();
         if (lastCtx) run();
+        // The ranking depends on how *this* buyer would own the car.
+        if (MARKET_INPUTS.indexOf(el.id) !== -1) scoreMarket();
       });
     });
     $('in-state').addEventListener('change', function () {
@@ -1610,6 +2008,7 @@
         (!root.dataset.theme && window.matchMedia('(prefers-color-scheme: dark)').matches);
       root.dataset.theme = dark ? 'light' : 'dark';
       if (lastCtx) run();      // charts re-render against the mode's validated palette
+      if (market.rows.length) renderMarket();
     });
 
     // A shared link wins over whatever this browser had saved.
@@ -1620,6 +2019,7 @@
     }
     applyStateDefaults(false);
 
+    initMarket();
     renderCompare();
     renderColophon(null);
     if (restored) refreshLive().then(run);

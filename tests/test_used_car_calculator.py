@@ -1026,3 +1026,355 @@ def test_ui_state_costs_reach_the_totals(page):
     assert cheap != dear, "state should change the cost of ownership"
     money = lambda s: int(re.sub(r"[^0-9]", "", s.split("all in")[0]))
     assert money(dear) > money(cheap), "Michigan insurance should cost more than Maine"
+
+
+# --------------------------------------------------- listing ingest (Python)
+
+import scrape_listings  # noqa: E402  (TOOL_DIR is on sys.path)
+
+
+def test_num_parses_the_shapes_listings_actually_use():
+    assert scrape_listings._num("$18,995") == 18995
+    assert scrape_listings._num("52,341 mi") == 52341
+    assert scrape_listings._num(18500) == 18500
+    assert scrape_listings._num("") is None
+    assert scrape_listings._num(None) is None
+    assert scrape_listings._num("n/a") is None
+
+
+def test_normalise_maps_aliases_and_types():
+    row = scrape_listings.normalise(
+        {"year": "2019", "make": "toyota", "model": "Camry",
+         "mileage": "52,341", "listPrice": "$18,995", "dealerName": "Example"}, 0)
+    assert row["year"] == 2019
+    assert row["make"] == "Toyota"
+    assert row["miles"] == 52341
+    assert row["price"] == 18995
+    assert row["dealer"] == "Example"
+    assert row["seenAt"]
+
+
+def test_normalise_discards_a_malformed_vin():
+    good = scrape_listings.normalise({"vin": "4T1B11HK5KU123456"}, 0)
+    bad = scrape_listings.normalise({"vin": "NOT-A-VIN"}, 0)
+    assert good["vin"] == "4T1B11HK5KU123456"
+    assert bad["vin"] is None, "a wrong VIN is worse than no VIN"
+
+
+def test_usable_requires_the_scorable_minimum():
+    complete = {"year": 2019, "make": "Toyota", "model": "Camry", "price": 18000, "miles": 50000}
+    assert scrape_listings.usable(complete)
+    for missing in ("year", "make", "model", "price", "miles"):
+        partial = dict(complete)
+        partial[missing] = None
+        assert not scrape_listings.usable(partial), missing
+
+
+def test_dedupe_prefers_the_cheaper_sighting_and_records_the_other():
+    rows = [
+        scrape_listings.normalise({"year": 2019, "make": "Toyota", "model": "Camry",
+                                   "miles": 50000, "price": 19500,
+                                   "vin": "4T1B11HK5KU123456", "source": "a"}, 0),
+        scrape_listings.normalise({"year": 2019, "make": "Toyota", "model": "Camry",
+                                   "miles": 50000, "price": 18500,
+                                   "vin": "4T1B11HK5KU123456", "source": "b"}, 1),
+    ]
+    out = scrape_listings.dedupe(rows)
+    assert len(out) == 1
+    assert out[0]["price"] == 18500
+    assert out[0]["duplicates"][0]["price"] == 19500
+
+
+def test_jsonld_extraction_reads_a_schema_org_vehicle():
+    html = """
+    <html><head>
+    <script type="application/ld+json">
+    {"@context":"https://schema.org","@type":"Car",
+     "name":"2019 Toyota Camry SE",
+     "vehicleIdentificationNumber":"4T1B11HK5KU123456",
+     "vehicleModelDate":"2019","brand":{"@type":"Brand","name":"Toyota"},
+     "model":"Camry","mileageFromOdometer":{"@type":"QuantitativeValue","value":52341},
+     "offers":{"@type":"Offer","price":"18995","priceCurrency":"USD"}}
+    </script></head><body></body></html>
+    """
+    found = scrape_listings.extract_jsonld_vehicles(html, "https://example.com/l/1")
+    assert len(found) == 1
+    assert found[0]["vin"] == "4T1B11HK5KU123456"
+    assert found[0]["make"] == "Toyota"
+    assert found[0]["price"] == "18995"
+    assert found[0]["source"] == "example.com"
+
+
+def test_jsonld_extraction_falls_back_to_the_name_for_make_and_model():
+    html = """<script type="application/ld+json">
+    {"@type":"Vehicle","name":"2018 Honda Accord EX-L",
+     "offers":{"price":17450},"mileageFromOdometer":61200}</script>"""
+    found = scrape_listings.extract_jsonld_vehicles(html, "https://example.com/x")
+    assert found[0]["year"] == "2018"
+    assert found[0]["make"] == "Honda"
+    assert "Accord" in found[0]["model"]
+
+
+def test_jsonld_extraction_walks_a_graph_and_ignores_other_types():
+    html = """<script type="application/ld+json">
+    {"@graph":[{"@type":"Organization","name":"Dealer"},
+               {"@type":"Car","name":"2020 Mazda Mazda3","offers":{"price":19000},
+                "mileageFromOdometer":30000}]}</script>"""
+    found = scrape_listings.extract_jsonld_vehicles(html, None)
+    assert len(found) == 1
+    assert found[0]["make"] == "Mazda"
+
+
+def test_jsonld_extraction_survives_malformed_blocks():
+    html = ('<script type="application/ld+json">{not json}</script>'
+            '<script type="application/ld+json">{"@type":"Car","offers":{"price":1}}</script>')
+    assert len(scrape_listings.extract_jsonld_vehicles(html, None)) == 1
+
+
+def test_fetch_refuses_a_path_robots_disallows(monkeypatch):
+    class DenyAll:
+        def set_url(self, url): pass
+        def read(self): pass
+        def can_fetch(self, agent, url): return False
+    monkeypatch.setattr(scrape_listings.urllib.robotparser, "RobotFileParser", DenyAll)
+    scrape_listings._robots_cache.clear()
+    with pytest.raises(scrape_listings.FetchError, match="robots.txt"):
+        scrape_listings.fetch_page("https://example.com/listing/1")
+    scrape_listings._robots_cache.clear()
+
+
+def test_fetch_listings_skips_disallowed_pages_without_dying(monkeypatch, caplog):
+    monkeypatch.setattr(scrape_listings, "fetch_page",
+                        lambda url, timeout=30: (_ for _ in ()).throw(
+                            scrape_listings.FetchError("nope")))
+    assert scrape_listings.fetch_listings(["https://example.com/a"], delay=0) == []
+
+
+def test_cli_writes_a_database_the_browser_can_load(tmp_path):
+    payload = {"listings": [
+        {"year": 2019, "make": "Toyota", "model": "Camry", "miles": 52341, "price": 18995},
+        {"year": 2018, "make": "Honda", "model": "Accord", "miles": 61200, "price": 17450},
+        {"make": "Incomplete"},
+    ]}
+    src = tmp_path / "found.json"
+    src.write_text(json.dumps(payload))
+    js, js_json = tmp_path / "listings.js", tmp_path / "listings.json"
+
+    code = scrape_listings.main(["--from-json", str(src), "--query", "test run",
+                                 "--out", str(js), "--out-json", str(js_json)])
+    assert code == 0
+
+    saved = json.loads(js_json.read_text())
+    assert saved["count"] == 2, "the incomplete record should be dropped"
+    assert saved["query"] == "test run"
+    assert saved["schema"] == scrape_listings.SCHEMA_VERSION
+
+    node = _node()
+    result = subprocess.run(
+        [node, "-e", "const d=require(process.argv[1]);"
+                     "process.stdout.write(String(d.listings.length))", str(js)],
+        capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, f"generated listings.js is not valid JS: {result.stderr}"
+    assert result.stdout == "2"
+
+
+def test_cli_merge_accumulates_searches(tmp_path):
+    js, js_json = tmp_path / "listings.js", tmp_path / "listings.json"
+    first = tmp_path / "a.json"
+    first.write_text(json.dumps([{"year": 2019, "make": "Toyota", "model": "Camry",
+                                  "miles": 50000, "price": 18000}]))
+    second = tmp_path / "b.json"
+    second.write_text(json.dumps([{"year": 2020, "make": "Honda", "model": "Accord",
+                                   "miles": 40000, "price": 21000}]))
+    scrape_listings.main(["--from-json", str(first), "--out", str(js), "--out-json", str(js_json)])
+    scrape_listings.main(["--from-json", str(second), "--merge",
+                          "--out", str(js), "--out-json", str(js_json)])
+    assert json.loads(js_json.read_text())["count"] == 2
+
+
+def test_cli_reads_csv(tmp_path):
+    csv_path = tmp_path / "export.csv"
+    csv_path.write_text("year,make,model,miles,price\n2019,Toyota,Camry,52341,18995\n")
+    js, js_json = tmp_path / "listings.js", tmp_path / "listings.json"
+    assert scrape_listings.main(["--from-csv", str(csv_path),
+                                 "--out", str(js), "--out-json", str(js_json)]) == 0
+    assert json.loads(js_json.read_text())["count"] == 1
+
+
+def test_cli_needs_a_source(capsys):
+    assert scrape_listings.main([]) == 1
+    assert "Nothing to ingest" in capsys.readouterr().out
+
+
+def test_cli_prints_the_schema(capsys):
+    assert scrape_listings.main(["--schema"]) == 0
+    out = capsys.readouterr().out
+    for field in ("year", "make", "model", "miles", "price", "vin"):
+        assert field in out
+
+
+def test_shipped_sample_database_is_valid():
+    """The checked-in listings.js must load and be scorable."""
+    node = _node()
+    script = (
+        "const M=require({market});const E=require({engine});const D=require({data});"
+        "const L=require({listings});"
+        "const ing=M.ingest(L);"
+        "const rows=M.scoreAll(ing.listings,{{currentYear:2026,payType:'cash',horizon:5,"
+        "annualMiles:12000,taxRate:0.06,fees:500,down:0,termMonths:48,apr:9.6,"
+        "creditTier:'prime',gasUsdPerGal:3.15,insurance:1750,income:0}},E,D,{{}});"
+        "process.stdout.write(JSON.stringify({{n:ing.listings.length,scored:rows.length,"
+        "top:rows[0].score,allFinite:rows.every(r=>Number.isFinite(r.score))}}));"
+    ).format(
+        market=json.dumps(os.path.join(TOOL_DIR, "market.js")),
+        engine=json.dumps(os.path.join(TOOL_DIR, "engine.js")),
+        data=json.dumps(os.path.join(TOOL_DIR, "data.js")),
+        listings=json.dumps(os.path.join(TOOL_DIR, "listings.js")),
+    )
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=120)
+    assert result.returncode == 0, result.stderr
+    summary = json.loads(result.stdout)
+    assert summary["n"] > 100, "the sample market should be a real cohort"
+    assert summary["scored"] == summary["n"]
+    assert summary["allFinite"]
+    assert 0 <= summary["top"] <= 100
+
+
+# ------------------------------------------------------- market section (UI)
+
+
+def test_ui_market_loads_the_generated_database(page):
+    status = page.inner_text("#market-status").lower()
+    assert "listings" in status
+    assert page.eval_on_selector("#market-live", "e => e.style.display") == "block"
+    assert page.eval_on_selector("#market-empty", "e => e.style.display") == "none"
+
+
+def test_ui_market_ranks_listings_best_first(page):
+    scores = page.eval_on_selector_all(
+        "#market-table tbody tr td:nth-child(8)",
+        "els => els.map(e => parseInt(e.textContent, 10))")
+    assert len(scores) > 10, "expect a real cohort in the table"
+    assert scores == sorted(scores, reverse=True), "the table must be ranked"
+    assert all(0 <= s <= 100 for s in scores)
+
+
+def test_ui_market_shows_the_three_shortlists(page):
+    assert page.eval_on_selector_all(".pick", "els => els.length") == 3
+    text = page.inner_text("#market-picks").lower()
+    for heading in ("best overall", "biggest bargains", "cheapest to own"):
+        assert heading in text
+
+
+def test_ui_market_derives_stats_from_the_cohort(page):
+    stats = page.inner_text("#market-stats").lower()
+    for expected in ("listings", "median price", "median score", "depreciation"):
+        assert expected in stats
+
+
+def test_ui_market_plots_every_listing(page):
+    dots = page.eval_on_selector_all(".mk-dot", "els => els.length")
+    rows = page.eval_on_selector_all("#market-table tbody tr", "els => els.length")
+    assert dots > rows, "the chart shows the whole filtered set, not just the visible page"
+
+
+def test_ui_market_search_narrows_the_table(page):
+    before = page.eval_on_selector_all("#market-table tbody tr", "els => els.length")
+    page.fill("#market-search", "camry")
+    page.wait_for_timeout(500)
+    after = page.inner_text("#market-table").lower()
+    assert "camry" in after
+    assert "accord" not in after
+    page.fill("#market-search", "")
+    page.wait_for_timeout(400)
+    assert page.eval_on_selector_all("#market-table tbody tr", "els => els.length") == before
+
+
+def test_ui_market_filters_apply(page):
+    page.fill("#mf-maxprice", "14000")
+    page.dispatch_event("#mf-maxprice", "change")
+    page.wait_for_timeout(500)
+    prices = page.eval_on_selector_all(
+        "#market-table tbody tr td:nth-child(5)",
+        "els => els.map(e => parseInt(e.textContent.replace(/[^0-9]/g, ''), 10))")
+    assert prices, "the filter should still leave something"
+    assert max(prices) <= 14000
+    page.click("#btn-market-reset-filters")
+    page.wait_for_timeout(500)
+
+
+def test_ui_market_clean_title_filter_is_on_by_default(page):
+    assert page.eval_on_selector("#mf-clean", "e => e.checked") is True
+    assert "rebuilt" not in page.inner_text("#market-table").lower()
+    page.uncheck("#mf-clean")
+    page.wait_for_timeout(600)
+    page.click("th[data-sort='price']")
+    page.wait_for_timeout(500)
+    page.check("#mf-clean")
+    page.wait_for_timeout(500)
+
+
+def test_ui_market_column_sort_works(page):
+    page.click("th[data-sort='price']")
+    page.wait_for_timeout(500)
+    prices = page.eval_on_selector_all(
+        "#market-table tbody tr td:nth-child(5)",
+        "els => els.map(e => parseInt(e.textContent.replace(/[^0-9]/g, ''), 10))")
+    assert prices == sorted(prices), "sorting by price should ascend"
+    page.click("th[data-sort='score']")
+    page.wait_for_timeout(500)
+
+
+def test_ui_market_show_more_pages_the_table(page):
+    first = page.eval_on_selector_all("#market-table tbody tr", "els => els.length")
+    if page.eval_on_selector("#btn-market-more", "e => e.style.display") != "none":
+        page.click("#btn-market-more")
+        page.wait_for_timeout(500)
+        assert page.eval_on_selector_all("#market-table tbody tr", "els => els.length") > first
+
+
+def test_ui_market_opens_a_listing_into_the_full_report(page):
+    page.click("#btn-market-reset-filters")
+    page.wait_for_timeout(500)
+    first_row = page.locator("#market-table tbody tr").first
+    price = first_row.locator("td").nth(4).inner_text()
+    expected = int(re.sub(r"[^0-9]", "", price))
+    first_row.locator("button[data-open]").click()
+    page.wait_for_timeout(1500)
+    assert int(page.input_value("#in-price")) == expected, \
+        "the listing's price should land in the report"
+    assert page.eval_on_selector("#results", "e => e.style.display") == "block"
+    # Cohort comparables should have been pushed into the comp fields.
+    assert page.input_value("#in-comp2"), "the cohort should supply comparables"
+
+
+def test_ui_market_paste_accepts_json(page):
+    page.click("#btn-market-paste")
+    page.wait_for_timeout(300)
+    payload = json.dumps({"listings": [
+        {"year": 2021, "make": "Toyota", "model": "Camry", "miles": 30000, "price": 21000},
+        {"year": 2020, "make": "Toyota", "model": "Camry", "miles": 45000, "price": 19000},
+    ]})
+    page.fill("#market-paste", payload)
+    page.click("#btn-market-load-paste")
+    page.wait_for_timeout(900)
+    assert "pasted json" in page.inner_text("#market-status").lower()
+    assert page.eval_on_selector_all("#market-table tbody tr", "els => els.length") == 2
+
+
+def test_ui_market_rejects_bad_json_with_a_message(page):
+    page.click("#btn-market-paste")
+    page.wait_for_timeout(300)
+    page.fill("#market-paste", "{not json")
+    page.click("#btn-market-load-paste")
+    page.wait_for_timeout(500)
+    assert "not valid json" in page.inner_text("#market-status").lower()
+
+
+def test_ui_market_clear_empties_the_section(page):
+    page.click("#btn-market-clear")
+    page.wait_for_timeout(600)
+    assert page.eval_on_selector("#market-empty", "e => e.style.display") == "block"
+    assert page.eval_on_selector("#market-live", "e => e.style.display") == "none"
+    assert "agents.md" in page.inner_text("#market-block").lower() or \
+        "scrape_listings" in page.inner_text("#market-empty").lower()

@@ -142,6 +142,60 @@ label.f.invalid input, label.f.invalid select { border-bottom-color: var(--bad);
 .actions li { padding: 5px 0 5px 20px; position: relative; font-size: 13.5px; color: var(--ink-2); }
 .actions li::before { content: "→"; position: absolute; left: 0; font-family: var(--mono); color: var(--ink-3); }
 
+/* ------------------------------------------------------------ market */
+.market-bar {
+  display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+  border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+  padding: 10px 0; margin: 14px 0 18px;
+}
+.market-bar .stat { display: flex; flex-direction: column; gap: 1px; }
+.market-bar .stat .cap {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.13em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+.market-bar .stat .v { font-family: var(--mono); font-size: 15px; font-weight: 700; }
+#market-search { font-size: 15px; padding: 8px 2px; }
+.filterrow { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px 18px; }
+@media (max-width: 900px) { .filterrow { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 560px) { .filterrow { grid-template-columns: repeat(2, 1fr); } }
+
+#market-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+#market-table th {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink-3); font-weight: 700; text-align: right; padding: 0 9px 6px 0;
+  border-bottom: 1.5px solid var(--rule-heavy); white-space: nowrap; cursor: pointer;
+}
+#market-table th:first-child, #market-table td:first-child,
+#market-table th:nth-child(2), #market-table td:nth-child(2) { text-align: left; }
+#market-table th[aria-sort]:not([aria-sort="none"])::after { content: " ▾"; color: var(--s1-ink); }
+#market-table td {
+  padding: 7px 9px 7px 0; border-bottom: 1px solid var(--rule); text-align: right;
+  font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+#market-table tbody tr:hover { background: var(--s1-wash); }
+#market-table .veh { font-family: var(--sans); font-size: 13px; }
+#market-table .veh .sub { display: block; font-size: 11px; color: var(--ink-3); }
+#market-table .rank { color: var(--ink-3); }
+.badge {
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.08em; padding: 1px 5px;
+  border: 1px solid currentColor; margin-left: 5px;
+}
+.badge.good { color: var(--ok); } .badge.bad { color: var(--bad); }
+.badge.warn { color: var(--warn); }
+.picks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+@media (max-width: 800px) { .picks { grid-template-columns: 1fr; } }
+.pick h4 {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ink-3); margin: 0 0 8px; border-bottom: 1px solid var(--rule); padding-bottom: 5px;
+}
+.pick ol { margin: 0; padding-left: 18px; font-size: 12.5px; }
+.pick li { margin-bottom: 7px; }
+.pick .m { font-family: var(--mono); }
+#market-paste { width: 100%; min-height: 130px; font-family: var(--mono); font-size: 12px;
+  border: 1px solid var(--field-line); background: var(--paper); color: var(--ink); padding: 9px; }
+#market-empty { border-left: 3px solid var(--s1); background: var(--s1-wash); padding: 14px 16px; }
+#market-empty code { font-size: 12px; }
+
 /* Fatal-error panel */
 #fatal {
   display: none; border: 2px solid var(--bad); padding: 16px 18px; margin: 20px 0;
@@ -469,6 +523,95 @@ table.ledger { min-width: 320px; }
     adds your local taxes, fees, insurance levels and inspection rules. Nothing you enter
     leaves this browser.
   </p>
+
+  <section class="block noprint input-block" id="market-block">
+    <div class="inner"><div class="stamp">M</div><div class="block-body">
+      <h2>Market — rank every listing you have</h2>
+      <p class="block-note">
+        Load a few hundred listings and this scores all of them through the same engine as the
+        single-car report, then ranks them. With a real cohort in hand it stops asking you for
+        comparables and derives them: for each car it finds its peers in the data, adjusts each
+        one to that car's mileage and year, and prices from there. Ask an assistant to browse for
+        you — <code>AGENTS.md</code> is the brief — or load a file below.
+      </p>
+
+      <div class="controls">
+        <button class="tiny" id="btn-market-file" type="button">Load listings file</button>
+        <input type="file" id="market-file" accept=".json,application/json" class="visually-hidden"
+               aria-label="Choose a listings JSON file">
+        <button class="tiny ghost" id="btn-market-paste" type="button">Paste JSON</button>
+        <button class="tiny ghost" id="btn-market-clear" type="button">Clear</button>
+        <span class="src" id="market-status" role="status" aria-live="polite"></span>
+      </div>
+
+      <div id="market-paste-wrap" style="display:none;margin-top:14px">
+        <label class="f"><span class="cap">Listings JSON</span>
+          <textarea id="market-paste" spellcheck="false"
+            placeholder='{"listings":[{"year":2019,"make":"Toyota","model":"Camry","miles":52341,"price":18995}]}'></textarea>
+        </label>
+        <div class="controls" style="margin-top:10px">
+          <button class="tiny" id="btn-market-load-paste" type="button">Load pasted listings</button>
+        </div>
+      </div>
+
+      <div id="market-empty" style="margin-top:16px">
+        <b>No listings loaded.</b> Ask your assistant something like
+        <em>“find me 2018–2021 Camrys and Accords under $25,000 within 100 miles of 22102”</em>,
+        then have it run
+        <code>python3 scrape_listings.py --from-json found.json --merge</code>
+        and reload this page. Or paste its JSON above.
+      </div>
+
+      <div id="market-live" style="display:none">
+        <div class="market-bar" id="market-stats"></div>
+
+        <label class="f"><span class="cap">Search these listings</span>
+          <input id="market-search" type="search" autocomplete="off"
+                 placeholder="camry xle vienna — every word must match"></label>
+
+        <h3>Narrow it down</h3>
+        <div class="filterrow">
+          <label class="f"><span class="cap">Max price</span>
+            <input id="mf-maxprice" type="number" min="0" step="500" placeholder="—"></label>
+          <label class="f"><span class="cap">Max miles</span>
+            <input id="mf-maxmiles" type="number" min="0" step="5000" placeholder="—"></label>
+          <label class="f"><span class="cap">Min year</span>
+            <input id="mf-minyear" type="number" min="1990" max="2027" placeholder="—"></label>
+          <label class="f"><span class="cap">Min score</span>
+            <input id="mf-minscore" type="number" min="0" max="100" step="5" placeholder="—"></label>
+          <label class="f"><span class="cap">Max distance</span>
+            <input id="mf-maxdist" type="number" min="0" step="10" placeholder="—"></label>
+          <label class="f"><span class="cap">Seller</span>
+            <select id="mf-seller"><option value="">Anyone</option>
+              <option value="dealer">Dealer</option><option value="private">Private</option>
+            </select></label>
+        </div>
+        <div class="controls" style="margin-top:12px">
+          <label style="display:inline-flex;gap:7px;align-items:center;font-size:12.5px;color:var(--ink-2)">
+            <input type="checkbox" id="mf-clean" checked> Clean titles only</label>
+          <label style="display:inline-flex;gap:7px;align-items:center;font-size:12.5px;color:var(--ink-2)">
+            <input type="checkbox" id="mf-nocrit"> Hide anything with a critical finding</label>
+          <button class="tiny ghost" id="btn-market-reset-filters" type="button">Reset filters</button>
+          <button class="tiny ghost" id="btn-market-export" type="button">Export shortlist CSV</button>
+        </div>
+
+        <h3>Your best options</h3>
+        <div class="picks" id="market-picks"></div>
+
+        <h3>Price against mileage</h3>
+        <div class="chart-rig">
+          <div class="scroller"><div id="market-chart"></div></div>
+          <div class="tip" id="market-tip"></div>
+        </div>
+
+        <h3 id="market-table-head">Ranked listings</h3>
+        <div class="scroller"><table id="market-table"></table></div>
+        <div class="controls" style="margin-top:12px">
+          <button class="tiny ghost" id="btn-market-more" type="button" style="display:none">Show more</button>
+        </div>
+      </div>
+    </div></div>
+  </section>
 
   <section class="block noprint input-block" id="keys-block" style="display:none">
     <div class="inner"><div class="stamp">00</div><div class="block-body">
@@ -855,6 +998,9 @@ table.ledger { min-width: 320px; }
 </div>
 
 <script src="data.js"></script>
+<script src="market.js"></script>
+<script>/* Optional: generated by scrape_listings.py. Absent on a fresh checkout. */</script>
+<script src="listings.js" onerror="window.UCDA_LISTINGS_MISSING=true"></script>
 <script src="engine.js"></script>
 <script src="sources.js"></script>
 <script src="ui.js"></script>

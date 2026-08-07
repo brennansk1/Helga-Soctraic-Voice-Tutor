@@ -5,6 +5,42 @@ walk away, works out how long the loan should be, projects the full cost of owne
 pulls live safety recalls and crash ratings from NHTSA. Everything runs in the browser;
 nothing you type leaves the machine.
 
+Feed it a few hundred scraped listings and it becomes a **market scanner**: it scores the
+whole cohort, ranks it, and — crucially — stops asking you for comparables and derives them
+from the data itself.
+
+## Shopping a whole market
+
+The single-car report's weakest input is comparables, because you have to find them by hand.
+With a cohort loaded, that goes away.
+
+**Ask an assistant to go and find the cars.** `AGENTS.md` is the brief it follows — what to
+search, what to read, and the exact JSON to produce. Then:
+
+```bash
+python3 scrape_listings.py --from-json found.json --query "Camry/Accord under 25k" --merge
+```
+
+Reload `index.html` and the **Market** section ranks every one of them. For each car it finds
+its peers in the cohort (same model, near year, near mileage, matching title class), adjusts
+each peer to that car's own mileage and model year, and prices from there — so a 120k-mile car
+is never valued off 40k-mile listings. Then it scores all of them through the same engine the
+single-car report uses, with *your* state, financing and driving as the assumptions.
+
+You get three shortlists — best overall, biggest bargains, cheapest to own — a searchable and
+sortable table, and a price-against-mileage scatter with the market's own depreciation slope
+fitted through it. Click any listing to load it into the full report, comparables and all.
+
+Other ways in: `--from-csv` for a spreadsheet export, `--stdin` for a pipe, the **Load
+listings file** button, or paste the JSON straight into the page. No shell required.
+
+`--fetch <url>` will read pages directly and extract schema.org `Vehicle` JSON-LD — the
+structured data listing sites publish so machines can read their inventory. It honours
+`robots.txt`, waits two seconds between requests and identifies itself honestly. It cannot
+help with sites that render listings only in JavaScript; there, have the assistant read the
+page and emit JSON. **Complying with each site's terms of use is the operator's
+responsibility**, and where a site offers an API (Marketcheck, Auto.dev) prefer it.
+
 ## Accessibility & quality
 
 - **WCAG 2.1 AA contrast is enforced by test**, not by eye: a Playwright check walks every
@@ -65,6 +101,7 @@ U.S. government APIs that need no key.
 | **Comparison** | saved candidates side by side with the best value marked per column, exportable to CSV |
 | **Complaint breakdown** | what owners actually report to NHTSA, by component, so the inspection targets the right systems |
 | **The bottom line** | a plain-language paragraph up top: what to offer, what to walk at, what it costs a month, and the two or three things to do next |
+| **Market ranking** | every scraped listing scored and ranked on your terms, with comparables derived from the cohort, three shortlists, search, filters, a price-vs-mileage scatter and CSV export |
 | **State cost profile** | sales tax and trade-in credit, title fee, registration, insurance level, fuel and electricity prices, inspection cadence, EV surcharge and vehicle property tax — all flowing into the totals |
 
 ### Score weights
@@ -167,18 +204,19 @@ leaves its table untouched and is reported.
 ## Tests
 
 ```bash
-python3 -m pytest tests/test_used_car_calculator.py -v     # everything (86 tests)
-node --test 'tools/used_car_calculator/tests/*.test.js'    # the JS engine alone (159 tests)
+python3 -m pytest tests/test_used_car_calculator.py -v     # everything (117 tests)
+node --test 'tools/used_car_calculator/tests/*.test.js'    # engine + market (188 tests)
 ```
 
-Three layers: 159 Node tests covering every formula, boundary and failure path in the engine
+Three layers: 188 Node tests covering every formula, boundary and failure path in the engine
 and the API client (with an injected fetch, so no network is touched); Python tests for the
 dataset builder, including a round-trip that proves a refreshed `data.js` is still loadable
-by the engine; and 64 headless-Chromium tests that drive the real UI — score rendering, chart
+by the engine; and 77 headless-Chromium tests that drive the real UI — score rendering, chart
 geometry, the loan-term table's monotonicity, the target-payment solver, trade-in tax rules,
 the service schedule, sensitivity ordering, the share-link round-trip, phone layout, WCAG
 contrast in both themes, keyboard/ARIA affordances, input validation, error recovery, the
-print sheet, CSV export and HTML-escaping of user text.
+print sheet, CSV export, HTML-escaping of user text, and the whole market flow — ranking
+order, search, filters, column sort, paste ingestion and opening a listing into the report.
 
 The Playwright tests skip cleanly if Playwright or Chromium is absent.
 
@@ -187,6 +225,10 @@ The Playwright tests skip cleanly if Playwright or Chromium is absent.
 | File | Purpose |
 |---|---|
 | `index.html` | markup and styles |
+| `market.js` | cohort comparables, batch scoring, search/filter/sort, market statistics |
+| `scrape_listings.py` | listing ingest: JSON/CSV/stdin, robots-aware JSON-LD fetch, dedupe |
+| `AGENTS.md` | the brief an assistant follows when browsing for listings |
+| `listings.js` / `.json` | the generated listing database (a sample market ships with the tool) |
 | `ui.js` | form wiring, SVG charts, live lookups, comparison table |
 | `engine.js` | every formula — pure functions, no DOM, no network |
 | `sources.js` | live API client with injectable fetch, 6s timeouts, silent fallback |
