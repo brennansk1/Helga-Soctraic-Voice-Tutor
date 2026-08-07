@@ -91,7 +91,13 @@ class TestTextbookSourcesAreTreatedAsGrounding(unittest.TestCase):
         src = open(os.path.join(
             _ROOT, 'services/research/research_server.py')).read()
         block = src[src.index('def textbook_lookup'):][:800]
-        self.assertIn('v2|', block)
+        # Assert the key is VERSIONED, not that it is any particular version.
+        # Pinning "v2|" made this test fail the moment the version was bumped
+        # for a real reason — the density fix that stopped a constructed-
+        # language page being served as a quantum textbook. A test that has to
+        # be edited every time the thing it guards works as designed trains
+        # people to edit it without thinking.
+        self.assertRegex(block, r'cache_key\("textbook", f"v\d+\|')
 
 
 if __name__ == '__main__':
