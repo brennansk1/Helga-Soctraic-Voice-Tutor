@@ -829,6 +829,176 @@ Design questions needing an answer before development starts:
 5. **Vocabulary** — "degree/university/credits" imply accreditation. Worth
    settling early, since it is cheap now and expensive after the UI exists.
 
+---
+
+# Part III — Risks and mitigations
+
+Each risk below is one where the design could be right on paper and fail in
+practice. The mitigation is the part that gets built; the risk is why.
+
+## R1 — Task 0 invalidates the premise
+
+**The risk.** The whole design assumes real-syllabus grounding produces
+substantially better courses. That is *unmeasured*: the 42% coverage figure comes
+from a course built before phase-1 research, textbook grounding, OpenStax and
+subject-fit gating existed. If grounding does not move coverage, copying textbook
+spines will not save it either, and 180 hours of build time buys nothing.
+
+**Mitigations.**
+* **Run it first, and make it cheap.** Criterion 6 scores the *skeleton*, so this
+  needs no hydration — minutes, not the 40 assumed. There is no excuse for
+  deferring it.
+* **Pre-commit to a decision rule before seeing the number**, so the result
+  cannot be rationalised after the fact:
+
+  | rebuilt coverage | reading | action |
+  |---|---|---|
+  | ≥ 70% | grounding works | proceed with the design as written |
+  | 50–70% | partial | proceed, but the copy-spine tier becomes the priority, not synthesis |
+  | ≤ 50% | premise not supported | **stop and revisit** before any program work |
+
+* **Keep a fallback that survives a bad result.** Even if *synthesis* does not
+  improve, the at-level **copy-spine** tier is a different mechanism — it does
+  not ask the model to invent structure at all. A poor Task 0 argues for *more*
+  copying, not for abandoning the design.
+
+## R2 — A build competes with a live tutoring session
+
+**The risk.** One model at a time on a 24 GB box. A background build is hundreds
+of LLM calls; a tutoring turn behind it either queues or forces a model swap. The
+learner experiences the university building itself as latency inside their own
+lesson. This is the failure that would define the product.
+
+**Mitigations.**
+* **BACKGROUND priority through the existing admission gate**; tutoring is
+  INTERACTIVE and always wins.
+* **Pre-empt, do not merely deprioritise.** A build must yield within seconds of
+  a session starting, not at the end of its current stage.
+* **Checkpoint per concept so a paused build resumes.** A 2–4 h build that
+  restarts on every interruption never completes for an active learner — this is
+  the mitigation that makes pre-emption affordable.
+* **Prefer idle windows** (no session for N minutes; overnight if the learner has
+  a pattern).
+* **Make it an acceptance gate, not a hope:** measure tutoring turn latency with
+  and without a background build. If the delta is material, the schedule is
+  wrong.
+* **Tension worth naming:** a smaller model for background builds would remove
+  the contention, but breaks the quality parity of condition 2. Do not take that
+  trade silently — courses built by a weaker model must at minimum be recorded as
+  such.
+
+## R3 — The build budget for a full program is large
+
+**The risk.** 5,400 concepts for a bachelor's: 180 h measured-9B, ~108 h
+projected-Nail. Even lazily, that is a lot of a single machine's life.
+
+**Mitigations.**
+* **Lookahead 1.** Never build more than the next course.
+* **Only chosen electives are built** — unchosen slots cost nothing, so the
+  registration mechanic is also the budget control.
+* **Measure per-concept build time on Nail before committing** (folded into the
+  `session_clock` run — same execution).
+* **Cache aggressively** — already done at the research layer (172× on repeat
+  lookups); a second course in the same discipline reuses the whole brief.
+* **Abandonment is bounded**: with lookahead 1, a learner who quits after two
+  courses has wasted at most one build, not thirty-eight.
+
+## R4 — Judge noise invalidates the quality claims
+
+**The risk.** This repo has measured its judges twice and found both defective:
+HelgaBench swung **±2 on an identical transcript**, and a *complete* syllabus
+scores ~71%. A quality claim from an uncalibrated judge is not a weak measurement,
+it is not a measurement.
+
+**Mitigations.**
+* **Self-test the instrument before quoting any number it produces** — the
+  source-parity judge must score source-vs-itself at ≈50/50.
+* **Median of ≥3; report the spread beside the median.**
+* **Hold the judge constant across any comparison.** `helgabench_a0.json` is
+  retained as a record but is *not a valid comparison point* because the judge
+  changed between runs. Comparing a Nail-judged rebuild against the 9B-judged 42%
+  baseline would repeat that exact error.
+* **Prefer instruments without a judge.** Key-term coverage is extraction plus
+  string matching; it cannot drift, so it carries more weight than the A/B.
+* **Treat all judge scores as lower bounds**, as criterion 6 already does.
+
+## R5 — Sourceless courses score like sourced ones
+
+**The risk.** A course with no reference and a course that matched its reference
+produce the same summary if N/A criteria are skipped or scored 0. This is the
+absent-vs-zero error in the position where it does most damage.
+
+**Mitigations.** Two-configuration gate; N/A stored as N/A and never 0; the
+configuration named on the course record and in the UI; fact-check weighted
+higher and internal-coherence substituted when no external anchor exists.
+
+## R6 — The over-stretch detector mis-fires
+
+**The risk.** Firing on Calculus makes it noise people learn to dismiss; never
+firing makes it decoration. Firing on a *degraded* brief tells a learner their
+subject is too small when the truth is that Wikimedia was throttling.
+
+**Mitigations.** Calibrate against known-good (Calculus, Biology) and known-thin
+subjects before shipping; **hard-suppress on `degraded`**, asserted by test;
+trigger on evidence volume *relative to requested scope* so a 6-course
+certificate in a niche subject passes while a 40-course master's does not; offer
+resize/broaden rather than a block.
+
+## R7 — An incoherent prerequisite graph
+
+**The risk.** A wrong DAG is invisible until a learner reaches a course they
+cannot follow — months in.
+
+**Mitigations.** Cycle detection and "every prerequisite appears in an earlier
+term" in the planner (P1); concept-level internal coherence (criterion 9) so a
+course does not depend on material it teaches later; a learner-facing "this
+assumes X" note rather than silent failure.
+
+## R8 — The program outlives the system that made it
+
+**The risk.** A bachelor's spans years. Schema migrations, model changes and
+preset changes will all happen inside that window. A program that cannot survive
+them strands the learner's progress.
+
+**Mitigations.**
+* **Version the program plan**, and record on every course the model, preset
+  parameters, source provenance and gate configuration used to build it.
+* **Make single-course regeneration possible** without invalidating the program
+  or the learner's completed work.
+* **Never hold program state in memory** — the single-global-FSM lesson.
+* Accept that courses built at different times may differ, and **show that
+  honestly** rather than implying uniformity.
+
+## R9 — Accreditation vocabulary
+
+**The risk.** "University", "degree", "credits" imply accreditation, which is
+regulated regardless of quality.
+
+**Mitigation.** Decide now, and route every user-visible name through **one
+display-name layer** so the vocabulary can be changed globally later without
+touching the data model. Cheap now, expensive after the UI exists.
+
+## R10 — Licence obligations from copied material
+
+**The risk.** OpenStax is CC-BY, Wikibooks CC-BY-SA. Copying structure is low
+risk; hydrating content from them carries attribution and, for Wikibooks,
+share-alike obligations. Reconstructing provenance later is near-impossible.
+
+**Mitigation.** Record per-source provenance **at hydration time**, generate the
+attribution block from it, and flag share-alike content distinctly. Nearly free
+while building.
+
+## R11 — The elective choice blocks the build
+
+**The risk.** A course cannot be built until it is chosen; a learner who does not
+choose stalls their own pipeline.
+
+**Mitigation.** Prompt at ~70% through the current course; if unanswered by ~90%,
+pre-select the recommended option and say so, keeping it changeable until the
+build starts.
+
+---
+
 ## Status
 
 Design. **No implementation has begun and none should until task 0 is measured**,
