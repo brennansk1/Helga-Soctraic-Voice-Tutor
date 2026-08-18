@@ -2779,6 +2779,18 @@ class MnemosyneFSM:
 
         # Multi-question mastery tracking
         self.concept_question_count += 1
+
+        # Evaluated on EVERY answer, deliberately. A first attempt nested this
+        # behind the question-type-cycle branch and it never fired: a real
+        # session hit 25 turns without that branch being reached, which is the
+        # same unbounded session the cap exists to prevent.
+        if self._should_park_concept():
+            self.speak(
+                "We've spent a while on this one. Let's move on and come back to "
+                "it later — it'll return in your review queue, which is usually a "
+                "better way to make something stick than pushing through now.")
+            self._advance_without_completing()
+            return
         if grade >= 3:
             self.concept_correct_streak += 1
             self.concept_miss_streak = 0
@@ -2887,14 +2899,6 @@ class MnemosyneFSM:
             ]["name"].lower()
             self.socratic_type_index += 1
             if self.socratic_type_index >= len(SOCRATIC_QUESTION_TYPES):
-                if self._should_park_concept():
-                    self.speak(
-                        "We've spent a while on this one. Let's move on and come "
-                        "back to it later — it'll return in your review queue, "
-                        "which is usually a better way to make it stick than "
-                        "pushing through now.")
-                    self._advance_without_completing()
-                    return
                 if self._check_mastery_gate():
                     completion_msg = (feedback or "Excellent work.") + " You've mastered this concept. Let's move on to the next one."
                     self.speak(completion_msg)

@@ -101,6 +101,13 @@ def run_session(fsm, concept_uid, replies, max_turns=25):
                     "payload": {"topic_id": concept_uid}})
     start_state = getattr(fsm, "state", None)
 
+    def _current():
+        node = getattr(fsm, "current_lesson_node", None) or {}
+        return node.get("uid")
+
+    started_on = _current()
+    parked_or_completed = False
+
     script = list(replies) + [_CONTINUATIONS[i % len(_CONTINUATIONS)]
                               for i in range(max_turns)]
     for reply in script[:max_turns]:
@@ -110,6 +117,14 @@ def run_session(fsm, concept_uid, replies, max_turns=25):
         fsm.transition({"type": "TEXT_INPUT", "payload": {"text": reply}})
         latencies.append(round(time.time() - t1, 1))
         turns += 1
+        # Stop when THIS concept ends, whether by mastery or by being parked at
+        # the turn cap. Watching only for the FSM leaving SOCRATIC_LEARNING
+        # measured the wrong thing: a parked concept advances to the next one
+        # and the state never changes, so the clock kept running across concept
+        # boundaries and reported the harness cap instead of the real length.
+        if _current() != started_on:
+            parked_or_completed = True
+            break
 
     return {
         "concept_uid": concept_uid,
@@ -118,6 +133,8 @@ def run_session(fsm, concept_uid, replies, max_turns=25):
         "turn_latencies": latencies,
         "median_turn_latency": (round(statistics.median(latencies), 1)
                                 if latencies else None),
+        "ended": parked_or_completed
+                 or getattr(fsm, "state", None) != "SOCRATIC_LEARNING",
         "completed": getattr(fsm, "state", None) != "SOCRATIC_LEARNING",
         "hit_cap": turns >= max_turns,
         "scripted_turns": len(replies),
@@ -139,7 +156,8 @@ def summarise(sessions):
 
     out = {"turns": stats(turns), "wall_seconds": stats(walls),
            "sessions": len(sessions),
-           "completed": sum(1 for s in sessions if s["completed"])}
+           "completed": sum(1 for s in sessions if s["completed"]),
+           "ended_cleanly": sum(1 for s in sessions if s.get("ended"))}
     med = out["turns"]["median"]
     out["implied_concepts_per_50min_lesson"] = None
     out["note"] = (

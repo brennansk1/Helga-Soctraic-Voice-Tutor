@@ -396,3 +396,34 @@ inside a container; a trap outside one.
 * **Hour-equivalence: still not claimable**, and now for a better reason than
   "unmeasured" — session length has no upper bound until the adult-band time-box
   exists.
+
+## Session bound — implemented and verified live
+
+```
+[WARNING] Concept turn cap reached (20 questions, streak=0) —
+          parking this concept for spaced review rather than grinding on it
+```
+
+Fired **exactly once** in a session, confirming the concept was parked and the
+learner advanced rather than the cap re-triggering every turn. Before this, the
+same session ran 25 turns on one concept and never ended.
+
+Three escalating stages, none of which credit mastery:
+
+| trigger | response |
+|---|---|
+| 2 consecutive misses | change the explanation — different angle, smaller step |
+| 4 consecutive misses | explain differently **and** offer to move on, without judgement |
+| 20 questions on one concept | park it: explicitly *not* completed, returned to FSRS |
+
+No warmth theatre for adults: someone who has missed four times knows they are
+stuck, and "tricky things take practice" reads as condescension at that point.
+
+**The cap never satisfies the mastery gate**, and a test asserts the two never
+touch. Letting a turn cap pass the gate would credit mastery nobody demonstrated
+— the same error the fallback grade avoids by never being a passing grade.
+
+One implementation note worth keeping: the first attempt nested this check behind
+the question-type-cycle branch and **it never fired** — the live session reached
+25 turns without that branch being reached. It now runs on every answer. A fix
+that is not verified against a real session is not a fix.
