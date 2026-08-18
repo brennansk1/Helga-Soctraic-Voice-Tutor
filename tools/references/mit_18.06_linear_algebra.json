@@ -1,0 +1,20 @@
+{
+  "name": "MIT 18.06 Linear Algebra (OCW, Spring 2010)",
+  "source": "https://ocw.mit.edu/courses/18-06-linear-algebra-spring-2010/pages/syllabus/",
+  "textbook": "Strang, Gilbert. Introduction to Linear Algebra, 4th ed.",
+  "lectures": 34,
+  "sessions_per_week": 3,
+  "note": "Ten topic areas transcribed from the published syllabus. `lectures` is the video-lecture count; the meeting pattern of 3 sessions/week is what the design's calendar anchor uses.",
+  "areas": {
+    "Elimination / LU factorization": ["elimination", "lu factor", "lu decomposition", "pivot"],
+    "Ax=b: column space, rank, nullspace": ["column space", "nullspace", "null space", "rank"],
+    "Bases and the four fundamental subspaces": ["basis", "bases", "dimension", "fundamental subspace"],
+    "Least squares and projections": ["least squares", "projection"],
+    "Gram-Schmidt and QR factorization": ["gram schmidt", "qr factor", "qr decomposition", "orthonormal"],
+    "Determinants": ["determinant", "cofactor"],
+    "Eigenvalues, eigenvectors, diagonalization": ["eigenvalue", "eigenvector", "diagonaliz"],
+    "Symmetric and positive definite matrices": ["symmetric matri", "positive definite"],
+    "Linear transformations, change of basis, SVD": ["linear transformation", "change of basis", "singular value", "svd"],
+    "Applications": ["application", "markov", "network", "incidence"]
+  }
+}
