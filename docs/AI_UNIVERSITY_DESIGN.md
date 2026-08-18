@@ -107,10 +107,21 @@ than a plausible-sounding one.
 |---|---|---|---|
 | **Program** | Degree | — | Associate 60 cr / ~20 courses / 2 yr · Bachelor's 120 cr / ~40 courses / 4 yr |
 | **Course** | 3-credit semester course | 20 or 40 per program | 15 weeks · 45 sessions of 50 min · **135 h total student work** |
-| **Module** | 2-week block | **6–8** per course | a module is conventionally ~2 weeks of a term |
-| **Unit** | ~1 week / topic cluster | 2–3 per module | subdivision of the block |
-| **Lesson** | one class session | **~45** per course | 3 × 50 min per week × 15 weeks |
-| **Concept** | one textbook section / learning objective | **see below** | measured from OpenStax |
+| **Module** | 2-week block | **8** per course | a module is conventionally ~2 weeks of a 15-week term |
+| **Unit** | one week of study | **2 per module** (15 per course) | 3 sessions = 1 week |
+| **Lesson** | **one class session** | **3 per unit** (45 per course) | 3 × 50 min per week × 15 weeks |
+| **Concept** | one teachable idea — *several per lesson* | **3 per lesson** (135 per course) | ~2 concepts per textbook section |
+
+The ladder derives entirely from two verified facts — a 15-week term at 3
+sessions per week, and a module being ~2 weeks:
+
+```
+course  = 15 weeks            = 8 modules
+module  = 2 weeks  = 2 units  = 6 lessons
+unit    = 1 week              = 3 lessons
+lesson  = 1 class session     = 3 concepts        <- 50 minutes
+course  = 45 lessons          = 135 concepts
+```
 
 The Carnegie definition fixes the top of this: 1 credit hour = 1 hour of
 instruction + 2 hours of preparation per week for 15 weeks, so a 3-credit course
@@ -118,42 +129,61 @@ is 45 contact hours inside **135 hours of total student work**.
 
 ### The concept count is the one number that is currently wrong
 
+**A lesson is a class session, and a class session covers several concepts.** An
+earlier draft of this document collapsed those two levels and lost `unit`
+entirely, which made the course look about half-sized. With the ladder intact it
+is worse than that.
+
 Counting *teachable* sections in real OpenStax books (front matter, key terms,
 chapter summaries and review exercises excluded):
 
-| book | chapters | teachable sections |
-|---|---|---|
-| Prealgebra 2e | 11 | **80** |
-| College Algebra 2e | 9 | **77** |
-| Calculus Volume 1 | 6 | **51** |
-| Principles of Economics 2e | 34 | 275 _(a two-semester book — micro + macro)_ |
+| book | teachable sections |
+|---|---|
+| Prealgebra 2e | **80** |
+| College Algebra 2e | **77** |
+| Calculus Volume 1 | **51** |
+| Principles of Economics 2e | 275 _(two-semester book — micro + macro)_ |
 
-So **a one-semester course covers roughly 50–80 teachable sections.**
+A one-semester course covers **51–80 teachable sections**. At 3 concepts per
+lesson the ladder yields **135 concepts**, which is **~2.1 concepts per textbook
+section** — a section decomposing into two or three teachable ideas is exactly
+what one would expect, so the two anchors corroborate rather than merely
+coexist.
 
-Helga's College Course preset produces **30 concepts** (6 modules × 5). If a
-concept is the analogue of a textbook section — and it is: both are one
-self-contained idea with its own content and its own review cards — then the
-current preset delivers **under half a real semester course**.
+The three candidate densities, with what each implies:
 
-That is the gap between "a course about Linear Algebra" and "Linear Algebra I".
-It is invisible today because there is nothing to compare against; it becomes
-glaring the moment the system claims to be a university.
+| concepts/lesson | concepts/course | per module | minutes per concept |
+|---|---|---|---|
+| 2 | 90 | 12 | 25.0 |
+| **3** | **135** | **18** | **16.7** |
+| 4 | 180 | 24 | 12.5 |
 
-**Recommendation: a semester course should target ~60 concepts, not 30.** Costs,
-stated plainly:
+**3 per lesson is the design target.** 16.7 minutes for a Socratic exchange on
+one idea is plausible for real dialogue; 12.5 starts to look like a quiz, and 25
+is closer to a tutorial than a class.
+
+Helga's College Course preset produces **30 concepts** (5 per module) —
+**0.67 concepts per lesson**. Against a 135-concept target the course is
+**under-filled by a factor of ~4.5**, and against the textbook section count it
+covers well under half the material. That is the difference between "a course
+about Linear Algebra" and "Linear Algebra I".
+
+**Cost, stated plainly:**
 
 | | concepts | build/course | bachelor's (40 courses) |
 |---|---|---|---|
 | today | 30 | ~60 min | ~40 h |
-| parity | ~60 | **~2 h** | **~80 h** |
+| parity | **135** | **~4.5 h** | **~180 h** |
 
-80 hours is only tolerable because of lazy materialisation — it is ~2 hours per
-course, built while the learner works through the previous one, spread across
-four years of study. Eagerly it would be indefensible.
+180 hours is a real number and worth staring at. It is only tolerable because of
+lazy materialisation — ~4.5 h per course, built in background windows while the
+learner works through the previous one, spread across four years of study.
+Eagerly it would be indefensible, and it makes condition 4's scheduling
+non-negotiable rather than a refinement.
 
-Keeping 30 is also defensible, but then the honest label is "condensed course",
-not a semester equivalent, and a degree of them is not a degree's worth of
-material. Worth deciding deliberately rather than inheriting.
+Keeping 30 remains defensible, but then the honest label is "condensed course"
+and a program of them is not a degree's worth of material. The decision should
+be deliberate, not inherited.
 
 ### One number deliberately left open
 
@@ -349,19 +379,19 @@ Two independent anchors, neither derived from the other:
   — Prealgebra 2e 80, College Algebra 2e 77, Calculus Volume 1 51 — i.e.
   **51–80 sections**.
 
-At **1.5 concepts per session**, 45 sessions × 1.5 = **68 concepts**, which lands
-inside the measured section range. Two unrelated sources agreeing is the
-strongest evidence available here, and it fixes the whole ladder:
+At **3 concepts per lesson**, 45 lessons × 3 = **135 concepts**, i.e. ~2.1
+concepts per teachable textbook section. A section decomposing into two or three
+teachable ideas is what one would expect independently, so the anchors
+corroborate:
 
 ```
-1 course   = 45 lessons          (a lesson IS a class session)
-1 lesson   = 1-2 concepts        (a 50-min class covers one or two sections)
-1 course   = ~60-68 concepts     (both anchors agree)
+1 course = 8 modules = 15 units = 45 lessons = 135 concepts
+1 lesson = 1 class session = 50 min = 3 concepts (~16.7 min each)
 ```
 
-Today Helga produces 30 concepts per course = **0.67 concepts per session** — a
-class session covering two-thirds of one idea. The structure is not wrong, it is
-**under-filled by slightly more than half**.
+Today Helga produces 30 concepts per course = **0.67 concepts per lesson** — a
+class session covering two-thirds of a single idea. The structure is right; it is
+**under-filled by a factor of ~4.5**.
 
 ### What has to be measured before any of this is claimed
 
@@ -390,13 +420,16 @@ is the *median learner*, not the fastest path through.
 
 | measured concept-session | concepts per lesson | concepts per course |
 |---|---|---|
-| ~50 min | 1 | 45 |
-| ~25 min | 2 | 90 → cap at ~68 |
-| ~35 min | 1.5 | 68 ← expected |
+| ~25 min | 2 | 90 |
+| **~16.7 min** | **3** | **135** ← design target |
+| ~12.5 min | 4 | 180 |
 
-If a concept-session measures ~35 min, the current design needs no structural
-change — only the concept count raised from 30 to ~68. If it measures ~10 min,
-concepts are too thin and the fix is depth per concept, not more of them. **The
+The floor is firm regardless: **at least one concept per lesson**, and a lesson
+that cannot fill a class session is a lesson that should have been merged.
+
+If a concept-session measures ~17 min, the design needs no structural change —
+only the concept count raised from 30 to ~135. If it measures ~5 min, concepts
+are too *thin*, and the fix is depth per concept rather than more of them. **The
 measurement decides which problem we have**, and the two fixes are opposites, so
 guessing is worse than waiting.
 
@@ -409,7 +442,8 @@ guessing is worse than waiting.
 2. `concepts_per_course` for the College Course preset is set from that median
    so that **lessons × session-length ≈ 45 × 50 min**, and the derivation is
    recorded in the preset table rather than typed in.
-3. A built course's actual lesson count is within ±15% of 45.
+3. A built course has **45 lessons ±15%**, **8 modules ±1**, and **≥1 concept in
+   every lesson** — no empty or single-concept lessons surviving to persist.
 4. **No hour-equivalence claim appears in the UI until (1) exists.** Coverage
    parity is defensible today; workload parity is not.
 
@@ -676,7 +710,7 @@ extended, not replaced:
 | 5 | Grounding | ENFORCED | **lower floor when sourceless, labelled** |
 | 6 | Syllabus realism | WIRED, non-blocking | **N/A when sourceless** |
 | **7** | **Source parity** | new | key-term coverage ≥85%, zero contradictions (condition 2) |
-| **8** | **Volume parity** | new | lessons ≈ 45, concepts ≈ 60-68 (condition 1) |
+| **8** | **Volume parity** | new | 8 modules · 45 lessons · ~135 concepts · ≥1 concept per lesson (condition 1) |
 | **9** | **Internal coherence** | new | no concept depends on material taught later (replaces 6/7 when sourceless) |
 
 And a new tier that did not exist before, because programs can fail in ways no
@@ -754,8 +788,8 @@ material impact on tutoring.
 
 Design questions needing an answer before development starts:
 
-1. **Concept count** — accept ~60-68 per semester course (doubling build cost to
-   ~2 h/course), or keep 30 and relabel as "condensed"?
+1. **Concept count** — accept ~135 per semester course (~4.5 h build, ~180 h for
+   a bachelor's), or keep 30 and relabel honestly as "condensed"?
 2. **Where "degree" stops being one object** — a bachelor's spans years and will
    outlive schema and model changes.
 3. **Retake policy** — what happens on a second failed gate? Unlimited retries
