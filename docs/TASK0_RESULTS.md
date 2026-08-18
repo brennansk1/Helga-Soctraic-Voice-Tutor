@@ -574,3 +574,63 @@ order of cost:
 
 The mechanism is proven: when a sequenced exact-match source exists, copy-spine
 takes coverage to 100%. What remains is source availability, not pipeline logic.
+
+---
+
+# Curated spine + grouping — the final measured state
+
+Two changes closed most of the remaining gap.
+
+**1. A curated spine for subjects research cannot sequence.** Linear algebra has
+no OpenStax title and its Wikibooks entry is an alphabetical index, so research
+returns complete coverage with no order. `tools/references/spines/` holds
+hand-transcribed chapter orders — for this subject, Strang's *Introduction to
+Linear Algebra*, which is 18.06's own text. Consulted **only** when research
+finds nothing both sequenced and on-subject:
+
+```
+[SPINE] ignoring alphabetical listing(s) ['Linear Algebra', 'Linear algebra']
+        — an index has coverage but no teaching order
+[SPINE] best sequenced syllabus 'College Algebra' scores 4.75 — not this subject
+[SPINE] using the curated spine for 'Linear Algebra' (Strang, Introduction to
+        Linear Algebra)
+```
+
+**2. Group chapters, never sample them.** The first version took every Nth
+chapter, and Strang's 12 chapters into 6 modules gave Introduction to Vectors,
+Vector Spaces, Determinants, SVD, Complex Vectors, Numerical LA — **dropping
+Solving Linear Equations, Orthogonality, Eigenvalues and Applications.** Half the
+book, including the exact cluster whose absence began this work. Grouping
+consecutive chapters keeps every one and still preserves order: **12 of 12
+chapters covered, up from 6 of 12.**
+
+## Result
+
+| | first run | after 3 fixes | copy from index | **final** |
+|---|---|---|---|---|
+| coverage vs MIT 18.06 | — (UNGUIDED) | 70% | 100% | **90%** |
+| sequencing | — | ok | **INDEX_ORDER** | **ok** |
+| lessons | 6 | 54 | 44 | **42** (target 45) |
+| concepts | 30 | 155 | 124 | **124** |
+| concepts/lesson | 0.67 | 2.87 | 2.82 | **2.95** (target 3) |
+| least squares / projections | MISS | MISS | HIT | **HIT** |
+| Gram-Schmidt / QR | MISS | MISS | HIT | **HIT** |
+
+Both areas that missed on *every* invented-spine run are now covered, with a
+teachable order and the closest structure to the ladder any run has produced.
+Only symmetric/positive-definite remains.
+
+The 100% column is the one to be careful about: it had every topic and an
+unteachable order. **90% sequenced is the better course**, and the pipeline now
+prefers it without supervision.
+
+## Condition 2 status
+
+The mechanism is proven end to end: real published structure, refused when it is
+an index, substituted when research has no sequenced source, grouped rather than
+sampled so nothing is dropped, and checked afterwards by two independent
+model-free instruments that measure different things.
+
+Remaining distance to parity is one topic area on this subject, and the general
+lever is coverage of `tools/references/spines/` — a per-subject transcription
+cost, not a pipeline problem.

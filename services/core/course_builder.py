@@ -482,6 +482,38 @@ DEPTH_PROFILES = {
 }
 
 
+def _curated_spine(topic):
+    """A hand-transcribed chapter order for a subject, or None.
+
+    Only consulted when research finds no sequenced source. These files record
+    the ORDER of a published textbook's chapters -- a short factual sequence --
+    for subjects where every machine-readable listing is an alphabetical index.
+    """
+    key = re.sub(r"[^a-z0-9 ]", " ", (topic or "").lower()).strip()
+    key = re.sub(r"\s+", " ", key)
+    if not key:
+        return None
+    here = os.path.dirname(os.path.abspath(__file__))
+    root = os.path.abspath(os.path.join(here, "../.."))
+    spine_dir = os.path.join(root, "tools", "references", "spines")
+    if not os.path.isdir(spine_dir):
+        return None
+    for name in sorted(os.listdir(spine_dir)):
+        if not name.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(spine_dir, name)) as fh:
+                data = json.load(fh)
+        except Exception as e:
+            logger.debug(f"curated spine {name} unreadable: {e}")
+            continue
+        aliases = [a.lower() for a in (data.get("aliases") or [])]
+        aliases.append((data.get("subject") or "").lower())
+        if key in aliases and data.get("chapters"):
+            return data
+    return None
+
+
 def _looks_alphabetical(titles, sample=25, threshold=0.9):
     """Is this list sorted rather than sequenced?
 
@@ -1730,22 +1762,37 @@ class SkeletonBuilder:
         # spine, because ordering is the part we cannot reconstruct.
         ordered = [o for o in outlines
                    if not _looks_alphabetical(o.get("chapters") or [])]
-        if not ordered:
-            logger.info("[SPINE] every matched syllabus is an alphabetical index "
-                        "— no teaching order available, generating instead")
-            return None
         if len(ordered) < len(outlines):
             dropped = [o.get("book") for o in outlines if o not in ordered]
-            logger.info(f"[SPINE] ignoring alphabetical listing(s) {dropped} in "
-                        f"favour of a sequenced source")
-        best = max(ordered, key=lambda o: o.get("relevance", 0))
-        # 6.0 is the exact-title-match bonus in _relevance: below it the book
-        # merely overlaps the subject rather than being it.
-        if float(best.get("relevance", 0)) < 6.0:
-            logger.info(f"[SPINE] best syllabus {best.get('book')!r} scores "
-                        f"{best.get('relevance')} — not an exact subject match, "
-                        f"generating instead of copying")
-            return None
+            logger.info(f"[SPINE] ignoring alphabetical listing(s) {dropped} — "
+                        f"an index has coverage but no teaching order")
+
+        # A research source qualifies only if it is BOTH sequenced and actually
+        # about this subject. 6.0 is the exact-title-match bonus in _relevance:
+        # below it the book merely overlaps the subject rather than being it.
+        best = max(ordered, key=lambda o: o.get("relevance", 0)) if ordered else None
+        if best is not None and float(best.get("relevance", 0)) < 6.0:
+            logger.info(f"[SPINE] best sequenced syllabus {best.get('book')!r} "
+                        f"scores {best.get('relevance')} — not this subject")
+            best = None
+
+        if best is None:
+            # CURATED FALLBACK. Both refusal paths land here: every listing was
+            # an index, or the only sequenced book was about something else.
+            # Linear algebra hits both — no OpenStax title, and the Wikibooks
+            # entry is alphabetical — so research returns complete coverage with
+            # no sequence. A chapter list transcribed from a published textbook
+            # supplies exactly the part an index cannot.
+            curated = _curated_spine(topic)
+            if not curated:
+                logger.info("[SPINE] no sequenced source for this subject and no "
+                            "curated spine — generating instead")
+                return None
+            logger.info(f"[SPINE] using the curated spine for "
+                        f"{curated['subject']!r} ({curated['source']})")
+            best = {"book": curated["source"], "source": "curated",
+                    "url": curated.get("source_url", ""),
+                    "relevance": 10.0, "chapters": curated["chapters"]}
 
         chapters = [c for c in (best.get("chapters") or [])
                     if isinstance(c, str) and c.strip()]
@@ -1770,29 +1817,51 @@ class SkeletonBuilder:
                         f"copy without padding")
             return None
 
-        # SCOPE-ADAPT: a 154-chapter book is not a 6-module course. Take an
-        # even spread so the whole arc of the subject survives rather than only
-        # its first sixth — the tail of a textbook is where the material the
-        # invented spines kept missing actually lives.
-        step = len(chapters) / target_modules
-        picked, seen = [], set()
+        # SCOPE-ADAPT BY GROUPING, NOT SAMPLING.
+        #
+        # A 154-chapter book is not a 6-module course, so the list has to be
+        # reduced — but taking every Nth chapter DISCARDS the ones in between.
+        # Measured: Strang's 12 chapters sampled into 6 modules gave Introduction
+        # to Vectors, Vector Spaces, Determinants, SVD, Complex Vectors,
+        # Numerical LA — dropping Solving Linear Equations, ORTHOGONALITY,
+        # Eigenvalues and Applications. Half the book, including the exact
+        # cluster (least squares, projections, Gram-Schmidt) whose absence
+        # started this whole line of work.
+        #
+        # Grouping consecutive chapters into each module keeps every chapter and
+        # still preserves order, which is the whole point of copying a spine.
+        groups, n = [], len(chapters)
         for i in range(target_modules):
-            title = chapters[min(int(i * step), len(chapters) - 1)].strip()
-            key = _normalize_title(title) if "_normalize_title" in globals() else title.lower()
+            lo = (i * n) // target_modules
+            hi = ((i + 1) * n) // target_modules
+            group = [c.strip() for c in chapters[lo:hi] if c.strip()]
+            if group:
+                groups.append(group)
+
+        picked, seen = [], set()
+        for group in groups:
+            # The first chapter names the module; the rest become its declared
+            # scope so the substructure builder still knows what belongs in it.
+            title = group[0]
+            key = title.lower()
             if key in seen:
                 continue
             seen.add(key)
-            picked.append(title)
+            picked.append((title, group))
         if len(picked) < max(2, target_modules // 2):
             return None
 
         self._spine_source = {"book": best.get("book"), "url": best.get("url"),
                               "source": best.get("source"),
                               "chapters_available": len(chapters),
-                              "modules_taken": len(picked)}
-        return [{"title": t[:120],
-                 "scope": f"As covered in {best.get('book')}",
-                 "from_syllabus": True} for t in picked]
+                              "modules_taken": len(picked),
+                              "chapters_covered": sum(len(g) for _, g in picked)}
+        return [{
+            "title": title[:120],
+            "scope": (f"Covers, as sequenced in {best.get('book')}: "
+                      + "; ".join(group))[:600],
+            "from_syllabus": True,
+        } for title, group in picked]
 
     def _backfill_uncovered_chapters(self, course_dict, topic, cap=6):
         """Add lessons for real syllabus chapters the outline never reached.

@@ -52,12 +52,22 @@ class TestWhenItFires(unittest.TestCase):
         assert spine is not None and len(spine) == 6
         assert all(m["from_syllabus"] for m in spine)
 
-    def test_merely_overlapping_book_does_not_copy(self):
+    def test_merely_overlapping_book_is_never_copied(self):
         """College Algebra scored 4.75 against Linear Algebra's 4.67 before the
         ranking fix and pulled Probability into a linear algebra course. Copying
-        the WRONG book's structure is worse than inventing one."""
-        assert _b([_outline("College Algebra", 4.75, 30)])._spine_from_syllabus(
-            "Linear Algebra", 6) is None
+        the WRONG book's structure is worse than inventing one.
+
+        Asserted on the SOURCE rather than on getting None: with the curated
+        fallback in place the right answer may be a substitute spine, and a
+        "returns None" assertion would forbid the better outcome."""
+        b = _b([_outline("College Algebra", 4.75, 30)])
+        spine = b._spine_from_syllabus("Linear Algebra", 6)
+        if spine is not None:
+            assert b._spine_source["book"] != "College Algebra"
+
+    def test_overlapping_book_with_no_curated_fallback_is_refused(self):
+        b = _b([_outline("Adjacent Field", 4.75, 30)])
+        assert b._spine_from_syllabus("Obscure Subject", 6) is None
 
     def test_too_few_chapters_does_not_copy(self):
         """Copying 3 chapters into 6 modules means padding, which is the failure
@@ -114,7 +124,12 @@ class TestAlphabeticalIndexIsNotASyllabus(unittest.TestCase):
     Ordering is the pedagogy.
     """
 
-    def test_the_real_wikibooks_listing_is_refused(self):
+    def test_the_real_wikibooks_listing_is_never_the_spine(self):
+        """The index must not become the spine. Since the curated-spine fallback
+        was added it may be *replaced* rather than refused outright, so the
+        assertion is about what the spine came FROM, not about getting None —
+        the original "returns None" form was too strong and would have blocked
+        the better answer."""
         alphabetical = [
             "Addition, Multiplication, and Transpose", "Any Matrix Represents a Linear Map",
             "Augmented Matrices", "Basis", "Basis Vectors", "Basis and Dimension",
@@ -123,7 +138,18 @@ class TestAlphabeticalIndexIsNotASyllabus(unittest.TestCase):
         ]
         b = _b([{"book": "Linear Algebra", "relevance": 9.0, "source": "Wikibooks",
                  "url": "u", "chapters": alphabetical}])
-        assert b._spine_from_syllabus("Linear Algebra", 6) is None
+        spine = b._spine_from_syllabus("Linear Algebra", 6)
+        if spine is not None:
+            assert getattr(b, "_spine_source", {}).get("source") != "Wikibooks"
+            titles = [m["title"] for m in spine]
+            assert "Identity Matrix" not in titles
+
+    def test_an_index_with_no_curated_fallback_is_refused_outright(self):
+        alphabetical = sorted(["Alpha topic", "Beta topic", "Delta topic",
+                               "Epsilon topic", "Gamma topic", "Omega topic"])
+        b = _b([{"book": "Obscure Subject", "relevance": 9.0, "source": "Wikibooks",
+                 "url": "u", "chapters": alphabetical}])
+        assert b._spine_from_syllabus("Obscure Subject", 4) is None
 
     def test_a_taught_order_is_accepted(self):
         """OpenStax books are ordered as taught, so they must still qualify."""
@@ -167,3 +193,81 @@ class TestPrefersASequencedSource(unittest.TestCase):
         b = _b([{"book": "X", "relevance": 9.0, "source": "Wikibooks",
                  "url": "u", "chapters": alphabetical}])
         assert b._spine_from_syllabus("X", 4) is None
+
+
+class TestCuratedSpine(unittest.TestCase):
+    """Some subjects have no machine-readable teaching order anywhere. Linear
+    algebra has no OpenStax title and its Wikibooks entry is an alphabetical
+    index, so research returns complete coverage with no sequence. A chapter list
+    transcribed from a published textbook supplies the part that cannot be
+    reconstructed from an index."""
+
+    def test_curated_spine_is_found_by_alias(self):
+        from services.core.course_builder import _curated_spine
+        for name in ("Linear Algebra", "linear algebra", "Matrix Algebra"):
+            c = _curated_spine(name)
+            assert c is not None, name
+            assert c["chapters"][0] == "Introduction to Vectors"
+
+    def test_unknown_subject_has_no_curated_spine(self):
+        from services.core.course_builder import _curated_spine
+        assert _curated_spine("Underwater Basket Weaving") is None
+
+    def test_curated_spine_is_used_when_research_only_finds_an_index(self):
+        alphabetical = sorted(["Augmented Matrices", "Basis", "Change of Basis",
+                               "Cofactors", "Determinants", "Eigenvalues",
+                               "Identity Matrix", "Inverses"])
+        b = _b([{"book": "Linear Algebra", "relevance": 9.0, "source": "Wikibooks",
+                 "url": "u", "chapters": alphabetical}])
+        spine = b._spine_from_syllabus("Linear Algebra", 6)
+        assert spine is not None, "curated spine was not consulted"
+        assert b._spine_source["source"] == "curated"
+        titles = [m["title"] for m in spine]
+        assert titles[0] == "Introduction to Vectors"
+
+    def test_curated_spine_is_a_last_resort_not_a_default(self):
+        """A real sequenced source from research must still win — the curated
+        file is a fallback for a gap, not a preferred answer."""
+        b = _b([{"book": "Linear Algebra", "relevance": 9.0, "source": "OpenStax",
+                 "url": "u", "chapters": _TAUGHT_ORDER}])
+        b._spine_from_syllabus("Linear Algebra", 6)
+        assert b._spine_source["source"] == "OpenStax"
+
+
+class TestGroupingNotSampling(unittest.TestCase):
+    """Reducing a chapter list to a module count must GROUP, not sample.
+
+    REGRESSION: Strang's 12 chapters sampled into 6 modules produced
+    Introduction to Vectors, Vector Spaces, Determinants, SVD, Complex Vectors,
+    Numerical LA -- dropping Solving Linear Equations, ORTHOGONALITY,
+    Eigenvalues and Applications. Half the book, including the exact cluster
+    (least squares, projections, Gram-Schmidt) whose absence started this work.
+    """
+
+    def test_every_chapter_survives_the_reduction(self):
+        chapters = [f"{t} chapter" for t in _TAUGHT_ORDER]   # 16, sequenced
+        b = _b([{"book": "Src", "relevance": 9.0, "source": "OpenStax",
+                 "url": "u", "chapters": chapters}])
+        b._spine_from_syllabus("Src", 6)
+        assert b._spine_source["chapters_covered"] == len(chapters), \
+            "chapters were dropped instead of grouped"
+
+    def test_dropped_chapters_appear_in_the_module_scope(self):
+        """A grouped chapter must still be visible to the substructure builder,
+        or it is dropped in practice even though it was 'covered'."""
+        chapters = ["Vectors", "Solving Systems", "Vector Spaces",
+                    "Orthogonality", "Determinants", "Eigenvalues"]
+        b = _b([{"book": "Src", "relevance": 9.0, "source": "OpenStax",
+                 "url": "u", "chapters": chapters}])
+        spine = b._spine_from_syllabus("Src", 3)
+        scopes = " ".join(m["scope"] for m in spine)
+        for ch in chapters:
+            assert ch in scopes, f"{ch} vanished from the spine"
+
+    def test_order_is_preserved(self):
+        chapters = ["Vectors", "Solving Systems", "Vector Spaces",
+                    "Orthogonality", "Determinants", "Eigenvalues"]
+        b = _b([{"book": "Src", "relevance": 9.0, "source": "OpenStax",
+                 "url": "u", "chapters": chapters}])
+        titles = [m["title"] for m in b._spine_from_syllabus("Src", 3)]
+        assert titles == ["Vectors", "Vector Spaces", "Determinants"]
