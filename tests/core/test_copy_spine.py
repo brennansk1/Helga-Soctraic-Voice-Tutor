@@ -138,3 +138,32 @@ class TestAlphabeticalIndexIsNotASyllabus(unittest.TestCase):
     def test_a_short_list_is_not_judged(self):
         from services.core.course_builder import _looks_alphabetical
         assert _looks_alphabetical(["A", "B", "C"]) is False
+
+
+class TestPrefersASequencedSource(unittest.TestCase):
+    """Relevance says whether a book is ABOUT the subject; it says nothing about
+    whether its chapter list is in teaching order. Picking by relevance alone
+    selected the Wikibooks index (highest score, alphabetical) over a sequenced
+    book, and produced modules running Addition..., Cofactors..., Diagonal
+    Matrix. Ordering is the part we cannot reconstruct, so it wins."""
+
+    def test_lower_scoring_sequenced_book_beats_higher_scoring_index(self):
+        alphabetical = sorted(["Augmented Matrices", "Basis", "Change of Basis",
+                               "Cofactors", "Determinants", "Eigenvalues",
+                               "Identity Matrix", "Inverses"])
+        b = _b([
+            {"book": "Linear Algebra", "relevance": 9.0, "source": "Wikibooks",
+             "url": "u", "chapters": alphabetical},
+            {"book": "Linear Algebra", "relevance": 7.0, "source": "OpenStax",
+             "url": "u", "chapters": _TAUGHT_ORDER},
+        ])
+        spine = b._spine_from_syllabus("Linear Algebra", 5)
+        assert spine is not None
+        assert b._spine_source["source"] == "OpenStax", b._spine_source
+
+    def test_all_sources_alphabetical_falls_back_to_generation(self):
+        alphabetical = sorted(["Alpha", "Beta", "Delta", "Epsilon", "Gamma",
+                               "Omega", "Sigma", "Theta"])
+        b = _b([{"book": "X", "relevance": 9.0, "source": "Wikibooks",
+                 "url": "u", "chapters": alphabetical}])
+        assert b._spine_from_syllabus("X", 4) is None

@@ -99,3 +99,30 @@ class TestRealReference(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSequencing(unittest.TestCase):
+    """Coverage cannot see ordering. A course copied from an alphabetical index
+    scored 100% coverage while its modules ran Addition..., Cofactors...,
+    Diagonal Matrix, Identity Matrix — every topic present, none of it teachable.
+    Presence is not sequence, so it takes a second instrument."""
+
+    def test_alphabetical_modules_are_flagged(self):
+        from tools.coverage_check import sequencing_check
+        c = _course("Addition and Transpose", "Cofactors and Minors",
+                    "Diagonal Matrix", "Gauss-Jordan Reduction", "Identity Matrix")
+        r = sequencing_check(c)
+        assert r["alphabetical"] is True and r["verdict"] == "INDEX_ORDER"
+
+    def test_a_taught_order_passes(self):
+        from tools.coverage_check import sequencing_check
+        c = _course("Vectors and Vector Spaces", "Solving Linear Systems",
+                    "Determinants", "Eigenvalues", "Orthogonality")
+        r = sequencing_check(c)
+        assert r["alphabetical"] is False and r["verdict"] == "ok"
+
+    def test_too_few_modules_is_not_judged(self):
+        """Three modules can be alphabetical by chance; that is not evidence."""
+        from tools.coverage_check import sequencing_check
+        r = sequencing_check(_course("Alpha", "Beta", "Gamma"))
+        assert r["checked"] is False

@@ -1641,11 +1641,29 @@ class SkeletonBuilder:
         if not chapters:
             judge_result["keyword_coverage"] = {
                 "status": "no external syllabus — not measured"}
+            try:
+                from tools.coverage_check import sequencing_check
+                judge_result["sequencing"] = sequencing_check(course_dict)
+            except ImportError:
+                pass
             return judge_result
         try:
-            from tools.coverage_check import check_coverage
+            from tools.coverage_check import check_coverage, sequencing_check
         except ImportError:
             return judge_result
+
+        # Recorded on every build, independent of whether a reference exists.
+        # A course can cover its whole syllabus and still be unteachable: the
+        # copy-spine run scored 100% coverage with modules running Addition...,
+        # Cofactors..., Diagonal Matrix, Identity Matrix. Coverage cannot see
+        # ordering, so the two questions need two instruments.
+        judge_result["sequencing"] = sequencing_check(course_dict)
+        if judge_result["sequencing"].get("alphabetical"):
+            logger.warning("[SYLLABUS] modules are in ALPHABETICAL order — an "
+                           "index, not a teaching sequence. Coverage is not a "
+                           "quality signal for this course.")
+            if self.status_callback:
+                self.status_callback("CHECK:SEQUENCING:INDEX_ORDER")
 
         # Each real chapter is its own "area", identified by its distinctive
         # words — the same rule the backfill uses, so the gate and the fix agree
@@ -1700,7 +1718,27 @@ class SkeletonBuilder:
         outlines = getattr(self, "_syllabus_outlines", None) or []
         if not outlines:
             return None
-        best = max(outlines, key=lambda o: o.get("relevance", 0))
+
+        # PREFER A SEQUENCED SOURCE OVER A HIGHER-SCORING INDEX.
+        #
+        # Relevance measures whether a book is about the subject; it says
+        # nothing about whether its chapter list is in teaching order. The
+        # Wikibooks Linear Algebra listing scores highest AND is alphabetical,
+        # so picking by relevance alone selected an index and produced a course
+        # whose modules ran Addition..., Cofactors..., Diagonal Matrix. A
+        # slightly less-relevant book that is actually sequenced is the better
+        # spine, because ordering is the part we cannot reconstruct.
+        ordered = [o for o in outlines
+                   if not _looks_alphabetical(o.get("chapters") or [])]
+        if not ordered:
+            logger.info("[SPINE] every matched syllabus is an alphabetical index "
+                        "— no teaching order available, generating instead")
+            return None
+        if len(ordered) < len(outlines):
+            dropped = [o.get("book") for o in outlines if o not in ordered]
+            logger.info(f"[SPINE] ignoring alphabetical listing(s) {dropped} in "
+                        f"favour of a sequenced source")
+        best = max(ordered, key=lambda o: o.get("relevance", 0))
         # 6.0 is the exact-title-match bonus in _relevance: below it the book
         # merely overlaps the subject rather than being it.
         if float(best.get("relevance", 0)) < 6.0:
@@ -1725,11 +1763,6 @@ class SkeletonBuilder:
         # Ordering IS the pedagogy, so a source that has none cannot be a spine.
         # It remains perfectly good as a coverage CHECKLIST for backfill, which
         # is order-independent.
-        if _looks_alphabetical(chapters):
-            logger.info(f"[SPINE] {best.get('book')!r} chapter list is "
-                        f"alphabetical — an index, not a teaching order; "
-                        f"generating the spine instead")
-            return None
 
         if len(chapters) < target_modules:
             logger.info(f"[SPINE] {best.get('book')!r} has {len(chapters)} "

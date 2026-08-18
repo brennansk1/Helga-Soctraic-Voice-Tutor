@@ -110,6 +110,37 @@ def check_coverage(struct, reference):
     }
 
 
+def sequencing_check(struct):
+    """Is the course ordered as taught, or merely sorted?
+
+    Coverage cannot see this. A course copied from an alphabetical index scored
+    **100%** on the coverage instrument above while its modules ran
+    "Addition..., Cofactors..., Definition..., Diagonal Matrix, Gauss-Jordan,
+    Identity Matrix" — every topic present, none of it in a teachable order, and
+    "Identity Matrix" standing as a module.
+
+    Presence is not sequence, so the two questions need two instruments. This is
+    still model-free: alphabetical ordering is arithmetic.
+    """
+    mods = [(m.get("title") or "").strip().lower()
+            for m in ((struct or {}).get("modules") or [])]
+    mods = [m for m in mods if m]
+    if len(mods) < 4:
+        return {"checked": False,
+                "reason": "too few modules to judge ordering"}
+    in_order = sum(1 for a, b in zip(mods, mods[1:]) if a <= b)
+    ratio = in_order / max(1, len(mods) - 1)
+    alphabetical = ratio >= 0.9
+    return {
+        "checked": True,
+        "alphabetical": alphabetical,
+        "in_order_ratio": round(ratio, 2),
+        "verdict": "INDEX_ORDER" if alphabetical else "ok",
+        "note": ("modules are in alphabetical order — this is an index, not a "
+                 "teaching sequence" if alphabetical else ""),
+    }
+
+
 def structural_summary(struct):
     """Lesson and concept counts, for the volume-parity half of the question.
 
@@ -154,6 +185,7 @@ def main():
 
     result = check_coverage(struct, reference)
     result["structure"] = structural_summary(struct)
+    result["sequencing"] = sequencing_check(struct)
     result["reference"] = meta.get("name", os.path.basename(a.reference))
 
     print(f"\n=== coverage vs {result['reference']} ===")
@@ -177,6 +209,14 @@ def main():
             print("  NOTE     : longer than the real course AND not covering it — "
                   "length is being spent on depth in topics already chosen, "
                   "not on reaching the ones missed.")
+
+    seq = result.get("sequencing") or {}
+    if seq.get("alphabetical"):
+        print(f"\n  SEQUENCING: **{seq['verdict']}** — {seq['note']}")
+        print("  Coverage above is meaningless as a quality signal when this "
+              "fires: every topic can be present in an unteachable order.")
+    elif seq.get("checked"):
+        print(f"  sequencing: ok (in-order pairs {seq['in_order_ratio']})")
 
     if a.out:
         json.dump(result, open(a.out, "w"), indent=2)
