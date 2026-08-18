@@ -61,6 +61,16 @@ WIKIBOOKS_API = "https://en.wikibooks.org/w/api.php"
 WIKIVERSITY_API = "https://en.wikiversity.org/w/api.php"
 WIKIPEDIA_API = "https://en.wikipedia.org/w/api.php"
 
+# OpenStax — peer-reviewed, openly licensed textbooks, most of them written to a
+# named course (Prealgebra, Biology 2e, US History). Wikibooks is community
+# writing of uneven completeness; OpenStax books are edited to a syllabus, which
+# is exactly the artefact this module is trying to obtain. Two hops: the release
+# manifest gives the current archive path and each book's pinned version, and the
+# CMS gives titles. Both are stable for weeks and both go through _get_json, so
+# they are cached and rate-limited like everything else.
+OPENSTAX_RELEASE = "https://openstax.org/rex/release.json"
+OPENSTAX_CMS = "https://openstax.org/apps/cms/api/v2/pages/"
+
 # Chapter titles that are apparatus, not subject matter. Every one of these was
 # observed in a real book's chapter list.
 _NON_CONTENT = {
@@ -354,6 +364,151 @@ def _relevance(topic, book, chapters, subjects=None, mastery=None):
     return score
 
 
+def _openstax_release():
+    """(archive_path, {uuid: version}) for the live release, retired books
+    dropped. A retired edition still answers, and teaching from an edition
+    OpenStax has withdrawn is a quiet way to teach superseded material."""
+    data = _get_json(OPENSTAX_RELEASE, None, timeout=20)
+    if not isinstance(data, dict):
+        return None, {}
+    books = {}
+    for uid, meta in (data.get("books") or {}).items():
+        meta = meta or {}
+        if meta.get("retired"):
+            continue
+        if meta.get("defaultVersion"):
+            books[uid] = meta["defaultVersion"]
+    return data.get("archiveUrl"), books
+
+
+def _openstax_catalogue():
+    """{uuid: title} for published OpenStax books."""
+    data = _get_json(OPENSTAX_CMS, {"type": "books.Book", "limit": 200,
+                                    "fields": "title,cnx_id"}, timeout=20)
+    if not isinstance(data, dict):
+        return {}
+    return {b["cnx_id"]: b["title"] for b in (data.get("items") or [])
+            if isinstance(b, dict) and b.get("cnx_id") and b.get("title")}
+
+
+def _openstax_chapters(archive, uid, version, cap=60):
+    """Chapter titles for one book, apparatus removed.
+
+    Titles arrive as markup — `<span class="os-number">1</span>...<span
+    class="os-text">Whole Numbers</span>` — so stripping tags naively yields
+    "1 Whole Numbers" with stray newlines, and that number would become part of
+    a concept title downstream. Prefer the os-text span and fall back to a
+    cleaned strip.
+    """
+    if not archive or not uid or not version:
+        return []
+    data = _get_json(f"https://openstax.org{archive}/contents/{uid}@{version}.json",
+                     None, timeout=30)
+    if not isinstance(data, dict):
+        return []
+    def _clean(node):
+        raw = node.get("title") or ""
+        m = re.search(r'class="os-text"[^>]*>([^<]+)', raw)
+        t = (m.group(1) if m
+             else re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", raw))).strip()
+        # "Chapter 3" / "Unit 7" with no text span is a numbering wrapper.
+        if not t or re.fullmatch(r"(chapter|unit|part)?\s*[\d.]+", t.lower()):
+            return ""
+        return t
+
+    top = [n for n in ((data.get("tree") or {}).get("contents") or [])
+           if isinstance(n, dict)]
+
+    # Some books (Biology) group chapters under UNITS, so the top level is
+    # "Unit 2. The Cell" — a shelf label, not a syllabus. Descend one level when
+    # the top looks like unit grouping, or the outline is 11 vague headings
+    # where the book actually has 47 chapters.
+    def _is_unit(n):
+        # Either an explicit "Unit 3. Genetics" heading, or a wrapper whose own
+        # title is pure numbering ("Unit 1") and therefore cleans to nothing
+        # while still holding the real chapters. The second kind would otherwise
+        # yield a book with zero chapters rather than a book with fifty.
+        t = _clean(n)
+        if not t:
+            return bool(n.get("contents"))
+        return re.match(r"^\s*unit\b", t.lower()) is not None
+
+    if top and sum(1 for n in top if _is_unit(n)) >= max(2, len(top) // 2):
+        descended = []
+        for n in top:
+            kids = [k for k in (n.get("contents") or []) if isinstance(k, dict)]
+            descended.extend(kids if kids else [n])
+        top = descended or top
+
+    out = []
+    for node in top:
+        title = _clean(node)
+        if title and _is_content_chapter(title) and title not in out:
+            out.append(title)
+        if len(out) >= cap:
+            break
+    return out
+
+
+def _openstax_outline(topic, broader_subjects=None, mastery=None, min_chapters=4):
+    """Best-matching OpenStax book for the topic, scored like the others."""
+    archive, versions = _openstax_release()
+    if not archive or not versions:
+        return None
+    catalogue = _openstax_catalogue()
+    if not catalogue:
+        return None
+
+    # Score on TITLE first and fetch chapters only for the top few: each book
+    # tree is a large document, and the catalogue is 129 books.
+    # SUBJECT FIT IS A GATE, NOT A SCORE COMPONENT. Scoring alone picked
+    # "Introduction to Anthropology" for the Pythagorean theorem: it has no
+    # topical overlap at all, but "Introduction to..." matched the level marker
+    # and that was enough to make it positive. Level fit may only ever ORDER
+    # books that are already about the right subject — it must never qualify one
+    # that is not. This is the "geography textbook for a maths class" failure.
+    wanted = set(_topic_terms(topic))
+    for b in (broader_subjects or []):
+        wanted |= set(_topic_terms(b))
+    prelim = []
+    for uid, title in catalogue.items():
+        if uid not in versions:
+            continue
+        if not (wanted & set(_topic_terms(title))):
+            continue
+        score = _relevance(topic, title, [], subjects=broader_subjects,
+                           mastery=mastery)
+        prelim.append((score, uid, title))
+    if not prelim:
+        logger.debug(f"OpenStax: no book overlaps {topic!r} or {broader_subjects}")
+        return None
+    prelim.sort(key=lambda x: x[0], reverse=True)
+
+    scored = []
+    for _, uid, title in prelim[:3]:
+        chapters = _openstax_chapters(archive, uid, versions[uid])
+        if len(chapters) >= min_chapters:
+            scored.append((_relevance(topic, title, chapters,
+                                      subjects=broader_subjects, mastery=mastery),
+                           uid, title, chapters))
+    if not scored:
+        return None
+    scored.sort(key=lambda x: x[0], reverse=True)
+    score, uid, title, chapters = scored[0]
+    if len(scored) > 1:
+        logger.info(
+            f"subject_outline({topic!r}) on OpenStax: chose {title!r} "
+            f"(relevance {score:.2f}) over "
+            + ", ".join(f"{t!r} ({sc:.2f})" for sc, _, t, _ in scored[1:]))
+    return {
+        "source": "OpenStax",
+        "book": title,
+        "url": f"https://openstax.org/details/books/{uid}",
+        "chapters": chapters,
+        "relevance": round(score, 3),
+    }
+
+
 def subject_outline(topic, broader_subjects=None, min_chapters=4, mastery=None):
     """How this subject is actually organised, from open textbooks.
 
@@ -418,6 +573,18 @@ def subject_outline(topic, broader_subjects=None, min_chapters=4, mastery=None):
                 "relevance": round(score, 3),
             })
 
+    # OpenStax last: it is the highest-quality source but the most expensive
+    # lookup (release manifest + catalogue + a large book tree), so it runs once
+    # per subject and is worth every bit of the caching in front of it.
+    try:
+        os_outline = _openstax_outline(topic, broader_subjects=broader_subjects,
+                                       mastery=mastery, min_chapters=min_chapters)
+        if os_outline:
+            outlines.append(os_outline)
+    except Exception as e:
+        logger.warning(f"subject_outline({topic!r}): OpenStax failed: {e}")
+
+    outlines.sort(key=lambda o: o.get("relevance", 0), reverse=True)
     return {
         "topic": topic,
         "outlines": outlines,

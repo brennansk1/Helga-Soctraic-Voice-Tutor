@@ -19,6 +19,7 @@ These test the pure logic. Network-dependent behaviour is exercised separately.
 import os
 import sys
 import unittest
+from unittest import mock
 from unittest.mock import patch
 
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
@@ -164,3 +165,72 @@ class TestSkeletonUsesTheEvidence(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestOpenStaxSource(unittest.TestCase):
+    """OpenStax books are edited to a named course, which is the artefact this
+    module wants. Two things have to hold: the right book, and real chapters."""
+
+    def test_subject_fit_gates_selection_not_merely_scores_it(self):
+        """REGRESSION: scoring alone chose "Introduction to Anthropology" for
+        the Pythagorean theorem — no topical overlap whatsoever, but
+        "Introduction to..." matched the level marker and that made it positive.
+        Level fit may ORDER books already about the subject; it must never
+        QUALIFY one that is not. This is the "geography textbook for a maths
+        class" complaint in its exact form."""
+        catalogue = {"u1": "Introduction to Anthropology",
+                     "u2": "Contemporary Mathematics"}
+        with mock.patch.object(ss, "_openstax_release",
+                               return_value=("/a", {"u1": "v", "u2": "v"})), \
+             mock.patch.object(ss, "_openstax_catalogue", return_value=catalogue), \
+             mock.patch.object(ss, "_openstax_chapters",
+                               side_effect=lambda a, u, v, **k: [
+                                   "Ch %d" % i for i in range(8)]):
+            out = ss._openstax_outline("The Pythagorean Theorem",
+                                       ["Geometry", "Mathematics"], mastery=2)
+        assert out is not None and out["book"] == "Contemporary Mathematics"
+
+    def test_no_overlapping_book_yields_nothing_rather_than_least_bad(self):
+        with mock.patch.object(ss, "_openstax_release",
+                               return_value=("/a", {"u1": "v"})), \
+             mock.patch.object(ss, "_openstax_catalogue",
+                               return_value={"u1": "Introduction to Anthropology"}):
+            assert ss._openstax_outline("The Pythagorean Theorem",
+                                        ["Geometry"], mastery=2) is None
+
+    def test_retired_editions_are_not_used(self):
+        """A withdrawn edition still answers; teaching from it is a quiet way to
+        teach superseded material."""
+        payload = {"archiveUrl": "/apps/archive/x",
+                   "books": {"live": {"defaultVersion": "1"},
+                             "old": {"defaultVersion": "2", "retired": True}}}
+        with mock.patch.object(ss, "_get_json", return_value=payload):
+            archive, books = ss._openstax_release()
+        assert archive == "/apps/archive/x"
+        assert "live" in books and "old" not in books
+
+    def test_numbering_wrappers_never_become_chapter_titles(self):
+        """Titles arrive as markup; a naive tag strip yields '1 Whole Numbers',
+        and a bare 'Chapter 3' node is a wrapper, not a topic."""
+        tree = {"tree": {"contents": [
+            {"title": '<span class="os-number">1</span><span class="os-text">Whole Numbers</span>'},
+            {"title": "Chapter 3"},
+            {"title": '<span class="os-text">Index</span>'},   # apparatus
+        ]}}
+        with mock.patch.object(ss, "_get_json", return_value=tree):
+            ch = ss._openstax_chapters("/a", "u", "v")
+        assert ch == ["Whole Numbers"], ch
+
+    def test_unit_grouped_books_are_descended_into(self):
+        """Biology's top level is 'Unit 2. The Cell' — a shelf label. Taking it
+        verbatim gave 11 vague headings for a book with ~50 chapters."""
+        unit = lambda n, kids: {
+            "title": '<span class="os-text">Unit %d</span>' % n,
+            "contents": [{"title": '<span class="os-text">%s</span>' % k}
+                         for k in kids]}
+        tree = {"tree": {"contents": [unit(1, ["The Study of Life", "Macromolecules"]),
+                                      unit(2, ["Cell Structure", "Metabolism"])]}}
+        with mock.patch.object(ss, "_get_json", return_value=tree):
+            ch = ss._openstax_chapters("/a", "u", "v")
+        assert ch == ["The Study of Life", "Macromolecules",
+                      "Cell Structure", "Metabolism"], ch

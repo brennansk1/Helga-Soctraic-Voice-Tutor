@@ -70,6 +70,7 @@ _MIN_INTERVAL = {
     "en.wikibooks.org": 0.2,
     "en.wikiversity.org": 0.2,
     "www.wikidata.org": 0.2,
+    "openstax.org": 0.3,            # not documented; conservative
     "www.loc.gov": 0.5,
     "api.artic.edu": 0.5,
     "collectionapi.metmuseum.org": 0.05,   # DOCUMENTED 80/s
