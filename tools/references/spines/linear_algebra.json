@@ -1,7 +1,12 @@
 {
   "subject": "Linear Algebra",
-  "aliases": ["linear algebra", "linear algebra i", "linear algebra 1",
-              "introduction to linear algebra", "matrix algebra"],
+  "aliases": [
+    "linear algebra",
+    "linear algebra i",
+    "linear algebra 1",
+    "introduction to linear algebra",
+    "matrix algebra"
+  ],
   "source": "Strang, Gilbert. Introduction to Linear Algebra (Wellesley-Cambridge Press)",
   "source_url": "https://math.mit.edu/~gs/linearalgebra/",
   "why": "This is the text MIT 18.06 is taught from. The research service finds no sequenced source for linear algebra: OpenStax has 129 books but no linear algebra title, and the Wikibooks entry is an alphabetical index of sub-pages rather than a chapter order. A chapter list is a short factual sequence, and the ordering is the part that cannot be reconstructed from an index.",
@@ -20,18 +25,79 @@
     "Linear Algebra in Probability and Statistics"
   ],
   "sections": {
+    "Introduction to Vectors": [
+      "Vectors and Linear Combinations",
+      "Lengths and Dot Products",
+      "Matrices"
+    ],
+    "Solving Linear Equations": [
+      "Vectors and Linear Equations",
+      "The Idea of Elimination",
+      "Elimination Using Matrices",
+      "Rules for Matrix Operations",
+      "Inverse Matrices",
+      "Elimination = Factorization: A = LU",
+      "Transposes and Permutations"
+    ],
     "Vector Spaces and Subspaces": [
-      "Spaces of Vectors", "The Nullspace of A: Solving Ax = 0",
-      "The Rank of A: Solving Ax = b", "Independence, Basis, and Dimension",
+      "Spaces of Vectors",
+      "The Nullspace of A: Solving Ax = 0",
+      "The Rank of A: Solving Ax = b",
+      "Independence, Basis, and Dimension",
       "Dimensions of the Four Subspaces"
     ],
     "Orthogonality": [
-      "Orthogonality of the Four Subspaces", "Projections",
-      "Least Squares Approximations", "Orthogonal Bases and Gram-Schmidt"
+      "Orthogonality of the Four Subspaces",
+      "Projections",
+      "Least Squares Approximations",
+      "Orthogonal Bases and Gram-Schmidt"
     ],
     "Determinants": [
-      "The Properties of Determinants", "Permutations and Cofactors",
+      "The Properties of Determinants",
+      "Permutations and Cofactors",
       "Cramer's Rule, Inverses, and Volumes"
+    ],
+    "Eigenvalues and Eigenvectors": [
+      "Introduction to Eigenvalues",
+      "Diagonalizing a Matrix",
+      "Systems of Differential Equations",
+      "Symmetric Matrices",
+      "Positive Definite Matrices"
+    ],
+    "The Singular Value Decomposition (SVD)": [
+      "Image Processing by Linear Algebra",
+      "Bases and Matrices in the SVD",
+      "Principal Component Analysis (PCA)",
+      "The Geometry of the SVD"
+    ],
+    "Linear Transformations": [
+      "The Idea of a Linear Transformation",
+      "The Matrix of a Linear Transformation",
+      "The Search for a Good Basis"
+    ],
+    "Complex Vectors and Matrices": [
+      "Complex Numbers",
+      "Hermitian and Unitary Matrices",
+      "The Fast Fourier Transform"
+    ],
+    "Applications": [
+      "Matrices in Engineering",
+      "Graphs and Networks",
+      "Markov Matrices",
+      "Linear Programming",
+      "Fourier Series"
+    ],
+    "Numerical Linear Algebra": [
+      "Gaussian Elimination in Practice",
+      "Norms and Condition Numbers",
+      "Iterative Methods and Preconditioners"
+    ],
+    "Linear Algebra in Probability and Statistics": [
+      "Mean, Variance, and Probability",
+      "Covariance Matrices",
+      "Multivariate Gaussian and Weighted Least Squares"
     ]
-  }
+  },
+  "edition": "5th ed. (matches MIT 18.06's listed text, 4th/5th ed.)",
+  "note_on_edition": "Section numbering differs between editions: in the 6th edition 6.4 is Complex Numbers and 6.5 Differential Equations, while in the 4th/5th it is 6.4 Symmetric Matrices and 6.5 Positive Definite Matrices. 18.06 lists the 4th edition, so that ordering is the one recorded here \u2014 pinning the edition matters because the section list is the part being relied on."
 }

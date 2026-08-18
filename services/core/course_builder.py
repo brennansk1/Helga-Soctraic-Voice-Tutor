@@ -1747,9 +1747,9 @@ class SkeletonBuilder:
         """
         if os.getenv("HELGA_COPY_SPINE", "1").lower() in ("0", "false", "no"):
             return None
+        # No early return on an empty list: "research found nothing" is exactly
+        # when a curated spine is most useful, and returning here skipped it.
         outlines = getattr(self, "_syllabus_outlines", None) or []
-        if not outlines:
-            return None
 
         # PREFER A SEQUENCED SOURCE OVER A HIGHER-SCORING INDEX.
         #
@@ -1792,7 +1792,12 @@ class SkeletonBuilder:
                         f"{curated['subject']!r} ({curated['source']})")
             best = {"book": curated["source"], "source": "curated",
                     "url": curated.get("source_url", ""),
-                    "relevance": 10.0, "chapters": curated["chapters"]}
+                    "relevance": 10.0, "chapters": curated["chapters"],
+                    # Section titles are where the specifics live. "Eigenvalues
+                    # and Eigenvectors" as a module title says nothing about
+                    # symmetric or positive-definite matrices; its SECTIONS name
+                    # both, and that was the last area still missing coverage.
+                    "sections": curated.get("sections") or {}}
 
         chapters = [c for c in (best.get("chapters") or [])
                     if isinstance(c, str) and c.strip()]
@@ -1856,12 +1861,21 @@ class SkeletonBuilder:
                               "chapters_available": len(chapters),
                               "modules_taken": len(picked),
                               "chapters_covered": sum(len(g) for _, g in picked)}
-        return [{
-            "title": title[:120],
-            "scope": (f"Covers, as sequenced in {best.get('book')}: "
-                      + "; ".join(group))[:600],
-            "from_syllabus": True,
-        } for title, group in picked]
+        sections = best.get("sections") or {}
+        out = []
+        for title, group in picked:
+            detail = []
+            for chapter in group:
+                subs = sections.get(chapter) or []
+                detail.append(f"{chapter}" + (f" ({'; '.join(subs)})" if subs
+                                              else ""))
+            out.append({
+                "title": title[:120],
+                "scope": (f"Covers, as sequenced in {best.get('book')}: "
+                          + " | ".join(detail))[:1200],
+                "from_syllabus": True,
+            })
+        return out
 
     def _backfill_uncovered_chapters(self, course_dict, topic, cap=6):
         """Add lessons for real syllabus chapters the outline never reached.

@@ -271,3 +271,38 @@ class TestGroupingNotSampling(unittest.TestCase):
                  "url": "u", "chapters": chapters}])
         titles = [m["title"] for m in b._spine_from_syllabus("Src", 3)]
         assert titles == ["Vectors", "Vector Spaces", "Determinants"]
+
+
+class TestSectionDetailReachesTheBuilder(unittest.TestCase):
+    """Section titles are where the specifics live. "Eigenvalues and
+    Eigenvectors" as a module title says nothing about symmetric or
+    positive-definite matrices; its SECTIONS name both, and that was the last
+    area still missing coverage against MIT 18.06."""
+
+    def test_grouped_chapters_carry_their_sections(self):
+        from services.core.course_builder import SkeletonBuilder
+        b = SkeletonBuilder.__new__(SkeletonBuilder)
+        b.status_callback = None
+        b._syllabus_outlines = []
+        scopes = " ".join(m["scope"] for m
+                          in b._spine_from_syllabus("Linear Algebra", 6))
+        for term in ("Symmetric Matrices", "Positive Definite Matrices",
+                     "Least Squares Approximations", "Gram-Schmidt"):
+            assert term in scopes, f"{term} never reached the builder"
+
+    def test_no_research_at_all_still_reaches_the_curated_spine(self):
+        """REGRESSION: an early `if not outlines: return None` skipped the
+        curated fallback entirely — and "research found nothing" is exactly when
+        it is most useful."""
+        from services.core.course_builder import SkeletonBuilder
+        b = SkeletonBuilder.__new__(SkeletonBuilder)
+        b.status_callback = None
+        b._syllabus_outlines = []
+        assert b._spine_from_syllabus("Linear Algebra", 6) is not None
+
+    def test_unknown_subject_with_no_research_still_returns_none(self):
+        from services.core.course_builder import SkeletonBuilder
+        b = SkeletonBuilder.__new__(SkeletonBuilder)
+        b.status_callback = None
+        b._syllabus_outlines = []
+        assert b._spine_from_syllabus("Underwater Basket Weaving", 6) is None

@@ -634,3 +634,37 @@ model-free instruments that measure different things.
 Remaining distance to parity is one topic area on this subject, and the general
 lever is coverage of `tools/references/spines/` — a per-subject transcription
 cost, not a pipeline problem.
+
+## Section detail — the systematic gap is gone; the residue is noise
+
+The curated spine now carries Strang's **48 section titles** under its 12
+chapters, and those sections reach the builder as each module's declared scope.
+The reason is specific: *"Eigenvalues and Eigenvectors"* as a module title says
+nothing about symmetric or positive-definite matrices, but its **sections** name
+both — and that was the last area still missing.
+
+Edition matters and is pinned: in the 6th edition 6.4/6.5 are Complex Numbers
+and Differential Equations, while in the 4th/5th they are Symmetric Matrices and
+Positive Definite Matrices. 18.06 lists the 4th, so that is what is recorded.
+
+| run | coverage | miss |
+|---|---|---|
+| invented spine ×3 | 70 / 90 / 80% | **always** least squares · Gram-Schmidt |
+| curated spine, chapters only | 90% | symmetric/positive-definite |
+| curated spine + sections | 90% | eigenvalues |
+
+**The important change is not the percentage, which has not moved.** It is that
+the miss is no longer the *same* area every time. Least squares and Gram-Schmidt
+— absent from every single invented-spine run — are now hit consistently. What
+remains is a different area each run, which is the generator noise already
+measured at ±10 points, not a systematic hole.
+
+Per this project's own rule, one run is not a measurement, so **no improvement is
+claimed from the last two runs individually**. The claim that survives is the
+structural one: a gap that was reproducible is now not.
+
+## An empty research result no longer skips the curated spine
+
+`_spine_from_syllabus` began with `if not outlines: return None`, so a subject
+where research found nothing at all — precisely when a curated spine is most
+useful — never consulted one. Fixed, with a test.
