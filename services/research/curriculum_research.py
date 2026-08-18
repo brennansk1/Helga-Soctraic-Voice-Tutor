@@ -203,7 +203,8 @@ def curriculum_brief(topic, mastery=3, scope=3, starting_from=1,
     # came back empty and the build went unguided. One call that broadens
     # internally is both correct and ~3x fewer requests.
     try:
-        outline = subject_outline(topic, broader_subjects=broader_subjects)
+        outline = subject_outline(topic, broader_subjects=broader_subjects,
+                                  mastery=mastery)
         brief["syllabi"] = outline.get("outlines", [])
         brief["vocabulary"] = outline.get("vocabulary", [])
     except Exception as e:

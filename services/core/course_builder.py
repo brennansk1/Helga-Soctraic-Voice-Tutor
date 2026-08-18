@@ -1080,6 +1080,12 @@ class SkeletonBuilder:
 
         # Real chapter lists for this subject, fetched before generation.
         _syllabus_evidence_block = self._syllabus_evidence(topic)
+        # Retain it. The evidence used to shape MODULE titles and stop there,
+        # while the syllabus check counts CONCEPTS — so the one stage that
+        # determines coverage was the one stage generating blind. A 31-chapter
+        # Geometry outline is worth far more to concept naming than to the four
+        # module headings above it.
+        self._evidence_block = _syllabus_evidence_block
 
         # Structured prompt with explicit progression schedule
         prompt = (
@@ -1604,6 +1610,19 @@ class SkeletonBuilder:
         positive_scope_str = ", ".join(m_ref["scope"])
         _bloom_label = BLOOM_LABELS.get(int(module_bloom_level), "Understand")
 
+        # Real curriculum evidence, if phase-1 research found any. Framed as
+        # material to draw ON, not a table of contents to copy: a copied TOC is
+        # somebody else's course at somebody else's level. Truncated because
+        # this rides in every module call.
+        _ev = (getattr(self, "_evidence_block", "") or "").strip()
+        _evidence = (
+            f"### HOW REAL TEXTBOOKS ORGANISE THIS SUBJECT (evidence, not a template):\n"
+            f"{_ev[:1800]}\n"
+            f"Use it to decide WHAT a learner at this level must meet. Cover the "
+            f"parts that belong to THIS module's scope; do not copy the ordering "
+            f"and do not stray outside the module scope above.\n\n"
+        ) if _ev else ""
+
         if self.status_callback:
             self.status_callback(f"LOG: Generating full subtree for module: {m_title}")
 
@@ -1615,6 +1634,7 @@ class SkeletonBuilder:
             f"Bloom target: {module_bloom_level} ({_bloom_label})\n\n"
             f"### ALREADY COVERED EARLIER IN THIS COURSE (do not repeat or paraphrase):\n"
             f"{prev_context_str}\n\n"
+            f"{_evidence}"
             f"Design this module's COMPLETE structure in one pass:\n"
             f"  - exactly {base_units} unit(s)\n"
             f"  - exactly {base_lessons} lesson(s) per unit\n"

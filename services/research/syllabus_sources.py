@@ -170,6 +170,19 @@ _RELEVANCE_STOP = {
     "introduction", "basics", "fundamentals", "principles", "theorem", "theory",
 }
 
+# Level markers that actually appear in open-textbook titles, mapped to the
+# mastery scale (1 Quick Overview .. 5 Graduate). A "Primary Mathematics" is a
+# genuinely different book from "High School Mathematics Extensions", and
+# picking the wrong one is how a high-school course ends up teaching arithmetic.
+_LEVEL_MARKERS = {
+    1: ("primary", "elementary", "basic", "beginner", "kids", "children",
+        "for dummies", "simple"),
+    2: ("high school", "secondary", "intro", "introductory", "gcse", "a-level"),
+    3: ("college", "undergraduate", "university", "general"),
+    4: ("advanced", "honors", "honours", "upper", "intermediate"),
+    5: ("graduate", "postgraduate", "research", "advanced topics", "phd"),
+}
+
 
 def _topic_terms(topic):
     """Content words from a topic, for relevance scoring."""
@@ -177,34 +190,76 @@ def _topic_terms(topic):
             if len(w) > 2 and w not in _RELEVANCE_STOP}
 
 
-def _relevance(topic, book, chapters):
-    """How much does this book actually teach `topic`?
+def _level_of_title(book):
+    """Which mastery level does this book's title advertise? None if silent."""
+    t = (book or "").lower()
+    for level, markers in _LEVEL_MARKERS.items():
+        if any(m in t for m in markers):
+            return level
+    return None
 
-    WHY THIS EXISTS
-    ---------------
-    Candidates are pooled across [topic] + broader_subjects, and the first book
-    with enough chapters used to win. Ordering put the broadest query first, so
-    'The Pythagorean Theorem' broadened to 'Mathematics' and selected *Primary
-    Mathematics* — 24 chapters of generic arithmetic. Structurally valid,
-    pedagogically useless for the topic, and the build still missed the formula
-    itself, triples, the converse and the distance formula.
 
-    A book that teaches the topic MENTIONS it in its chapter list. That is a
-    cheap, strong signal and it is what this scores. Chapter hits are weighted
-    above title hits because a title can be broad while the contents are apt
-    (Geometry does teach Pythagoras) and vice versa.
+def _relevance(topic, book, chapters, subjects=None, mastery=None):
+    """How well does this book serve THIS topic at THIS level?
+
+    WHY THIS IS NOT JUST KEYWORD OVERLAP
+    ------------------------------------
+    Three failure modes, all observed:
+
+      * WRONG BOOK, RIGHT LENGTH. Candidates were pooled across
+        [topic] + broader_subjects and the first with enough chapters won, so
+        'The Pythagorean Theorem' selected *Primary Mathematics* -- 24 chapters
+        of generic arithmetic.
+
+      * WRONG SUBJECT. Topic terms are sparse after stopwords ('The Pythagorean
+        Theorem' reduces to {'pythagorean'}), so a geography book and a maths
+        book can both score zero and the tiebreak becomes arbitrary. The
+        DISCIPLINE is the signal that separates them, and it is already known --
+        the builder derives it to broaden the search.
+
+      * WRONG LEVEL. 'Primary Mathematics' and 'High School Mathematics
+        Extensions' are both real maths books; only one suits a given course.
+
+    So the score combines topic fit, discipline fit and level fit. Chapters
+    weigh more than titles throughout: a broad title can have apt contents
+    (Geometry does teach Pythagoras) and a narrow one can not.
     """
+    chapter_blob = " ".join(chapters or []).lower()
+    title = (book or "").lower()
+    score = 0.0
+
+    # 1. TOPIC FIT — does it actually teach this thing?
     terms = _topic_terms(topic)
-    if not terms:
-        return 0.0
-    chapter_blob = " ".join(chapters).lower()
-    chapter_hits = sum(1 for t in terms if t in chapter_blob)
-    title_hits = sum(1 for t in terms if t in (book or "").lower())
-    # Normalised so a long chapter list cannot win on length alone.
-    return (chapter_hits / len(terms)) * 2.0 + (title_hits / len(terms))
+    if terms:
+        score += (sum(1 for t in terms if t in chapter_blob) / len(terms)) * 3.0
+        score += (sum(1 for t in terms if t in title) / len(terms)) * 1.5
+
+    # 2. DISCIPLINE FIT — is it even the right field? This is what stops a
+    #    geography text being chosen for a maths course.
+    subj_terms = set()
+    for sub in (subjects or []):
+        subj_terms |= _topic_terms(sub)
+    if subj_terms:
+        score += (sum(1 for t in subj_terms if t in title) / len(subj_terms)) * 2.0
+        score += (sum(1 for t in subj_terms if t in chapter_blob) / len(subj_terms)) * 1.0
+
+    # 3. LEVEL FIT — right field, right topic, wrong audience is still wrong.
+    if mastery:
+        advertised = _level_of_title(book)
+        if advertised is not None:
+            gap = abs(advertised - int(mastery))
+            score += {0: 1.5, 1: 0.5}.get(gap, -1.0 * (gap - 1))
+        # a title that says nothing about level is neutral, not penalised
+
+    # 4. SHAPE SANITY — a course-shaped book, not a two-chapter stub or a
+    #    200-heading encyclopedia dump.
+    n = len(chapters or [])
+    if n > 120:
+        score -= 1.0
+    return score
 
 
-def subject_outline(topic, broader_subjects=None, min_chapters=4):
+def subject_outline(topic, broader_subjects=None, min_chapters=4, mastery=None):
     """How this subject is actually organised, from open textbooks.
 
     Returns:
@@ -247,7 +302,9 @@ def subject_outline(topic, broader_subjects=None, min_chapters=4):
             # course to whatever those two happen to be, which is worse than
             # not using it at all.
             if len(chapters) >= min_chapters:
-                scored.append((_relevance(topic, candidate, chapters),
+                scored.append((_relevance(topic, candidate, chapters,
+                                          subjects=broader_subjects,
+                                          mastery=mastery),
                                candidate, chapters))
         if scored:
             scored.sort(key=lambda x: x[0], reverse=True)
