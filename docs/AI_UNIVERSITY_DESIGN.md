@@ -1146,11 +1146,26 @@ titles. On the same course the LLM-based criterion 6 reported **0%** while
 listing as missing four topics that were literally module titles, so the
 judge-free number is the one that survives inspection.
 
-Still open: session length is unmeasured, so **no hour-equivalence claim may be
-made** (condition 1); the copy-spine tier is designed but not built; and
-criterion 6's judge needs fixing or replacing.
+**Condition status, measured rather than asserted:**
 
-### Original Task 0 findings (now fixed) It did not
+| condition | built | measured | state |
+|---|---|---|---|
+| 1 — content/time parity | ladder in `compute_course_params`; `tools/session_clock.py` | 47 lessons · 135 concepts · 2.87/lesson vs 45 · 144 · 3 | **structure met**; session *length* still unmeasured — the one valid run needs hydrated content, which does not yet exist |
+| 2 — quality vs published assets | `tools/coverage_check.py`, wired as the authoritative gate number; coverage backfill | 70 / 90 / 80% vs MIT 18.06 across three runs | **measurable and improving, not at parity**. Copy-spine designed, unbuilt |
+| 3 — sourceless / over-stretch | `services/core/scope_fit.py`, wired pre-generation | Linear Algebra ok · Biology ok · D&D 40-course **unsupported** | **done and calibrated** |
+| 4 — trigger timing | — | — | designed only |
+| 5 — Mode A / QA gates | coverage gate, grade provenance | 8 + 12 + 4 tests | criterion 6's judge demoted from authoritative, retained for sequencing |
+
+**Two measurement disciplines this work established the hard way:**
+
+* **The generator is noisy.** Three runs of identical code gave 70 / 90 / 80%
+  coverage. Any claim of the form "change X improved coverage" needs
+  median-of-3, exactly as the judges already did.
+* **A single build is not a measurement, and neither is a single session.**
+  `session_clock`'s first run returned a uniform 1.1 s per turn — no LLM call is
+  that fast here — and is recorded as invalid rather than as a result.
+
+### Original Task 0 findings (now fixed)### Original Task 0 findings (now fixed) It did not
 produce a valid coverage number, and that is its finding: two wiring bugs block
 the measurement.
 
