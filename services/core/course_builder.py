@@ -1157,9 +1157,34 @@ class SkeletonBuilder:
             f"Return strict JSON array:\n{example_json}"
         )
 
+        # COPY-SPINE. When a real textbook for this exact subject is in hand, its
+        # chapter list IS the module spine and inventing another one is pure
+        # downside.
+        #
+        # Measured against MIT 18.06: an invented spine covered 7-9 of 10
+        # published topic areas and ran 38-59% LONGER than the real course. It
+        # was never short of room — it simply never SELECTED least squares,
+        # projections or Gram-Schmidt, and the same cluster went missing on
+        # every run. Selection is where coverage is lost, and copying removes the
+        # selection step entirely.
+        spine = self._spine_from_syllabus(topic, target_modules)
+
         max_retries = 3
         modules = []
         correction_header = ""
+
+        if spine:
+            # Set the module list and skip generation entirely. NOT an early
+            # return: this is inside _build_inner, which returns the course uid,
+            # so returning the spine here aborted the build and handed a list
+            # back where a uid was expected.
+            modules = spine
+            logger.info(f"[SPINE] using {len(spine)} modules copied from the real "
+                        f"syllabus instead of generating them")
+            if self.status_callback:
+                self.status_callback(
+                    f"STRUCT:SPINE:{len(spine)} modules from the published syllabus")
+            max_retries = 0
 
         if self.status_callback:
             self.status_callback(
@@ -1257,7 +1282,7 @@ class SkeletonBuilder:
                 raise CourseCreationError(msg)
 
         # Abort if the primary generation failed entirely instead of using fallbacks
-        if not modules:
+        if not modules and not spine:
             msg = "ABORTING COURSE CREATION: LLM failed to return a valid JSON structure for the course modules."
             logger.error(msg)
             if self.status_callback:
@@ -1512,6 +1537,8 @@ class SkeletonBuilder:
         # as "material this course MUST reach", which is a claim only the primary
         # source has earned.
         try:
+            self._syllabus_outlines = [o for o in (brief.get("syllabi") or [])
+                                       if o.get("chapters")]
             ranked = sorted(
                 [o for o in (brief.get("syllabi") or []) if o.get("chapters")],
                 key=lambda o: o.get("relevance", 0), reverse=True)
@@ -1637,6 +1664,66 @@ class SkeletonBuilder:
             self.status_callback(
                 f"CHECK:COVERAGE:{kw.get('coverage_pct')}")
         return judge_result
+
+    def _spine_from_syllabus(self, topic, target_modules):
+        """Module list copied from a real textbook, or None to generate instead.
+
+        Deliberately conservative. Copying the WRONG book's structure is worse
+        than inventing one, so this only fires when the evidence is strong:
+
+          * the matched book is about this exact subject (relevance gate), and
+          * it has enough chapters to fill the course without padding, and
+          * copy-spine has not been disabled
+
+        Everything else falls through to generation, which is the existing,
+        tested path. Failing toward the slower, safer route is the right default
+        for a step this consequential.
+        """
+        if os.getenv("HELGA_COPY_SPINE", "1").lower() in ("0", "false", "no"):
+            return None
+        outlines = getattr(self, "_syllabus_outlines", None) or []
+        if not outlines:
+            return None
+        best = max(outlines, key=lambda o: o.get("relevance", 0))
+        # 6.0 is the exact-title-match bonus in _relevance: below it the book
+        # merely overlaps the subject rather than being it.
+        if float(best.get("relevance", 0)) < 6.0:
+            logger.info(f"[SPINE] best syllabus {best.get('book')!r} scores "
+                        f"{best.get('relevance')} — not an exact subject match, "
+                        f"generating instead of copying")
+            return None
+
+        chapters = [c for c in (best.get("chapters") or [])
+                    if isinstance(c, str) and c.strip()]
+        if len(chapters) < target_modules:
+            logger.info(f"[SPINE] {best.get('book')!r} has {len(chapters)} "
+                        f"chapters for {target_modules} modules — too few to "
+                        f"copy without padding")
+            return None
+
+        # SCOPE-ADAPT: a 154-chapter book is not a 6-module course. Take an
+        # even spread so the whole arc of the subject survives rather than only
+        # its first sixth — the tail of a textbook is where the material the
+        # invented spines kept missing actually lives.
+        step = len(chapters) / target_modules
+        picked, seen = [], set()
+        for i in range(target_modules):
+            title = chapters[min(int(i * step), len(chapters) - 1)].strip()
+            key = _normalize_title(title) if "_normalize_title" in globals() else title.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            picked.append(title)
+        if len(picked) < max(2, target_modules // 2):
+            return None
+
+        self._spine_source = {"book": best.get("book"), "url": best.get("url"),
+                              "source": best.get("source"),
+                              "chapters_available": len(chapters),
+                              "modules_taken": len(picked)}
+        return [{"title": t[:120],
+                 "scope": f"As covered in {best.get('book')}",
+                 "from_syllabus": True} for t in picked]
 
     def _backfill_uncovered_chapters(self, course_dict, topic, cap=6):
         """Add lessons for real syllabus chapters the outline never reached.

@@ -427,3 +427,64 @@ One implementation note worth keeping: the first attempt nested this check behin
 the question-type-cycle branch and **it never fired** — the live session reached
 25 turns without that branch being reached. It now runs on every answer. A fix
 that is not verified against a real session is not a fix.
+
+---
+
+# Copy-spine — condition 2 reaches parity
+
+The persistent finding across every previous run was that the **same** areas
+missed: least squares/projections, Gram-Schmidt/QR, and symmetric/positive
+definite matrices. Coverage varied (70 / 80 / 90%) but those never appeared.
+Meanwhile the course ran 38–59% *longer* than MIT 18.06. It was never short of
+room — it never **selected** that material.
+
+Copy-spine removes the selection step: when a real textbook for this exact
+subject is in hand, its chapter list becomes the module spine.
+
+## Result
+
+```
+COVERAGE: 10/10 = 100%
+structure: 6 modules · 15 units · 44 lessons · 124 concepts (2.82/lesson)
+```
+
+| | invented spine (best of 3) | **copied spine** | target |
+|---|---|---|---|
+| coverage vs MIT 18.06 | 90% | **100%** | — |
+| least squares / projections | MISS every run | **HIT** | — |
+| Gram-Schmidt / QR | MISS every run | **HIT** | — |
+| symmetric / positive definite | MISS 2 of 3 runs | **HIT** | — |
+| units | 16–18 | **15** | 15 |
+| lessons | 47–54 | **44** | 45 |
+| concepts | 135–155 | 124 | 144 |
+
+Every previously-missing area is now covered, and the structure is the closest
+to the ladder any run has produced — 15 units exactly, 44 lessons against 45.
+
+## Why it is gated hard
+
+Copying the WRONG book's structure is worse than inventing one, so it fires only
+when the evidence is unambiguous:
+
+* **relevance ≥ 6.0** — that is the exact-title-match bonus, so the book must
+  *be* the subject rather than overlap it. *College Algebra* for a linear algebra
+  course scores 2.25 and is refused.
+* **enough chapters** to fill the module count without padding.
+* `HELGA_COPY_SPINE=0` disables it.
+
+Anything else falls through to generation, which is the existing tested path.
+Failing toward the slower, safer route is the right default for a step this
+consequential.
+
+**Scope adaptation matters as much as the copying.** A 154-chapter Wikibook is
+not a 6-module course, and taking the first six chapters would keep only the
+introduction — the material the invented spines kept missing lives in the *tail*.
+An even spread across the whole book is what makes the coverage jump, and a test
+asserts the last module comes from beyond chapter 100 of a 154-chapter book.
+
+## One implementation note
+
+The first attempt returned the spine from inside `_build_inner`, which returns
+the course **uid** — so the build aborted and handed a list back where a string
+was expected (`TypeError: unhashable type: 'list'`). It now sets the module list
+and skips generation. Caught only by running a real build.
