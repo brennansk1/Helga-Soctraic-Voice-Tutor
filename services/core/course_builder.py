@@ -1336,6 +1336,15 @@ class SkeletonBuilder:
         # Normalise degenerate lessons before persisting.
         self._merge_degenerate_lessons(course_dict)
 
+        # Close the loop the syllabus check never closed. Until now the coverage
+        # verdict was DIAGNOSTIC ONLY: it reported a hole and nothing acted on
+        # it. Measured against MIT 18.06, a generated Linear Algebra course
+        # covered 7 of 10 published topic areas while running 59% LONGER than
+        # the real course — it was not short of room, it simply never selected
+        # the orthogonality cluster. Reporting that after the fact helps nobody;
+        # the outline is still in hand and cheap to extend.
+        self._backfill_uncovered_chapters(course_dict, topic)
+
         # Gate criterion 6 — syllabus realism. Runs here, on the skeleton,
         # BEFORE the expensive hydration: a curriculum hole is an outline
         # defect, and finding it after 40 minutes of hydration teaches nothing
@@ -1461,6 +1470,17 @@ class SkeletonBuilder:
                 self.status_callback(f"RESEARCH:BOOK:{t['title']}{yr}")
             self.status_callback(
                 f"CHECK:SYLLABUS_EVIDENCE:{n} chapters / {srcs} sources")
+        # Keep the raw chapter list, not just the rendered text: coverage
+        # backfill needs to compare titles against titles, and re-parsing prose
+        # to recover a list we already had is how detail gets lost.
+        try:
+            self._syllabus_chapters = [
+                c for o in (brief.get("syllabi") or []) for c in (o.get("chapters") or [])
+            ] + [
+                sec for c in (brief.get("courses") or []) for sec in (c.get("sections") or [])
+            ]
+        except Exception:
+            self._syllabus_chapters = []
         return format_brief(brief)
 
     _PARENT_CACHE = {}
@@ -1514,6 +1534,105 @@ class SkeletonBuilder:
             f"Grounding will be attempted on the narrow topic alone; a miss here "
             f"is DEGRADED, not evidence that no syllabus exists.")
         return [], True
+
+    def _backfill_uncovered_chapters(self, course_dict, topic, cap=6):
+        """Add lessons for real syllabus chapters the outline never reached.
+
+        Same shape as the depth contract's named-element retry: name what is
+        missing and regenerate against that name, rather than asking for
+        "better" and hoping. Keyword matching decides coverage — no judge, so it
+        cannot invent a hole or miss an obvious hit.
+        """
+        chapters = [c for c in (getattr(self, "_syllabus_chapters", None) or [])
+                    if isinstance(c, str) and c.strip()]
+        if not chapters:
+            return
+        try:
+            from tools.coverage_check import course_title_blob, _normalise
+        except ImportError:
+            return
+
+        blob, _ = course_title_blob(course_dict)
+        norm = _normalise(blob)
+        # A chapter counts as covered if its distinctive words appear. Stopwords
+        # and one-word generics ("Introduction") would match everything, so they
+        # are not evidence either way.
+        missing = []
+        for ch in chapters:
+            key = _normalise(ch)
+            if not key or len(key) < 4:
+                continue
+            words = [w for w in key.split() if len(w) > 3
+                     and w not in ("introduction", "overview", "review", "chapter",
+                                   "part", "basic", "basics", "advanced", "further")]
+            if not words:
+                continue
+            if not any(w in norm for w in words):
+                missing.append(ch)
+        if not missing:
+            logger.info("[BACKFILL] outline already covers every syllabus chapter")
+            return
+
+        missing = missing[:cap]
+        logger.warning(f"[BACKFILL] {len(missing)} syllabus chapter(s) uncovered: "
+                       f"{missing}")
+        if self.status_callback:
+            self.status_callback(
+                f"STRUCT:BACKFILL:{len(missing)} uncovered syllabus topic(s)")
+
+        modules = course_dict.get("modules") or []
+        if not modules:
+            return
+        target = modules[-1]
+        units = target.get("units") or []
+        if not units:
+            units = [{"uid": f"unit_{uuid.uuid4().hex[:8]}", "title": "Further Topics",
+                      "lessons": []}]
+            target["units"] = units
+        unit = units[-1]
+        unit.setdefault("lessons", [])
+
+        cpl = max(1, self.course_params.get("concepts_per_lesson", 3))
+        added = 0
+        for ch in missing:
+            concepts = self._concepts_for_backfill(ch, topic, cpl)
+            if not concepts:
+                continue
+            unit["lessons"].append({
+                "uid": f"less_{uuid.uuid4().hex[:8]}",
+                "title": ch.strip()[:120],
+                "backfilled": True,
+                "concepts": concepts,
+            })
+            added += 1
+        if added:
+            course_dict["backfilled_lessons"] = added
+            logger.info(f"[BACKFILL] added {added} lesson(s) from the real syllabus")
+
+    def _concepts_for_backfill(self, chapter, topic, count):
+        """Concepts for one uncovered chapter. Returns [] rather than stubs."""
+        try:
+            data = llm_generate_json(
+                prompt=(f"Course: {topic}\n"
+                        f"A real published syllabus for this subject includes the "
+                        f"topic \"{chapter}\", which the course currently omits.\n"
+                        f"List exactly {count} specific teachable concepts that "
+                        f"cover it, ordered as they should be taught."),
+                sys_prompt="You design university curricula. Answer only with JSON.",
+                schema={"type": "object", "properties": {"concepts": {
+                    "type": "array", "items": {"type": "string"}}},
+                    "required": ["concepts"]},
+                max_tokens=400,
+            )
+        except Exception as e:
+            logger.warning(f"[BACKFILL] concept generation failed for {chapter!r}: {e}")
+            return []
+        titles = []
+        if isinstance(data, dict):
+            titles = [t for t in (data.get("concepts") or [])
+                      if isinstance(t, str) and t.strip()]
+        return [{"uid": f"con_{uuid.uuid4().hex[:8]}", "title": t.strip()[:120],
+                 "backfilled": True} for t in titles[:count]]
 
     def _record_syllabus_check(self, course_dict):
         """Attach the criterion-6 verdict to the course. Never raises.
