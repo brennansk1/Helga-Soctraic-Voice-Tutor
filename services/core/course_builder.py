@@ -1343,6 +1343,10 @@ class SkeletonBuilder:
         # the real course — it was not short of room, it simply never selected
         # the orthogonality cluster. Reporting that after the fact helps nobody;
         # the outline is still in hand and cheap to extend.
+        _sf = getattr(self, "_scope_fit", None)
+        if _sf:
+            course_dict["scope_fit"] = _sf
+
         self._backfill_uncovered_chapters(course_dict, topic)
 
         # Gate criterion 6 — syllabus realism. Runs here, on the skeleton,
@@ -1470,6 +1474,29 @@ class SkeletonBuilder:
                 self.status_callback(f"RESEARCH:BOOK:{t['title']}{yr}")
             self.status_callback(
                 f"CHECK:SYLLABUS_EVIDENCE:{n} chapters / {srcs} sources")
+        # Is there enough subject here to fill what was asked for? Compared
+        # BEFORE generation, because the honest options — build the smaller
+        # version, broaden the subject, continue anyway — are only offerable
+        # while nothing has been built yet.
+        try:
+            from services.core.scope_fit import assess_scope, describe
+        except ImportError:
+            from scope_fit import assess_scope, describe
+        try:
+            _requested = int(self.course_params.get("total_concepts_approx") or 0)
+            self._scope_fit = assess_scope(brief, _requested,
+                                           requested_courses=1)
+            _msg = describe(self._scope_fit)
+            if _msg:
+                logger.warning(f"[SCOPE] {self._scope_fit['verdict']}: "
+                               f"{self._scope_fit['reason']}")
+                if self.status_callback:
+                    self.status_callback(
+                        f"CHECK:SCOPE:{self._scope_fit['verdict']}:{_msg}")
+        except Exception as e:
+            logger.debug(f"scope assessment failed: {e}")
+            self._scope_fit = None
+
         # Keep the raw chapter list, not just the rendered text: coverage
         # backfill needs to compare titles against titles, and re-parsing prose
         # to recover a list we already had is how detail gets lost.
@@ -1555,6 +1582,59 @@ class SkeletonBuilder:
             f"Grounding will be attempted on the narrow topic alone; a miss here "
             f"is DEGRADED, not evidence that no syllabus exists.")
         return [], True
+
+    def _add_keyword_coverage(self, course_dict, judge_result):
+        """Attach judge-free coverage to the criterion-6 record.
+
+        Both numbers are kept and clearly labelled. A gate that silently swapped
+        instruments would repeat the helgabench a0/a1 mistake of comparing across
+        a changed judge without saying so.
+        """
+        judge_result = judge_result if isinstance(judge_result, dict) else {}
+        chapters = [c for c in (getattr(self, "_syllabus_chapters", None) or [])
+                    if isinstance(c, str) and c.strip()]
+        if not chapters:
+            judge_result["keyword_coverage"] = {
+                "status": "no external syllabus — not measured"}
+            return judge_result
+        try:
+            from tools.coverage_check import check_coverage
+        except ImportError:
+            return judge_result
+
+        # Each real chapter is its own "area", identified by its distinctive
+        # words — the same rule the backfill uses, so the gate and the fix agree
+        # on what counts as covered.
+        reference = {}
+        for ch in chapters:
+            words = [w for w in re.sub(r"[^a-z0-9 ]", " ", ch.lower()).split()
+                     if len(w) > 3 and w not in (
+                         "introduction", "overview", "review", "chapter", "part",
+                         "basic", "basics", "advanced", "further")]
+            if words:
+                reference[ch] = words
+        if not reference:
+            return judge_result
+
+        kw = check_coverage(course_dict, reference)
+        judge_result["keyword_coverage"] = {
+            "coverage_pct": kw.get("coverage_pct"),
+            "covered": kw.get("areas_covered"),
+            "checked": kw.get("areas_checked"),
+            "missing": (kw.get("missing") or [])[:12],
+            "instrument": "keyword (no model)",
+            "authoritative": True,
+        }
+        judge_result["judge_coverage_pct"] = judge_result.get("coverage_pct")
+        judge_result["coverage_pct"] = kw.get("coverage_pct")
+        judge_result["coverage_source"] = "keyword"
+        logger.info(f"[SYLLABUS] keyword coverage {kw.get('coverage_pct')}% "
+                    f"({kw.get('areas_covered')}/{kw.get('areas_checked')} chapters); "
+                    f"judge said {judge_result.get('judge_coverage_pct')}%")
+        if self.status_callback:
+            self.status_callback(
+                f"CHECK:COVERAGE:{kw.get('coverage_pct')}")
+        return judge_result
 
     def _backfill_uncovered_chapters(self, course_dict, topic, cap=6):
         """Add lessons for real syllabus chapters the outline never reached.
@@ -1694,6 +1774,21 @@ class SkeletonBuilder:
             logger.info("[SYLLABUS] no external reference available — criterion 6 "
                         "will run on model knowledge (WEAK)")
         result = check_structure(course_dict, reference_text=_ref)
+
+        # MEASURED, TWICE: the judge behind criterion 6 reports topics as missing
+        # that are literally module titles. On a generated Linear Algebra course
+        # it returned 0% INADEQUATE while listing 'Vector Spaces', 'Basis and
+        # Dimension', 'Linear Maps' and 'Determinants' as absent — all four were
+        # module titles. That is the defect syllabus_check.py documents about
+        # itself, reproduced with the reference correctly wired in, so it is the
+        # judge and not the plumbing.
+        #
+        # So the authoritative coverage number comes from a matcher with no model
+        # in it, computed against the SAME chapter list the backfill uses. The
+        # judge's verdict is retained beside it rather than deleted: it is the
+        # only thing that reads sequencing, and its prose critique has been
+        # useful even when its number is not.
+        result = self._add_keyword_coverage(course_dict, result)
         course_dict["syllabus_check"] = result
 
         if result.get("error"):

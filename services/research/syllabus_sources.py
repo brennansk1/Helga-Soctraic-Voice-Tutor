@@ -81,6 +81,10 @@ _NON_CONTENT = {
     "table of contents", "contents", "introduction to the book", "preface",
     "front matter", "back matter", "resources", "meta", "see also",
     "external links", "notes", "sources", "credits", "faq", "wikibookians",
+    # Wikibooks pedagogical apparatus. Observed as real "chapters" of the
+    # Linear Algebra book and backfilled into a course as if they were topics.
+    "exploration", "automation", "laboratory", "computer algebra systems",
+    "input", "output", "extra", "topic", "topics",
 }
 
 _NON_CONTENT_PATTERNS = (
