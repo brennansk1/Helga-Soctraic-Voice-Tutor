@@ -1148,24 +1148,32 @@ judge-free number is the one that survives inspection.
 
 **Condition status, measured rather than asserted:**
 
-| condition | built | measured | state |
+| condition | implementation | measured | state |
 |---|---|---|---|
-| 1 — content/time parity | ladder in `compute_course_params`; `tools/session_clock.py` | 47 lessons · 135 concepts · 2.87/lesson vs 45 · 144 · 3 | **structure met**; session *length* still unmeasured — the one valid run needs hydrated content, which does not yet exist |
-| 2 — quality vs published assets | `tools/coverage_check.py`, wired as the authoritative gate number; coverage backfill | 70 / 90 / 80% vs MIT 18.06 across three runs | **measurable and improving, not at parity**. Copy-spine designed, unbuilt |
-| 3 — sourceless / over-stretch | `services/core/scope_fit.py`, wired pre-generation | Linear Algebra ok · Biology ok · D&D 40-course **unsupported** | **done and calibrated** |
-| 4 — trigger timing | — | — | designed only |
-| 5 — Mode A / QA gates | coverage gate, grade provenance | 8 + 12 + 4 tests | criterion 6's judge demoted from authoritative, retained for sequencing |
+| 1 — content/time parity | calendar-derived ladder; `session_clock.py`; adult pacing scaffold + 20-question park | 42 lessons · 124 concepts · 2.95/lesson vs 45 · 144 · 3. Session bound verified live, fires once, learner advances | **structure and bound done.** Hour-equivalence is a product decision, not a measurement (see below) |
+| 2 — quality vs published assets | `coverage_check.py` (coverage + sequencing, both model-free); coverage backfill; copy-spine; curated spines | **90%** vs MIT 18.06 **with correct sequencing**, from 70% and from an UNGUIDED start | mechanism proven end to end; residue is per-subject source coverage |
+| 3 — sourceless / over-stretch | `scope_fit.py`, wired pre-generation; verbatim disclaimer in `build-view.js` | Linear Algebra ok · Biology ok · D&D 40-course **unsupported → suggests 1** | **done**, including the learner-facing surface |
+| 4 — trigger timing | `build_scheduler.py` | 17 tests over the decision logic | **done as logic**; wiring to a live programme awaits programmes existing |
+| 5 — Mode A / QA gates | judge-free coverage authoritative, judge retained for sequencing prose; grade provenance | 1081 core tests | criterion 6's judge demoted, not deleted |
 
-**Two measurement disciplines this work established the hard way:**
+**The one thing that is a decision rather than a measurement:** a parity-sized
+semester course is ~144 concepts at a measured 1.5 min each — a **216-minute
+build**. The old guard said no one-click preset exceeds 150 minutes, written when
+a course was 30 concepts and covered under half its subject. Both cannot hold.
+`LONG_BUILDS` names the affected presets explicitly so the choice stays visible.
 
-* **The generator is noisy.** Three runs of identical code gave 70 / 90 / 80%
-  coverage. Any claim of the form "change X improved coverage" needs
-  median-of-3, exactly as the judges already did.
-* **A single build is not a measurement, and neither is a single session.**
-  `session_clock`'s first run returned a uniform 1.1 s per turn — no LLM call is
-  that fast here — and is recorded as invalid rather than as a result.
+**Three measurement disciplines this work established by being bitten:**
 
-### Original Task 0 findings (now fixed)### Original Task 0 findings (now fixed) It did not
+* **The generator is as noisy as the judges.** Three identical runs gave 70 / 90 /
+  80% coverage. Any "change X improved Y" claim needs median-of-3.
+* **One number cannot see two properties.** Copy-spine scored **100% coverage
+  with an unteachable alphabetical order**. Coverage and sequencing needed
+  separate instruments; the 100% is why it looked like success.
+* **A fix unverified against a real run is not a fix.** The session bound's first
+  placement never fired, and copy-spine's first version returned a list where a
+  uid was expected. Both passed their unit tests.
+
+### Original Task 0 findings (now fixed) (now fixed)### Original Task 0 findings (now fixed) It did not
 produce a valid coverage number, and that is its finding: two wiring bugs block
 the measurement.
 
