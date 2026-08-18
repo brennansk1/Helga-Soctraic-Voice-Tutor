@@ -999,6 +999,134 @@ build starts.
 
 ---
 
+---
+
+# Part IV — QA strategy, deduplication, and the structural changes required
+
+## Tiered testing: what gets tested at which program size
+
+Testing everything at every tier is unaffordable — a bachelor's is thousands of
+concepts. The split follows where the risk actually lives:
+
+| tier | skeleton builder | content hydrator | asset collection |
+|---|---|---|---|
+| Above College Course (associate, bachelor's) | **tested** | not per-course | not per-course |
+| **College Course and below** | **tested** | **tested** | **tested** |
+
+Above College Course the unit of risk is *structural* — does the program plan
+produce a coherent, non-duplicating, correctly-sequenced set of courses. The
+content of any individual course in that program is already covered by testing
+the College Course tier, because it is the same machinery. Re-testing hydration
+for all 40 courses of a bachelor's measures the same code forty times.
+
+At College Course and below the whole chain matters, and specifically **whether
+asset collection is efficiently pulling from the textbook where one exists** —
+that is the mechanism condition 2's quality parity depends on, and it is the part
+with no coverage today.
+
+### Sequence planning is its own test
+
+Linear Algebra I → II is the minimum case that exercises building courses *off
+each other*: II must assume I's material, not repeat it, and must not depend on
+anything I never taught. This is tested at the 2-course tier, which is also the
+MVP, so it is exercised continuously rather than once.
+
+## The deduplication problem, which the concept-level skeleton creates
+
+Running the skeleton builder down to the concept level for an entire program
+produces thousands of concepts. Without a global view, the same idea will be
+taught repeatedly: "the chain rule" appearing in Calculus I, again in Calculus
+II, again in Differential Equations — **more often than any real curriculum would
+teach it**.
+
+Repetition is not simply waste. A real curriculum revisits deliberately, at
+increasing depth; accidental repetition teaches the same thing at the same level
+twice and makes the program feel padded — which is the hollow-concept failure
+wearing a different hat.
+
+**Three mechanisms, in order of reliability:**
+
+1. **Program-scoped concept registry.** Every concept generated anywhere in the
+   program is registered with a normalised key. `_normalize_title` and
+   `_is_duplicate` already exist at course scope; the registry lifts them to
+   program scope. Cheap, deterministic, no judge.
+2. **Deliberate-revisit allowlist.** A concept may legitimately recur if it
+   recurs at a *higher Bloom level* — first taught, later applied. So the
+   registry stores the Bloom level, and a repeat is permitted only when it moves
+   up. A repeat at the same level is a duplicate; a repeat one level up is
+   spaced curriculum design. This distinction is what keeps the check from
+   flattening real pedagogy.
+3. **Textbook adherence as the tie-breaker.** Where a course maps to a real
+   textbook, **the textbook's own repetition is the ground truth.** If
+   OpenStax's Calculus II revisits the chain rule, revisiting it is correct; if
+   it does not, ours should not either. This is the strongest signal available
+   and it is only available because the OpenStax section tree is now in hand.
+
+**FSRS already covers the legitimate need.** Much of what repetition is *for* —
+retention — is handled by spaced review, which resurfaces a concept without
+re-teaching it. Cross-course review (condition 5) is the right home for that,
+not duplicate concepts.
+
+### Textbook adherence, stated as a checkable property
+
+Where a source textbook exists, adherence means:
+
+* every teachable section of the matched book maps to **≥1 concept** (coverage)
+* no concept is generated that the book does not support, **unless flagged as an
+  addition** (no invented material silently mixed with sourced material)
+* concept *ordering* follows the book's section order unless deliberately
+  re-sequenced for level (the tier-2 case)
+* **repetition matches the book's repetition** (the dedup tie-breaker above)
+
+The first two are countable — no judge, so no drift.
+
+## Skeleton builder must offer choices, not a single line
+
+The builder currently produces one linear path. Real registration offers
+**several viable courses per slot**, and the design's cost control depends on it:
+unchosen options are never built.
+
+**Required change:** the planner emits, per elective slot, **N candidate course
+specs** (title, description, prerequisites, what it leads to) — cheap
+specifications, not built courses. The learner picks one; the choice locks; only
+that one is built.
+
+Two properties that must hold:
+
+* **Candidates must be genuinely alternative** — same slot, same prerequisites,
+  different subject. Three variations on one subject is a fake choice.
+* **Every candidate must be plan-valid.** If picking option B strands a later
+  course that needed option A, the DAG check has to run per candidate at plan
+  time, not after the learner commits. Offering a choice that breaks the program
+  is worse than offering none.
+
+## Trigger: passing a course starts the next one
+
+Course completion is the natural build trigger, and it is more reliable than a
+pace projection because it is an event rather than an estimate. Both are used:
+the projection prompts the *choice* early (~70%), and **passing the gate starts
+the build** of the already-chosen next course, including its hydration and asset
+collection.
+
+Tested explicitly: pass a course in a 2-course program, assert the next course's
+build begins, that it runs at BACKGROUND priority, and that it yields to a
+session started mid-build.
+
+## Visualisation: the tree is now too big to show flat
+
+A 135-concept course is already awkward to render; a 40-course program is
+impossible. The course view needs **collapsible structure** — program → course →
+module → unit → lesson → concept, collapsed by default below the current
+position, with progress roll-ups at each level so a collapsed node still shows
+how much of it is done.
+
+Worth carrying over from `/build`: it already translates internals
+(`STRUCT:MODULE:x`) into what actually happened. The program view needs the same
+treatment — a learner should see "Linear Algebra II — 3 of 8 modules", not a
+thousand leaf nodes.
+
+---
+
 ## Status
 
 Design. **No implementation has begun and none should until task 0 is measured**,
