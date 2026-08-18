@@ -10,6 +10,7 @@ import hashlib
 import json
 import logging
 import os
+import threading
 import time
 from urllib.parse import urlparse
 
@@ -18,6 +19,11 @@ import re
 import requests
 import trafilatura
 import wikipediaapi
+
+try:
+    import ratelimit as _rl
+except ImportError:
+    from services.research import ratelimit as _rl
 from diskcache import Cache
 from flask import Flask, request, jsonify
 
@@ -33,7 +39,7 @@ CACHE_TTL_EXTRACT = 604800     # 7 days for extracted page content
 os.makedirs(CACHE_DIR, exist_ok=True)
 cache = Cache(CACHE_DIR)
 
-wiki = wikipediaapi.Wikipedia(user_agent="Helga/1.0 (Socratic Tutor)", language="en")
+wiki = wikipediaapi.Wikipedia(user_agent=_rl.user_agent(), language="en")
 
 # Pure ranking/query/scoring helpers live in ranking.py (dep-free + unit-tested).
 from ranking import domain_tier, build_search_queries, compute_confidence, dedup_by_url
@@ -65,7 +71,7 @@ def wiki_search_title(query):
             "https://en.wikipedia.org/w/api.php",
             params={"action": "opensearch", "search": query, "limit": 1,
                     "namespace": 0, "format": "json"},
-            headers={"User-Agent": "Helga/1.0 (Socratic Tutor)"},
+            headers=_rl.headers(),
             timeout=10)
         if r.status_code == 200:
             data = r.json()
@@ -115,7 +121,7 @@ def _mediawiki_extract(api, title, timeout=12):
         r = requests.get(api, params={
             "action": "query", "prop": "extracts", "explaintext": 1,
             "redirects": 1, "titles": title, "format": "json",
-        }, headers={"User-Agent": "Helga/1.0 (Socratic Tutor)"}, timeout=timeout)
+        }, headers=_rl.headers(), timeout=timeout)
         if r.status_code != 200:
             return ""
         pages = (r.json().get("query") or {}).get("pages") or {}
@@ -176,7 +182,7 @@ def textbook_lookup(query, limit=2):
             r = requests.get(api, params={
                 "action": "query", "list": "search", "srsearch": query,
                 "srlimit": 2, "format": "json",
-            }, headers={"User-Agent": "Helga/1.0 (Socratic Tutor)"}, timeout=12)
+            }, headers=_rl.headers(), timeout=12)
             if r.status_code != 200:
                 continue
             hits = ((r.json().get("query") or {}).get("search") or [])
@@ -234,12 +240,14 @@ def primary_source_lookup(query, limit=2):
     out = []
     # 1. Crossref — all disciplines, returns a DOI.
     try:
-        r = requests.get(
-            "https://api.crossref.org/works",
-            params={"query": query, "rows": limit,
-                    "select": "DOI,title,type,issued"},
-            headers={"User-Agent": "Helga/1.0 (Socratic Tutor; mailto:noreply@localhost)"},
-            timeout=15)
+        _u = "https://api.crossref.org/works"
+        _rl.wait(_u)
+        # mailto only when HELGA_CONTACT is a real address: the polite pool is
+        # checking for a reachable contact, and noreply@localhost is not one.
+        _p = {"query": query, "rows": limit, "select": "DOI,title,type,issued"}
+        _p.update(_rl.contact_param())
+        r = requests.get(_u, params=_p, headers=_rl.headers(), timeout=15)
+        _rl.note_response(_u, r.status_code, r.headers)
         if r.status_code == 200:
             for item in (r.json().get("message", {}).get("items") or [])[:limit]:
                 doi = item.get("DOI")
@@ -257,12 +265,14 @@ def primary_source_lookup(query, limit=2):
     # 2. arXiv — preprints, STEM-leaning. HTTPS: the http endpoint 301s.
     if len(out) < limit:
         try:
+            _u = "https://export.arxiv.org/api/query"
+            _rl.wait(_u)   # arXiv documents 1 request / 3 s; we were ignoring it
             r = requests.get(
-                "https://export.arxiv.org/api/query",
+                _u,
                 params={"search_query": f"all:{query}",
                         "max_results": limit - len(out)},
-                headers={"User-Agent": "Helga/1.0 (Socratic Tutor)"},
-                timeout=15)
+                headers=_rl.headers(), timeout=15)
+            _rl.note_response(_u, r.status_code, r.headers)
             if r.status_code == 200:
                 ids = re.findall(r"<id>(http[^<]*abs[^<]*)</id>", r.text)
                 titles = re.findall(r"<title>([^<]*)</title>", r.text)
@@ -308,10 +318,52 @@ def wiki_lookup(title):
 
 
 # --- SearXNG search ---
+_SEARCH_STATS = threading.local()
+
+
+def search_stats_reset():
+    """Begin recording search outcomes on this thread."""
+    _SEARCH_STATS.d = {"ok": 0, "cached": 0, "empty": 0, "degraded": 0}
+
+
+def search_stats():
+    d = getattr(_SEARCH_STATS, "d", None)
+    return dict(d) if d is not None else None
+
+
+def _search_tally(key):
+    d = getattr(_SEARCH_STATS, "d", None)
+    if d is not None:
+        d[key] = d.get(key, 0) + 1
+
+
 async def searxng_search(session, query, max_results=5):
+    """Web results for one query, or [] .
+
+    SearXNG is a META-search proxy: it scrapes Google/Brave/DDG/Startpage rather
+    than calling an API, so it inherits their bot defences. Measured 2026-08-18
+    on this box: the engine pool was exhausted after ~14 queries -- startpage
+    and brave suspended, then duckduckgo (the only engine still contributing)
+    CAPTCHA'd -- and every query after that returned **HTTP 200 with an empty
+    result list**. A real build issues 24-80 queries, so this is the normal case
+    partway through a course, not an edge case.
+
+    Two consequences were being handled wrongly:
+
+      * `[]` from a CAPTCHA storm was indistinguishable from `[]` for a genuinely
+        obscure query, so a build with a dead search engine scored the same as a
+        build on a topic nobody has written about.
+      * that empty list was CACHED for 24 h, turning a transient block into a
+        day-long "there is nothing on the web about this concept".
+
+    `unresponsive_engines` is how SearXNG reports the difference, so use it:
+    empty results WITH dead engines is degradation, and degradation is neither
+    cached nor reported as a clean zero.
+    """
     key = cache_key("search", query)
     cached = cache.get(key)
     if cached is not None:
+        _search_tally("cached")
         return cached
 
     try:
@@ -345,11 +397,23 @@ async def searxng_search(session, query, max_results=5):
                     if len(results) >= max_results:
                         break
                 results.sort(key=lambda x: x["tier"])
+                dead = data.get("unresponsive_engines") or []
+                if not results and dead:
+                    # Cache this and the block outlives the block, by a day.
+                    _search_tally("degraded")
+                    logger.warning(
+                        f"SearXNG returned nothing for {query!r} with "
+                        f"{len(dead)} engine(s) down ({dead}) — treating as "
+                        f"NO SEARCH, not as 'no results'; not cached")
+                    return []
+                _search_tally("ok" if results else "empty")
                 cache.set(key, results, expire=CACHE_TTL_SEARCH)
                 return results
+            logger.warning(f"SearXNG HTTP {resp.status} for {query!r}")
     except Exception as e:
         logger.warning(f"SearXNG search failed for '{query}': {e}")
 
+    _search_tally("degraded")
     return []
 
 
@@ -364,7 +428,7 @@ async def extract_page(session, url):
         async with session.get(
             url,
             timeout=aiohttp.ClientTimeout(total=10),
-            headers={"User-Agent": "Helga/1.0 (Educational Research Bot)"},
+            headers=_rl.headers("Helga-Research/1.0"),
         ) as resp:
             if resp.status == 200:
                 html = await resp.text()
@@ -503,6 +567,7 @@ async def _research_concept_async(title, module_title, course_title, mastery=1):
         logger.debug(f"domain sources failed: {e}")
 
     # 2b. Generate search queries (mastery-aware)
+    search_stats_reset()
     queries = build_search_queries(title, module_title, mastery)
 
     # 3. Search via SearXNG
@@ -548,11 +613,18 @@ async def _research_concept_async(title, module_title, course_title, mastery=1):
     confidence = compute_confidence(bool(wikipedia_data), len(web_sources),
                                     len(primary_sources), len(textbook_sources))
 
+    # Report whether the web leg actually ran. Without this a concept grounded
+    # only by Wikipedia looks the same whether the topic is obscure or the
+    # search engine was CAPTCHA'd, and the hydrator cannot tell a thin subject
+    # from a broken dependency.
+    _ss = search_stats() or {}
     return {
         "sources": sources,
         "wikipedia": wikipedia_data,
         "combined_text": combined_text,
         "confidence": confidence,
+        "search_degraded": bool(_ss.get("degraded", 0)),
+        "search_stats": _ss,
     }
 
 

@@ -46,9 +46,16 @@ import time
 
 import requests
 
+try:
+    import ratelimit as _rl
+except ImportError:
+    from services.research import ratelimit as _rl
+
 logger = logging.getLogger(__name__)
 
-UA = {"User-Agent": "Helga/1.0 (Socratic Tutor)"}
+# Built from HELGA_CONTACT: Wikimedia's UA policy asks for contact info, and a
+# fabricated address is worse than none.
+UA = _rl.headers()
 
 WIKIBOOKS_API = "https://en.wikibooks.org/w/api.php"
 WIKIVERSITY_API = "https://en.wikiversity.org/w/api.php"
@@ -170,7 +177,9 @@ def _get_json(url, params, timeout=15, attempts=3):
     throttled = False
     for attempt in range(attempts):
         try:
+            _rl.wait(url)
             r = requests.get(url, params=params, headers=UA, timeout=timeout)
+            _rl.note_response(url, r.status_code, r.headers)
             if r.status_code == 200:
                 data = r.json()
                 if _cache_on() and ck:

@@ -54,9 +54,14 @@ except ImportError:  # imported as a package
         fetch_stats, fetch_stats_reset, subject_outline,
     )
 
+try:
+    import ratelimit as _rl
+except ImportError:
+    from services.research import ratelimit as _rl
+
 logger = logging.getLogger(__name__)
 
-UA = {"User-Agent": "Helga/1.0 (Socratic Tutor)"}
+UA = _rl.headers()   # contact info from HELGA_CONTACT, never fabricated
 IA_SEARCH = "https://archive.org/advancedsearch.php"
 
 # How the level dial changes what we go looking for. These are search steers,
