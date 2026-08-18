@@ -39,7 +39,7 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 DEFAULT_OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3.5:9b")
+DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "nail-35b-a3b")
 
 
 # --- student profiles --------------------------------------------------------

@@ -29,9 +29,24 @@ if [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" != "arm64" ]; then
 fi
 
 # 2. Model
-MODEL="${OLLAMA_MODEL:-qwen3.5:9b}"
-echo "[2/6] Pulling $MODEL..."
-ollama pull "$MODEL"
+MODEL="${OLLAMA_MODEL:-nail-35b-a3b}"
+echo "[2/6] Checking $MODEL..."
+# The project model is imported from a local GGUF, not pulled from a registry
+# (see docs/MODEL.md). `ollama pull` on it fails, so only pull when the model
+# is genuinely absent AND looks like a registry name.
+if ollama list 2>/dev/null | awk '{print $1}' | grep -qx "$MODEL"; then
+    echo "  $MODEL already installed (local import — not pulling)"
+elif ollama list 2>/dev/null | awk '{print $1}' | grep -qx "$MODEL:latest"; then
+    echo "  $MODEL:latest already installed (local import — not pulling)"
+else
+    echo "  $MODEL not installed."
+    echo "  If this is the project model, import it: see docs/MODEL.md"
+    echo "  Attempting a registry pull in case it is a published tag..."
+    ollama pull "$MODEL" || {
+        echo "  ! Pull failed. Import the GGUF per docs/MODEL.md, then re-run."
+        exit 1
+    }
+fi
 
 # 3. Data directories
 echo "[3/6] Setting up data directories..."

@@ -34,7 +34,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3.5:9b")
+DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "nail-35b-a3b")
 DEFAULT_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 
 # A stubborn student restates the SAME wrong belief in different words each

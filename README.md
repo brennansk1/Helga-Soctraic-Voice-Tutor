@@ -37,7 +37,9 @@ Mac Mini M4 Pro 24GB
 
 ```bash
 # 1. Pull the LLM model (multimodal — text + vision)
-ollama pull qwen3.5:9b      # or qwen3.5:9b-mlx on Apple Silicon for faster decode
+# The project model is a LOCAL GGUF import, not a registry pull.
+# See docs/MODEL.md for the one-time setup:
+#   hf download peculiar-ragdoll/Nail-Qwen3.6-35B-A3B-GGUF ... && ollama create nail-35b-a3b
 
 # 2. Clone and start
 git clone <repo-url> && cd helga
@@ -114,7 +116,7 @@ make backup    # Backup SQLite database
 Copy `.env.example` to `.env` and adjust:
 
 ```bash
-OLLAMA_MODEL=qwen3.5:9b          # LLM model (multimodal: text + vision)
+OLLAMA_MODEL=nail-35b-a3b        # project model (see docs/MODEL.md — local GGUF import)
 OLLAMA_URL=http://host.docker.internal:11434
 FLASK_ENV=production
 DEFAULT_VOICE=af_heart            # Kokoro TTS voice
@@ -130,10 +132,10 @@ the grading/tutoring model is a config change, not a code change.
 ### Swapping the model
 
 Set `OLLAMA_MODEL` in your `.env` (or the environment). `docker-compose.yml`
-already reads it with a default of `qwen3.5:9b` (multimodal — text + vision):
+already reads it with a default of `nail-35b-a3b` (see `docs/MODEL.md`):
 
 ```yaml
-OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3.5:9b}
+OLLAMA_MODEL: ${OLLAMA_MODEL:-nail-35b-a3b}
 ```
 
 ```bash
@@ -143,7 +145,7 @@ OLLAMA_MODEL=qwen3.5:9b-mlx      # Apple-Silicon MLX build, faster decode
 # OLLAMA_MODEL=qwen3.5:35b-a3b   # MoE reach model (~20GB), stronger reasoning
 ```
 
-Pull the model first (`ollama pull qwen3.5:9b`), then restart:
+Install the model first (`docs/MODEL.md`), then restart:
 `docker compose up -d`.
 
 ### Faster decode on Apple Silicon (MLX)

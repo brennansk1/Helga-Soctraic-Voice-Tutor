@@ -53,7 +53,7 @@ if _ROOT not in sys.path:
 from services.common.prompts import VISUAL_AID_RULES          # noqa: E402
 from services.common.visual_aids import extract_aids, normalize_aid  # noqa: E402
 
-DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3.5:9b")
+DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "nail-35b-a3b")
 DEFAULT_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 
 # One case per kind: a teaching moment where that diagram is the obvious move.

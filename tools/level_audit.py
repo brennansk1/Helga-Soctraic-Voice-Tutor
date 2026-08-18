@@ -54,7 +54,7 @@ if _ROOT not in sys.path:
 
 DATA_DIR = os.path.join(_ROOT, "data")
 COURSES_DIR = os.path.join(DATA_DIR, "courses")
-DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3.5:9b")
+DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "nail-35b-a3b")
 DEFAULT_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 
 JUDGE = """You classify the academic level of teaching material. Be strict and
