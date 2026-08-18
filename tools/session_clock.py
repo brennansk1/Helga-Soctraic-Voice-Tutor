@@ -81,7 +81,18 @@ PERSONAS = {
 }
 
 
-def run_session(fsm, concept_uid, replies, max_turns=14):
+# Once a persona's scripted replies are exhausted the session must keep going or
+# the measurement is a floor rather than a count. The first valid run stopped at
+# exactly the script length (median 6, max 6) with completed=0 -- it measured the
+# script, not the tutor. These continuations carry no new information, so they
+# cannot shorten a session artificially; they only stop it ending early.
+_CONTINUATIONS = [
+    "I think so.", "Can you say more?", "Right.", "I'm not sure.",
+    "That makes sense.", "Okay.", "Go on.", "I see.",
+]
+
+
+def run_session(fsm, concept_uid, replies, max_turns=25):
     """Drive one concept to completion. Returns per-session measures."""
     t0 = time.time()
     turns, latencies = 0, []
@@ -90,7 +101,9 @@ def run_session(fsm, concept_uid, replies, max_turns=14):
                     "payload": {"topic_id": concept_uid}})
     start_state = getattr(fsm, "state", None)
 
-    for reply in replies[:max_turns]:
+    script = list(replies) + [_CONTINUATIONS[i % len(_CONTINUATIONS)]
+                              for i in range(max_turns)]
+    for reply in script[:max_turns]:
         if getattr(fsm, "state", None) != "SOCRATIC_LEARNING":
             break
         t1 = time.time()
@@ -106,6 +119,8 @@ def run_session(fsm, concept_uid, replies, max_turns=14):
         "median_turn_latency": (round(statistics.median(latencies), 1)
                                 if latencies else None),
         "completed": getattr(fsm, "state", None) != "SOCRATIC_LEARNING",
+        "hit_cap": turns >= max_turns,
+        "scripted_turns": len(replies),
         "start_state": start_state,
     }
 

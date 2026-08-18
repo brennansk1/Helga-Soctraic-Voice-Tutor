@@ -309,3 +309,90 @@ copy-spine tier would fix, since Strang's book devotes a chapter to it.
 | 3 — sourceless programs | designed; not built |
 | 4 — trigger timing | designed; not built |
 | 5 — Mode A / QA gates | `coverage_check.py` built and tested (8 tests); criterion 6's judge confirmed broken and must not gate |
+
+---
+
+# Session measurement — condition 1's missing number
+
+_Hydrated a 3-concept slice of the Linear Algebra course (hydrating all 135 is
+~3.4 h and unnecessary — session length is measured per concept)._
+
+## Build cost on Nail, finally measured
+
+```
+3 concepts hydrated in 269 s  =  90 s/concept  (1.5 min)
+```
+
+The design carried two figures because the only measured one belonged to a
+retired model. The projection was optimistic, as flagged:
+
+| | per concept | per course (135) | bachelor's (40) |
+|---|---|---|---|
+| measured, qwen3.5:9b | 2.0 min | 4.5 h | 180 h |
+| projected, Nail (decode-scaled) | ~1.2 min | ~2.7 h | ~108 h |
+| **measured, Nail** | **1.5 min** | **~3.4 h** | **~135 h** |
+
+Hydration is not pure decode — depth-contract retries, fact-check and research
+calls live inside that figure — which is exactly why the projection undershot.
+**~135 h for a bachelor's is the number to plan against.**
+
+## A concept session does not end on its own
+
+Nine sessions across 3 concepts × 3 personas, then a second run with the scripts
+extended so a session could not stop merely because the script ran out:
+
+| run | turns | wall | completed |
+|---|---|---|---|
+| scripted only | median **6** (max 6) | 108.7 s | **0 / 9** |
+| scripts + continuations, cap 25 | **25 (cap) every time** | ~470 s | **0 / 3** |
+
+The first run measured the *script*, not the tutor — median 6 was exactly the
+script length. With continuations the sessions ran to the 25-turn cap and still
+never completed.
+
+**This is not a bug.** Concept completion requires a streak of `grade >= 3`, and
+the generic continuations ("I think so", "Go on") grade at 2, so the streak never
+builds. The tutor declining to advance a learner who has not demonstrated
+understanding is precisely correct Socratic behaviour.
+
+## What it means for the design — session length is not a constant
+
+The ladder assumes *1 lesson = 1 class session = 3 concepts ≈ 50 minutes*. The
+measurement shows session length is **learner-dependent and unbounded above**:
+
+* a learner who demonstrates understanding completes in a handful of exchanges
+* a learner who does not can exceed 25 exchanges on a single concept
+
+So "3 concepts per 50-minute lesson" is a **median over progressing learners**,
+never a guarantee, and the tail is long.
+
+### The gap this exposes
+
+`concept_miss_streak` drives an affect scaffold that eases the next question
+after 2 consecutive misses — **but only for the `K-2` and `3-5` grade bands**
+(`fsm_logic.py:2373`). For the adult and college learners this whole AI-university
+design targets, there is **no easing, no escalation and no time-box**. A stuck
+adult learner gets an unbounded session on concept 1, and a 50-minute lesson
+never ends.
+
+**Required before the lesson↔class-session mapping can be claimed:** a bounded
+response to repeated misses for adult bands — ease the question, offer a
+different explanation, or park the concept and let FSRS resurface it — so that a
+lesson terminates for every learner rather than only for progressing ones.
+
+## Operational note
+
+`fsm_logic` reads **`OLLAMA_URL`** (default `http://host.docker.internal:11434`),
+not the `LLM_API_URL` the builder uses. Running the FSM on the host with only
+`LLM_API_URL` set produces silent LLM failures, a canned repeated tutor line, and
+a fallback grade — which is what made the first two session runs invalid. Correct
+inside a container; a trap outside one.
+
+## Condition 1 status
+
+* **Structure: met.** 47 lessons · 135 concepts · 2.87 concepts/lesson.
+* **Turn count: measured as a floor** (≥6 for a progressing learner; unbounded
+  for a stalled one).
+* **Hour-equivalence: still not claimable**, and now for a better reason than
+  "unmeasured" — session length has no upper bound until the adult-band time-box
+  exists.
