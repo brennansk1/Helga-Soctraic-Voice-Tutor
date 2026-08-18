@@ -119,3 +119,119 @@ currently collapsing to one child each.
 
 Then re-run Task 0 and apply the R1 decision rule against a number that means
 something.
+
+---
+
+# Task 0, second run — after the three fixes
+
+_Same day. Topic changed to **Linear Algebra** so the result could be compared
+against a real published course: **MIT 18.06** (OCW, Spring 2010)._
+
+## The fixes work
+
+| | before (broken) | after (fixed) | target |
+|---|---|---|---|
+| modules | 6 | 6 | 6–8 |
+| units | **6** | **18** | ~15 |
+| lessons | **6** | **54** | 45 |
+| concepts | **30** | **155** | 144 |
+| grounding | UNGUIDED (cold) | Wikibooks *Linear Algebra* + OpenStax *College Algebra* | — |
+| criterion 6 grounding | `model-knowledge (WEAK)` | **`external`** | external |
+
+**Fix 1 proved itself in production during this very run.** The LLM
+parent-subject lookup timed out again, and the log shows the no-LLM path
+catching it:
+
+```
+[SKELETON] parent subjects via Wikipedia categories: ['Linear algebra', ...]
+[SKELETON] evidence for 'Linear Algebra' (broadened via ['Linear algebra', 'Numerical analysis'])
+```
+
+Before the fix that same timeout produced an UNGUIDED build reporting success.
+
+## Coverage against MIT 18.06 — 70%, measured without a judge
+
+The published 18.06 syllabus lists ten topic areas. Checking the generated
+skeleton's full title set against them by **keyword matching only** — no LLM
+anywhere in the instrument, so it cannot drift:
+
+| | area | result |
+|---|---|---|
+| 1 | Elimination / LU factorization | HIT |
+| 2 | Ax=b: column space, rank, nullspace | HIT |
+| 3 | Bases & four fundamental subspaces | HIT |
+| 4 | **Least squares & projections** | **MISS** |
+| 5 | **Gram-Schmidt & QR** | **MISS** |
+| 6 | Determinants | HIT |
+| 7 | Eigenvalues / diagonalization | HIT |
+| 8 | **Symmetric & positive definite** | **MISS** |
+| 9 | Linear transformations / SVD | HIT |
+| 10 | Applications | HIT |
+
+**7/10 = 70%.**
+
+**The misses are one coherent cluster, not scattered noise.** Least squares,
+projections, Gram-Schmidt, QR, symmetric and positive-definite matrices are all
+*orthogonality* — MIT's lectures 14–17 and 25–28. The generated course covers the
+spine of the subject (spaces → elimination → determinants → eigenvalues) and
+drops the orthogonality arc entirely. A scattered 70% would suggest random
+weakness; a clustered 70% points at a specific missing region, which is
+actionable.
+
+## The finding that matters most: it is over-long AND under-covering
+
+**54 lessons generated against MIT's 34 lectures — 59% more sessions — while
+covering 70% of the syllabus.** The course is not short of room. It spends its
+extra length going deeper on what it already chose rather than reaching the
+material it missed.
+
+This is a strong argument for the design's **copy-spine tier**: Strang's
+*Introduction to Linear Algebra* (18.06's text) has chapters for exactly the
+missing cluster. A course that followed the book's chapter order would not have
+been able to skip orthogonality. Asking the model to *select* topics is where the
+coverage is lost, and copying removes that step.
+
+## Criterion 6's judge is confirmed unusable in its current form
+
+With the reference now correctly supplied (`grounding: external`), the judge
+still returned:
+
+```
+coverage_pct : 0    verdict: INADEQUATE
+missing      : ['Vector Spaces', 'Linear Independence', 'Basis and Dimension',
+                'Linear Maps', 'Matrix Representations', 'Determinants', ...]
+```
+
+The generated modules are titled **"Vector Spaces and Linear Combinations"**,
+**"Basis and Dimension"**, **"Matrix-Vector Multiplication and Linear Maps"**,
+**"Determinants and Inverses"**. The judge declared as missing four topics that
+are literally module titles.
+
+This is precisely the defect `syllabus_check.py` documents about itself —
+*"'Potential outcomes' is declared missing from an outline whose first module is
+literally 'Potential Outcomes'"* — and it is now reproduced with the reference
+wired in, so it is not a plumbing problem. **The judge, not the plumbing, is the
+remaining fault.**
+
+Two instruments ran on the same course and disagreed completely:
+
+| instrument | result | can it drift? |
+|---|---|---|
+| criterion 6 (LLM judge) | **0%, INADEQUATE** | yes — and demonstrably wrong here |
+| keyword coverage vs MIT 18.06 | **70%** | no — string matching only |
+
+The keyword result is verifiable by eye. **Criterion 6 must not gate anything
+until its judge is fixed**, and the judge-free comparison should become the
+primary coverage instrument — which is what the design already argued on
+principle (condition 2: "key-term coverage… needs no judge at all, so it cannot
+drift") and is now supported by measurement.
+
+## Against the R1 decision rule
+
+R1 pre-committed: **≥70% → grounding works, proceed with the design as written.**
+
+70% lands exactly on that boundary, measured against real external ground truth
+rather than a judge. Combined with the clustered nature of the misses and the
+over-length finding, the reading is: **the pipeline is sound and the remaining
+coverage gap is a topic-selection problem that the copy-spine tier is designed to
+solve.** Proceed — with copy-spine promoted, not deferred.
