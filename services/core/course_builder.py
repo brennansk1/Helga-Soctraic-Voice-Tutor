@@ -482,6 +482,22 @@ DEPTH_PROFILES = {
 }
 
 
+def _looks_alphabetical(titles, sample=25, threshold=0.9):
+    """Is this list sorted rather than sequenced?
+
+    Checked on a prefix and by PROPORTION of in-order adjacent pairs, not by
+    exact equality with sorted(): a real syllabus occasionally has two adjacent
+    chapters that happen to be alphabetical, and an index may have a stray entry
+    out of place. The question is whether the dominant organising principle is
+    the alphabet.
+    """
+    items = [t.strip().lower() for t in (titles or []) if isinstance(t, str)][:sample]
+    if len(items) < 5:
+        return False
+    in_order = sum(1 for a, b in zip(items, items[1:]) if a <= b)
+    return in_order / max(1, len(items) - 1) >= threshold
+
+
 class SkeletonBuilder:
     def __init__(
         self,
@@ -1695,6 +1711,26 @@ class SkeletonBuilder:
 
         chapters = [c for c in (best.get("chapters") or [])
                     if isinstance(c, str) and c.strip()]
+
+        # AN ALPHABETICAL LIST IS AN INDEX, NOT A SYLLABUS.
+        #
+        # Wikibooks stores a book as sub-pages and the API returns them sorted,
+        # so "Linear Algebra" comes back as Addition..., Any Matrix..., Augmented
+        # Matrices, Basis, ... That list has complete COVERAGE and no pedagogical
+        # ORDER, and copying it produced a course whose modules were
+        # alphabetically-ordered sub-topics — "Identity Matrix" as a module.
+        #
+        # It scored 100% on the keyword instrument, which is exactly the blind
+        # spot that instrument documents about itself: presence is not sequence.
+        # Ordering IS the pedagogy, so a source that has none cannot be a spine.
+        # It remains perfectly good as a coverage CHECKLIST for backfill, which
+        # is order-independent.
+        if _looks_alphabetical(chapters):
+            logger.info(f"[SPINE] {best.get('book')!r} chapter list is "
+                        f"alphabetical — an index, not a teaching order; "
+                        f"generating the spine instead")
+            return None
+
         if len(chapters) < target_modules:
             logger.info(f"[SPINE] {best.get('book')!r} has {len(chapters)} "
                         f"chapters for {target_modules} modules — too few to "

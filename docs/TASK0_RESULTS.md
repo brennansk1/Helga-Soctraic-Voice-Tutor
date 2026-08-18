@@ -488,3 +488,38 @@ The first attempt returned the spine from inside `_build_inner`, which returns
 the course **uid** — so the build aborted and handed a list back where a string
 was expected (`TypeError: unhashable type: 'list'`). It now sets the module list
 and skips generation. Caught only by running a real build.
+
+## Correction: 100% coverage, wrong structure
+
+The modules copy-spine actually produced were:
+
+> Addition, Multiplication, and Transpose · Cofactors and Minors · Definition and
+> Examples of Similarity · Diagonal Matrix · Gauss-Jordan Reduction · Identity
+> Matrix
+
+**Alphabetically ordered sub-topics.** "Identity Matrix" is a concept, not a
+module. Wikibooks stores a book as sub-pages and the API returns them sorted, so
+the "chapter list" for Linear Algebra is an *index*, not a teaching order —
+verified directly: the first 30 entries are exactly `sorted()`.
+
+So the 100% is real and the course is still wrong. That is precisely the blind
+spot `coverage_check.py` documents about itself — **presence is not sequence** —
+and it is why that tool's docstring says not to read it as a quality score. A
+second instrument disagreeing with the first has happened twice now in this
+work, and both times the disagreement was the finding.
+
+**Ordering is the pedagogy**, so a source that has none cannot be a spine.
+`_looks_alphabetical` now refuses such a list for copy-spine while leaving it
+available as a coverage checklist for backfill, which is order-independent. It
+judges by the *proportion* of in-order adjacent pairs rather than exact equality
+with `sorted()`, since a real syllabus occasionally has two adjacent chapters
+that happen to be alphabetical.
+
+The consequence: copy-spine no longer fires for the Wikibooks Linear Algebra
+listing and falls back to generation, which is correct. It still fires for
+OpenStax, whose books are sequenced as taught — a test pins both behaviours.
+
+**Condition 2's honest status:** copy-spine is the right mechanism and is proven
+to close the coverage gap when the source is properly ordered. Reaching parity
+now depends on having a *sequenced* source for the subject, which OpenStax
+provides for its 129 books and Wikibooks does not.

@@ -25,9 +25,24 @@ def _b(outlines):
     return b
 
 
+# A realistic chapter list: sequenced as taught, NOT alphabetical. Using
+# "Chapter 0, Chapter 1, ..." here would be sorted, and the alphabetical-index
+# guard would correctly refuse it — the fixture would then be testing the guard
+# rather than the behaviour under test.
+_TAUGHT_ORDER = [
+    "Vectors and Vector Spaces", "Solving Linear Systems", "Matrix Operations",
+    "Determinants", "Inverses and LU Factorization", "Basis and Dimension",
+    "The Four Fundamental Subspaces", "Orthogonality", "Projections",
+    "Least Squares", "Gram-Schmidt", "Eigenvalues", "Diagonalization",
+    "Symmetric Matrices", "Positive Definite Matrices", "Singular Value Decomposition",
+]
+
+
 def _outline(book, relevance, n_chapters, source="Wikibooks"):
+    chapters = [f"{_TAUGHT_ORDER[i % len(_TAUGHT_ORDER)]} {i // len(_TAUGHT_ORDER) or ''}".strip()
+                for i in range(n_chapters)]
     return {"book": book, "source": source, "relevance": relevance,
-            "url": "http://x", "chapters": [f"Chapter {i}" for i in range(n_chapters)]}
+            "url": "http://x", "chapters": chapters}
 
 
 class TestWhenItFires(unittest.TestCase):
@@ -67,12 +82,13 @@ class TestScopeAdaptation(unittest.TestCase):
         """A 154-chapter book is not a 6-module course. Taking the FIRST six
         chapters would keep only the introduction; the material the invented
         spines kept missing lives in the tail."""
-        chapters = [f"Topic {i:03d}" for i in range(154)]
+        # 154 sequenced (not sorted) chapters
+        chapters = [f"{_TAUGHT_ORDER[i % len(_TAUGHT_ORDER)]} part {i}"
+                    for i in range(154)]
         b = _b([{"book": "Linear Algebra", "relevance": 9.0, "source": "Wikibooks",
                  "url": "u", "chapters": chapters}])
         spine = b._spine_from_syllabus("Linear Algebra", 6)
         titles = [m["title"] for m in spine]
-        assert titles[0] == "Topic 000"
         assert int(titles[-1].split()[-1]) > 100, \
             f"spine stopped at {titles[-1]} — the book's later material was dropped"
 
@@ -85,3 +101,40 @@ class TestScopeAdaptation(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestAlphabeticalIndexIsNotASyllabus(unittest.TestCase):
+    """REGRESSION. Wikibooks stores a book as sub-pages and the API returns them
+    SORTED, so "Linear Algebra" comes back as Addition..., Any Matrix...,
+    Augmented Matrices, Basis, ... Copying that produced a course whose modules
+    were alphabetically-ordered sub-topics -- "Identity Matrix" as a module.
+
+    It scored 100% on the keyword coverage instrument, which is precisely the
+    blind spot that instrument documents about itself: presence is not sequence.
+    Ordering is the pedagogy.
+    """
+
+    def test_the_real_wikibooks_listing_is_refused(self):
+        alphabetical = [
+            "Addition, Multiplication, and Transpose", "Any Matrix Represents a Linear Map",
+            "Augmented Matrices", "Basis", "Basis Vectors", "Basis and Dimension",
+            "Change of Basis", "Changing Map Representations", "Characteristic Equation",
+            "Cofactors and Minors", "Column and Row Spaces", "Determinants",
+        ]
+        b = _b([{"book": "Linear Algebra", "relevance": 9.0, "source": "Wikibooks",
+                 "url": "u", "chapters": alphabetical}])
+        assert b._spine_from_syllabus("Linear Algebra", 6) is None
+
+    def test_a_taught_order_is_accepted(self):
+        """OpenStax books are ordered as taught, so they must still qualify."""
+        taught = ["Whole Numbers", "The Language of Algebra", "Integers",
+                  "Fractions", "Decimals", "Percents",
+                  "The Properties of Real Numbers", "Solving Linear Equations"]
+        b = _b([{"book": "Prealgebra", "relevance": 9.0, "source": "OpenStax",
+                 "url": "u", "chapters": taught}])
+        spine = b._spine_from_syllabus("Prealgebra", 4)
+        assert spine is not None and len(spine) == 4
+
+    def test_a_short_list_is_not_judged(self):
+        from services.core.course_builder import _looks_alphabetical
+        assert _looks_alphabetical(["A", "B", "C"]) is False
