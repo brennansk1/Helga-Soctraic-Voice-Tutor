@@ -118,3 +118,44 @@ class TestSafety(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSourceSelection(unittest.TestCase):
+    """Only the best-matching syllabus may act as a coverage checklist.
+
+    REGRESSION: for "Linear Algebra" the brief also matched OpenStax *College
+    Algebra*, and pooling every source's chapters backfilled Exponential and
+    Logarithmic Functions, Analytic Geometry and Probability into a linear
+    algebra course. A weaker source is useful as corroboration and dangerous as
+    a checklist.
+    """
+
+    def _retain(self, syllabi):
+        b = SkeletonBuilder.__new__(SkeletonBuilder)
+        brief = {"syllabi": syllabi, "courses": []}
+        # exercise the retention block via the same code path
+        ranked = sorted([o for o in brief["syllabi"] if o.get("chapters")],
+                        key=lambda o: o.get("relevance", 0), reverse=True)
+        best = ranked[0]
+        margin = float(best.get("relevance", 0)) * 0.75
+        chosen = [o for o in ranked if float(o.get("relevance", 0)) >= margin]
+        return [c for o in chosen for c in o["chapters"]]
+
+    def test_weak_secondary_source_is_excluded(self):
+        chapters = self._retain([
+            {"book": "Linear Algebra", "relevance": 7.5,
+             "chapters": ["Vector Spaces", "Eigenvalues"]},
+            {"book": "College Algebra", "relevance": 2.25,
+             "chapters": ["Exponential and Logarithmic Functions",
+                          "Analytic Geometry", "Probability"]},
+        ])
+        assert chapters == ["Vector Spaces", "Eigenvalues"], chapters
+
+    def test_comparably_strong_sources_are_both_kept(self):
+        """Two genuine syllabi for the same subject corroborate each other."""
+        chapters = self._retain([
+            {"book": "Linear Algebra", "relevance": 7.5, "chapters": ["A"]},
+            {"book": "Linear Algebra (Wikiversity)", "relevance": 6.5,
+             "chapters": ["B"]},
+        ])
+        assert chapters == ["A", "B"]

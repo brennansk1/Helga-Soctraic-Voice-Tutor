@@ -304,6 +304,34 @@ def _level_of_title(book):
     return None
 
 
+def _title_match_bonus(topic, book):
+    """Extra weight when the book IS the subject, not merely adjacent to it.
+
+    MEASURED FAILURE: for topic "Linear Algebra", OpenStax *College Algebra*
+    scored 4.75 against Wikibooks *Linear Algebra*'s 4.67 and won -- one shared
+    token ("algebra") plus a level-marker bonus ("College") outweighed being the
+    actual subject. Chapters from College Algebra (Exponential and Logarithmic
+    Functions, Analytic Geometry, Probability) were then pulled into a linear
+    algebra course.
+
+    Topic fit alone cannot fix this: both books genuinely score on "algebra".
+    What distinguishes them is that one title CONTAINS the whole topic and the
+    other only overlaps it.
+    """
+    t, b = _normalise_for_match(topic), _normalise_for_match(book)
+    if not t or not b:
+        return 0.0
+    if t == b:
+        return 6.0            # the book is the subject
+    if t in b or b in t:
+        return 3.0            # "Linear Algebra" vs "Linear Algebra/Advanced"
+    return 0.0
+
+
+def _normalise_for_match(text):
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", (text or "").lower())).strip()
+
+
 def _relevance(topic, book, chapters, subjects=None, mastery=None):
     """How well does this book serve THIS topic at THIS level?
 
@@ -361,7 +389,7 @@ def _relevance(topic, book, chapters, subjects=None, mastery=None):
     n = len(chapters or [])
     if n > 120:
         score -= 1.0
-    return score
+    return _title_match_bonus(topic, book) + score
 
 
 def _openstax_release():

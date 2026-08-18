@@ -1473,13 +1473,34 @@ class SkeletonBuilder:
         # Keep the raw chapter list, not just the rendered text: coverage
         # backfill needs to compare titles against titles, and re-parsing prose
         # to recover a list we already had is how detail gets lost.
+        #
+        # Only the BEST-matching syllabus may drive backfill. Pooling every
+        # matched source sounds more thorough and is not: for "Linear Algebra"
+        # the brief also matched OpenStax *College Algebra*, and pooling pulled
+        # Exponential and Logarithmic Functions, Analytic Geometry and
+        # Probability into a linear algebra course. A weaker source is useful as
+        # corroboration and dangerous as a checklist -- backfill treats its input
+        # as "material this course MUST reach", which is a claim only the primary
+        # source has earned.
         try:
-            self._syllabus_chapters = [
-                c for o in (brief.get("syllabi") or []) for c in (o.get("chapters") or [])
-            ] + [
-                sec for c in (brief.get("courses") or []) for sec in (c.get("sections") or [])
-            ]
-        except Exception:
+            ranked = sorted(
+                [o for o in (brief.get("syllabi") or []) if o.get("chapters")],
+                key=lambda o: o.get("relevance", 0), reverse=True)
+            if ranked:
+                best = ranked[0]
+                margin = float(best.get("relevance", 0)) * 0.75
+                chosen = [o for o in ranked if float(o.get("relevance", 0)) >= margin]
+                self._syllabus_chapters = [c for o in chosen
+                                           for c in (o.get("chapters") or [])]
+                if len(chosen) < len(ranked):
+                    logger.info(
+                        f"[BACKFILL] using {len(chosen)} of {len(ranked)} syllabi "
+                        f"(best: {best.get('book')!r} @ {best.get('relevance')}); "
+                        f"weaker sources excluded from the coverage checklist")
+            else:
+                self._syllabus_chapters = []
+        except Exception as e:
+            logger.debug(f"chapter retention failed: {e}")
             self._syllabus_chapters = []
         return format_brief(brief)
 
