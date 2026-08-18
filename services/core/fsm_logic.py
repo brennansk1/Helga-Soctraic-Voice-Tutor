@@ -2599,7 +2599,14 @@ class MnemosyneFSM:
         reason}. Tolerant of code fences, stray prose, and "Grade N" strings. On
         None or unparseable content, grade defaults to 2 (partial) — never a
         passing grade, so a grading failure can't silently credit mastery (B3.3)."""
-        fail = {"grade": 2, "missing_concepts": [], "feedback": "", "reason": ""}
+        # `graded` marks this as a real assessment. The grade-2 default is the
+        # right fail-safe -- it never credits mastery -- but it is currently
+        # INDISTINGUISHABLE downstream from a learner who genuinely earned a 2.
+        # FSRS scheduling, mastery gates and (under the programme design) a
+        # course pass all consume these, and a grade fabricated during an LLM
+        # outage is data about the infrastructure, not about the learner.
+        fail = {"grade": 2, "missing_concepts": [], "feedback": "", "reason": "",
+                "graded": False, "grade_source": "fallback"}
         if not content:
             logging.error("LLM Grading returned None")
             return fail
@@ -2625,8 +2632,7 @@ class MnemosyneFSM:
                         result = {"grade": int(any_grade.group(1))}
                     else:
                         raise e
-            return {
-                "grade": int(result.get("grade", 3)),
+            return {"graded": True, "grade_source": "llm", "grade": int(result.get("grade", 3)),
                 "missing_concepts": result.get("missing_concepts", []),
                 "feedback": result.get("feedback", ""),
                 "reason": result.get("reason", ""),
