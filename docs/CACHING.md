@@ -30,7 +30,7 @@ whose sources were deliberately made to fail. Every cache below has an opt-out.
 
 | layer | what | TTL | opt-out |
 |---|---|---|---|
-| `syllabus_sources._get_json` | **all** MediaWiki + Internet Archive lookups — `_search_book`, `_chapters_of`, `_wikipedia_sections`, `_wikiversity_course_shapes`, `_internet_archive_books` | 7 d | `HELGA_RESEARCH_CACHE=0` |
+| `syllabus_sources._get_json` | **all** MediaWiki + Internet Archive + OpenStax lookups — `_search_book`, `_chapters_of`, `_wikipedia_sections`, `_wikiversity_course_shapes`, `_internet_archive_books`, `_openstax_release/_catalogue/_chapters` | 7 d | `HELGA_RESEARCH_CACHE=0` |
 | `curriculum_research.curriculum_brief` | assembled brief per (topic, level, broader) | 7 d | `use_cache=False`, `HELGA_BRIEF_CACHE=0` |
 | `research_server` | web search / page extraction | 24 h / 7 d | — |
 
@@ -39,6 +39,10 @@ Measured: `subject_outline('The Pythagorean Theorem')` 73.93 s → **0.43 s**
 
 ## Still uncached — candidates, with the caveat that matters
 
+0. **Done since this was written:** the SearXNG search cache no longer stores an
+   empty result caused by a CAPTCHA — it had a 24 h TTL, so a transient block
+   became a day-long "nothing exists on the web about this concept". That is the
+   successes-only rule below, violated where it cost most.
 1. **The parent-subject lookup.** `"What academic subject is X part of?"` is a
    tiny, effectively deterministic LLM call made once per build and identical
    across rebuilds of the same topic. Safe to cache; pure win.
