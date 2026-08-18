@@ -13,7 +13,7 @@ That collapses five separate features into one abstraction plus a planner:
 |---|---|
 | College Course, 1 semester | 1 course |
 | College Course, 2 semesters | 2 courses (Linear Algebra I → II) |
-| Associate | ~30 courses |
+| Associate | ~20 courses |
 | Bachelor's | ~40 courses |
 | Seminar (day/weekend/week) | 1 course, small scope |
 
@@ -31,7 +31,7 @@ is **30 concepts ≈ 60 min**.
 | program | courses | concepts | build time if eager |
 |---|---|---|---|
 | 2-semester | 2 | 60 | ~2 h |
-| Associate | ~30 | 900 | **~30 h** |
+| Associate | ~20 | 600 | **~20 h** |
 | Bachelor's | ~40 | 1,200 | **~40 h** |
 
 Generating a degree up front is 40 hours of compute for an artifact representing
@@ -57,13 +57,35 @@ reliable source would make the whole feature as fragile as its weakest input.
 Invert it. Degree *shape* is stable public knowledge and belongs in a template:
 
 ```
-Associate  ~30 courses: gen-ed 10 · core 14 · electives 5  · capstone 1
-Bachelor's ~40 courses: gen-ed 12 · core 16 · electives 9  · capstone 3
+Associate  60 credits  ~20 courses: gen-ed 7 · core 9  · electives 3 · capstone 1
+Bachelor's 120 credits ~40 courses: gen-ed 12 · core 16 · electives 9 · capstone 3
 ```
 
-(Course counts are the spec, not derived from credit hours — a 3-credit
-assumption gives 20 for an associate, which undercounts labs and 1–2 credit
-requirements.)
+**Verified against published sources rather than assumed** (2026-08-18):
+
+| | credits | courses | terms | years |
+|---|---|---|---|---|
+| Associate | 60 | ~20 | 4 | 2 |
+| Bachelor's | 120 | ~40 | 8 | 4 |
+
+A semester is ~15 weeks; a course is 3–4 credit hours; a full-time load is 12–18
+credits, i.e. **4–6 courses per term**.
+
+An earlier draft used 30 courses for an associate. The arithmetic rules it out:
+at 4–6 courses per term over two terms a year, 30 courses is three years, and an
+associate is by definition a **two-year** degree. 20 courses ÷ 5 per term ÷ 2
+terms = 2 years exactly, and 40 ÷ 5 ÷ 2 = 4 years for a bachelor's. The two
+independent facts agree, which is the check worth trusting.
+
+### Module count per course is already right
+
+A module is conventionally ~2 weeks of a semester, giving **7–8 modules** per
+15-week course (some schools instead use three 5-week blocks).
+
+Helga's College Course preset yields `concepts_per_module 5` and
+`total_concepts_approx 30` — **6 modules of 5 concepts**. That sits inside the
+real range without any change. The existing calibration is sound; only the
+program layer above it is new.
 
 Research then supplies **which subjects fill each slot**, as evidence, using the
 tiered matching already designed for skeletons (at-level match → copy; one level
