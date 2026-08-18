@@ -124,7 +124,13 @@ class LLMClient:
         # Constrained decoding: a JSON schema forces schema-valid output; plain
         # json_mode only nudges toward JSON. Prefer the schema when given.
         if json_schema is not None:
+            # See llm_utils: `format` is the NATIVE field and is ignored by /v1.
+            # Send both so one payload constrains on either endpoint.
             payload["format"] = json_schema
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": "helga_schema", "schema": json_schema},
+            }
         elif json_mode:
             payload["format"] = "json"
 

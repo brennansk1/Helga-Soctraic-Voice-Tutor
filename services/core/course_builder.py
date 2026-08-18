@@ -1364,20 +1364,29 @@ class SkeletonBuilder:
         except Exception as e:
             logger.debug(f"[SKELETON] parent-subject lookup failed: {e}")
 
+        # ONE broadened lookup, not one full sweep per candidate.
+        #
+        # This loop used to call curriculum_brief() once per candidate, and each
+        # call is a complete Wikibooks + Wikiversity + Wikipedia + Internet
+        # Archive sweep. Wikimedia throttles bursts, so by the third candidate —
+        # reliably the discipline-level one that actually has a syllabus — the
+        # API returned empty and the build proceeded UNGUIDED. Measured: a
+        # standalone curriculum_brief('Geometry') finds 31 chapters, while the
+        # same call as the third in a burst found 0.
+        #
+        # subject_outline() already accepts broader_subjects and tries them
+        # internally; passing them collapses three sweeps into one.
         brief = None
-        for candidate in [topic] + broader:
-            try:
-                brief = curriculum_brief(
-                    candidate, mastery=self.mastery, scope=self.scope,
-                    starting_from=self.starting_from,
-                    preset_label=getattr(self, "preset_label", None))
-            except Exception as e:
-                logger.warning(f"[SKELETON] curriculum_brief failed for {candidate!r}: {e}")
-                continue
-            if brief.get("found"):
-                if candidate != topic:
-                    logger.info(f"[SKELETON] {topic!r} had no syllabus; used {candidate!r}")
-                break
+        try:
+            brief = curriculum_brief(
+                topic, mastery=self.mastery, scope=self.scope,
+                starting_from=self.starting_from,
+                preset_label=getattr(self, "preset_label", None),
+                broader_subjects=broader)
+        except Exception as e:
+            logger.warning(f"[SKELETON] curriculum_brief failed for {topic!r}: {e}")
+        if brief and brief.get("found") and broader:
+            logger.info(f"[SKELETON] evidence for {topic!r} (broadened via {broader})")
 
         if not brief or not brief.get("found"):
             logger.warning(
@@ -1516,6 +1525,274 @@ class SkeletonBuilder:
                 f"LOG: merged {merged} single-concept lesson(s) into siblings")
         return merged
 
+
+    # ---- Consolidated subtree generation (one call per module) -------------
+    #
+    # The nested path below generates units, then lessons per unit, then
+    # concepts per lesson: 1 + U + U*L calls per module (~28 for a 4-module
+    # course). That decomposition is a SMALL-MODEL pattern. Each call is blind
+    # to its siblings, so uniqueness has to be enforced from outside by
+    # injecting a blacklist of already-used titles into every prompt.
+    #
+    # With the project model (34.7B MoE, 256K context) the whole module subtree
+    # fits in one generation, which is both fewer round trips AND better
+    # structure: the model chooses lesson and concept names while it can see the
+    # unit layout, instead of being told after the fact what not to repeat.
+    #
+    # Per-MODULE rather than per-COURSE on purpose:
+    #   * each module has its own Bloom target
+    #   * cross-module coverage context still feeds the next module's prompt
+    #   * progress stays granular (a module is a visible unit of work)
+    #   * a failure costs one module's retry, not the whole course
+    #
+    # Every validation from the nested path is preserved: title normalisation,
+    # duplicate rejection, fallback synthesis + counting, Bloom stamping, uid
+    # generation and the STRUCT:* progress events.
+
+    SUBTREE_SCHEMA = {
+        "type": "object",
+        "properties": {
+            "units": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "description": {"type": "string"},
+                        "lessons": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "title": {"type": "string"},
+                                    "concepts": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "title": {"type": "string"},
+                                                "objectives": {
+                                                    "type": "array",
+                                                    "items": {"type": "string"},
+                                                },
+                                            },
+                                            "required": ["title", "objectives"],
+                                        },
+                                    },
+                                },
+                                "required": ["title", "concepts"],
+                            },
+                        },
+                    },
+                    "required": ["title", "lessons"],
+                },
+            }
+        },
+        "required": ["units"],
+    }
+
+    def _build_module_subtree_oneshot(
+        self, m_ref, topic, mastery_label, base_units, base_lessons,
+        base_concepts, module_bloom_level, module_specific_depth,
+        prev_context_str, mastery_constraint,
+    ):
+        """Generate one module's whole units->lessons->concepts tree in a single
+        LLM call. Returns the list of summary lines for cross-module context."""
+        m_title = m_ref["title"]
+        m_role = m_ref["role_desc"]
+        module_dict = m_ref["dict"]
+        positive_scope_str = ", ".join(m_ref["scope"])
+        _bloom_label = BLOOM_LABELS.get(int(module_bloom_level), "Understand")
+
+        if self.status_callback:
+            self.status_callback(f"LOG: Generating full subtree for module: {m_title}")
+
+        prompt = (
+            f"Course: {topic}\n"
+            f"Module: {m_title}\n"
+            f"Module scope: {positive_scope_str}\n"
+            f"Mastery: {mastery_label} ({self.mastery}/5)\n"
+            f"Bloom target: {module_bloom_level} ({_bloom_label})\n\n"
+            f"### ALREADY COVERED EARLIER IN THIS COURSE (do not repeat or paraphrase):\n"
+            f"{prev_context_str}\n\n"
+            f"Design this module's COMPLETE structure in one pass:\n"
+            f"  - exactly {base_units} unit(s)\n"
+            f"  - exactly {base_lessons} lesson(s) per unit\n"
+            f"  - exactly {base_concepts} concept(s) per lesson\n"
+            f"  - exactly 2 learning objectives per concept, written for Bloom "
+            f"{module_bloom_level} ({_bloom_label})\n\n"
+            f"Because you are designing the whole module at once, you can see every "
+            f"sibling you create. Use that: no two units, lessons or concepts anywhere "
+            f"in this module may cover the same ground, and none may restate a title "
+            f"listed as already covered above.\n\n"
+            f"TITLES — specific, real terminology from {topic}:\n"
+            f"  - units 2-5 words, lessons 3-8 words, concepts 2-6 words\n"
+            f"  - a reader must know exactly what is taught from the title alone\n"
+            f"  - do NOT use: Introduction to X, Overview of X, Understanding X, X Part N,\n"
+            f"    Fundamentals, Principles, Framework, Dynamics, Axioms, Modelling\n"
+            f"{mastery_constraint}\n"
+            f"Return JSON only, shaped exactly:\n"
+            f'{{"units": [{{"title": "...", "description": "...", "lessons": '
+            f'[{{"title": "...", "concepts": [{{"title": "...", "objectives": ["...", "..."]}}]}}]}}]}}'
+        )
+        sys_prompt = (
+            f"Expert {topic} curriculum designer building a {mastery_label}-level module. "
+            f"You are producing a complete, internally-consistent module tree in one "
+            f"response. Match complexity to mastery {self.mastery}/5 and Bloom "
+            f"{module_bloom_level}. Use only real, established terminology from {topic} — "
+            f"never invent terms. Prefer fewer items over padding with synonyms. "
+            f"Return strict JSON matching the requested shape."
+        )
+
+        # Budget scales with the tree size; a truncated tree is the one real
+        # failure mode of consolidating, so give it room.
+        est_leaves = max(1, base_units) * max(1, base_lessons) * max(1, base_concepts)
+        max_tokens = min(6000, 700 + est_leaves * 160)
+
+        data = llm_generate_json(
+            prompt,
+            sys_prompt=sys_prompt,
+            max_tokens=max_tokens,
+            expected_type="dict",
+            schema=self.SUBTREE_SCHEMA,
+            progress_callback=self.status_callback,
+        )
+        # Tolerate shape drift. A model (or a differently-configured server) may
+        # return the units ARRAY directly instead of the wrapper object; an
+        # earlier version assumed a dict and raised AttributeError on a list,
+        # which crashed the build instead of degrading to the chunked path.
+        if isinstance(data, dict):
+            units_data = data.get("units") or []
+        elif isinstance(data, list):
+            units_data = data
+        else:
+            units_data = []
+        # Every element must be a mapping — a list of strings is not a subtree.
+        units_data = [u for u in units_data if isinstance(u, dict)]
+        if not units_data:
+            logger.warning(
+                f"  [ONESHOT] Empty subtree for module '{m_title}' — "
+                f"falling back to the chunked path."
+            )
+            return None   # caller falls back to the nested path
+
+        m_summary_lines = [f"Module: {m_title} (Scope: {positive_scope_str})"]
+        units_data = units_data[:base_units]
+
+        for u_idx, unit_data in enumerate(units_data, 1):
+            u_title = self._normalize_title(unit_data.get("title", ""))
+            unit_used_fallback = False
+            if not u_title or self._is_duplicate(u_title, course_topic=topic, level="unit"):
+                u_title = f"{m_title} Part {u_idx}"
+                unit_used_fallback = True
+                self.fallback_count += 1
+                logger.warning(
+                    f"  [FALLBACK] unit {u_idx} in '{m_title}' — duplicate or empty."
+                )
+            self.used_titles.add(u_title)
+            self.used_titles_by_level["unit"].add(u_title)
+            unit_dict = {
+                "uid": f"unit_{uuid.uuid4().hex[:8]}",
+                "title": u_title,
+                "ordinal": u_idx,
+                "lessons": [],
+            }
+            if unit_used_fallback:
+                unit_dict["llm_fallback"] = True
+            module_dict["units"].append(unit_dict)
+            m_summary_lines.append(
+                f"  Unit: {u_title} — {unit_data.get('description', '')}"
+            )
+            if self.status_callback:
+                self.status_callback(f"STRUCT:UNIT:{u_title}")
+
+            for l_idx, lesson_data in enumerate(
+                (unit_data.get("lessons") or [])[:base_lessons], 1
+            ):
+                l_title = self._normalize_title(lesson_data.get("title", ""))
+                lesson_used_fallback = False
+                if not l_title or self._is_duplicate(
+                    l_title, course_topic=topic, level="lesson"
+                ):
+                    l_title = f"{u_title} Lesson {l_idx}"
+                    lesson_used_fallback = True
+                    self.fallback_count += 1
+                    logger.warning(
+                        f"  [FALLBACK] lesson {l_idx} in unit '{u_title}' — duplicate or empty."
+                    )
+                self.used_titles.add(l_title)
+                self.used_titles_by_level["lesson"].add(l_title)
+                lesson_dict = {
+                    "uid": f"less_{uuid.uuid4().hex[:8]}",
+                    "title": l_title,
+                    "ordinal": l_idx,
+                    "concepts": [],
+                }
+                if lesson_used_fallback:
+                    lesson_dict["llm_fallback"] = True
+                unit_dict["lessons"].append(lesson_dict)
+                m_summary_lines.append(f"    Lesson: {l_title}")
+                if self.status_callback:
+                    self.status_callback(f"STRUCT:LESSON:{l_title}")
+
+                concept_titles = []
+                for c_idx, concept_data in enumerate(
+                    (lesson_data.get("concepts") or [])[:base_concepts], 1
+                ):
+                    c_title = self._normalize_title(concept_data.get("title", ""))
+                    if not c_title or self._is_duplicate(
+                        c_title, course_topic=topic, level="concept"
+                    ):
+                        continue
+                    self.used_titles.add(c_title)
+                    self.used_titles_by_level["concept"].add(c_title)
+                    concept_titles.append(c_title)
+                    c_uid = f"con_{uuid.uuid4().hex[:8]}"
+                    lesson_dict["concepts"].append({
+                        "uid": c_uid,
+                        "title": c_title,
+                        "learning_objectives": concept_data.get(
+                            "objectives", [f"Understand {c_title}"]
+                        ),
+                        "complexity_role": m_role,
+                        "depth_level": module_specific_depth,
+                        "bloom_level": int(module_bloom_level),
+                        "ordinal": c_idx,
+                    })
+                    if self.status_callback:
+                        self.status_callback(f"STRUCT:CONCEPT:{c_uid}:{c_title}")
+
+                # Same black-hole guard as the chunked path: never ship an
+                # empty lesson.
+                if not lesson_dict["concepts"]:
+                    for pad_idx in range(1, base_concepts + 1):
+                        pad_title = f"{l_title} Part {pad_idx}"
+                        self.used_titles.add(pad_title)
+                        self.used_titles_by_level["concept"].add(pad_title)
+                        concept_titles.append(pad_title)
+                        lesson_dict["concepts"].append({
+                            "uid": f"con_{uuid.uuid4().hex[:8]}",
+                            "title": pad_title,
+                            "learning_objectives": [f"Understand {l_title}"],
+                            "complexity_role": m_role,
+                            "depth_level": module_specific_depth,
+                            "bloom_level": int(module_bloom_level),
+                            "ordinal": pad_idx,
+                            "llm_fallback": True,
+                        })
+                        self.fallback_count += 1
+                    logger.warning(
+                        f"  [FALLBACK] Lesson '{l_title}' had 0 concepts after dedup — "
+                        f"backfilled with {base_concepts} Part-N stubs."
+                    )
+
+                if concept_titles:
+                    m_summary_lines.append(
+                        f"      Concepts: {', '.join(concept_titles)}"
+                    )
+
+        return m_summary_lines
+
     def _build_substructures_progressive(
         self, module_refs, max_depth, topic, all_modules_metadata,
         module_bloom_targets=None,
@@ -1596,6 +1873,22 @@ class SkeletonBuilder:
                 if planned_hierarchy_summary
                 else "No modules covered yet."
             )
+
+            # CONSOLIDATED PATH (default): one call for this module's whole
+            # subtree instead of 1 + U + U*L calls. Falls through to the chunked
+            # path below if it returns nothing, so a bad generation degrades to
+            # the old behaviour rather than to an empty module.
+            if os.getenv("HELGA_ONESHOT_SUBTREE", "1").lower() in ("1", "true", "yes"):
+                _lines = self._build_module_subtree_oneshot(
+                    m_ref, topic, mastery_label, base_units, base_lessons,
+                    base_concepts, module_bloom_level, module_specific_depth,
+                    prev_context_str, mastery_constraint,
+                )
+                if _lines:
+                    planned_hierarchy_summary.append("\n".join(_lines))
+                    continue
+                # reset any partial subtree before retrying the chunked way
+                module_dict["units"] = []
 
             # Bloom-progressive level constraints per module
             ordinal = module_dict.get("ordinal", 1)

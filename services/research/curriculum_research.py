@@ -34,6 +34,7 @@ it produces the worst of both.
 """
 
 import logging
+import os
 import re
 import time
 
@@ -143,13 +144,45 @@ def _wikiversity_course_shapes(subject, limit=3):
 # undone rather than faked.
 
 
+# Disk cache for briefs. Keyed on the inputs that change the answer.
+#
+# ONLY SUCCESSES ARE CACHED. A miss here is ambiguous — it may mean "this
+# subject has no open textbook" or "Wikimedia throttled us this second" — and
+# caching the second kind would make a transient failure permanent for the
+# whole TTL. That is the same absent-vs-zero confusion that made a 6-title
+# brief look like evidence, so it is worth the occasional re-query.
+try:
+    from diskcache import Cache as _DiskCache
+    _BRIEF_CACHE = _DiskCache(
+        os.path.join(os.getenv("DATA_ROOT", "/app/data"), "cache", "curriculum"))
+    _BRIEF_TTL = 7 * 24 * 3600
+except Exception:            # diskcache absent (unit tests) — degrade to no cache
+    _BRIEF_CACHE = None
+    _BRIEF_TTL = 0
+
+
 def curriculum_brief(topic, mastery=3, scope=3, starting_from=1,
-                     preset_label=None):
+                     preset_label=None, broader_subjects=None, use_cache=True):
     """Evidence for what a course on `topic` should contain, at this level.
 
     Returns a dict the builder turns into a prompt. Never raises: an empty
     brief means the builder generates unguided, and says so.
     """
+    # `use_cache=False` bypasses the disk cache entirely. Needed by anything
+    # asserting on the LIVE source behaviour — a cached success would otherwise
+    # satisfy a call whose sources were deliberately made to fail, which is
+    # exactly how a cache turns a real regression into a green test.
+    _cache_on = (use_cache
+                 and os.getenv("HELGA_BRIEF_CACHE", "1").lower() not in ("0", "false", "no"))
+    _ck = None
+    if _BRIEF_CACHE is not None and _cache_on:
+        _ck = f"brief:{topic}|{mastery}|{scope}|{starting_from}|{tuple(broader_subjects or ())}"
+        _hit = _BRIEF_CACHE.get(_ck)
+        if _hit:
+            logger.info(f"curriculum_brief({topic!r}): cache hit "
+                        f"({_hit.get('chapter_count', 0)} chapters)")
+            return _hit
+
     prof = _level_profile(mastery)
     brief = {
         "topic": topic,
@@ -160,8 +193,17 @@ def curriculum_brief(topic, mastery=3, scope=3, starting_from=1,
     }
 
     # 1. Open-textbook syllabi — the strongest structural evidence.
+    #
+    # `broader_subjects` exists precisely for the narrow-topic case that
+    # produced the 42%-coverage course: "the pythagorean theorem" matches no
+    # Wikibook, but Geometry has 31+ chapters. It was NOT being passed, so the
+    # builder compensated with an outer loop that re-ran this whole sweep once
+    # per candidate — three full Wikibooks+Wikiversity+Wikipedia+Archive passes.
+    # Wikimedia throttles bursts, so the THIRD candidate (the one that works)
+    # came back empty and the build went unguided. One call that broadens
+    # internally is both correct and ~3x fewer requests.
     try:
-        outline = subject_outline(topic)
+        outline = subject_outline(topic, broader_subjects=broader_subjects)
         brief["syllabi"] = outline.get("outlines", [])
         brief["vocabulary"] = outline.get("vocabulary", [])
     except Exception as e:
@@ -203,6 +245,11 @@ def curriculum_brief(topic, mastery=3, scope=3, starting_from=1,
         logger.warning(
             f"curriculum_brief({topic!r}): {len(brief['canonical_texts'])} book "
             f"titles but NO chapter structure — treating as no evidence")
+    if brief["found"] and _BRIEF_CACHE is not None and _cache_on and _ck:
+        try:
+            _BRIEF_CACHE.set(_ck, brief, expire=_BRIEF_TTL)
+        except Exception as e:
+            logger.debug(f"brief cache write failed: {e}")
     return brief
 
 

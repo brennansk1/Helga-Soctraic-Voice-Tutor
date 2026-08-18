@@ -37,7 +37,7 @@ class TestEvidenceMustBeStructural(unittest.TestCase):
              patch.object(cr, '_wikiversity_course_shapes', return_value=courses or []), \
              patch.object(cr, '_internet_archive_books', return_value=texts or []), \
              patch.object(cr.time, 'sleep', lambda *a: None):
-            return cr.curriculum_brief('x', mastery=3, scope=3)
+            return cr.curriculum_brief('x', mastery=3, scope=3, use_cache=False)
 
     def test_titles_alone_are_not_evidence(self):
         """A brief holding six book titles and zero chapters guided nothing
@@ -62,7 +62,7 @@ class TestEvidenceMustBeStructural(unittest.TestCase):
              patch.object(cr, '_wikiversity_course_shapes', side_effect=boom), \
              patch.object(cr, '_internet_archive_books', side_effect=boom), \
              patch.object(cr.time, 'sleep', lambda *a: None):
-            b = cr.curriculum_brief('x')
+            b = cr.curriculum_brief('x', use_cache=False)
         self.assertFalse(b['found'])
 
 
@@ -80,7 +80,7 @@ class TestOneSourceIsNotCountedTwice(unittest.TestCase):
              patch.object(cr, '_wikiversity_course_shapes', return_value=[dup]), \
              patch.object(cr, '_internet_archive_books', return_value=[]), \
              patch.object(cr.time, 'sleep', lambda *a: None):
-            b = cr.curriculum_brief('cell biology')
+            b = cr.curriculum_brief('cell biology', use_cache=False)
         self.assertEqual(b['courses'], [], 'the same book was counted twice')
 
 

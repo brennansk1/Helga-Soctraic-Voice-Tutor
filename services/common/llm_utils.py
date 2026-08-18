@@ -428,9 +428,17 @@ def llm_generate(
         try:
             req_id = f"req_{int(time.time())}_{attempt}"
             _role_url, _role_model = resolve_role(role)
-            temp = 0.7 + (
-                attempt * 0.1
-            )  # Standard temperature, slight increase on retry
+            # TEMPERATURE POLICY.
+            # Prose generation benefits from a nudge upward on retry — a second
+            # identical sample is wasted work. STRUCTURED generation is the
+            # opposite: when a schema pins the shape, the retry exists because
+            # the CONTENT was wrong, and raising temperature makes a
+            # shape-conforming-but-wrong answer *more* likely, not less. So
+            # schema-constrained calls start cooler and get cooler still.
+            if isinstance(json_format, dict):
+                temp = max(0.15, 0.35 - attempt * 0.1)
+            else:
+                temp = 0.7 + attempt * 0.1
 
             data = {
                 # Resolved per ROLE, not from one global variable. This helper
@@ -494,7 +502,19 @@ def llm_generate(
                 # "json") makes Ollama constrain generation so invalid JSON
                 # cannot be produced in the first place. repair_json() stays as
                 # a backstop for callers that don't pass one.
-                **({"format": json_format} if json_format else {}),
+                # CONSTRAINED DECODING. `format` is Ollama's NATIVE-API field and is
+                # SILENTLY IGNORED on the OpenAI-compatible /v1 endpoint we post to —
+                # the correct field there is `response_format`. Verified 2026-08-18 on
+                # nail-35b-a3b with a nested schema: `format` -> 2408 chars of
+                # free-form shape that failed a strict parse; `response_format` -> 202
+                # chars matching the schema exactly. Send BOTH so the same payload
+                # works against a native endpoint and against /v1 (and mlx_lm).
+                **({"format": json_format,
+                    "response_format": {
+                        "type": "json_schema",
+                        "json_schema": {"name": "helga_schema", "schema": json_format},
+                    }} if isinstance(json_format, dict) else
+                   {"format": json_format} if json_format else {}),
             }
             logger.info(
                 f"[{req_id}] LLM Call (tokens:{max_tokens}, temp:{temp:.1f}, "
@@ -554,6 +574,43 @@ def llm_generate(
     return ""
 
 
+
+def _describe_schema_mismatch(result, schema, path="root"):
+    """Name the FIRST concrete way `result` violates `schema`, in words a model
+    can act on. Deliberately shallow and cheap: the point is a usable hint for
+    the next attempt, not a full JSON-Schema validator."""
+    try:
+        exp = schema.get("type")
+        if exp == "object":
+            if not isinstance(result, dict):
+                return f"{path} must be a JSON object, got {type(result).__name__}"
+            for key in schema.get("required", []):
+                if key not in result:
+                    return f"{path} is missing the required key '{key}'"
+            for key, sub in (schema.get("properties") or {}).items():
+                if key in result:
+                    deeper = _describe_schema_mismatch(result[key], sub, f"{path}.{key}")
+                    if deeper:
+                        return deeper
+        elif exp == "array":
+            if not isinstance(result, list):
+                return f"{path} must be a JSON array, got {type(result).__name__}"
+            if not result:
+                return f"{path} is an empty array; it must contain at least one item"
+            item_schema = schema.get("items")
+            if isinstance(item_schema, dict):
+                for i, item in enumerate(result[:3]):
+                    deeper = _describe_schema_mismatch(item, item_schema, f"{path}[{i}]")
+                    if deeper:
+                        return deeper
+        elif exp == "string" and not isinstance(result, str):
+            return f"{path} must be a string, got {type(result).__name__}"
+        elif exp in ("number", "integer") and not isinstance(result, (int, float)):
+            return f"{path} must be a number, got {type(result).__name__}"
+    except Exception:
+        pass
+    return "" if schema else ""
+
 def llm_generate_json(
     prompt: str,
     sys_prompt: str = "Expert content assistant. Always return structured JSON data.",
@@ -576,6 +633,7 @@ def llm_generate_json(
       2. repair_json() for unconstrained output (trailing commas, quotes, ...)
       3. retry, escalating to constrained JSON mode if the first attempt failed
     """
+    _base_prompt = prompt   # retries append corrective notes; keep the original
     for attempt in range(retries):
         # Constrain ONLY with a caller-supplied schema.
         #
@@ -608,8 +666,21 @@ def llm_generate_json(
         if result is not None:
             # LLM-2: Validate against schema if provided
             if schema and not validate_schema(result, schema):
+                # Retry against the NAMED mismatch rather than re-rolling blind.
+                # This is the pattern the depth contract already proved on this
+                # project: regenerating "against the named missing element"
+                # converges, while an identical re-roll mostly reproduces the
+                # same defect and burns a call.
+                _detail = _describe_schema_mismatch(result, schema)
                 logger.warning(
-                    f"Attempt {attempt + 1}/{retries}: Schema validation failed"
+                    f"Attempt {attempt + 1}/{retries}: Schema validation failed "
+                    f"({_detail})"
+                )
+                prompt = (
+                    f"{_base_prompt}\n\n"
+                    f"YOUR PREVIOUS RESPONSE WAS REJECTED: {_detail}\n"
+                    f"Return the SAME content, corrected to the required shape. "
+                    f"Do not add commentary."
                 )
                 continue
             return result

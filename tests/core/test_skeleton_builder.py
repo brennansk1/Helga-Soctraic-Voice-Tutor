@@ -425,7 +425,21 @@ class TestCourseStructureQuality(unittest.TestCase):
         self.patcher_preflight.stop()
 
     def _build_with_mock_llm(self):
-        """Run build() with a context-aware mock LLM that returns realistic titles."""
+        """Run build() with a context-aware mock LLM that returns realistic titles.
+
+        Pinned to the CHUNKED path (HELGA_ONESHOT_SUBTREE=0): this mock and the
+        prompt classifiers below key off that path's per-level prompt phrasing.
+        The chunked path remains live as the consolidated path's fallback, so
+        this is coverage of a real code path, not of dead code. Consolidated-path
+        context propagation is covered by TestConsolidatedSubtree.
+        """
+        import os as _os
+        _prev = _os.environ.get("HELGA_ONESHOT_SUBTREE")
+        _os.environ["HELGA_ONESHOT_SUBTREE"] = "0"
+        self.addCleanup(
+            lambda: _os.environ.__setitem__("HELGA_ONESHOT_SUBTREE", _prev)
+            if _prev is not None else _os.environ.pop("HELGA_ONESHOT_SUBTREE", None)
+        )
         call_count = {'n': 0}
 
         def llm_side_effect(prompt, **kwargs):
@@ -762,3 +776,140 @@ class TestCourseStructureQuality(unittest.TestCase):
 if __name__ == '__main__':
     unittest.main()
 
+
+
+class TestConsolidatedSubtree(unittest.TestCase):
+    """The consolidated path (HELGA_ONESHOT_SUBTREE=1, the default) must build a
+    structurally identical tree from ONE call per module, carry the same context
+    into that call, and keep every safeguard the chunked path had."""
+
+    def setUp(self):
+        self.captured = []
+        # Restore afterwards — leaving this set leaks the consolidated path into
+        # sibling tests that build via the chunked mock.
+        _prev = os.environ.get("HELGA_ONESHOT_SUBTREE")
+        os.environ["HELGA_ONESHOT_SUBTREE"] = "1"
+        self.addCleanup(
+            lambda: os.environ.__setitem__("HELGA_ONESHOT_SUBTREE", _prev)
+            if _prev is not None else os.environ.pop("HELGA_ONESHOT_SUBTREE", None)
+        )
+
+    def _subtree_reply(self):
+        return {
+            "units": [{
+                "title": "Sigma and Pi Bonding",
+                "description": "Orbital overlap geometry.",
+                "lessons": [{
+                    "title": "Hybridisation of Carbon Orbitals",
+                    "concepts": [
+                        {"title": "sp3 Tetrahedral Geometry",
+                         "objectives": ["Predict bond angles", "Relate hybridisation to shape"]},
+                        {"title": "sp2 Planar Geometry",
+                         "objectives": ["Identify planar centres", "Explain pi overlap"]},
+                    ],
+                }],
+            }]
+        }
+
+    def _run(self, reply):
+        from services.core.course_builder import SkeletonBuilder
+        import tempfile
+        from services.common.storage import StorageManager
+
+        storage = StorageManager(tempfile.mkdtemp(prefix="oneshot_test_"))
+        b = SkeletonBuilder(storage=storage, scope=2, mastery=2, starting_from=1)
+        m_ref = {
+            "title": "Carbon Bonding Fundamentals",
+            "role_desc": "foundation",
+            "scope": ["orbitals", "geometry"],
+            "dict": {"uid": "mod_x", "title": "Carbon Bonding Fundamentals", "units": []},
+        }
+        with patch("services.core.course_builder.llm_generate_json") as mock:
+            def side_effect(prompt, **kw):
+                self.captured.append((prompt, kw))
+                return reply
+            mock.side_effect = side_effect
+            lines = b._build_module_subtree_oneshot(
+                m_ref, "Organic Chemistry", "Understanding",
+                base_units=1, base_lessons=1, base_concepts=2,
+                module_bloom_level=2, module_specific_depth=2,
+                prev_context_str="No modules covered yet.",
+                mastery_constraint="",
+            )
+        return b, m_ref, lines, mock
+
+    def test_one_call_builds_the_whole_subtree(self):
+        b, m_ref, lines, mock = self._run(self._subtree_reply())
+        self.assertEqual(mock.call_count, 1, "consolidation must use ONE call per module")
+        units = m_ref["dict"]["units"]
+        self.assertEqual(len(units), 1)
+        self.assertEqual(len(units[0]["lessons"]), 1)
+        self.assertEqual(len(units[0]["lessons"][0]["concepts"]), 2)
+
+    def test_shapes_match_the_chunked_path(self):
+        b, m_ref, lines, mock = self._run(self._subtree_reply())
+        unit = m_ref["dict"]["units"][0]
+        self.assertTrue(unit["uid"].startswith("unit_"))
+        self.assertIn("ordinal", unit)
+        lesson = unit["lessons"][0]
+        self.assertTrue(lesson["uid"].startswith("less_"))
+        con = lesson["concepts"][0]
+        self.assertTrue(con["uid"].startswith("con_"))
+        for key in ("title", "learning_objectives", "complexity_role",
+                    "depth_level", "bloom_level", "ordinal"):
+            self.assertIn(key, con, f"concept missing {key} the chunked path emitted")
+        self.assertEqual(con["bloom_level"], 2)
+
+    def test_context_propagates_into_the_single_call(self):
+        b, m_ref, lines, mock = self._run(self._subtree_reply())
+        prompt = self.captured[0][0]
+        self.assertIn("Organic Chemistry", prompt, "course topic must reach the prompt")
+        self.assertIn("Carbon Bonding Fundamentals", prompt, "module title must reach it")
+        self.assertIn("orbitals", prompt, "module scope must reach it")
+        self.assertIn("No modules covered yet", prompt, "prior-coverage context must reach it")
+
+    def test_schema_is_used_to_constrain(self):
+        b, m_ref, lines, mock = self._run(self._subtree_reply())
+        kwargs = self.captured[0][1]
+        self.assertIsNotNone(kwargs.get("schema"), "must pass a schema to constrain shape")
+        self.assertEqual(kwargs.get("expected_type"), "dict")
+
+    def test_empty_reply_signals_fallback(self):
+        b, m_ref, lines, mock = self._run({"units": []})
+        self.assertIsNone(lines, "empty subtree must return None so the caller falls back")
+
+    def test_empty_lesson_is_backfilled_never_a_black_hole(self):
+        reply = {"units": [{"title": "Sigma Bonding", "description": "d",
+                            "lessons": [{"title": "Hybridisation", "concepts": []}]}]}
+        b, m_ref, lines, mock = self._run(reply)
+        concepts = m_ref["dict"]["units"][0]["lessons"][0]["concepts"]
+        self.assertEqual(len(concepts), 2, "empty lesson must be backfilled, not shipped empty")
+        self.assertTrue(all(c.get("llm_fallback") for c in concepts))
+        self.assertEqual(b.fallback_count, 2, "backfill must be counted as fallback")
+
+    def test_duplicate_titles_are_rejected(self):
+        reply = {"units": [{"title": "Sigma Bonding", "description": "d",
+                            "lessons": [{"title": "Hybridisation", "concepts": [
+                                {"title": "sp3 Geometry", "objectives": ["a", "b"]},
+                                {"title": "sp3 Geometry", "objectives": ["a", "b"]},
+                            ]}]}]}
+        b, m_ref, lines, mock = self._run(reply)
+        titles = [c["title"] for c in m_ref["dict"]["units"][0]["lessons"][0]["concepts"]]
+        self.assertEqual(len(titles), len(set(titles)), "duplicates must not survive")
+
+    def test_tolerates_bare_units_array(self):
+        """A model may return the units array directly rather than wrapped."""
+        b, m_ref, lines, mock = self._run([{
+            "title": "Sigma Bonding", "description": "d",
+            "lessons": [{"title": "Hybridisation", "concepts": [
+                {"title": "sp3 Geometry", "objectives": ["a", "b"]}]}],
+        }])
+        self.assertIsNotNone(lines, "a bare units array must still build")
+        self.assertEqual(len(m_ref["dict"]["units"]), 1)
+
+    def test_nonsense_reply_falls_back_instead_of_raising(self):
+        """A list of strings, or a scalar, must degrade to the chunked path."""
+        for junk in (["just", "strings"], "a string", 42, None):
+            with self.subTest(junk=junk):
+                b, m_ref, lines, mock = self._run(junk)
+                self.assertIsNone(lines, f"{junk!r} should signal fallback, not raise")
