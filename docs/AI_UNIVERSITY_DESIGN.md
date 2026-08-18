@@ -25,26 +25,33 @@ as Programs means the "cobble together curriculum" logic is written once.
 
 ## Why programs must be planned cheaply and built lazily
 
-Measured on this hardware: **~2 min per concept**, and a College Course preset
-is **30 concepts ≈ 60 min**.
+Measured on this hardware: **~2 min per concept**. At the parity target derived
+below (**135 concepts per semester course**) that is **~4.5 h per course**.
 
 | program | courses | concepts | build time if eager |
 |---|---|---|---|
-| 2-semester | 2 | 60 | ~2 h |
-| Associate | ~20 | 600 | **~20 h** |
-| Bachelor's | ~40 | 1,200 | **~40 h** |
+| 2-semester | 2 | 270 | ~9 h |
+| Associate | ~20 | 2,700 | **~90 h** |
+| Bachelor's | ~40 | 5,400 | **~180 h** |
 
-Generating a degree up front is 40 hours of compute for an artifact representing
+_(At today's under-filled 30 concepts/course those figures are 40 h for a
+bachelor's. The parity decision in §"The concept count" quadruples them, which is
+the strongest argument for lazy building rather than against parity.)_
+
+Generating a degree up front is 180 hours of compute for an artifact representing
 four years of study, most of which the learner will never reach. So:
 
 * **The Program plan is cheap** — research + a small number of LLM calls
   producing course specs, titles, prerequisite edges and term placement. Target
   well under a minute. This is what the learner sees immediately.
-* **Courses materialise on enrolment** — ~60 min each, built while the learner
-  is working through the previous one.
+* **Courses materialise on enrolment** — ~4.5 h each, built in background windows
+  while the learner works through the previous one. A course takes weeks to
+  study and hours to build, so the window is ample; the constraint is *when* it
+  runs, not whether there is time. See condition 4.
 
-Storage is a non-issue (1,200 concepts ≈ 5 MB of markdown). The binding
-constraint is not compute, it is that a degree is a multi-year object.
+Storage is a non-issue (5,400 concepts ≈ 20 MB of markdown). The binding
+constraint is not compute or disk — it is that a build must never compete with a
+live tutoring session on a single-model box.
 
 ## Degree structure: template first, research second
 
@@ -77,15 +84,18 @@ associate is by definition a **two-year** degree. 20 courses ÷ 5 per term ÷ 2
 terms = 2 years exactly, and 40 ÷ 5 ÷ 2 = 4 years for a bachelor's. The two
 independent facts agree, which is the check worth trusting.
 
-### Module count per course is already right
+### Module count is close; module *contents* are not
 
-A module is conventionally ~2 weeks of a semester, giving **7–8 modules** per
+A module is conventionally ~2 weeks of a semester, giving **8 modules** per
 15-week course (some schools instead use three 5-week blocks).
 
 Helga's College Course preset yields `concepts_per_module 5` and
-`total_concepts_approx 30` — **6 modules of 5 concepts**. That sits inside the
-real range without any change. The existing calibration is sound; only the
-program layer above it is new.
+`total_concepts_approx 30` — **6 modules of 5 concepts**.
+
+The module *count* is nearly right: 6 against a target of 8. What is wrong is
+what a module contains. A 2-week module is 6 class sessions, and at 3 concepts
+per session that is **18 concepts, not 5**. See the ladder and the concept-count
+analysis below — the shape of the course is sound and its filling is not.
 
 Research then supplies **which subjects fill each slot**, as evidence, using the
 tiered matching already designed for skeletons (at-level match → copy; one level
@@ -360,9 +370,9 @@ nearly free to record while building and expensive to reconstruct later.
 
 ---
 
-# Part II — The four conditions for calling this done
+# Part II — The five conditions for calling this done
 
-The sections above establish the shape. These four establish when it is
+The sections above establish the shape. These five establish when it is
 *trustworthy*, each with an instrument and an acceptance criterion. Nothing here
 should be believed because it sounds right; every claim below names how it gets
 measured.
