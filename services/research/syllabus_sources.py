@@ -39,6 +39,7 @@ Measured 2026-08-04:
 """
 
 import logging
+import os
 import re
 import time
 
@@ -90,18 +91,69 @@ def _is_content_chapter(title):
     return not any(p.match(low) for p in _NON_CONTENT_PATTERNS)
 
 
+# Disk cache for every MediaWiki lookup.
+#
+# _get_json is the single chokepoint: _search_book, _chapters_of,
+# _wikipedia_sections and the Wikiversity course shapes all route through it.
+# Caching here therefore covers the whole research surface in one place.
+#
+# WHY IT MATTERS BEYOND SPEED. Wikimedia throttles bursts, and a throttled reply
+# is indistinguishable from "no such book" at this layer. That ambiguity is what
+# made a build go UNGUIDED: the third candidate query in a burst returned empty
+# and was read as absence of evidence. Serving repeat lookups from disk removes
+# most of the burst, so the ambiguity mostly stops arising.
+#
+# SUCCESSES ONLY. Caching a throttled miss would make a transient failure
+# permanent for the whole TTL -- the exact confusion this is meant to prevent.
+# Open textbooks change on the scale of months, so 7 days is conservative.
+try:
+    from diskcache import Cache as _DiskCache
+    _HTTP_CACHE = _DiskCache(
+        os.path.join(os.getenv("DATA_ROOT", "/app/data"), "cache", "syllabus_http"))
+    _HTTP_TTL = 7 * 24 * 3600
+except Exception:                      # diskcache absent (unit tests)
+    _HTTP_CACHE = None
+    _HTTP_TTL = 0
+
+
+def _cache_on():
+    return (_HTTP_CACHE is not None
+            and os.getenv("HELGA_RESEARCH_CACHE", "1").lower()
+            not in ("0", "false", "no"))
+
+
 def _get_json(url, params, timeout=15, attempts=3):
-    """GET returning parsed JSON, or None.
+    """GET returning parsed JSON, or None. Cached on success.
 
     Wikimedia rate-limits bursts and answers with a non-JSON body rather than a
     429, so `.json()` raises and the whole lookup silently returns nothing.
-    Observed repeatedly while probing. Retry with backoff.
+    Observed repeatedly while probing. Retry with backoff, and honour
+    Retry-After when the server does send a 429.
     """
+    ck = None
+    if _cache_on():
+        ck = "wiki:" + url + ":" + repr(sorted((params or {}).items()))
+        hit = _HTTP_CACHE.get(ck)
+        if hit is not None:
+            return hit
+
     for attempt in range(attempts):
         try:
             r = requests.get(url, params=params, headers=UA, timeout=timeout)
             if r.status_code == 200:
-                return r.json()
+                data = r.json()
+                if _cache_on() and ck:
+                    try:
+                        _HTTP_CACHE.set(ck, data, expire=_HTTP_TTL)
+                    except Exception as e:
+                        logger.debug(f"cache write failed: {e}")
+                return data
+            if r.status_code == 429:
+                # The server told us how long to wait; guessing is worse.
+                wait = float(r.headers.get("Retry-After", 0) or 0) or 1.5 * (attempt + 1)
+                logger.info(f"{url}: 429, waiting {wait:.1f}s")
+                time.sleep(min(wait, 10))
+                continue
         except Exception as e:
             logger.debug(f"{url} attempt {attempt + 1} failed: {e}")
         time.sleep(0.6 * (attempt + 1))
