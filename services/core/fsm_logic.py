@@ -224,6 +224,15 @@ except Exception:
 
 
 
+# A lesson has to end for EVERY learner, not only for progressing ones.
+# Measured: without these, an adult session ran 25 turns on one concept and never
+# completed. Ease first, then offer the exit -- and let FSRS bring the concept
+# back rather than grinding on it now.
+ADULT_EASE_AFTER = 2          # consecutive misses before changing approach
+ADULT_OFFER_PARK_AFTER = 4    # consecutive misses before offering to move on
+CONCEPT_TURN_CAP = 20         # hard bound so a lesson always terminates
+
+
 class MnemosyneFSM:
     def __init__(self, student_id=None, storage=None):
         # B15.6: the isolation key. Every storage call passes it; every
@@ -1492,6 +1501,26 @@ class MnemosyneFSM:
             analogies = [l.strip().lstrip("- ") for l in text.split("\n") if l.strip() and not l.strip().startswith("#")]
         return analogies
 
+    def _should_park_concept(self):
+        """Has this concept absorbed a whole lesson without being learned?
+
+        Deliberately NOT part of the mastery gate. Letting a turn cap satisfy
+        the gate would credit mastery nobody demonstrated — the same mistake the
+        fallback grade avoids by never being a passing grade. Parking is the
+        opposite move: the concept is explicitly NOT completed, it goes back to
+        FSRS, and the learner gets to keep going.
+
+        Measured: without this, adult sessions ran to a 25-turn cap on a single
+        concept and never ended. A lesson has to terminate for every learner.
+        """
+        if self.concept_question_count < CONCEPT_TURN_CAP:
+            return False
+        logging.warning(
+            f"Concept turn cap reached ({self.concept_question_count} questions, "
+            f"streak={self.concept_correct_streak}) — parking this concept for "
+            f"spaced review rather than grinding on it")
+        return True
+
     def _check_mastery_gate(self):
         """GAP 4 + B17.3: mastery gate — streak, bloom target, and question
         diversity, with thresholds from the student's grade band (a K-2 kid
@@ -2385,6 +2414,45 @@ class MnemosyneFSM:
                 "misses, and never sound disappointed.")
             logging.info(f"Affect scaffold engaged (miss_streak="
                          f"{self.concept_miss_streak}, band={self.grade_band})")
+        # ADULT BANDS GET A BOUNDED RESPONSE TOO (measured 2026-08-18).
+        #
+        # The scaffold above fires only for K-2 and 3-5. Driving real sessions
+        # showed what that leaves: every adult session hit a 25-turn cap on a
+        # SINGLE concept and never completed, because completion needs a streak
+        # of grade >= 3 and a stalled learner never builds one. The tutor was
+        # behaving correctly -- it declines to advance someone who has not
+        # understood -- but nothing bounded the session, so a 50-minute lesson
+        # never ends and the whole lesson-is-a-class-session model fails for the
+        # learner who most needs it to hold.
+        #
+        # Two stages, escalating, and no warmth theatre: an adult who has missed
+        # four times knows they are stuck, and being told "tricky things take
+        # practice" reads as condescension. Change the EXPLANATION, then offer
+        # the exit.
+        elif getattr(self, "concept_miss_streak", 0) >= ADULT_EASE_AFTER:
+            floor = self.course_bloom_floor or 1
+            if self.current_bloom_level > floor:
+                self.current_bloom_level -= 1
+                self.bloom_correct_streak = 0
+            if self.concept_miss_streak >= ADULT_OFFER_PARK_AFTER:
+                affect_note = (
+                    "PACING NOTE: This learner has missed several questions in a "
+                    "row on this concept. Do NOT ask another question of the same "
+                    "kind. Explain the idea a DIFFERENT way — a worked example, a "
+                    "concrete case, or a different angle entirely — and then tell "
+                    "them plainly that they can stay with this or move on and meet "
+                    "it again later. Offer the choice without judgement.")
+                self._offered_park = True
+            else:
+                affect_note = (
+                    "PACING NOTE: The learner has missed this more than once. Do "
+                    "not press harder. Approach the idea from a different "
+                    "direction and make the next step smaller and more concrete. "
+                    "No reassurance and no commentary on the misses — just a "
+                    "clearer route in.")
+            logging.info(f"Adult pacing scaffold engaged (miss_streak="
+                         f"{self.concept_miss_streak}, band={self.grade_band})")
+
         if affect_note:
             system_note = f"{system_note}\n{affect_note}" if system_note else affect_note
 
@@ -2819,6 +2887,14 @@ class MnemosyneFSM:
             ]["name"].lower()
             self.socratic_type_index += 1
             if self.socratic_type_index >= len(SOCRATIC_QUESTION_TYPES):
+                if self._should_park_concept():
+                    self.speak(
+                        "We've spent a while on this one. Let's move on and come "
+                        "back to it later — it'll return in your review queue, "
+                        "which is usually a better way to make it stick than "
+                        "pushing through now.")
+                    self._advance_without_completing()
+                    return
                 if self._check_mastery_gate():
                     completion_msg = (feedback or "Excellent work.") + " You've mastered this concept. Let's move on to the next one."
                     self.speak(completion_msg)
