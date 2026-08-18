@@ -1129,5 +1129,28 @@ thousand leaf nodes.
 
 ## Status
 
-Design. **No implementation has begun and none should until task 0 is measured**,
-because task 0 can invalidate the premise.
+Design. **Task 0 has now been run — see `docs/TASK0_RESULTS.md`.** It did not
+produce a valid coverage number, and that is its finding: two wiring bugs block
+the measurement.
+
+1. **A cold model silently disables the entire grounding chain.** The
+   parent-subject lookup times out at 90 s during a ~142 s cold load, and "the
+   model did not answer" becomes "this topic has no broader subject" — so the
+   build proceeds UNGUIDED and still reports success. Warm, the same build finds
+   Wikibooks *Geometry* (31 chapters) and OpenStax *Contemporary Mathematics*.
+2. **Criterion 6 never receives the syllabus.** `check_structure(course_dict)` is
+   called with no reference while the fetched outline sits in the same class, so
+   the gate's only external anchor ran self-referentially and scored 0%. That 0
+   is an instrument failure and must not be compared against the 42% baseline.
+3. **The ladder is confirmed from a real build**: 6 modules / 6 units / 6 lessons
+   / 30 concepts against 8 / 15 / 45 / 135 — ~21% filled, with the shortfall
+   concentrated at the unit and lesson levels, which collapse to one child each.
+
+**The premise is not refuted** — grounding works when warm, and the ranking chose
+Geometry (4.50) over Primary Mathematics (0.50) correctly. What failed was
+plumbing on either side of it.
+
+Three fixes now precede any university work, all in the existing pipeline rather
+than in this design: the cold-start/cache fix, passing the outline into
+`check_structure`, and unit/lesson fan-out. Then re-run Task 0 and apply the R1
+decision rule to a number that means something.
