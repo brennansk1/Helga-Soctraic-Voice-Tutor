@@ -114,6 +114,22 @@
             return 'No open textbook found for this subject — building without that evidence'; }],
         [/^CHECK:SYLLABUS_EVIDENCE:(.+)/, function (m) {
             return 'Found ' + m[1] + ' of real syllabus material'; }],
+        // The scope warning is the one a learner must actually act on, so it is
+        // passed through verbatim rather than summarised: it names the shortfall
+        // and offers the right-sized alternative, and a paraphrase would lose
+        // the number that makes it actionable.
+        [/^CHECK:SCOPE:(stretched|unsupported):(.+)/, function (m) {
+            return (m[1] === 'unsupported' ? '\u26A0 ' : '') + m[2]; }],
+        [/^CHECK:COVERAGE:(\d+)/,        function (m) {
+            return 'Covers ' + m[1] + '% of the published syllabus for this subject'; }],
+        [/^CHECK:SEQUENCING:INDEX_ORDER/, function () {
+            return 'Modules came out in alphabetical order — rebuilding in a ' +
+                   'teaching sequence'; }],
+        [/^STRUCT:SPINE:(.+)/,           function (m) {
+            return 'Following a real textbook\u2019s chapter order — ' + m[1]; }],
+        [/^STRUCT:BACKFILL:(\d+)(.*)/,   function (m) {
+            return 'Adding ' + m[1] + ' topic(s) the published syllabus has ' +
+                   'and this outline missed'; }],
         [/^CHECK:SYLLABUS:SKIP/,         function () { return 'Coverage could not be measured'; }],
         [/^CHECK:SYLLABUS:(\w+):(.*)/,   function (m) {
             return 'Coverage check: ' + m[1].toLowerCase() + (m[2] ? ' (' + m[2] + ')' : ''); }],
