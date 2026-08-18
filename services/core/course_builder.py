@@ -165,28 +165,38 @@ FORBIDDEN_TITLES = {
 }
 
 # Three-slider parameter system (scope, mastery, starting_from)
+# `term_fraction` is how much of a 15-week semester the scope represents, which
+# is what converts the calendar into a lesson budget. Scope 3 ("Standard") is the
+# reference point: exactly one semester, 45 class sessions. Without this every
+# preset inherited a full semester, so a "quick overview in an evening" was
+# budgeted the same 45 lessons as a full college course.
 SCOPE_PROFILES = {
-    1: {"label": "Focused", "module_base": 3, "description": "A single narrow subtopic"},
-    2: {"label": "Targeted", "module_base": 4, "description": "One specific area within the field"},
-    3: {"label": "Standard", "module_base": 6, "description": "A subject area with context"},
-    4: {"label": "Broad", "module_base": 8, "description": "A substantial field"},
-    5: {"label": "Comprehensive", "module_base": 11, "description": "Full discipline survey"},
+    1: {"label": "Focused", "module_base": 3, "term_fraction": 0.10,
+        "description": "A single narrow subtopic"},
+    2: {"label": "Targeted", "module_base": 4, "term_fraction": 0.25,
+        "description": "One specific area within the field"},
+    3: {"label": "Standard", "module_base": 6, "term_fraction": 1.00,
+        "description": "A subject area with context"},
+    4: {"label": "Broad", "module_base": 8, "term_fraction": 1.25,
+        "description": "A substantial field"},
+    5: {"label": "Comprehensive", "module_base": 11, "term_fraction": 1.50,
+        "description": "Full discipline survey"},
 }
 
 MASTERY_PROFILES = {
-    1: {"label": "Awareness", "concepts_per_module": 3, "bloom_ceiling": 2, "content_words": 150,
+    1: {"label": "Awareness", "concepts_per_module": 3, "concepts_per_lesson": 2, "bloom_ceiling": 2, "content_words": 150,
         "vocabulary": "simple terms, everyday language, high-level intuition",
         "writing": "Write for a curious beginner. Use everyday language, analogies, and intuitive explanations. Avoid jargon."},
-    2: {"label": "Understanding", "concepts_per_module": 4, "bloom_ceiling": 3, "content_words": 250,
+    2: {"label": "Understanding", "concepts_per_module": 4, "concepts_per_lesson": 2, "bloom_ceiling": 3, "content_words": 250,
         "vocabulary": "standard educational level, key technical terms introduced",
         "writing": "Write for an interested learner. Introduce technical terms with clear definitions. Use concrete examples."},
-    3: {"label": "Application", "concepts_per_module": 5, "bloom_ceiling": 4, "content_words": 400,
+    3: {"label": "Application", "concepts_per_module": 5, "concepts_per_lesson": 3, "bloom_ceiling": 4, "content_words": 400,
         "vocabulary": "technical depth, precise mechanisms, named methods and properties",
         "writing": "Write for an undergraduate student. Use precise technical language. Explain mechanisms and formal relationships."},
-    4: {"label": "Proficiency", "concepts_per_module": 7, "bloom_ceiling": 5, "content_words": 600,
+    4: {"label": "Proficiency", "concepts_per_module": 7, "concepts_per_lesson": 3, "bloom_ceiling": 5, "content_words": 600,
         "vocabulary": "formal definitions, named theorems and criteria, professional terminology",
         "writing": "Write for a postgraduate/professional. Use full technical precision. Include formal definitions and edge cases."},
-    5: {"label": "Expertise", "concepts_per_module": 10, "bloom_ceiling": 6, "content_words": 800,
+    5: {"label": "Expertise", "concepts_per_module": 10, "concepts_per_lesson": 4, "bloom_ceiling": 6, "content_words": 800,
         "vocabulary": "formal proofs, research methodologies, open problems, theoretical frameworks",
         "writing": "Write for a researcher. Include formal notation, theoretical implications, and frontier research."},
 }
@@ -320,6 +330,13 @@ def list_presets():
     return sorted([p for p in out if p], key=lambda p: p["est_minutes"])
 
 
+# Verified real-world anchors (docs/AI_UNIVERSITY_DESIGN.md): a US semester is
+# ~15 weeks and a 3-credit course meets 3 times a week, so a course is ~45 class
+# sessions. A lesson is one class session.
+WEEKS_PER_TERM = 15
+SESSIONS_PER_WEEK = 3
+
+
 def compute_course_params(scope=2, mastery=2, starting_from=1):
     """Compute course structure parameters from three sliders."""
     s = SCOPE_PROFILES.get(scope, SCOPE_PROFILES[2])
@@ -335,10 +352,26 @@ def compute_course_params(scope=2, mastery=2, starting_from=1):
     # (which produced a degenerate Bloom ramp). Raise the ceiling to at least the
     # floor so the course never "ends below where it starts".
     bloom_ceiling = max(bloom_ceiling, bloom_floor)
+    # THE CALENDAR IS THE ONLY FIXED THING. A 15-week semester at 3 sessions a
+    # week is 45 class sessions, and a lesson IS a class session — that is a real
+    # constraint and it does not bend. Everything below it does: a unit is a
+    # TOPICAL grouping, so some units are one week and some are three, and how
+    # many lessons a unit holds should follow the material rather than a
+    # hardcoded number. Previously `units_per_module` and `lessons_per_unit` were
+    # both pinned at 1 in the legacy DEPTH_PROFILES, which collapsed every course
+    # to one lesson per module — measured in Task 0 as 6 modules / 6 units /
+    # 6 lessons where the calendar calls for 45 lessons.
+    lessons_total = int(round(SESSIONS_PER_WEEK * WEEKS_PER_TERM * s.get(
+        "term_fraction", 1.0)))
+    lessons_per_module = max(1, round(lessons_total / max(1, modules)))
+    concepts_per_lesson = m.get("concepts_per_lesson", 3)
     return {
         "modules": modules,
         "concepts_per_module": concepts_per_module,
-        "total_concepts_approx": modules * concepts_per_module,
+        "lessons_total": lessons_total,
+        "lessons_per_module": lessons_per_module,
+        "concepts_per_lesson": concepts_per_lesson,
+        "total_concepts_approx": modules * lessons_per_module * concepts_per_lesson,
         "bloom_floor": bloom_floor,
         "bloom_ceiling": bloom_ceiling,
         "content_words": m["content_words"],
@@ -1356,19 +1389,20 @@ class SkeletonBuilder:
         # A narrow topic has no book of its own — "the pythagorean theorem"
         # matches no Wikibook — which is the case that produced the 42% course.
         # One cheap call names the parent discipline so real syllabi are found.
-        broader = []
-        try:
-            raw = llm_generate(
-                prompt=(f"What academic subject or discipline is '{topic}' part of? "
-                        f"Answer with 1-3 subject names only, comma separated, "
-                        f"no explanation. Example: Geometry, Trigonometry"),
-                sys_prompt="You name academic disciplines. Answer tersely.",
-                max_tokens=60,
-            )
-            broader = [b.strip() for b in (raw or "").split(",")
-                       if b.strip() and len(b.strip()) < 60][:3]
-        except Exception as e:
-            logger.debug(f"[SKELETON] parent-subject lookup failed: {e}")
+        # MEASURED FAILURE (Task 0): this call gates the whole grounding chain,
+        # and on a cold model it exceeded the 90 s timeout three times — Nail's
+        # cold load is ~142 s, so the budget cannot be met from cold by
+        # construction. The empty result was then read as "this topic HAS no
+        # parent discipline", only the narrow topic was tried, no Wikibook
+        # matched, and the build went UNGUIDED while reporting success.
+        # Absent-vs-zero, gating everything downstream.
+        #
+        # Three defences, in order: a cache (this answer is deterministic and
+        # identical across rebuilds — docs/CACHING.md candidate 1), a
+        # source-based fallback that needs no LLM at all, and an explicit
+        # degraded flag so "we could not look" never masquerades as "nothing
+        # exists".
+        broader, self._broadening_degraded = self._parent_subjects(topic)
 
         # ONE broadened lookup, not one full sweep per candidate.
         #
@@ -1429,6 +1463,58 @@ class SkeletonBuilder:
                 f"CHECK:SYLLABUS_EVIDENCE:{n} chapters / {srcs} sources")
         return format_brief(brief)
 
+    _PARENT_CACHE = {}
+
+    def _parent_subjects(self, topic):
+        """(broader_subjects, degraded). Never raises.
+
+        `degraded` means we could not determine the parent discipline — which is
+        NOT the same as the topic having none, and the caller must not report
+        "no evidence exists" on the strength of it.
+        """
+        key = (topic or "").strip().lower()
+        if key in SkeletonBuilder._PARENT_CACHE:
+            return SkeletonBuilder._PARENT_CACHE[key], False
+
+        subjects = []
+        try:
+            raw = llm_generate(
+                prompt=(f"What academic subject or discipline is '{topic}' part of? "
+                        f"Answer with 1-3 subject names only, comma separated, "
+                        f"no explanation. Example: Geometry, Trigonometry"),
+                sys_prompt="You name academic disciplines. Answer tersely.",
+                max_tokens=60,
+            )
+            subjects = [b.strip() for b in (raw or "").split(",")
+                        if b.strip() and len(b.strip()) < 60][:3]
+        except Exception as e:
+            logger.warning(f"[SKELETON] parent-subject lookup failed for {topic!r}: {e}")
+
+        if not subjects:
+            # No LLM needed: Wikipedia's own categories name the discipline, and
+            # this path is cached and rate-limited like every other lookup.
+            try:
+                try:
+                    from syllabus_sources import wikipedia_parent_subjects
+                except ImportError:
+                    from services.research.syllabus_sources import (
+                        wikipedia_parent_subjects)
+                subjects = wikipedia_parent_subjects(topic)[:3]
+                if subjects:
+                    logger.info(f"[SKELETON] parent subjects via Wikipedia "
+                                f"categories: {subjects}")
+            except Exception as e:
+                logger.warning(f"[SKELETON] category fallback failed: {e}")
+
+        if subjects:
+            SkeletonBuilder._PARENT_CACHE[key] = subjects
+            return subjects, False
+        logger.warning(
+            f"[SKELETON] could not determine a parent discipline for {topic!r}. "
+            f"Grounding will be attempted on the narrow topic alone; a miss here "
+            f"is DEGRADED, not evidence that no syllabus exists.")
+        return [], True
+
     def _record_syllabus_check(self, course_dict):
         """Attach the criterion-6 verdict to the course. Never raises.
 
@@ -1458,7 +1544,16 @@ class SkeletonBuilder:
             logger.info(f"[SYLLABUS] check unavailable, skipping: {e}")
             return
 
-        result = check_structure(course_dict)
+        # Criterion 6 is the gate's ONLY external anchor — "an LLM judging output
+        # produced by an LLM" is what every other criterion does. Task 0 found it
+        # was being called with no reference while the fetched outline sat in
+        # this same object, so it graded coverage from model memory and returned
+        # 0%, self-referentially, which is the one thing it exists not to do.
+        _ref = (getattr(self, "_evidence_block", "") or "").strip() or None
+        if not _ref:
+            logger.info("[SYLLABUS] no external reference available — criterion 6 "
+                        "will run on model knowledge (WEAK)")
+        result = check_structure(course_dict, reference_text=_ref)
         course_dict["syllabus_check"] = result
 
         if result.get("error"):
@@ -1636,8 +1731,11 @@ class SkeletonBuilder:
             f"{prev_context_str}\n\n"
             f"{_evidence}"
             f"Design this module's COMPLETE structure in one pass:\n"
-            f"  - exactly {base_units} unit(s)\n"
-            f"  - exactly {base_lessons} lesson(s) per unit\n"
+            f"  - about {base_units} unit(s), grouped by TOPIC — units may "
+            f"differ in size where the material warrants it\n"
+            f"  - about {base_lessons} lesson(s) per unit, and about "
+            f"{base_units * base_lessons} lessons in this module overall; each "
+            f"lesson is one ~50-minute class session\n"
             f"  - exactly {base_concepts} concept(s) per lesson\n"
             f"  - exactly 2 learning objectives per concept, written for Bloom "
             f"{module_bloom_level} ({_bloom_label})\n\n"
@@ -1840,25 +1938,21 @@ class SkeletonBuilder:
             * self.depth_profile.get("units_per_module", 1),
         )
 
-        profile_units = self.depth_profile.get("units_per_module", 1)
-        profile_lessons = self.depth_profile.get("lessons_per_unit", 1)
-        # Choose the smallest (units, lessons) that can hold at least
-        # target_concepts_per_module/2 leaves without going under 2 concepts
-        # per lesson. Preference is fewer units → more concepts per lesson,
-        # which mirrors how a real syllabus scales with mastery.
-        if target_concepts_per_module <= 3:
-            base_units, base_lessons = 1, 1
-        elif target_concepts_per_module <= 5:
-            base_units, base_lessons = 1, min(profile_lessons, 2)
-        elif target_concepts_per_module <= 7:
-            base_units, base_lessons = min(profile_units, 2), min(profile_lessons, 2)
-        elif target_concepts_per_module <= 10:
-            base_units, base_lessons = min(profile_units, 2), min(profile_lessons, 3)
-        else:
-            base_units, base_lessons = min(profile_units, 3), min(profile_lessons, 3)
-        base_units = max(1, base_units)
-        base_lessons = max(1, base_lessons)
-        base_concepts = max(2, target_concepts_per_module // max(1, base_units * base_lessons))
+        # The lesson budget comes from the calendar and is not negotiable; the
+        # UNIT shape is not fixed, because a unit is a topical grouping whose
+        # size should follow the material — some units are one week, some three.
+        # So we pass a lesson budget and a unit RANGE, and let the module's
+        # content decide how those lessons group.
+        lessons_per_module = self.course_params.get("lessons_per_module")
+        if not lessons_per_module:
+            lessons_per_module = max(
+                1, round(WEEKS_PER_TERM * SESSIONS_PER_WEEK
+                         / max(1, self.course_params.get("modules", 6))))
+        base_concepts = max(1, self.course_params.get("concepts_per_lesson", 3))
+        # 2-4 units per module is the range real syllabi occupy; within it the
+        # model groups by topic rather than by arithmetic.
+        base_units = max(1, min(4, round(lessons_per_module / 3)))
+        base_lessons = max(1, round(lessons_per_module / base_units))
         logger.info(
             f"Substructure shape: units={base_units}, lessons_per_unit={base_lessons}, "
             f"concepts_per_lesson={base_concepts} "

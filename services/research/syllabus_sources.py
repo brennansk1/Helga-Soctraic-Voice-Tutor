@@ -509,6 +509,46 @@ def _openstax_outline(topic, broader_subjects=None, mastery=None, min_chapters=4
     }
 
 
+# Category names that describe the ARTICLE rather than the subject. Every one
+# of these was observed on a real page.
+_ADMIN_CAT = re.compile(
+    r"^(articles?|all |wikipedia|cs1|use \w+ english|short description|"
+    r"webarchive|pages |commons |good articles|featured |mathematics articles|"
+    r"unprintworthy|redirects|harv|engvarb|wikidata)", re.I)
+
+
+def wikipedia_parent_subjects(topic, limit=3):
+    """Discipline names for a topic, from Wikipedia's own categories.
+
+    A fallback for when the LLM cannot be reached to name the parent discipline.
+    That lookup gates the whole grounding chain, and losing it turns a narrow
+    topic into an unguided build -- so it needs a path that does not depend on
+    the model being loaded. Categories are curated by people, cached here, and
+    already rate-limited.
+
+    "Pythagorean theorem" -> Euclidean geometry, Theorems about right triangles.
+    """
+    data = _get_json(WIKIPEDIA_API, {
+        "action": "query", "prop": "categories", "titles": topic,
+        "cllimit": 30, "clshow": "!hidden", "format": "json",
+        "redirects": 1,
+    }, timeout=15)
+    if not isinstance(data, dict):
+        return []
+    pages = ((data.get("query") or {}).get("pages") or {})
+    out = []
+    for page in pages.values():
+        for cat in (page.get("categories") or []):
+            name = (cat.get("title") or "").replace("Category:", "").strip()
+            if not name or _ADMIN_CAT.match(name):
+                continue
+            # "Theorems about right triangles" is a fine discipline hint;
+            # "1990 births" is not. Length is a crude but effective filter.
+            if 3 <= len(name) <= 50 and name not in out:
+                out.append(name)
+    return out[:limit]
+
+
 def subject_outline(topic, broader_subjects=None, min_chapters=4, mastery=None):
     """How this subject is actually organised, from open textbooks.
 
