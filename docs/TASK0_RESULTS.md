@@ -523,3 +523,54 @@ OpenStax, whose books are sequenced as taught — a test pins both behaviours.
 to close the coverage gap when the source is properly ordered. Reaching parity
 now depends on having a *sequenced* source for the subject, which OpenStax
 provides for its 129 books and Wikibooks does not.
+
+---
+
+# Final validated state
+
+With sequenced-source preference and the sequencing gate both active, the
+Linear Algebra build makes this chain of decisions:
+
+```
+[SPINE] ignoring alphabetical listing(s) ['Linear Algebra', 'Linear algebra']
+        in favour of a sequenced source
+[SPINE] best syllabus 'College Algebra' scores 4.75 — not an exact subject
+        match, generating instead of copying
+```
+
+Both refusals are correct: the Wikibooks listings are indexes, and *College
+Algebra* is not linear algebra. With no sequenced exact-match source available it
+generates and backfills, which is the intended fallback.
+
+| | coverage | sequencing | verdict |
+|---|---|---|---|
+| copy-spine from an alphabetical index | **100%** | **INDEX_ORDER** | rejected — unteachable |
+| generate + backfill (final) | **80%** | **ok** (0.4) | accepted |
+
+**A properly sequenced 80% beats an unteachable 100%**, and the system now
+prefers it automatically rather than by luck.
+
+Two of the three persistently-missing areas are now covered — least
+squares/projections and symmetric/positive-definite — leaving Gram-Schmidt/QR and
+SVD. Backfill is doing real work; the residue is where no sequenced source exists
+for this subject.
+
+```
+6 modules · 18 units · 54 lessons · 158 concepts (2.93/lesson)
+```
+
+## What would close the remaining gap
+
+Not more generation. A **sequenced source for linear algebra** — OpenStax has 129
+books but no linear algebra title, and the Wikibooks one is an index. Options, in
+order of cost:
+
+1. Transcribe a real chapter order (Strang's *Introduction to Linear Algebra* is
+   18.06's own text) into a reference file, as was done for the MIT syllabus.
+2. Fetch OpenStax section trees for subjects it *does* cover, where the ordering
+   is already correct and unused.
+3. Detect the alphabetical case at the *source* and re-order using a published
+   syllabus rather than discarding the book.
+
+The mechanism is proven: when a sequenced exact-match source exists, copy-spine
+takes coverage to 100%. What remains is source availability, not pipeline logic.
