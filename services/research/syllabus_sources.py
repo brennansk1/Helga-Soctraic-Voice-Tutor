@@ -165,6 +165,45 @@ def _wikipedia_sections(subject):
             if x.get("line") and _is_content_chapter(x["line"])]
 
 
+_RELEVANCE_STOP = {
+    "the", "a", "an", "of", "and", "or", "to", "in", "on", "for", "with",
+    "introduction", "basics", "fundamentals", "principles", "theorem", "theory",
+}
+
+
+def _topic_terms(topic):
+    """Content words from a topic, for relevance scoring."""
+    return {w for w in re.findall(r"[a-z]+", (topic or "").lower())
+            if len(w) > 2 and w not in _RELEVANCE_STOP}
+
+
+def _relevance(topic, book, chapters):
+    """How much does this book actually teach `topic`?
+
+    WHY THIS EXISTS
+    ---------------
+    Candidates are pooled across [topic] + broader_subjects, and the first book
+    with enough chapters used to win. Ordering put the broadest query first, so
+    'The Pythagorean Theorem' broadened to 'Mathematics' and selected *Primary
+    Mathematics* — 24 chapters of generic arithmetic. Structurally valid,
+    pedagogically useless for the topic, and the build still missed the formula
+    itself, triples, the converse and the distance formula.
+
+    A book that teaches the topic MENTIONS it in its chapter list. That is a
+    cheap, strong signal and it is what this scores. Chapter hits are weighted
+    above title hits because a title can be broad while the contents are apt
+    (Geometry does teach Pythagoras) and vice versa.
+    """
+    terms = _topic_terms(topic)
+    if not terms:
+        return 0.0
+    chapter_blob = " ".join(chapters).lower()
+    chapter_hits = sum(1 for t in terms if t in chapter_blob)
+    title_hits = sum(1 for t in terms if t in (book or "").lower())
+    # Normalised so a long chapter list cannot win on length alone.
+    return (chapter_hits / len(terms)) * 2.0 + (title_hits / len(terms))
+
+
 def subject_outline(topic, broader_subjects=None, min_chapters=4):
     """How this subject is actually organised, from open textbooks.
 
@@ -191,20 +230,41 @@ def subject_outline(topic, broader_subjects=None, min_chapters=4):
         candidates = []
         for q in queries:
             candidates.extend(_search_book(api, q, limit=3))
+        # Score several viable candidates and keep the most RELEVANT, rather
+        # than the first that happens to be long enough. Capped because each
+        # candidate costs an HTTP round trip; briefs are cached upstream, so a
+        # rebuild of the same subject pays this once.
+        scored = []
+        seen = set()
         for candidate in candidates:
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            if len(scored) >= 4:
+                break
             chapters = _chapters_of(api, candidate)
             # A book with two chapters is a stub. Using it would narrow the
             # course to whatever those two happen to be, which is worse than
             # not using it at all.
             if len(chapters) >= min_chapters:
-                outlines.append({
-                    "source": label,
-                    "book": candidate,
-                    "url": f"https://en.{label.lower()}.org/wiki/"
-                           + candidate.replace(" ", "_"),
-                    "chapters": chapters,
-                })
-                break                       # best book per site is enough
+                scored.append((_relevance(topic, candidate, chapters),
+                               candidate, chapters))
+        if scored:
+            scored.sort(key=lambda x: x[0], reverse=True)
+            score, candidate, chapters = scored[0]
+            if len(scored) > 1:
+                logger.info(
+                    f"subject_outline({topic!r}) on {label}: chose {candidate!r} "
+                    f"(relevance {score:.2f}) over "
+                    + ", ".join(f"{c!r} ({sc:.2f})" for sc, c, _ in scored[1:]))
+            outlines.append({
+                "source": label,
+                "book": candidate,
+                "url": f"https://en.{label.lower()}.org/wiki/"
+                       + candidate.replace(" ", "_"),
+                "chapters": chapters,
+                "relevance": round(score, 3),
+            })
 
     return {
         "topic": topic,
