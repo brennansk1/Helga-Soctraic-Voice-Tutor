@@ -96,6 +96,84 @@ in Dungeons & Dragons."** One has real syllabi to match against and one does
 not, but neither changes the algorithm — the D&D case simply runs with zero
 external matches. No special "custom degree" branch to write or maintain.
 
+
+## The taxonomy, with every level anchored to a verified number
+
+Helga has five structural levels below a program. For an "as close to the real
+thing as possible" system, each needs a defensible real-world analogue rather
+than a plausible-sounding one.
+
+| Helga level | Real analogue | Count | Anchor |
+|---|---|---|---|
+| **Program** | Degree | — | Associate 60 cr / ~20 courses / 2 yr · Bachelor's 120 cr / ~40 courses / 4 yr |
+| **Course** | 3-credit semester course | 20 or 40 per program | 15 weeks · 45 sessions of 50 min · **135 h total student work** |
+| **Module** | 2-week block | **6–8** per course | a module is conventionally ~2 weeks of a term |
+| **Unit** | ~1 week / topic cluster | 2–3 per module | subdivision of the block |
+| **Lesson** | one class session | **~45** per course | 3 × 50 min per week × 15 weeks |
+| **Concept** | one textbook section / learning objective | **see below** | measured from OpenStax |
+
+The Carnegie definition fixes the top of this: 1 credit hour = 1 hour of
+instruction + 2 hours of preparation per week for 15 weeks, so a 3-credit course
+is 45 contact hours inside **135 hours of total student work**.
+
+### The concept count is the one number that is currently wrong
+
+Counting *teachable* sections in real OpenStax books (front matter, key terms,
+chapter summaries and review exercises excluded):
+
+| book | chapters | teachable sections |
+|---|---|---|
+| Prealgebra 2e | 11 | **80** |
+| College Algebra 2e | 9 | **77** |
+| Calculus Volume 1 | 6 | **51** |
+| Principles of Economics 2e | 34 | 275 _(a two-semester book — micro + macro)_ |
+
+So **a one-semester course covers roughly 50–80 teachable sections.**
+
+Helga's College Course preset produces **30 concepts** (6 modules × 5). If a
+concept is the analogue of a textbook section — and it is: both are one
+self-contained idea with its own content and its own review cards — then the
+current preset delivers **under half a real semester course**.
+
+That is the gap between "a course about Linear Algebra" and "Linear Algebra I".
+It is invisible today because there is nothing to compare against; it becomes
+glaring the moment the system claims to be a university.
+
+**Recommendation: a semester course should target ~60 concepts, not 30.** Costs,
+stated plainly:
+
+| | concepts | build/course | bachelor's (40 courses) |
+|---|---|---|---|
+| today | 30 | ~60 min | ~40 h |
+| parity | ~60 | **~2 h** | **~80 h** |
+
+80 hours is only tolerable because of lazy materialisation — it is ~2 hours per
+course, built while the learner works through the previous one, spread across
+four years of study. Eagerly it would be indefensible.
+
+Keeping 30 is also defensible, but then the honest label is "condensed course",
+not a semester equivalent, and a degree of them is not a degree's worth of
+material. Worth deciding deliberately rather than inheriting.
+
+### One number deliberately left open
+
+Whether 60 concepts *equals* 135 hours of student work is unmeasured. A Socratic
+dialogue on one concept plus its review is plausibly 20–40 minutes, which puts a
+60-concept course at 20–40 hours — well under 135. One-to-one tutoring is
+genuinely more time-efficient than lecture-plus-homework, so some of that gap is
+real rather than missing material; how much is an empirical question this
+project has not answered. **Measure session length before claiming hour
+equivalence anywhere in the UI.** Coverage parity (sections) is defensible now;
+workload parity (hours) is not yet.
+
+### Measurement caveat
+
+Biology 2e reported 8 chapters / 46 sections above, which understates it — it is
+a unit-grouped book and the counter collapsed its units. Chapter counts for
+unit-grouped books in that table are not reliable; the single-semester figures
+(Prealgebra, College Algebra, Calculus 1) are.
+
+
 ## Registration: choice that is also cost control
 
 Offer N candidate courses per term from the plan's elective slots; the learner
