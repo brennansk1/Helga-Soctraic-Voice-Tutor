@@ -235,3 +235,77 @@ rather than a judge. Combined with the clustered nature of the misses and the
 over-length finding, the reading is: **the pipeline is sound and the remaining
 coverage gap is a topic-selection problem that the copy-spine tier is designed to
 solve.** Proceed — with copy-spine promoted, not deferred.
+
+---
+
+# Task 0, runs 3 and 4 — backfill, and the variance finding
+
+## Structure now hits the design target
+
+| | run 2 (fixes) | run 3 (backfill) | run 4 (+ranking fix) | target |
+|---|---|---|---|---|
+| modules | 6 | 6 | 6 | 6–8 |
+| units | 18 | 18 | 16 | ~15 |
+| lessons | 54 | 52 | **47** | 45 |
+| concepts | 155 | 152 | **135** | 144 |
+| concepts/lesson | 2.87 | 2.92 | **2.87** | 3 |
+
+Run 4 lands within 4% of the lesson target and exactly on the 135-concept figure
+the Part I ladder derives. **The structural half of condition 1 is met.**
+
+## Coverage improved — and varies
+
+| run | coverage vs MIT 18.06 |
+|---|---|
+| 2 — fixes only | 70% |
+| 3 — + backfill | **90%** |
+| 4 — + ranking fix | **80%** |
+
+**Three runs of identical code and prompt produced 70 / 90 / 80.** That spread
+is not caused by the changes between runs — run 4's changes *narrowed* what
+backfill may draw from, which is correct, and its coverage still landed between
+the other two.
+
+This is the same lesson this project already learned about judges, now about the
+**generator**: a single build is not a measurement. Any future claim of the form
+"change X improved coverage" needs **median-of-3 at minimum**, or it is reading
+noise. The +20-point jump attributed to backfill in run 3 is, on this evidence,
+somewhere between +0 and +20 — real in direction, unquantified in size.
+
+## Backfill is drawing from the right book, and still catching poor chapters
+
+Run 4's source selection worked exactly as designed:
+
+```
+[BACKFILL] using 2 of 3 syllabi (best: 'Linear Algebra' @ 9.667);
+           weaker sources excluded from the coverage checklist
+```
+
+OpenStax *College Algebra* is now correctly excluded, and the off-topic
+Exponential/Logarithmic/Probability chapters from run 3 are gone. But the
+chapters it selected from the *right* book were still weak:
+
+> 'Automation', 'Comparing Set Descriptions', 'Cramer's Rule', 'Exploration',
+> 'Factoring and Complex Numbers: A Review', 'Fields'
+
+Only *Cramer's Rule* and *Fields* are curriculum topics. The rest are Wikibooks
+navigational and apparatus headings that `_NON_CONTENT` does not yet catch —
+"Exploration" and "Automation" are section names in that particular book, not
+subjects. **Wikibooks chapter lists need the same apparatus filtering that
+OpenStax sections already get**, and the backfill should prefer a textbook whose
+chapter names are curricular (OpenStax) over a wiki whose names are structural.
+
+Notably, the *persistent* misses across all runs are the same two: **least
+squares/projections and Gram-Schmidt/QR**. That consistency — against a varying
+overall score — is the actionable signal, and it is precisely what the
+copy-spine tier would fix, since Strang's book devotes a chapter to it.
+
+## Where this leaves the goal conditions
+
+| condition | state |
+|---|---|
+| 1 — content/time parity | **structure met** (47 lessons, 135 concepts, 2.87/lesson). Session *length* still unmeasured, so no hour-equivalence claim. |
+| 2 — quality vs published assets | **measurable and measured**: 80% (median of 70/90/80) against MIT 18.06, judge-free. Not yet at parity. |
+| 3 — sourceless programs | designed; not built |
+| 4 — trigger timing | designed; not built |
+| 5 — Mode A / QA gates | `coverage_check.py` built and tested (8 tests); criterion 6's judge confirmed broken and must not gate |
