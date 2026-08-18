@@ -25,21 +25,42 @@ as Programs means the "cobble together curriculum" logic is written once.
 
 ## Why programs must be planned cheaply and built lazily
 
-Measured on this hardware: **~2 min per concept**. At the parity target derived
-below (**135 concepts per semester course**) that is **~4.5 h per course**.
+### The cost figure needs re-measuring before it is trusted
 
-| program | courses | concepts | build time if eager |
+The **~2 min per concept** quoted throughout this project is explicitly tied to
+the old model — `MODE_A_STATUS.md` §5 reads "~30 s per LLM call **on
+qwen3.5:9b** → ~2 min/concept". The project has since standardised on Nail,
+which decodes at **29.0 tok/s against the 9B's 17.2** (`docs/MODEL.md`), a 1.69×
+speedup.
+
+If decode dominates, that projects to **~1.2 min/concept**. But hydration is not
+pure decode — depth-contract retries, fact-check and research calls all sit
+inside that figure — so this is a **projection, not a measurement**, and it is
+flagged here rather than quietly substituted:
+
+| | per concept | per course (135) | bachelor's (40) |
 |---|---|---|---|
-| 2-semester | 2 | 270 | ~9 h |
-| Associate | ~20 | 2,700 | **~90 h** |
-| Bachelor's | ~40 | 5,400 | **~180 h** |
+| measured, qwen3.5:9b | 2.0 min | 4.5 h | **180 h** |
+| projected, Nail (decode-scaled) | ~1.2 min | ~2.7 h | **~108 h** |
 
-_(At today's under-filled 30 concepts/course those figures are 40 h for a
-bachelor's. The parity decision in §"The concept count" quadruples them, which is
-the strongest argument for lazy building rather than against parity.)_
+**Both figures are quoted until one is measured.** Planning against the
+optimistic projection and discovering the pessimistic one is how a four-year
+artifact becomes undeliverable. The `session_clock` work in condition 1 should
+capture build time per concept on Nail at the same time — it is the same run.
 
-Generating a degree up front is 180 hours of compute for an artifact representing
-four years of study, most of which the learner will never reach. So:
+| program | courses | concepts | eager build (measured 9B → projected Nail) |
+|---|---|---|---|
+| 2-semester | 2 | 270 | 9 h → ~5 h |
+| Associate | ~20 | 2,700 | 90 h → ~54 h |
+| Bachelor's | ~40 | 5,400 | **180 h → ~108 h** |
+
+_(At today's under-filled 30 concepts/course a bachelor's is 40 h. Parity
+quadruples it, which is the strongest argument for lazy building — not an
+argument against parity.)_
+
+Even at the optimistic end, generating a degree up front is ~108 hours of compute
+for an artifact representing four years of study, most of which the learner will
+never reach. So:
 
 * **The Program plan is cheap** — research + a small number of LLM calls
   producing course specs, titles, prerequisite edges and term placement. Target
