@@ -754,7 +754,7 @@ table.ledger { min-width: 320px; }
         <label class="f"><span class="cap">Payment method</span>
           <select id="in-paytype"><option value="loan" selected>Finance</option><option value="cash">Cash</option></select></label>
         <label class="f"><span class="cap">Down payment</span><span class="hint">dollars</span>
-          <input id="in-down" type="number" min="0" step="100" value="3000"></label>
+          <input id="in-down" type="number" min="0" step="100" value="2000"></label>
         <label class="f"><span class="cap">Credit tier</span>
           <select id="in-credit">
             <option value="superprime">Super prime · 781+</option>
@@ -763,8 +763,8 @@ table.ledger { min-width: 320px; }
             <option value="subprime">Subprime · 501–600</option>
             <option value="deepsub">Deep subprime · &lt;501</option>
           </select></label>
-        <label class="f"><span class="cap">APR</span><span class="hint" id="apr-hint">blank = tier average</span>
-          <input id="in-apr" type="number" min="0" max="40" step="0.1" placeholder="auto"></label>
+        <label class="f"><span class="cap">APR</span><span class="hint" id="apr-hint">preapproved rate</span>
+          <input id="in-apr" type="number" min="0" max="40" step="0.01" value="4.99"></label>
         <label class="f"><span class="cap">Loan term</span><span class="hint">months</span>
           <select id="in-term">
             <option value="24">24</option><option value="36">36</option>
@@ -789,6 +789,10 @@ table.ledger { min-width: 320px; }
           <input id="in-insurance" type="number" min="0" step="50" placeholder="auto"></label>
         <label class="f"><span class="cap">Take-home pay</span><span class="hint">per month, optional</span>
           <input id="in-income" type="number" min="0" step="100" placeholder="—"></label>
+        <label class="f"><span class="cap">All-in monthly budget</span><span class="hint">payment + running costs</span>
+          <input id="in-budget" type="number" min="0" step="25" placeholder="—"></label>
+        <label class="f"><span class="cap">Max payment</span><span class="hint">the loan alone, optional</span>
+          <input id="in-maxpayment" type="number" min="0" step="25" placeholder="—"></label>
         <label class="f"><span class="cap">Trade-in value</span><span class="hint">what they offered you</span>
           <input id="in-trade-value" type="number" min="0" step="100" placeholder="—"></label>
         <label class="f"><span class="cap">Trade-in payoff</span><span class="hint">still owed on it</span>
@@ -875,6 +879,7 @@ table.ledger { min-width: 320px; }
         </div>
         <div id="price-ladder"></div>
         <div id="price-solver"></div>
+        <div id="cash-check"></div>
         <div id="afford-check"></div>
       </div></div>
     </section>

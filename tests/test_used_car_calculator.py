@@ -1580,3 +1580,44 @@ def test_no_personal_data_in_the_tool():
         text = open(path, encoding="utf-8", errors="replace").read()
         hits = [h for h in banned.findall(text) if "noreply@anthropic.com" not in h]
         assert not hits, f"{name} contains what looks like personal data: {hits[:3]}"
+
+
+def test_ui_defaults_to_the_preapproved_loan_terms(page):
+    page = _fresh_page(page)
+    assert page.input_value("#in-apr") == "4.99"
+    assert page.input_value("#in-down") == "2000"
+
+
+def test_ui_shows_the_monthly_cash_breakdown(page):
+    page = _fresh_page(page)
+    page.click("#btn-analyze")
+    page.wait_for_selector("#results", state="visible", timeout=20000)
+    page.wait_for_timeout(600)
+    text = page.inner_text("#cash-check").lower()
+    for line in ("loan payment", "insurance", "fuel", "upkeep", "out of your account"):
+        assert line in text, f"the cash breakdown omits {line}"
+    assert "excludes depreciation" in text
+
+
+def test_ui_budget_solver_names_the_most_you_can_spend(page):
+    page.fill("#in-budget", "450")
+    page.fill("#in-maxpayment", "150")
+    page.dispatch_event("#in-maxpayment", "change")
+    page.wait_for_timeout(800)
+    text = page.inner_text("#cash-check")
+    assert "the most you can spend is" in text.lower()
+    assert "all in" in text.lower()
+    page.fill("#in-budget", "")
+    page.fill("#in-maxpayment", "")
+    page.dispatch_event("#in-maxpayment", "change")
+    page.wait_for_timeout(500)
+
+
+def test_ui_budget_solver_says_so_when_nothing_fits(page):
+    page.fill("#in-budget", "60")
+    page.dispatch_event("#in-budget", "change")
+    page.wait_for_timeout(800)
+    assert "nothing runs within" in page.inner_text("#cash-check").lower()
+    page.fill("#in-budget", "")
+    page.dispatch_event("#in-budget", "change")
+    page.wait_for_timeout(500)

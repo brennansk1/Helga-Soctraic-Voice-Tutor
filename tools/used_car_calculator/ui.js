@@ -247,6 +247,8 @@
       annualMiles: numOrNull('in-annualmiles'), horizon: numOrNull('in-horizon'),
       gasUsdPerGal: numOrNull('in-gas'), insurance: numOrNull('in-insurance'),
       income: numOrNull('in-income'),
+      monthlyBudget: numOrNull('in-budget'),
+      maxPayment: numOrNull('in-maxpayment'),
       state: val('in-state') || null,
       tradeInValue: numOrNull('in-trade-value'),
       tradePayoff: numOrNull('in-trade-payoff'),
@@ -470,6 +472,8 @@
         ' here — the limit is the car itself (title, history or remaining life), not the money.</div>';
     }
 
+    renderCashCheck(ctx);
+
     if (ctx.affordability) {
       var a = ctx.affordability;
       var rows = [
@@ -486,6 +490,54 @@
       $('afford-check').innerHTML = '<div class="callout warn">Add your monthly take-home pay above to ' +
         'check this against the 20/4/10 affordability rule and to size the loan term.</div>';
     }
+  }
+
+  /**
+   * What this car costs you in cash each month, and — if a budget is set — the most
+   * expensive car that would stay inside it.
+   */
+  function renderCashCheck(ctx) {
+    var cash = ctx.monthlyCash;
+    var rows = [
+      ['Loan payment', cash.payment, ctx.input.financed
+        ? ctx.input.apr.toFixed(2) + '% over ' + ctx.input.termMonths + ' months' : 'paid cash'],
+      ['Insurance', cash.insurance, 'class average for ' + (ctx.input.state || 'the US') +
+        ' — get a real quote'],
+      ['Fuel', cash.fuel, fmtNum.format(ctx.input.annualMiles) + ' miles a year'],
+      ['Upkeep', cash.maintenance, 'averaged over ' + ctx.input.horizon + ' years'],
+      ['Registration & inspection', cash.fees, 'spread monthly']
+    ];
+    var html = '<h3>What it costs you a month, in cash</h3><table class="ledger"><tbody>' +
+      rows.map(function (r) {
+        return '<tr><td>' + esc(r[0]) + '</td><td class="n">' + usd(r[1]) +
+          '</td><td class="src">' + esc(r[2]) + '</td></tr>';
+      }).join('') +
+      '<tr class="total"><td>Out of your account</td><td class="n">' + usd(cash.total) +
+      '</td><td class="src">excludes depreciation — real, but not a monthly bill</td></tr>' +
+      '</tbody></table>';
+
+    var budget = ctx.input.monthlyBudget;
+    var maxPayment = ctx.input.maxPayment;
+    if (budget > 0 || maxPayment > 0) {
+      var solved = E.maxPriceForMonthlyBudget(readForm(), DATA,
+        budget > 0 ? budget : Infinity,
+        maxPayment > 0 ? { maxPayment: maxPayment } : {});
+      var within = (!(budget > 0) || cash.total <= budget) &&
+        (!(maxPayment > 0) || cash.payment <= maxPayment);
+      html += !solved
+        ? '<div class="callout warn">Nothing runs within ' +
+          (budget > 0 ? usd(budget) + ' a month' : 'that payment') +
+          ' — insurance, fuel and upkeep alone exceed it before any car payment. ' +
+          'Raise the budget or plan to pay cash for something cheap.</div>'
+        : '<div class="callout' + (within ? '' : ' warn') + '">' +
+          (within ? 'This car fits your budget. ' : 'This car is over your budget by ' +
+            usd(Math.max(cash.total - (budget > 0 ? budget : cash.total), 0)) + ' a month. ') +
+          'At ' + ctx.input.apr.toFixed(2) + '% over ' + ctx.input.termMonths + ' months with ' +
+          usd(ctx.input.down) + ' down, the most you can spend is <b>' + usd(solved.price) +
+          '</b> — that lands at ' + usd(solved.cash.payment) + ' a month in payment and <b>' +
+          usd(solved.cash.total) + '</b> all in.</div>';
+    }
+    setHTML($('cash-check'), html);
   }
 
   /** A one-dimensional price line: comps, fair value, the target band, and the ask. */
@@ -1383,12 +1435,12 @@
     'in-records', 'in-comp1', 'in-comp2', 'in-comp3', 'in-ppi', 'in-paytype', 'in-down',
     'in-credit', 'in-apr', 'in-term', 'in-target-payment', 'in-tax', 'in-fees',
     'in-annualmiles', 'in-horizon', 'in-state', 'in-gas', 'in-insurance', 'in-income',
-    'in-trade-value', 'in-trade-payoff'];
+    'in-budget', 'in-maxpayment', 'in-trade-value', 'in-trade-payoff'];
   var CHECK_IDS = ['in-recalls-verified', 'in-comp-bias'];
   /** Changing any of these changes how every listing would be owned, so the market re-scores. */
   var MARKET_INPUTS = ['in-state', 'in-paytype', 'in-down', 'in-credit', 'in-apr', 'in-term',
     'in-tax', 'in-fees', 'in-annualmiles', 'in-horizon', 'in-gas', 'in-insurance',
-    'in-income', 'in-comp-bias'];
+    'in-income', 'in-budget', 'in-maxpayment', 'in-comp-bias'];
 
   function collectForm() {
     var out = {};

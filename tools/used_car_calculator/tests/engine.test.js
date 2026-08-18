@@ -1293,3 +1293,89 @@ test('every state produces a finite, sane analysis', () => {
     assert.ok(Number.isFinite(ctx.otd) && ctx.otd > 0, state);
   });
 });
+
+/* ------------------------------------------- monthly cash cost & affordability */
+
+test('monthlyCashCost counts the money that actually leaves your account', () => {
+  const ctx = E.analyze(baseInput(), DATA);
+  const cash = ctx.monthlyCash;
+  const parts = cash.payment + cash.insurance + cash.fuel + cash.maintenance + cash.fees;
+  assert.ok(Math.abs(cash.total - parts) < 1e-6, 'the parts must sum to the total');
+  assert.ok(cash.total > cash.payment, 'running costs sit on top of the payment');
+});
+
+test('cash cost and economic cost differ by depreciation, not by accident', () => {
+  // Paying cash: no payment at all, so the only thing the ownership total adds is
+  // depreciation. That is the cleanest place to see the two figures are different animals.
+  const ctx = E.analyze(baseInput({ payType: 'cash' }), DATA);
+  assert.ok(ctx.monthlyCash.total < ctx.tco.costPerMonth,
+    'without a payment, cash cost must sit below the full economic cost');
+  // The ownership total also amortizes the one-off cost of buying — sales tax, dealer
+  // fees and the title — which never appears in a monthly cash figure.
+  const months = ctx.input.horizon * 12;
+  const gap = (ctx.tco.depreciation + ctx.tco.salesTax + ctx.input.fees + ctx.tco.titleFee) / months;
+  assert.ok(Math.abs((ctx.monthlyCash.total + gap) - ctx.tco.costPerMonth) < 1,
+    'the gap is depreciation plus the one-off purchase costs, nothing else');
+});
+
+test('with a loan, cash cost can exceed the economic cost — that is equity, not waste', () => {
+  // A short term repays principal faster than the car loses value, so more cash leaves
+  // your account than the car actually costs you. The tool must not conflate the two.
+  const shortTerm = E.analyze(baseInput({ termMonths: 36, down: 500 }), DATA);
+  assert.ok(shortTerm.monthlyCash.total > 0);
+  assert.ok(Number.isFinite(shortTerm.tco.costPerMonth));
+});
+
+test('monthlyCashCost has no payment on a cash purchase', () => {
+  const ctx = E.analyze(baseInput({ payType: 'cash' }), DATA);
+  assert.strictEqual(ctx.monthlyCash.payment, 0);
+  assert.ok(ctx.monthlyCash.total > 0, 'you still insure and fuel it');
+});
+
+test('maxPriceForMonthlyBudget finds a price that actually meets the budget', () => {
+  const raw = baseInput({ state: 'UT', apr: 4.99, down: 2000, termMonths: 60, insurance: null });
+  const result = E.maxPriceForMonthlyBudget(raw, DATA, 450);
+  assert.ok(result, 'a $450 budget should buy something');
+  assert.ok(result.cash.total <= 450 + 0.01, `got ${result.cash.total}`);
+  // One dollar more must break it — this is the *maximum*.
+  const dearer = E.analyze(Object.assign({}, raw, { asking: result.price + 500 }), DATA);
+  assert.ok(dearer.monthlyCash.total > 450, 'the answer must be the ceiling, not just any price');
+});
+
+test('maxPriceForMonthlyBudget honours a separate cap on the loan payment', () => {
+  const raw = baseInput({ state: 'UT', apr: 4.99, down: 2000, termMonths: 60, insurance: null });
+  const capped = E.maxPriceForMonthlyBudget(raw, DATA, 450, { maxPayment: 150 });
+  assert.ok(capped.cash.payment <= 150 + 0.01, `payment ${capped.cash.payment}`);
+  assert.ok(capped.cash.total <= 450 + 0.01);
+  const uncapped = E.maxPriceForMonthlyBudget(raw, DATA, 450);
+  assert.ok(capped.price <= uncapped.price, 'a payment cap can only lower the ceiling');
+});
+
+test('a longer term buys a dearer car at the same payment', () => {
+  const raw = st => baseInput({ state: 'UT', apr: 4.99, down: 2000, termMonths: st, insurance: null });
+  const short = E.maxPriceForMonthlyBudget(raw(48), DATA, 9999, { maxPayment: 150 });
+  const long = E.maxPriceForMonthlyBudget(raw(72), DATA, 9999, { maxPayment: 150 });
+  assert.ok(long.price > short.price);
+});
+
+test('a thirstier class buys less car for the same all-in budget', () => {
+  const of = seg => E.maxPriceForMonthlyBudget(
+    baseInput({ state: 'UT', apr: 4.99, down: 2000, termMonths: 60,
+                segment: seg, brand: 'Toyota', model: '', insurance: null }),
+    DATA, 450);
+  assert.ok(of('Midsize SUV').price < of('Compact car').price,
+    'fuel and insurance eat the budget before the payment does');
+});
+
+test('maxPriceForMonthlyBudget returns null when nothing fits', () => {
+  const raw = baseInput({ state: 'UT', apr: 4.99, down: 0, termMonths: 60, insurance: null });
+  assert.strictEqual(E.maxPriceForMonthlyBudget(raw, DATA, 40), null,
+    '$40 a month does not run a car');
+});
+
+test('the down payment lifts what the same budget can buy', () => {
+  const of = down => E.maxPriceForMonthlyBudget(
+    baseInput({ state: 'UT', apr: 4.99, down, termMonths: 60, insurance: null }), DATA, 450);
+  assert.ok(of(4000).price > of(2000).price);
+  assert.ok(of(2000).price > of(0).price);
+});

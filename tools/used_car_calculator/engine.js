@@ -556,6 +556,73 @@
   }
 
   /**
+   * Monthly cash cost of keeping this car: the money that actually leaves your account.
+   *
+   * Loan payment, insurance, fuel, upkeep, registration and any inspection or EV charge.
+   * Depreciation is deliberately excluded — it is a real cost and the cost-of-ownership
+   * total counts it, but it is not a monthly outgoing, and a monthly budget is about cash.
+   */
+  function monthlyCashCost(input, data) {
+    var purchase = purchaseCosts(input, data);
+    var loan = input.financed
+      ? loanSchedule(purchase.principal, input.apr, input.termMonths)
+      : { payment: 0 };
+    var insurance = toNum(input.insurance,
+      (data.segments[input.segment] || {}).insPerYear || 1750);
+    var maint = maintenanceCost(input.brand, input.age, input.horizon, data, input.segment);
+    var maintPerYear = (maint.total * toNum(input.maintMultiplier, 1)) / input.horizon;
+    var values = projectValue(input.asking, input.age, input.segment, input.brand, input.horizon, data);
+    var propertyTax = 0;
+    for (var t = 1; t <= input.horizon; t++) propertyTax += values[t] * purchase.propertyTaxRate;
+
+    var perYear = insurance + annualFuelCost(input, data) + maintPerYear +
+      purchase.registrationPerYear + purchase.inspectionPerYear + purchase.evFeePerYear +
+      propertyTax / input.horizon;
+
+    return {
+      payment: loan.payment,
+      insurance: insurance / 12,
+      fuel: annualFuelCost(input, data) / 12,
+      maintenance: maintPerYear / 12,
+      fees: (purchase.registrationPerYear + purchase.inspectionPerYear +
+             purchase.evFeePerYear + propertyTax / input.horizon) / 12,
+      total: loan.payment + perYear / 12
+    };
+  }
+
+  /**
+   * The most expensive car whose monthly cash cost stays inside `budget`.
+   *
+   * Answers the question people actually shop with — "what can I afford at $X a month" —
+   * rather than making them guess a price and check. Optionally also caps the loan payment
+   * itself, since a budget met by stretching the term is not the same as an affordable car.
+   * Returns null when even the cheapest running car breaks the budget.
+   */
+  function maxPriceForMonthlyBudget(rawInput, data, budget, options) {
+    options = options || {};
+    var maxPayment = isNum(options.maxPayment) ? options.maxPayment : Infinity;
+    var floor = data.constants.floorValue;
+
+    function costAt(price) {
+      var input = normalizeInput(Object.assign({}, rawInput, { asking: price }), data);
+      applyStateDefaults(input, data);
+      var cash = monthlyCashCost(input, data);
+      return { cash: cash, ok: cash.total <= budget && cash.payment <= maxPayment };
+    }
+
+    if (!costAt(floor).ok) return null;          // nothing runs this cheaply
+
+    var lo = floor, hi = Math.max(toNum(rawInput.asking, 20000) * 3, 60000);
+    if (costAt(hi).ok) return { price: hi, cash: costAt(hi).cash, capped: true };
+    for (var i = 0; i < 40; i++) {
+      var mid = (lo + hi) / 2;
+      if (costAt(mid).ok) lo = mid; else hi = mid;
+    }
+    var atLo = costAt(lo);
+    return { price: lo, cash: atLo.cash, capped: false };
+  }
+
+  /**
    * Solve for the asking price that would earn `targetScore`. Binary search, because
    * the score is monotonic in price except where a hard cap flattens it — hence the
    * explicit reachability check before searching.
@@ -1007,6 +1074,9 @@
       elecUsdPerKwh: toNum(raw.elecUsdPerKwh, data.energy.elecUsdPerKwh),
       insurance: toNum(raw.insurance, (data.segments[rec && rec.seg ? rec.seg : segment] || {}).insPerYear),
       income: Math.max(toNum(raw.income, 0), 0),
+      // What the buyer can actually spend each month, if they said.
+      monthlyBudget: Math.max(toNum(raw.monthlyBudget, 0), 0),
+      maxPayment: Math.max(toNum(raw.maxPayment, 0), 0),
       isEV: raw.isEV,
       state: raw.state || null,
       stateDefaultsApplied: false,
@@ -1109,6 +1179,7 @@
     ctx.cumulative = cumulativeCost(input, data, loan);
     ctx.termComparison = input.financed ? loanTermComparison(input, data) : null;
     ctx.services = serviceOutlook(input, data);
+    ctx.monthlyCash = monthlyCashCost(input, data);
     // findings() reads the views above, so it runs last.
     ctx.findings = findings(ctx);
     return ctx;
@@ -1127,6 +1198,7 @@
     applyStateDefaults: applyStateDefaults,
     loanTermComparison: loanTermComparison, cumulativeCost: cumulativeCost,
     priceForScore: priceForScore, bakedRecallCount: bakedRecallCount,
+    monthlyCashCost: monthlyCashCost, maxPriceForMonthlyBudget: maxPriceForMonthlyBudget,
     vehicleRecord: vehicleRecord, annualFuelCost: annualFuelCost,
     totalCostOfOwnership: totalCostOfOwnership, affordability: affordability,
     reliabilityScore: reliabilityScore, safetyPoints: safetyPoints,
