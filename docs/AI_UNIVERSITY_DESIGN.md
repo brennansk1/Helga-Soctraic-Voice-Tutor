@@ -1129,7 +1129,28 @@ thousand leaf nodes.
 
 ## Status
 
-Design. **Task 0 has now been run — see `docs/TASK0_RESULTS.md`.** It did not
+Design, with the pipeline work that Task 0 forced now done and measured. See
+`docs/TASK0_RESULTS.md` for the full run log.
+
+**Measured progression on the same course (Linear Algebra, vs MIT 18.06):**
+
+| | lessons | concepts | coverage vs MIT 18.06 |
+|---|---|---|---|
+| before the fixes | 6 | 30 | — (build went UNGUIDED) |
+| after 3 fixes | 54 | 155 | **70%** |
+| after coverage backfill | 52 | 152 | **90%** |
+
+Coverage is measured by `tools/coverage_check.py`, which has **no model in it** —
+a topic counts as covered when its identifying terms appear in the course's own
+titles. On the same course the LLM-based criterion 6 reported **0%** while
+listing as missing four topics that were literally module titles, so the
+judge-free number is the one that survives inspection.
+
+Still open: session length is unmeasured, so **no hour-equivalence claim may be
+made** (condition 1); the copy-spine tier is designed but not built; and
+criterion 6's judge needs fixing or replacing.
+
+### Original Task 0 findings (now fixed) It did not
 produce a valid coverage number, and that is its finding: two wiring bugs block
 the measurement.
 
