@@ -239,7 +239,9 @@ def progressive_bloom(index: int, total: int, floor: int, ceiling: int) -> int:
 # between presets is 20 minutes and 3+ hours, and a learner should not discover
 # that by waiting.
 
-_MINUTES_PER_CONCEPT = 2.0
+# MEASURED 2026-08-18 on nail-35b-a3b: 3 concepts hydrated in 269 s = 90 s each.
+# The previous 2.0 was measured on qwen3.5:9b, which the project no longer uses.
+_MINUTES_PER_CONCEPT = 1.5
 
 COURSE_PRESETS = {
     "overview": {
