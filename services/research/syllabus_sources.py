@@ -41,6 +41,7 @@ Measured 2026-08-04:
 import logging
 import os
 import re
+import threading
 import time
 
 import requests
@@ -122,6 +123,26 @@ def _cache_on():
             not in ("0", "false", "no"))
 
 
+_FETCH_STATS = threading.local()
+
+
+def fetch_stats_reset():
+    """Begin recording lookup outcomes on this thread."""
+    _FETCH_STATS.d = {"ok": 0, "cached": 0, "failed": 0, "throttled": 0}
+
+
+def fetch_stats():
+    """Lookup outcomes since the last reset on this thread, else None."""
+    d = getattr(_FETCH_STATS, "d", None)
+    return dict(d) if d is not None else None
+
+
+def _tally(key):
+    d = getattr(_FETCH_STATS, "d", None)
+    if d is not None:
+        d[key] = d.get(key, 0) + 1
+
+
 def _get_json(url, params, timeout=15, attempts=3):
     """GET returning parsed JSON, or None. Cached on success.
 
@@ -129,14 +150,24 @@ def _get_json(url, params, timeout=15, attempts=3):
     429, so `.json()` raises and the whole lookup silently returns nothing.
     Observed repeatedly while probing. Retry with backoff, and honour
     Retry-After when the server does send a 429.
+
+    Returning None for BOTH "no such book" and "three attempts all died" is the
+    absent-vs-zero confusion again, and it is the one that actually hurt: a
+    throttled reply read as *absence of evidence* is what let a build go
+    unguided while reporting success. This layer cannot resolve the ambiguity --
+    a caller asking for one page has no idea a burst is in progress -- so it
+    records the outcome instead, and `curriculum_brief` reads the tally to tell
+    "we looked and found nothing" apart from "we could not look."
     """
     ck = None
     if _cache_on():
         ck = "wiki:" + url + ":" + repr(sorted((params or {}).items()))
         hit = _HTTP_CACHE.get(ck)
         if hit is not None:
+            _tally("cached")
             return hit
 
+    throttled = False
     for attempt in range(attempts):
         try:
             r = requests.get(url, params=params, headers=UA, timeout=timeout)
@@ -147,9 +178,11 @@ def _get_json(url, params, timeout=15, attempts=3):
                         _HTTP_CACHE.set(ck, data, expire=_HTTP_TTL)
                     except Exception as e:
                         logger.debug(f"cache write failed: {e}")
+                _tally("ok")
                 return data
             if r.status_code == 429:
                 # The server told us how long to wait; guessing is worse.
+                throttled = True
                 wait = float(r.headers.get("Retry-After", 0) or 0) or 1.5 * (attempt + 1)
                 logger.info(f"{url}: 429, waiting {wait:.1f}s")
                 time.sleep(min(wait, 10))
@@ -157,6 +190,7 @@ def _get_json(url, params, timeout=15, attempts=3):
         except Exception as e:
             logger.debug(f"{url} attempt {attempt + 1} failed: {e}")
         time.sleep(0.6 * (attempt + 1))
+    _tally("throttled" if throttled else "failed")
     return None
 
 

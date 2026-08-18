@@ -13,6 +13,7 @@ Research now runs in both phases. These test the Phase-1 logic without network.
 import os
 import sys
 import unittest
+from unittest import mock
 from unittest.mock import patch
 
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
@@ -148,3 +149,41 @@ class TestNoisySignalsWereRemovedNotShipped(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestDegradedVsEmpty(unittest.TestCase):
+    """"We looked and found nothing" and "we could not look" must not be the
+    same fact. Conflating them is what let a throttled sweep read as evidence
+    of absence and send a build unguided while reporting success."""
+
+    # NOTE: go through `cr`'s own imported names, not a fresh
+    # `services.research.syllabus_sources` import. The dual flat/package import
+    # can produce TWO module objects, each with its own threading.local tally,
+    # and a test that resets one while the code writes the other passes or
+    # fails for reasons unrelated to the behaviour under test.
+    def test_dead_lookups_are_recorded_not_silently_none(self):
+        cr.fetch_stats_reset()
+        assert cr._get_json("http://127.0.0.1:9/nope", {}, timeout=1,
+                            attempts=1) is None
+        assert cr.fetch_stats()["failed"] == 1
+
+    def test_brief_flags_degraded_when_sources_could_not_be_reached(self):
+        with mock.patch.object(cr, "subject_outline",
+                               side_effect=lambda *a, **k: (
+                                   cr._get_json("http://127.0.0.1:9/x", {},
+                                                timeout=1, attempts=1),
+                                   {"outlines": [], "vocabulary": []})[1]), \
+             mock.patch.object(cr, "_wikiversity_course_shapes", return_value=[]), \
+             mock.patch.object(cr, "_internet_archive_books", return_value=[]):
+            brief = cr.curriculum_brief("Anything", use_cache=False)
+        assert brief["found"] is False
+        assert brief["degraded"] is True, \
+            "unreachable sources reported as a clean 'no evidence' result"
+
+    def test_clean_empty_sweep_is_not_degraded(self):
+        with mock.patch.object(cr, "subject_outline",
+                               return_value={"outlines": [], "vocabulary": []}), \
+             mock.patch.object(cr, "_wikiversity_course_shapes", return_value=[]), \
+             mock.patch.object(cr, "_internet_archive_books", return_value=[]):
+            brief = cr.curriculum_brief("Anything", use_cache=False)
+        assert brief["found"] is False and brief["degraded"] is False

@@ -46,12 +46,12 @@ import time
 try:  # container (flat)
     from syllabus_sources import (
         WIKIBOOKS_API, WIKIVERSITY_API, _chapters_of, _get_json, _search_book,
-        subject_outline,
+        fetch_stats, fetch_stats_reset, subject_outline,
     )
 except ImportError:  # imported as a package
     from services.research.syllabus_sources import (
         WIKIBOOKS_API, WIKIVERSITY_API, _chapters_of, _get_json, _search_book,
-        subject_outline,
+        fetch_stats, fetch_stats_reset, subject_outline,
     )
 
 logger = logging.getLogger(__name__)
@@ -183,6 +183,7 @@ def curriculum_brief(topic, mastery=3, scope=3, starting_from=1,
                         f"({_hit.get('chapter_count', 0)} chapters)")
             return _hit
 
+    fetch_stats_reset()
     prof = _level_profile(mastery)
     brief = {
         "topic": topic,
@@ -242,11 +243,26 @@ def curriculum_brief(topic, mastery=3, scope=3, starting_from=1,
         sum(len(x["chapters"]) for x in brief["syllabi"])
         + sum(len(c["sections"]) for c in brief["courses"]))
     brief["found"] = brief["chapter_count"] > 0
+
+    # "We looked and there is nothing" vs "we could not look" are different
+    # facts, and only the first justifies building unguided. Lookups that never
+    # completed are reported so the builder can say which one happened; a brief
+    # assembled through a throttling storm is NOT evidence of absence.
+    _st = fetch_stats() or {}
+    brief["lookup_stats"] = _st
+    brief["degraded"] = bool(_st.get("failed", 0) or _st.get("throttled", 0))
+    if brief["degraded"]:
+        logger.warning(
+            f"curriculum_brief({topic!r}): DEGRADED — {_st.get('failed', 0)} "
+            f"failed and {_st.get('throttled', 0)} throttled lookups. "
+            f"found={brief['found']} is not trustworthy as evidence of absence.")
+
     if not brief["found"] and brief["canonical_texts"]:
         logger.warning(
             f"curriculum_brief({topic!r}): {len(brief['canonical_texts'])} book "
             f"titles but NO chapter structure — treating as no evidence")
-    if brief["found"] and _BRIEF_CACHE is not None and _cache_on and _ck:
+    if (brief["found"] and not brief["degraded"]
+            and _BRIEF_CACHE is not None and _cache_on and _ck):
         try:
             _BRIEF_CACHE.set(_ck, brief, expire=_BRIEF_TTL)
         except Exception as e:
