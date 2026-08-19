@@ -202,6 +202,13 @@
                     is something you have while in the middle of something else;
                     making it a destination means leaving the thing that
                     prompted it. Cmd/Ctrl-K opens it too. #}
+                {# Build-in-progress pill: visible on every page while a build
+                   runs, returns to /build. Driven by build-guard.js from the
+                   same status stream the build view consumes. #}
+                <a href="/build" class="build-pill hidden" id="build-pill">
+                    <span class="build-now-pulse" aria-hidden="true"></span>
+                    <span id="build-pill-label">Building&hellip;</span>
+                </a>
                 <button id="ask-open-btn" class="ask-open-btn" type="button"
                         aria-label="Ask Helga a question" title="Ask Helga  (\u2318K)">
                     <span class="i i-chat" aria-hidden="true"></span>
@@ -237,6 +244,7 @@
         survive navigation and the UI must stop offering actions the system
         will refuse. #}
     <script src="{{ url_for('static', filename='js/build-guard.js') }}?v=1"></script>
+    <script src="{{ url_for('static', filename='js/build-guard.js') }}"></script>
     {% block page_scripts %}{% endblock %}
 
     <!-- Toast Container -->

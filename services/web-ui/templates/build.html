@@ -28,6 +28,40 @@
     </div>
   </header>
 
+  <!-- The two pipelines make opposite decisions (COURSE_PIPELINE.md), so they
+       get different rails. The first BOOK:* status swaps the researched rail
+       out — showing "Research: finding real syllabi" during a book build would
+       narrate a pipeline that is not running. -->
+  <ol class="build-stages hidden" id="book-stages" aria-label="Build stages (book)">
+    <li class="build-stage" data-stage="book-read">
+      <span class="build-stage-dot"></span>
+      <div><strong>Reading the book</strong><span>Structure first — chapters, parts, words</span></div>
+    </li>
+    <li class="build-stage" data-stage="book-shape">
+      <span class="build-stage-dot"></span>
+      <div><strong>Shaping the course</strong><span>The book's own divisions become the course</span></div>
+    </li>
+    <li class="build-stage" data-stage="book-name">
+      <span class="build-stage-dot"></span>
+      <div><strong>Naming concepts</strong><span>Reading every chapter, chapter by chapter</span></div>
+    </li>
+    <li class="build-stage" data-stage="hydrate">
+      <span class="build-stage-dot"></span>
+      <div><strong>Writing content</strong><span>Each concept written from its chapter</span></div>
+    </li>
+    <li class="build-stage" data-stage="book-gate">
+      <span class="build-stage-dot"></span>
+      <div><strong>Quality gate</strong><span>Every lesson linked, in the book's order</span></div>
+    </li>
+  </ol>
+
+  <!-- Chapter progress: a 59-chapter naming run takes tens of minutes, and a
+       spinner with no counter is indistinguishable from a hang. -->
+  <div class="book-progress hidden" id="book-progress">
+    <div class="book-progress-bar"><div class="book-progress-fill" id="book-progress-fill"></div></div>
+    <span class="book-progress-label" id="book-progress-label"></span>
+  </div>
+
   <ol class="build-stages" id="build-stages" aria-label="Build stages">
     <li class="build-stage" data-stage="preflight">
       <span class="build-stage-dot"></span>
@@ -74,12 +108,19 @@
     </article>
   </section>
 
-  <section class="build-panel build-log-panel">
-    <h2 class="build-panel-title">
-      Activity
-      <button class="btn btn-ghost btn-small" id="build-log-toggle"
-              aria-expanded="false" aria-controls="build-log">Show detail</button>
-    </h2>
+  <section class="build-panel build-stream-panel">
+    <h2 class="build-panel-title">Live</h2>
+    <!-- The stream is the show, not a debug drawer. The "now" line carries the
+         current action with a pulse; beneath it the last events scroll as
+         human sentences with timestamps. Raw developer vocabulary stays
+         available behind the toggle for anyone testing. -->
+    <div class="build-now" id="build-now" aria-live="polite">
+      <span class="build-now-pulse" aria-hidden="true"></span>
+      <span class="build-now-text" id="build-now-text">Warming up…</span>
+    </div>
+    <ul class="build-stream" id="build-stream" aria-live="off"></ul>
+    <button class="btn btn-ghost btn-small" id="build-log-toggle"
+            aria-expanded="false" aria-controls="build-log">Raw log</button>
     <ul class="build-log" id="build-log" hidden></ul>
   </section>
 

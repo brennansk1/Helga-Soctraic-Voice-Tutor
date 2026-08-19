@@ -408,6 +408,7 @@
         createBtn.querySelector(".create-btn-label").textContent = "Starting…";
         if (state.source === "book") {
             // The upload already started the build server-side; go watch it.
+            if (window.HelgaBuildGuard) window.HelgaBuildGuard.set();
             window.location.href = "/build";
             return;
         }
@@ -426,6 +427,7 @@
                 },
             }),
         }).then(function () {
+            if (window.HelgaBuildGuard) window.HelgaBuildGuard.set();
             window.location.href = "/build";
         }).catch(function (e) {
             createBtn.disabled = false;
@@ -449,6 +451,33 @@
         if (dx < 0 && !nextBtn.disabled) go(state.index + 1);
         if (dx > 0) go(state.index - 1);
     }, { passive: true });
+
+    /* THE SINGLE-BUILD LOCK. The hardware runs one model; a second build
+       would queue behind the first and look like a hang. If one is running,
+       this page says so and routes to it instead of pretending to offer a
+       choice it cannot honour. */
+    if (window.HelgaBuildGuard && window.HelgaBuildGuard.active()) {
+        var shell = document.getElementById("create-shell");
+        shell.textContent = "";
+        var box = document.createElement("div");
+        box.className = "stretch-card";
+        box.style.margin = "10vh auto";
+        var h = document.createElement("h2");
+        h.textContent = "A course is already being built";
+        var p1 = document.createElement("p");
+        p1.textContent = "Helga builds one course at a time — a second build " +
+            "would queue behind the first. Watch the current build, or come " +
+            "back when it finishes.";
+        var a = document.createElement("a");
+        a.className = "create-btn"; a.href = "/build";
+        a.style.textDecoration = "none";
+        var al = document.createElement("span");
+        al.className = "create-btn-label"; al.textContent = "Go to the build";
+        a.appendChild(al);
+        box.appendChild(h); box.appendChild(p1); box.appendChild(a);
+        shell.appendChild(box);
+        return;
+    }
 
     /* ------------------------------------------------ init */
     go(0);

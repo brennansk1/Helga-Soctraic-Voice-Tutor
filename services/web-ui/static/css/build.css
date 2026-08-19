@@ -184,3 +184,96 @@
     background: var(--bg-secondary); border: 1px solid var(--border-color);
     border-radius: var(--border-radius); }
 .library-plan-title { margin: 0 0 var(--space-3); font-size: var(--font-size-lg); }
+
+/* --- the live stream (2026-08-19) -------------------------------------------
+ * The stream is the show, not a debug drawer. The "now" line carries the
+ * current action with a pulse; the feed scrolls beneath it as human sentences
+ * with timestamps, colour-coded by kind. Raw vocabulary stays behind the
+ * toggle for testing.
+ */
+.build-now {
+    display: flex; align-items: center; gap: .7em;
+    padding: .85em 1em;
+    border-radius: var(--radius-md, 10px);
+    background: color-mix(in srgb, var(--accent, #4759e4) 8%, transparent);
+    font-weight: 600;
+    margin-bottom: var(--space-3, .75rem);
+}
+.build-now-pulse {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--accent, #4759e4);
+    animation: now-pulse 1.4s ease-in-out infinite;
+    flex: 0 0 auto;
+}
+@keyframes now-pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.6); opacity: .45; }
+}
+@media (prefers-reduced-motion: reduce) { .build-now-pulse { animation: none; } }
+
+.build-stream {
+    list-style: none; margin: 0 0 var(--space-3) 0; padding: 0;
+    max-height: 260px; overflow-y: auto;
+    font-size: .9rem;
+}
+.stream-item {
+    display: flex; gap: .8em; align-items: baseline;
+    padding: .3em .2em;
+    border-bottom: 1px solid color-mix(in srgb, var(--border, #d5d9e0) 55%, transparent);
+    animation: stream-in var(--dur-base, 200ms) ease;
+}
+@keyframes stream-in { from { opacity: 0; transform: translateY(4px); } }
+.stream-item time {
+    flex: 0 0 auto; font-variant-numeric: tabular-nums;
+    color: var(--text-secondary, #667); font-size: .8rem;
+}
+.stream-evidence span { color: var(--accent, #4759e4); }
+.stream-structure span { color: var(--text-primary, #223); }
+.stream-gate span { color: var(--success, #1b9e57); font-weight: 600; }
+.stream-warn span { color: var(--warning, #c77d0a); font-weight: 600; }
+
+/* Chapter progress for book builds: the counter that proves it is not hung. */
+.book-progress {
+    display: flex; align-items: center; gap: var(--space-3);
+    margin: 0 0 var(--space-4);
+}
+.book-progress-bar {
+    flex: 1; height: 8px; border-radius: 999px;
+    background: color-mix(in srgb, var(--border, #d5d9e0) 60%, transparent);
+    overflow: hidden;
+}
+.book-progress-fill {
+    height: 100%; width: 0;
+    border-radius: 999px;
+    background: var(--accent, #4759e4);
+    transition: width var(--dur-slow, 320ms) ease;
+}
+.book-progress-label {
+    font-variant-numeric: tabular-nums;
+    font-size: .9rem; color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+/* create.css defines .hidden for its own page; this file never had it, so
+   enterBookMode() "hid" the researched rail with a class that did nothing and
+   both rails rendered. */
+.hidden { display: none !important; }
+
+/* --- build-in-progress pill (nav) -------------------------------------------
+ * Clicking away from a build must not mean losing it. The pill lives in the
+ * nav on EVERY page while a build runs, carries a live pulse, and returns to
+ * /build. It doubles as the single-build guard's visual: you cannot miss that
+ * one is running.
+ */
+.build-pill {
+    display: inline-flex; align-items: center; gap: .5em;
+    padding: .35em .9em;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent, #4759e4) 12%, transparent);
+    color: var(--accent, #4759e4);
+    font-size: .82rem; font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+}
+.build-pill .build-now-pulse { width: 8px; height: 8px; }
+.build-pill:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }

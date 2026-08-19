@@ -102,7 +102,19 @@
         [/^RESEARCH:COURSE:([^|]+)\|([^|]+)\|(\d+)/, function (m) {
             return 'Found course — ' + m[1] + ': "' + m[2] + '" (' + m[3] + ' sections)'; }],
         [/^RESEARCH:BOOK:(.+)/,           function (m) {
-            return 'Found book — ' + m[1]; }],
+            return 'Found book — ' + m[1];
+
+    // One sentence for the live stream, or '' when a message is purely
+    // internal. Walks the same HUMAN table the log renderer uses, so the
+    // stream and the log can never tell two different stories.
+    function translate(msg) {
+        for (var i = 0; i < HUMAN.length; i++) {
+            var m = msg.match(HUMAN[i][0]);
+            if (m) { try { return HUMAN[i][1](m) || ''; } catch (e) { return ''; } }
+        }
+        return '';
+    }
+ }],
         [/^HYDRATE:SOURCES:([^|]+)\|([^|]+)\|([\d.]+)/, function (m) {
             return 'Wrote "' + m[1] + '" — grounded in ' + m[2] +
                    ' (confidence ' + m[3] + ')'; }],
@@ -201,6 +213,14 @@
         ul.scrollTop = ul.scrollHeight;
     }
 
+    function streamKind(msg) {
+        if (/^RESEARCH:/.test(msg)) return 'evidence';
+        if (/^STRUCT:WARN|^CHECK:.*(FAIL|INADEQUATE)|^STRUCT:REDUNDANT/.test(msg)) return 'warn';
+        if (/^CHECK:/.test(msg)) return 'gate';
+        if (/^STRUCT:/.test(msg)) return 'structure';
+        return '';
+    }
+
     // --- message interpretation --------------------------------------------
     //
     // The builder emits a structured prefix vocabulary (CHECK:, STRUCT:, LOG:).
@@ -208,10 +228,110 @@
     // previous progress UI matched substrings like "hydrat" and broke whenever
     // a message was reworded.
 
+    // --- book mode -----------------------------------------------------
+    //
+    // The first BOOK:* status proves this is an upload build, so the
+    // researched rail is swapped for the book rail. Without this, an upload
+    // showed "Research: finding real syllabi" — narrating a pipeline that was
+    // not running.
+    var bookMode = false;
+    function enterBookMode() {
+        if (bookMode) return;
+        bookMode = true;
+        var r = document.getElementById('build-stages');
+        var b = document.getElementById('book-stages');
+        if (r) r.classList.add('hidden');
+        if (b) b.classList.remove('hidden');
+        var sub = document.getElementById('build-sub');
+        if (sub) sub.textContent = 'Reading your book — structure first, then every chapter.';
+    }
+
+    var nowText = document.getElementById('build-now-text');
+    var streamEl = document.getElementById('build-stream');
+    function now(text) { if (nowText && text) nowText.textContent = text; }
+    function stream(text, kind) {
+        if (!streamEl || !text) return;
+        var li = document.createElement('li');
+        li.className = 'stream-item' + (kind ? ' stream-' + kind : '');
+        var t = document.createElement('time');
+        var d = new Date();
+        t.textContent = ('0' + d.getHours()).slice(-2) + ':' +
+                        ('0' + d.getMinutes()).slice(-2) + ':' +
+                        ('0' + d.getSeconds()).slice(-2);
+        var span = document.createElement('span');
+        span.textContent = text;                    // textContent, always
+        li.appendChild(t); li.appendChild(span);
+        streamEl.appendChild(li);
+        while (streamEl.children.length > 80) streamEl.removeChild(streamEl.firstChild);
+        streamEl.scrollTop = streamEl.scrollHeight;
+    }
+
+    function handleBook(msg) {
+        var m;
+        if ((m = msg.match(/^BOOK:PARSED:(\w+):(\d+):(\d+):(\d+)/))) {
+            enterBookMode(); setStage('book-read', 'done'); setStage('book-shape', 'active');
+            var sent = 'Read the book: ' + m[2] + ' chapters' +
+                (+m[3] ? ', ' + m[3] + ' parts' : '') + ', ' +
+                Number(m[4]).toLocaleString() + ' words (' + m[1].toUpperCase() + ')';
+            now(sent); stream(sent, 'evidence');
+            return true;
+        }
+        if ((m = msg.match(/^BOOK:SHAPE:([\w_]+):(.*)/))) {
+            enterBookMode(); setStage('book-shape', 'done'); setStage('book-name', 'active');
+            var human = { textbook: 'Textbook: chapters become modules, sections become lessons',
+                          parts_as_units: 'Parts become units; one lesson per chapter',
+                          chapters_as_lessons: 'One lesson per chapter, in the book\u2019s own order' }[m[1]] || m[1];
+            now(human); stream(human + ' \u2014 ' + m[2], 'structure');
+            return true;
+        }
+        if ((m = msg.match(/^BOOK:READING:(\d+):(\d+):(.*)/))) {
+            enterBookMode(); setStage('book-name', 'active');
+            var barWrap = document.getElementById('book-progress');
+            var fill = document.getElementById('book-progress-fill');
+            var label = document.getElementById('book-progress-label');
+            if (barWrap) barWrap.classList.remove('hidden');
+            if (fill) fill.style.width = Math.round(100 * m[1] / Math.max(1, m[2])) + '%';
+            if (label) label.textContent = 'Chapter ' + m[1] + ' of ' + m[2];
+            var line = 'Reading chapter ' + m[1] + ' of ' + m[2] +
+                       (m[3] ? ' \u2014 ' + m[3] : '');
+            now(line); stream(line);
+            if (+m[1] === +m[2]) { setStage('book-name', 'done'); setStage('hydrate', 'active'); }
+            return true;
+        }
+        if ((m = msg.match(/^BOOK:WARN:CHAPTER_SKIPPED:(.*)/))) {
+            stream('Could not name concepts for ' + m[1] + ' \u2014 it will retry in hydration', 'warn');
+            return true;
+        }
+        if ((m = msg.match(/^BOOK:UNREADABLE:(.*)/))) {
+            now('Could not read ' + m[1]);
+            stream('Could not read ' + m[1] + ' \u2014 the build stopped rather than invent a course', 'warn');
+            return true;
+        }
+        if ((m = msg.match(/^CHECK:BOOK_QA:(\w+)/))) {
+            setStage('book-gate', m[1] === 'BOOK_FAITHFUL' ? 'done' : 'warn');
+            var v = m[1] === 'BOOK_FAITHFUL'
+                ? 'Quality gate passed: every lesson linked to its chapter, in the book\u2019s order'
+                : 'Quality gate flagged issues \u2014 the course is usable and the flags are recorded';
+            now(v); stream(v, m[1] === 'BOOK_FAITHFUL' ? 'gate' : 'warn');
+            return true;
+        }
+        return false;
+    }
+
+    // Exposed as a test hook: a build takes tens of minutes, and the only way
+    // to exercise this view without one is to replay a recorded status stream.
+    // Used by E2E tests and the design preview; harmless in production.
+    window.__helgaBuildHandle = function (raw) { handle(raw); };
+
     function handle(raw) {
         var msg = String(raw == null ? '' : raw).trim();
         if (!msg) return;
         log(msg);
+        if (handleBook(msg)) return;
+        // Everything below narrates the RESEARCHED pipeline; a translated
+        // sentence also feeds the stream so the live feed is never empty.
+        var t = translate(msg);
+        if (t) { now(t); stream(t, streamKind(msg)); }
 
         // Phase 3 — asset collection. The course is not enterable until this
         // finishes, so the stage has to be visible or the last minutes of a
