@@ -218,6 +218,111 @@ def scheduler_state(program, progress=0.0, seconds_since_turn=None,
     }
 
 
+#   DMT 101: Title   ENG-201. Title   MATH 221 Title   PHI101 — Title
+# The separator is optional, because catalogues print "MATH 221 Discrete
+# Structures" as readily as "MATH 221: Discrete Structures" — but when it is
+# absent a capitalised word must follow, so "Physics 2 Lab" keeps its numeral
+# and only a genuine code-plus-title is split.
+_CATALOGUE_CODE = re.compile(
+    r"^\s*[A-Z]{2,4}\s*[- ]?\s*\d{2,4}[A-Z]?\s*(?:[:.—-]\s*|(?=[A-Z]))")
+
+
+def strip_catalogue_code(title):
+    """Drop an invented department code from the front of a course title.
+
+    "DMT 101: Introduction to Tabletop Roleplaying Games" -> "Introduction to
+    Tabletop Roleplaying Games".
+
+    Real catalogues do print codes, and theirs denote a real department with a
+    real numbering scheme. A generated one denotes nothing — it borrows the
+    look of institutional authority without any of it. Measured: a
+    model-proposed Dungeon Mastering associate invented an entire "DMT"
+    department, numbered 101 through 499.
+
+    Two further reasons to strip rather than tolerate:
+
+      * `degree_quality.check_breadth` counts distinct subjects off exactly
+        this prefix, so codes silently change what breadth MEANS between plans.
+        The same D&D plan scored 6 distinct subjects by code where Economics
+        scored 15 by content word — not a real difference in breadth.
+      * a prompt alone does not hold. Measured 0/5 on generic titles this
+        session, against 5/5 for deterministic correction.
+
+    A trailing ordinal is NOT touched: "Calculus II" and "Linear Algebra I" are
+    genuine sequence markers and the only numbering a course legitimately
+    carries here.
+    """
+    t = (title or "").strip()
+    stripped = _CATALOGUE_CODE.sub("", t).strip()
+    # Refuse to empty a title: a name that is ONLY a code tells us nothing, and
+    # returning "" would silently drop the slot. Keep the original and let
+    # check_titles report it.
+    return stripped or t
+
+
+MAX_SEQUENCE_PARTS = 3
+
+_ORDINAL_SUFFIX = re.compile(
+    r"\s+(?:([IVX]{1,4})|(\d{1,2}))\s*$")
+_ROMAN = {"I": 1, "II": 2, "III": 3, "IV": 4, "V": 5, "VI": 6, "VII": 7,
+          "VIII": 8, "IX": 9, "X": 10}
+
+
+def sequence_stem(title):
+    """("Calculus II") -> ("calculus", 2). Returns (title, None) if unnumbered.
+
+    Only a TRAILING ordinal counts. "World History to 1500" ends in a number
+    that is part of the name, not a part number, and must not be split — hence
+    the two-digit cap on the arabic branch.
+    """
+    t = (title or "").strip()
+    m = _ORDINAL_SUFFIX.search(t)
+    if not m:
+        return t.lower(), None
+    roman, arabic = m.group(1), m.group(2)
+    n = _ROMAN.get(roman) if roman else int(arabic)
+    if not n:
+        return t.lower(), None
+    return t[:m.start()].strip().lower(), n
+
+
+def cap_sequences(titles, max_parts=MAX_SEQUENCE_PARTS):
+    """Split titles into (kept, overflow) at `max_parts` per numbered sequence.
+
+    Numbering is the cheapest way to make a thin subject look like a programme:
+    "Dungeon Mastering I" through "V" is five courses of content that was never
+    five courses. A sequence is legitimate where a subject genuinely cannot be
+    divided by topic — Calculus, Linear Algebra — and three parts is the most
+    any real one runs to.
+
+    OVERFLOW IS RETURNED, NOT DROPPED. A fourth part is evidence that the
+    subject was never really one indivisible thing, so the answer is to name
+    that material by topic — which is more courses, not fewer. Discarding it
+    would shrink the programme to fix a labelling problem, and quietly lose
+    content the model thought belonged there. The caller re-splits; see
+    `propose_slot_subjects`.
+
+    Unnumbered titles pass through untouched, and surviving parts keep their
+    original order so the sequence stays coherent.
+    """
+    kept, overflow, counts = [], [], {}
+    for t in titles:
+        stem, n = sequence_stem(t)
+        if n is None:
+            kept.append(t)
+            continue
+        counts[stem] = counts.get(stem, 0) + 1
+        if counts[stem] <= max_parts:
+            kept.append(t)
+        else:
+            overflow.append(t)
+    if overflow:
+        logger.info(
+            f"[PROGRAM] {len(overflow)} title(s) past {max_parts} parts of a "
+            f"sequence: {overflow} — re-splitting by topic")
+    return kept, overflow
+
+
 def propose_slot_subjects(subject, template, llm_json_fn, brief_fn=None):
     """Real course titles for each slot, or {} .
 
@@ -256,11 +361,24 @@ def propose_slot_subjects(subject, template, llm_json_fn, brief_fn=None):
     try:
         data = llm_json_fn(
             prompt=(f"Name the actual courses in a real {tpl['label']} programme "
-                    f"in {subject}. Use the titles a real institution would "
-                    f"print in its catalogue.\n\nSlots to fill:\n{lines}\n\n"
+                    f"in {subject}.\n\nSlots to fill:\n{lines}\n\n"
                     f"gen_ed is general education outside the major; core is the "
                     f"major itself in teaching order; elective is optional "
-                    f"depth; capstone is the final project or practicum."),
+                    f"depth; capstone is the final project or practicum.\n\n"
+                    f"NO CATALOGUE CODES. Write \"Introduction to Sociology\", "
+                    f"never \"SOC 101: Introduction to Sociology\". Real "
+                    f"institutions do print codes, but theirs refer to a real "
+                    f"department and yours would not — an invented code claims "
+                    f"an authority this programme does not have.\n"
+                    f"NUMBERED SEQUENCES ARE A LAST RESORT. Prefer distinct "
+                    f"descriptive titles that name what each course is about — "
+                    f"\"Adventure Writing\", \"Encounter Design\" — over "
+                    f"\"Dungeon Mastering I\" and \"Dungeon Mastering II\". "
+                    f"Split a subject into a numbered sequence only when it "
+                    f"genuinely cannot be divided by topic, as Calculus and "
+                    f"Linear Algebra cannot, and then use AT MOST 3 parts. "
+                    f"Numbering is how a thin subject is made to look like a "
+                    f"programme, so a title with a numeral has to earn it."),
             sys_prompt="You know how degree programmes are composed. JSON only.",
             schema={"type": "object", "properties": {
                 slot: {"type": "array", "items": {"type": "string"}}
@@ -280,8 +398,9 @@ def propose_slot_subjects(subject, template, llm_json_fn, brief_fn=None):
 
     out = {}
     for slot, n in wanted.items():
-        titles = [t.strip() for t in (data.get(slot) or [])
+        titles = [strip_catalogue_code(t) for t in (data.get(slot) or [])
                   if isinstance(t, str) and t.strip()]
+        titles = [t for t in titles if t]
         # Deduplicate: the same subject filling two slots under one name is the
         # padding `validate()` rejects, and it is better caught here where a
         # retry is cheap.
@@ -291,9 +410,64 @@ def propose_slot_subjects(subject, template, llm_json_fn, brief_fn=None):
             if k not in seen:
                 seen.add(k)
                 uniq.append(t)
+        # OVER-LONG SEQUENCES ARE RE-SPLIT BY TOPIC, NOT TRUNCATED.
+        #
+        # A fourth part means the subject was never one indivisible thing, so
+        # the material still belongs in the programme — under names that say
+        # what it is. Truncating would shrink the degree to fix a labelling
+        # problem. One correction round naming the offenders, which is the
+        # enforcement shape that works here (5/5) where a prompt alone does not
+        # (0/5).
+        uniq, overflow = cap_sequences(uniq)
+        if overflow and llm_json_fn:
+            uniq.extend(_resplit_by_topic(subject, slot, overflow, uniq,
+                                          llm_json_fn))
         if uniq:
             out[slot] = uniq[:n]
     return out
+
+
+def _resplit_by_topic(subject, slot, overflow, existing, llm_json_fn):
+    """Rename over-long sequence parts as distinct topical courses.
+
+    Returns replacements, or the overflow unchanged if the call fails — losing
+    the courses would be a worse outcome than keeping badly-named ones, and the
+    naming defect is visible to `degree_quality` either way.
+    """
+    try:
+        data = llm_json_fn(
+            prompt=(f"These {slot} courses in a {subject} programme are "
+                    f"numbered parts of one sequence, past the {MAX_SEQUENCE_PARTS} "
+                    f"that a real sequence runs to:\n"
+                    + "\n".join(f"  - {t}" for t in overflow)
+                    + f"\n\nThat many parts means the subject divides by topic "
+                      f"after all. Rename each one to say what it actually "
+                      f"covers, as a course title with no numeral. Return "
+                      f"exactly {len(overflow)} titles, none of them matching:\n"
+                    + "\n".join(f"  - {t}" for t in existing)),
+            sys_prompt="You know how degree programmes are composed. JSON only.",
+            schema={"type": "object", "properties": {
+                "titles": {"type": "array", "items": {"type": "string"}}},
+                "required": ["titles"]},
+            max_tokens=400,
+        )
+        if isinstance(data, list):
+            data = next((d for d in data if isinstance(d, dict)), None)
+        got = [strip_catalogue_code(t) for t in ((data or {}).get("titles") or [])
+               if isinstance(t, str) and t.strip()]
+        # Accept only if the correction actually corrected: still-numbered or
+        # duplicate titles are not an improvement on what we had.
+        seen = {t.lower() for t in existing}
+        fixed = [t for t in got
+                 if sequence_stem(t)[1] is None and t.lower() not in seen]
+        if len(fixed) >= len(overflow):
+            logger.info(f"[PROGRAM] re-split {len(overflow)} sequence part(s) "
+                        f"into topical courses: {fixed[:len(overflow)]}")
+            return fixed[:len(overflow)]
+        logger.info("[PROGRAM] re-split produced nothing better — keeping parts")
+    except Exception as e:
+        logger.warning(f"[PROGRAM] sequence re-split failed: {e}")
+    return overflow
 
 
 def curated_degree(subject, template):

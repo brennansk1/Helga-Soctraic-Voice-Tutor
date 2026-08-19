@@ -149,10 +149,61 @@ def check_titles(plan):
             "examples": placeholder[:4], "ok": not placeholder}
 
 
+# A course requiring the ENTIRE preceding term is a term barrier wearing a
+# prerequisite's clothes. Real catalogues gate on specific earlier courses:
+# Managerial Accounting needs Financial Accounting, Calc II needs Calc I.
+_MAX_SHARED_REQUIREMENT_SETS = 0.30
+
+
+def check_prerequisite_specificity(plan):
+    """Are prerequisites informative, or just "everything that came before"?
+
+    `check_prerequisites` asks whether each edge RESOLVES and comes earlier,
+    which a term barrier satisfies perfectly. Measured: a model-proposed
+    Dungeon Mastering associate had 37 edges across 20 courses against
+    Economics' 7, because all four term-2 cores declared the identical set of
+    five term-1 cores, and all three term-3 electives the identical set of four
+    term-2 cores. Seven of ten gated courses shared their requirement set with
+    a sibling; Economics shared none.
+
+    The tell is DUPLICATION, not volume. A dense graph can be legitimate; an
+    identical requirement set repeated across siblings cannot — it carries no
+    information distinguishing them, which is exactly what a prerequisite is
+    for.
+
+    This is not cosmetic. Just-in-time remediation has to know WHICH
+    prerequisite decayed in order to revive it; if every course depends on
+    every earlier course, that signal is uniform and therefore useless.
+    """
+    cs = _courses(plan)
+    gated = [c for c in cs if c.get("requires")]
+    if not gated:
+        return {"checked": False, "reason": "no prerequisite edges to judge"}
+
+    from collections import Counter
+    sets = Counter(frozenset(c["requires"]) for c in gated)
+    shared = sum(n for n in sets.values() if n > 1)
+    rate = shared / len(gated)
+    worst = [(n, sorted(s)) for s, n in sets.most_common(1) if n > 1]
+    return {
+        "checked": True,
+        "gated": len(gated),
+        "distinct_sets": len(sets),
+        "shared_with_sibling": shared,
+        "share_rate": round(rate, 2),
+        "mean_edges_per_gated": round(
+            sum(len(c["requires"]) for c in gated) / len(gated), 1),
+        "example": (f"{worst[0][0]} courses all require the same "
+                    f"{len(worst[0][1])}") if worst else "",
+        "ok": rate <= _MAX_SHARED_REQUIREMENT_SETS,
+    }
+
+
 def assess(plan):
     out = {
         "term_balance": check_term_balance(plan),
         "prerequisites": check_prerequisites(plan),
+        "prereq_specificity": check_prerequisite_specificity(plan),
         "capstone": check_capstone(plan),
         "breadth": check_breadth(plan),
         "titles": check_titles(plan),
@@ -184,6 +235,7 @@ def main():
           f"source={plan.get('curriculum_source')}\n")
     tb, pr, cp, br, ti = (r["term_balance"], r["prerequisites"], r["capstone"],
                           r["breadth"], r["titles"])
+    ps = r["prereq_specificity"]
     if tb.get("checked"):
         print(f"  {'PASS' if tb['ok'] else 'FAIL'} term_balance   "
               f"{tb['courses_per_term']} (spread {tb['spread']})")
@@ -191,6 +243,12 @@ def main():
         print(f"  {'PASS' if pr['ok'] else 'FAIL'} prerequisites  {pr['edges']} edges"
               + (f", missing {pr['missing']}" if pr['missing'] else "")
               + (f", not earlier {pr['not_earlier']}" if pr['not_earlier'] else ""))
+    if ps.get("checked"):
+        print(f"  {'PASS' if ps['ok'] else 'FAIL'} prereq_detail  "
+              f"{ps['shared_with_sibling']}/{ps['gated']} gated courses share a "
+              f"requirement set with a sibling ({ps['mean_edges_per_gated']} "
+              f"edges each)"
+              + (f" — {ps['example']}" if ps["example"] and not ps["ok"] else ""))
     if cp.get("checked"):
         print(f"  {'PASS' if cp['ok'] else 'FAIL'} capstone       "
               f"{cp['capstones']} capstone(s)"

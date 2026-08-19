@@ -982,3 +982,122 @@ class TestConsolidatedSubtree(unittest.TestCase):
             with self.subTest(junk=junk):
                 b, m_ref, lines, mock = self._run(junk)
                 self.assertIsNone(lines, f"{junk!r} should signal fallback, not raise")
+
+
+class TestEvidencePartition(unittest.TestCase):
+    """A relevance gate applied at ONE consumer is not a relevance gate.
+
+    Regression cover for a measured failure. Building "Dungeon Mastering"
+    matched an OpenStax SOCIOLOGY text at relevance ~2, and because the gate
+    lived only inside `_spine_from_syllabus`, every other consumer took the
+    brief unfiltered: scope_fit counted 68 sociology chapters and reported the
+    subject amply supported (ratio 2.83, no stretch disclaimer), backfill tried
+    to inject six sociology chapters as material the course MUST reach, and the
+    sourceless research loop never ran at all because the brief counted as
+    "found".
+
+    The structure survived — the spine gate did reject it — so every structural
+    check still passed while the evidence behind them was about another subject
+    entirely. That is why these tests assert on the ROUTING, not the output.
+    """
+
+    def _builder(self):
+        import tempfile
+        from services.common.storage import StorageManager
+        return SkeletonBuilder(storage=StorageManager(
+            tempfile.mkdtemp(prefix="evidence_test_")), scope=2, mastery=2,
+            starting_from=1)
+
+    def _sociology_brief(self):
+        """The real shape of the failure: one adjacent book, nothing else."""
+        return {
+            "found": True,
+            "level": "college",
+            "syllabi": [{
+                "source": "OpenStax", "book": "Introduction to Sociology",
+                "relevance": 2.1,
+                "chapters": ["Being a Sociologist", "Culture", "Demography",
+                             "Deviance", "Economy", "Education", "Family"],
+            }],
+            "courses": [], "canonical_texts": [],
+        }
+
+    def test_an_adjacent_book_does_not_ground_the_course(self):
+        b = self._builder()
+        out, supp = b._partition_brief(self._sociology_brief(), "Dungeon Mastering")
+        self.assertEqual(out["syllabi"], [], "sociology must not ground D&D")
+        self.assertEqual(len(supp), 1, "but it must be kept, not discarded")
+        self.assertFalse(b._grounded)
+
+    def test_a_wrong_subject_match_no_longer_suppresses_the_research_loop(self):
+        """The costliest consequence: least material, therefore least research.
+
+        `found` gated the sourceless loop, so a wrong-subject match switched off
+        the fallback that exists for exactly that situation.
+        """
+        b = self._builder()
+        out, _ = b._partition_brief(self._sociology_brief(), "Dungeon Mastering")
+        self.assertFalse(out["found"],
+                         "a brief holding only adjacent material is sourceless")
+
+    def test_a_real_match_still_grounds_normally(self):
+        """The gate must not make everything sourceless."""
+        b = self._builder()
+        brief = {"found": True, "level": "college", "courses": [],
+                 "syllabi": [{"source": "OpenStax", "book": "Linear Algebra",
+                              "relevance": 9.4,
+                              "chapters": ["Elimination", "Determinants"]}]}
+        out, supp = b._partition_brief(brief, "Linear Algebra")
+        self.assertEqual(len(out["syllabi"]), 1)
+        self.assertEqual(supp, [])
+        self.assertTrue(out["found"])
+        self.assertTrue(b._grounded)
+
+    def test_strong_and_weak_sources_separate_rather_than_pool(self):
+        b = self._builder()
+        brief = {"found": True, "level": "college", "courses": [], "syllabi": [
+            {"source": "OpenStax", "book": "Linear Algebra", "relevance": 9.4,
+             "chapters": ["Elimination"]},
+            {"source": "OpenStax", "book": "College Algebra", "relevance": 3.2,
+             "chapters": ["Exponential and Logarithmic Functions"]},
+        ]}
+        out, supp = b._partition_brief(brief, "Linear Algebra")
+        self.assertEqual([o["book"] for o in out["syllabi"]], ["Linear Algebra"])
+        self.assertEqual([o["book"] for o in supp], ["College Algebra"])
+
+    def test_wikiversity_courses_are_not_dropped_for_lacking_a_score(self):
+        """They carry no relevance because they are fetched by direct topic
+        search, not matched out of a catalogue. Filtering on a score they do not
+        have would drop every one of them."""
+        b = self._builder()
+        brief = {"found": True, "level": "college", "syllabi": [],
+                 "courses": [{"course": "Dungeons and Dragons",
+                              "sections": ["Running a game"]}]}
+        out, _ = b._partition_brief(brief, "Dungeon Mastering")
+        self.assertTrue(out["found"], "a topic-searched course is still evidence")
+        self.assertEqual(len(out["courses"]), 1)
+
+    def test_supplementary_is_handed_to_hydration_not_thrown_away(self):
+        """Excluded from structure, kept for content — the two stages ask
+        different questions, and the hydration one is narrower."""
+        b = self._builder()
+        _, supp = b._partition_brief(self._sociology_brief(), "Dungeon Mastering")
+        self.assertEqual(b._supplementary_sources, supp)
+        self.assertTrue(supp[0]["chapters"], "chapters must survive for hydration")
+
+    def test_an_empty_brief_is_handled(self):
+        b = self._builder()
+        out, supp = b._partition_brief(None, "Anything")
+        self.assertIsNone(out)
+        self.assertEqual(supp, [])
+
+    def test_a_missing_relevance_score_is_treated_as_unproven(self):
+        """Absent is not the same as high. A source with no score has not
+        demonstrated it speaks for the subject, so it cannot ground one."""
+        b = self._builder()
+        brief = {"found": True, "level": "college", "courses": [],
+                 "syllabi": [{"source": "X", "book": "Mystery Book",
+                              "chapters": ["A", "B"]}]}
+        out, supp = b._partition_brief(brief, "Linear Algebra")
+        self.assertEqual(out["syllabi"], [])
+        self.assertEqual(len(supp), 1)

@@ -15,7 +15,8 @@ for p in (_root, os.path.join(_root, "tools")):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from tools.degree_quality import assess  # noqa: E402
+from tools.degree_quality import (  # noqa: E402
+    assess, check_prerequisite_specificity)
 
 
 def _plan(courses, terms=4, subject="X", template="associate"):
@@ -120,3 +121,59 @@ class TestRealPlans(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPrerequisiteSpecificity(unittest.TestCase):
+    """A term barrier satisfies check_prerequisites perfectly.
+
+    Every edge resolves and every edge points earlier, so the original check
+    passes — while the graph says nothing at all. Measured on real plans: a
+    model-proposed Dungeon Mastering associate carried 37 edges across 20
+    courses against Economics' 7, because four term-2 cores declared the
+    identical set of five term-1 cores.
+    """
+
+    def _plan(self, courses):
+        return {"subject": "X", "template": "associate", "terms": 2,
+                "courses": courses}
+
+    def test_a_term_barrier_is_caught(self):
+        prior = [f"C{i}" for i in range(1, 6)]
+        courses = [{"title": t, "term": 1, "slot": "core"} for t in prior]
+        courses += [{"title": f"D{i}", "term": 2, "slot": "core",
+                     "requires": list(prior)} for i in range(1, 5)]
+        r = check_prerequisite_specificity(self._plan(courses))
+        self.assertTrue(r["checked"])
+        self.assertFalse(r["ok"], "four identical requirement sets is a barrier")
+        self.assertEqual(r["shared_with_sibling"], 4)
+
+    def test_specific_prerequisites_pass(self):
+        courses = [
+            {"title": "Financial Accounting", "term": 1, "slot": "core"},
+            {"title": "Calculus I", "term": 1, "slot": "core"},
+            {"title": "Managerial Accounting", "term": 2, "slot": "core",
+             "requires": ["Financial Accounting"]},
+            {"title": "Calculus II", "term": 2, "slot": "core",
+             "requires": ["Calculus I"]},
+        ]
+        r = check_prerequisite_specificity(self._plan(courses))
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["shared_with_sibling"], 0)
+
+    def test_density_alone_is_not_the_defect(self):
+        """A dense graph can be legitimate. Duplication is the tell, not volume."""
+        courses = [{"title": f"C{i}", "term": 1, "slot": "core"} for i in range(1, 5)]
+        courses += [
+            {"title": "D1", "term": 2, "slot": "core", "requires": ["C1", "C2", "C3"]},
+            {"title": "D2", "term": 2, "slot": "core", "requires": ["C2", "C3", "C4"]},
+            {"title": "D3", "term": 2, "slot": "core", "requires": ["C1", "C4"]},
+        ]
+        r = check_prerequisite_specificity(self._plan(courses))
+        self.assertTrue(r["ok"], "distinct dense sets are informative")
+        self.assertGreater(r["mean_edges_per_gated"], 2)
+
+    def test_no_edges_is_not_run_rather_than_passed(self):
+        courses = [{"title": "C1", "term": 1, "slot": "core"}]
+        r = check_prerequisite_specificity(self._plan(courses))
+        self.assertFalse(r["checked"])
+        self.assertNotIn("ok", r)

@@ -434,3 +434,65 @@ class TestPlanDegreeEntryPoint(unittest.TestCase):
         assert "reference" in p
         q = plan_degree("Basket Weaving", "associate")
         assert "note" in q and "still evidence-gated" in q["note"]
+
+
+class TestCourseTitleHygiene(unittest.TestCase):
+    """Invented catalogue codes and runaway numbering.
+
+    Both were measured on a model-proposed Dungeon Mastering associate: an
+    entire "DMT" department numbered 101-499, in a programme with no department
+    at all.
+    """
+
+    def test_an_invented_code_is_stripped(self):
+        from services.core.program import strip_catalogue_code as s
+        self.assertEqual(s("DMT 101: Introduction to Tabletop Roleplaying Games"),
+                         "Introduction to Tabletop Roleplaying Games")
+        self.assertEqual(s("MATH-221 Discrete Structures"), "Discrete Structures")
+        self.assertEqual(s("ENG 201. Technical Writing"), "Technical Writing")
+
+    def test_a_real_sequence_marker_survives(self):
+        """Calculus II is a genuine part number, not a catalogue code."""
+        from services.core.program import strip_catalogue_code as s
+        for t in ("Calculus II", "Linear Algebra I", "Principles of Microeconomics"):
+            self.assertEqual(s(t), t)
+
+    def test_a_number_inside_a_name_is_not_a_code(self):
+        from services.core.program import strip_catalogue_code as s
+        self.assertEqual(s("World History to 1500"), "World History to 1500")
+        self.assertEqual(s("Physics 2 Lab"), "Physics 2 Lab")
+
+    def test_a_title_that_is_only_a_code_is_kept_not_emptied(self):
+        """Returning "" would silently drop the slot."""
+        from services.core.program import strip_catalogue_code as s
+        self.assertEqual(s("DMT 499"), "DMT 499")
+
+    def test_a_sequence_is_capped_at_three(self):
+        from services.core.program import cap_sequences
+        kept, overflow = cap_sequences(
+            ["DM I", "DM II", "DM III", "DM IV", "DM V"])
+        self.assertEqual(kept, ["DM I", "DM II", "DM III"])
+        self.assertEqual(overflow, ["DM IV", "DM V"])
+
+    def test_overflow_is_returned_for_resplitting_not_discarded(self):
+        """A fourth part means the subject divides by topic after all, so the
+        material still belongs in the programme — under a name that says what
+        it is. Dropping it would shrink the degree to fix a labelling defect."""
+        from services.core.program import cap_sequences
+        _, overflow = cap_sequences(["X I", "X II", "X III", "X IV"])
+        self.assertEqual(overflow, ["X IV"], "the fourth part must survive")
+
+    def test_distinct_titles_and_short_sequences_are_untouched(self):
+        from services.core.program import cap_sequences
+        titles = ["Adventure Writing", "Encounter Design",
+                  "Calculus I", "Calculus II"]
+        kept, overflow = cap_sequences(titles)
+        self.assertEqual(kept, titles)
+        self.assertEqual(overflow, [])
+
+    def test_separate_sequences_count_separately(self):
+        from services.core.program import cap_sequences
+        kept, overflow = cap_sequences(
+            ["A I", "A II", "A III", "B I", "B II", "B III"])
+        self.assertEqual(len(kept), 6, "two full sequences are both legal")
+        self.assertEqual(overflow, [])

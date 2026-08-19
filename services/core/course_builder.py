@@ -343,6 +343,39 @@ SESSIONS_PER_WEEK = 3
 # deficient.
 LESSON_TOLERANCE = 0.25
 
+# THE SCORE AT WHICH A SOURCE MAY SPEAK FOR THE SUBJECT.
+#
+# 6.0 is the exact-title-match bonus in syllabus_sources._relevance, so a source
+# clearing it is about this subject rather than merely adjacent to it. Below the
+# line a source is SUPPLEMENTARY: still useful, never authoritative.
+#
+# MEASURED FAILURE. This gate existed only inside _spine_from_syllabus, so it
+# protected the structure and nothing else. A build of "Dungeon Mastering"
+# matched an OpenStax SOCIOLOGY text (68 chapters), and because every other
+# consumer took the brief unfiltered:
+#
+#   * scope_fit reported "68 chapters support roughly 408 concepts against 144
+#     requested", ratio 2.83, verdict ok — so the thin-subject disclaimer never
+#     fired for the exact case it was built for
+#   * backfill treated sociology chapters as material the course MUST reach and
+#     tried to inject six of them
+#   * syllabus_check scored the course 28% against sociology keywords
+#   * and the sourceless research loop never ran AT ALL, because the brief
+#     counted as "found"
+#
+# A relevance gate applied at one consumer is not a relevance gate.
+GROUNDING_RELEVANCE = 6.0
+
+# HOW MUCH OF A COURSE A SUPPLEMENTARY SOURCE MAY ACCOUNT FOR.
+#
+# Demoting a weak source is not enough on its own — a course whose subject is
+# poorly served by books can still end up mostly built from whatever adjacent
+# material happened to match, which is how a Dungeon Mastering course becomes a
+# storytelling course with dice in it. Supplementary material earns a minority
+# share and no more; the rest has to come from the subject itself, which for a
+# sourceless subject means the research loop rather than a closer book.
+SUPPLEMENTARY_MAX_SHARE = 0.20
+
 
 def compute_course_params(scope=2, mastery=2, starting_from=1):
     """Compute course structure parameters from three sliders."""
@@ -1555,6 +1588,29 @@ class SkeletonBuilder:
         # that finding it now does not.
         self._record_syllabus_check(course_dict)
 
+        # Hand supplementary sources forward to hydration, labelled, having kept
+        # them out of every structural decision. Recorded on the course rather
+        # than passed in memory so a hydration run that happens later, or in
+        # another process, sees the same classification this build made.
+        _supp = getattr(self, "_supplementary_sources", None)
+        if _supp:
+            course_dict["supplementary_sources"] = [
+                {"source": o.get("source"), "book": o.get("book"),
+                 "url": o.get("url"), "relevance": o.get("relevance"),
+                 "chapters": o.get("chapters") or []}
+                for o in _supp
+            ]
+            course_dict["supplementary_policy"] = {
+                "grounding_bar": GROUNDING_RELEVANCE,
+                "max_share": SUPPLEMENTARY_MAX_SHARE,
+                "usable_for": "content hydration only",
+                "excluded_from": ["structure", "scope assessment",
+                                  "coverage checklist", "coverage measurement"],
+                "why": ("below the grounding bar these sources do not speak for "
+                        "the subject, but may still serve an individual concept "
+                        "— a judgement that can only be made per concept"),
+            }
+
         # Write course structure to JSON
         self.storage.courses.create_course(course_dict)
         _skeleton_elapsed = time.perf_counter() - _pipeline_start
@@ -1641,6 +1697,15 @@ class SkeletonBuilder:
         if brief and brief.get("found") and broader:
             logger.info(f"[SKELETON] evidence for {topic!r} (broadened via {broader})")
 
+        # SPLIT THE EVIDENCE BEFORE ANYTHING CONSUMES IT.
+        #
+        # Every consumer below asks a different question of the same brief, and
+        # only some of those questions a weak source has earned the right to
+        # answer. Partitioning here — once, at the source — is what makes the
+        # distinction hold everywhere instead of at the one call site that
+        # remembered to check.
+        brief, supplementary = self._partition_brief(brief, topic)
+
         if not brief or not brief.get("found"):
             logger.warning(
                 f"[SKELETON] no curriculum evidence for {topic!r} "
@@ -1723,7 +1788,14 @@ class SkeletonBuilder:
             # EXIT is measured coverage of that checklist, never the model's
             # satisfaction — see services/research/research_loop.py for why that
             # distinction is load-bearing.
-            if not (brief or {}).get("found"):
+            #
+            # Keyed on GROUNDING, not on whether the sweep returned anything.
+            # `found` used to mean "some book matched", so a sociology text
+            # matching "Dungeon Mastering" counted as evidence and switched this
+            # fallback off — the subject with the least real material got the
+            # least research. A subject is sourceless when nothing SPEAKS FOR
+            # IT, however many adjacent books exist.
+            if not getattr(self, "_grounded", False):
                 try:
                     self._research_loop_result = self._run_sourceless_research(
                         topic)
@@ -1762,7 +1834,17 @@ class SkeletonBuilder:
                 key=lambda o: o.get("relevance", 0), reverse=True)
             if ranked:
                 best = ranked[0]
-                margin = float(best.get("relevance", 0)) * 0.75
+                # A RELATIVE MARGIN NEEDS AN ABSOLUTE FLOOR UNDER IT.
+                #
+                # 0.75x-the-best is a sensible way to drop the weaker of several
+                # good matches, and no protection at all when the best match is
+                # itself wrong: a lone sociology text scored 0.75 of its own
+                # score and became the checklist for a Dungeon Mastering course.
+                # `ranked` is already filtered to grounding-quality sources by
+                # _partition_brief; the floor here is belt-and-braces because
+                # this list has been assembled from the raw brief before.
+                margin = max(float(best.get("relevance", 0)) * 0.75,
+                             GROUNDING_RELEVANCE)
                 chosen = [o for o in ranked if float(o.get("relevance", 0)) >= margin]
                 self._syllabus_chapters = [c for o in chosen
                                            for c in (o.get("chapters") or [])]
@@ -1969,10 +2051,11 @@ class SkeletonBuilder:
                         f"an index has coverage but no teaching order")
 
         # A research source qualifies only if it is BOTH sequenced and actually
-        # about this subject. 6.0 is the exact-title-match bonus in _relevance:
-        # below it the book merely overlaps the subject rather than being it.
+        # about this subject. The bar is the shared GROUNDING_RELEVANCE — this
+        # check used to hold the only copy of it, which is precisely why every
+        # other consumer went unprotected.
         best = max(ordered, key=lambda o: o.get("relevance", 0)) if ordered else None
-        if best is not None and float(best.get("relevance", 0)) < 6.0:
+        if best is not None and float(best.get("relevance", 0)) < GROUNDING_RELEVANCE:
             logger.info(f"[SPINE] best sequenced syllabus {best.get('book')!r} "
                         f"scores {best.get('relevance')} — not this subject")
             best = None
@@ -2098,6 +2181,77 @@ class SkeletonBuilder:
                 "from_syllabus": True,
             })
         return out
+
+    def _partition_brief(self, brief, topic):
+        """Split evidence into what may ground the course and what may enrich it.
+
+        Returns `(grounding_brief, supplementary)`. The grounding brief carries
+        only syllabi at or above GROUNDING_RELEVANCE, and `found` is recomputed
+        from what survives — so a brief holding nothing but adjacent material
+        reports itself as sourceless, which is the honest answer and the one
+        that routes the build to the research loop.
+
+        Wikiversity `courses` are not filtered: they carry no relevance score
+        because they are fetched by direct topic search rather than matched out
+        of a catalogue, so the failure this guards against cannot arise there.
+        Filtering them on a score they do not have would drop all of them.
+        """
+        if not brief:
+            return brief, []
+
+        syllabi = [o for o in (brief.get("syllabi") or []) if o.get("chapters")]
+        primary, supplementary = [], []
+        for o in syllabi:
+            try:
+                score = float(o.get("relevance", 0))
+            except (TypeError, ValueError):
+                score = 0.0
+            (primary if score >= GROUNDING_RELEVANCE else supplementary).append(o)
+
+        if supplementary:
+            logger.warning(
+                f"[EVIDENCE] {len(supplementary)} source(s) below the grounding "
+                f"bar for {topic!r} — supplementary only: "
+                + ", ".join(f"{o.get('book')!r} @ {o.get('relevance')}"
+                            for o in supplementary[:3]))
+            if self.status_callback:
+                self.status_callback(
+                    f"CHECK:EVIDENCE_SUPPLEMENTARY:{len(supplementary)}")
+
+        out = dict(brief)
+        out["syllabi"] = primary
+        # `found` gated the research loop, so recomputing it is the whole point:
+        # a wrong-subject match used to suppress the fallback that exists for
+        # exactly that situation.
+        out["found"] = bool(primary or brief.get("courses"))
+        out["structural_sources"] = len(primary) + len(brief.get("courses") or [])
+
+        if syllabi and not primary:
+            logger.warning(
+                f"[EVIDENCE] no source clears {GROUNDING_RELEVANCE} for "
+                f"{topic!r} — treating as SOURCELESS despite "
+                f"{len(syllabi)} match(es). A closer book is not the same "
+                f"subject.")
+            if self.status_callback:
+                self.status_callback("CHECK:GROUNDING:NONE")
+
+        self._grounded = bool(primary)
+        # HELD FOR HYDRATION, NOT DISCARDED.
+        #
+        # These sources are excluded from every structural decision above and
+        # kept for content, because the question changes between the two stages
+        # and gets EASIER. At skeleton time the question is "does this book
+        # speak for the subject?", which adjacent material always fails. At
+        # hydration it is "does this passage serve THIS concept?", which the
+        # same material can legitimately pass — a sociology chapter is wrong as
+        # a checklist for a Dungeon Mastering course and may be exactly right
+        # for one concept about political structures in worldbuilding.
+        #
+        # The stages also fail differently. A poisoned skeleton is inherited by
+        # everything downstream and cannot be walked back; a bad hydration
+        # source is one concept, attributable, and re-runnable.
+        self._supplementary_sources = supplementary
+        return out, supplementary
 
     def _run_sourceless_research(self, topic):
         """Iterative research for a subject with no published syllabus.
@@ -2259,7 +2413,29 @@ class SkeletonBuilder:
             logger.info("[BACKFILL] outline already covers every syllabus chapter")
             return
 
-        missing = missing[:cap]
+        # THE CAP IS A SHARE OF THE COURSE, NOT A FLAT SIX.
+        #
+        # A flat cap means the same six additions are a rounding error on a
+        # 45-lesson course and a fifth of a 12-lesson one. Backfill appends to
+        # the LAST module, so on a short course an uncapped-in-proportion list
+        # visibly tilts the whole thing toward whatever the source emphasised.
+        #
+        # Chapters reaching here have already cleared GROUNDING_RELEVANCE, so
+        # this is not protection against the wrong subject — that happens
+        # upstream. It bounds how much of a course can be steered by a coverage
+        # checklist at all, which is a different and still necessary limit.
+        _total_lessons = sum(
+            len(u.get("lessons") or [])
+            for m in (course_dict.get("modules") or [])
+            for u in (m.get("units") or []))
+        _share_cap = max(1, int(SUPPLEMENTARY_MAX_SHARE * _total_lessons))
+        _cap = min(cap, _share_cap)
+        if len(missing) > _cap:
+            logger.info(
+                f"[BACKFILL] {len(missing)} uncovered, adding {_cap} "
+                f"({SUPPLEMENTARY_MAX_SHARE:.0%} of {_total_lessons} lessons). "
+                f"The rest are recorded as uncovered rather than bolted on.")
+        missing = missing[:_cap]
         logger.warning(f"[BACKFILL] {len(missing)} syllabus chapter(s) uncovered: "
                        f"{missing}")
         if self.status_callback:
