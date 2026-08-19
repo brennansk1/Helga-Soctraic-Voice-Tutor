@@ -1944,6 +1944,17 @@
 </template>
 {% endblock %}
 
+<script>
+/* Feed the Continue pill: remember the last course opened here. */
+(function(){
+  try {
+    var uid = new URLSearchParams(location.search).get("course_uid");
+    if (uid) localStorage.setItem("helga_last_course",
+      JSON.stringify({uid: uid, title: document.title.replace(/ \u2014.*/, ""),
+                      at: Date.now()}));
+  } catch(e) {}
+})();
+</script>
 {% block page_scripts %}
 <!-- session.js loaded via head_scripts block -->
 <script src="{{ url_for('static', filename='js/session-rails.js') }}"></script>

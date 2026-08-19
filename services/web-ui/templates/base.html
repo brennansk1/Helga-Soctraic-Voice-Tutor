@@ -174,8 +174,14 @@
                     %}aria-current="page" {% endif %}>Home</a>
                 <a href="/courses" class="nav-link {% if request.path == '/courses' %}active{% endif %}" {% if
                     request.path=='/courses' %}aria-current="page" {% endif %}>Courses</a>
-                <a href="/learn" class="nav-link {% if request.path == '/learn' %}active{% endif %}" {% if
-                    request.path=='/learn' %}aria-current="page" {% endif %}>Learn</a>
+                {# Learn was a broken affordance as a tab: /learn requires a
+                   course_uid and bounces to /courses without one, so the tab
+                   only worked after visiting another tab. What it was trying
+                   to be is "resume where I left off", which is the Continue
+                   action in the utility zone — one click, always valid.
+                   Degree is the flagship and earns the slot instead. #}
+                <a href="/degree" class="nav-link {% if request.path == '/degree' %}active{% endif %}" {% if
+                    request.path=='/degree' %}aria-current="page" {% endif %}>Degree</a>
                 {# A5.1 — six destinations, down from nine.
 
                    The count was not the problem; the grouping was. Quiz,
@@ -192,8 +198,15 @@
                    onto a second row at 1280px, orphaning the settings icon. #}
                 <a href="/progress" class="nav-link {% if request.path == '/progress' %}active{% endif %}" {% if
                     request.path=='/progress' %}aria-current="page" {% endif %}>Progress</a>
-                <a href="/practice" class="nav-link {% if request.path in ['/practice', '/quiz', '/test', '/review', '/schedule'] %}active{% endif %}" {% if
-                    request.path in ['/practice', '/quiz', '/test', '/review', '/schedule'] %}aria-current="page" {% endif %}>Practice</a>
+                {# Practice and Test are DIFFERENT jobs: ungraded drilling vs
+                   graded gates. Assessment is what makes a degree credible —
+                   exams gate completion and retention-over-time is the
+                   credential a one-shot exam cannot offer — so it is visible,
+                   not buried inside Practice. #}
+                <a href="/practice" class="nav-link {% if request.path in ['/practice', '/quiz', '/review', '/schedule'] %}active{% endif %}" {% if
+                    request.path in ['/practice', '/quiz', '/review', '/schedule'] %}aria-current="page" {% endif %}>Practice</a>
+                <a href="/test" class="nav-link {% if request.path == '/test' %}active{% endif %}" {% if
+                    request.path=='/test' %}aria-current="page" {% endif %}>Test</a>
                 <a href="/settings" class="nav-link {% if request.path in ['/settings', '/status'] %}active{% endif %}" {% if
                     request.path in ['/settings', '/status'] %}aria-current="page" {% endif %}>Settings</a>
             </nav>
@@ -205,6 +218,12 @@
                 {# Build-in-progress pill: visible on every page while a build
                    runs, returns to /build. Driven by build-guard.js from the
                    same status stream the build view consumes. #}
+                {# Continue: the job the Learn tab was trying to do — resume
+                   the last session in one click, always valid, never a bounce.
+                   Hidden until a session has ever been opened. #}
+                <a href="#" class="build-pill hidden" id="continue-pill">
+                    <span id="continue-label">Continue</span>
+                </a>
                 <a href="/build" class="build-pill hidden" id="build-pill">
                     <span class="build-now-pulse" aria-hidden="true"></span>
                     <span id="build-pill-label">Building&hellip;</span>

@@ -84,5 +84,21 @@
 
     paint();
 
+    // --- Continue (resume last session) ---------------------------------
+    // learn.html records the last opened course; this surfaces it everywhere.
+    // Reads at paint time, so a new session in another tab appears on the
+    // next navigation rather than requiring a reload dance.
+    try {
+        var last = JSON.parse(localStorage.getItem("helga_last_course") || "null");
+        var cp = document.getElementById("continue-pill");
+        if (cp && last && last.uid) {
+            cp.href = "/learn?course_uid=" + encodeURIComponent(last.uid);
+            cp.classList.remove("hidden");
+            var cl = document.getElementById("continue-label");
+            if (cl && last.title) cl.textContent = "Continue: " +
+                (last.title.length > 24 ? last.title.slice(0, 23) + "\u2026" : last.title);
+        }
+    } catch (e) {}
+
     window.HelgaBuildGuard = { active: get, set: set, clear: clear };
 })();
