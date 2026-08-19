@@ -154,11 +154,18 @@ class TestChapterTitles(unittest.TestCase):
         self.assertEqual(compose_title(2, "Chapter II", "Mr Bennet Visits"),
                          "Chapter 2 — Mr Bennet Visits")
 
-    def test_an_authored_title_is_kept(self):
-        """The author's words beat ours where the author supplied them."""
+    def test_an_authored_title_is_kept_UNCHANGED(self):
+        """A title the author wrote needs nothing from us.
+
+        An earlier version prefixed any title lacking a digit, which broke
+        textbooks: the section "The Process of Science" became "Chapter 1 — The
+        Process of Science" though it is a SECTION of chapter 1, and the next
+        section of the same chapter became "Chapter 2 — ...". The number was
+        the leaf ordinal, so the titles asserted a structure the book lacks.
+        """
         from services.core.book_source import compose_title
-        self.assertEqual(compose_title(4, "The Cell Membrane", "Something Else"),
-                         "Chapter 4 — The Cell Membrane")
+        for orig in ("The Cell Membrane", "Water", "The Process of Science"):
+            self.assertEqual(compose_title(4, orig, "Something Else"), orig)
 
     def test_a_bare_heading_with_no_subject_survives(self):
         from services.core.book_source import compose_title
@@ -203,6 +210,55 @@ class TestConceptParsing(unittest.TestCase):
     def test_junk_yields_nothing(self):
         self.assertEqual(parse_concepts(None, 3), [])
         self.assertEqual(parse_concepts({"concepts": [{}]}, 3), [])
+
+
+class TestTextbookLadder(unittest.TestCase):
+    """A textbook's table of contents is a ladder, not a list.
+
+    MEASURED on a real OpenStax biology export: 19 level-2 CHAPTERS over 86
+    level-3 SECTIONS. Flattening them made a chapter and one of its own sections
+    siblings.
+    """
+
+    def _textbook(self):
+        chs = []
+        for ch in range(1, 4):
+            for sec in range(1, 4):
+                chs.append(Chapter(f"Section {ch}.{sec}", "word " * 900,
+                                   len(chs) + 1, part=f"Chapter {ch}: Topic {ch}",
+                                   level=3))
+        return Book("Text", chs)
+
+    def test_a_hierarchical_book_is_detected(self):
+        self.assertTrue(self._textbook().hierarchical)
+
+    def test_a_flat_book_is_not(self):
+        flat = Book("Novel", [Chapter(f"Chapter {i}", "word " * 900, i)
+                              for i in range(1, 12)])
+        self.assertFalse(flat.hierarchical)
+
+    def test_chapters_become_modules_and_sections_lessons(self):
+        c = build_structure(self._textbook())
+        self.assertEqual(len(c["modules"]), 3)
+        self.assertEqual(c["modules"][0]["title"], "Chapter 1: Topic 1")
+        lessons = [l for m in c["modules"] for u in m["units"]
+                   for l in u["lessons"]]
+        self.assertEqual(len(lessons), 9)
+
+    def test_a_novel_still_gets_no_modules(self):
+        """The textbook ladder must not leak into a flat book."""
+        flat = Book("Novel", [Chapter(f"Chapter {i}", "word " * 900, i)
+                              for i in range(1, 12)])
+        c = build_structure(flat)
+        self.assertEqual(len(c["modules"]), 1)
+        self.assertTrue(c["modules"][0]["container_only"])
+
+    def test_one_lesson_per_section_still_holds(self):
+        book = self._textbook()
+        c = build_structure(book)
+        lessons = [l for m in c["modules"] for u in m["units"]
+                   for l in u["lessons"]]
+        self.assertEqual(len(lessons), len(book.chapters))
 
 
 class TestFrontMatter(unittest.TestCase):

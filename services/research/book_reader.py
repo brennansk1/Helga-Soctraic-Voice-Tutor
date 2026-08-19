@@ -75,7 +75,12 @@ _CHAPTER_SPLIT = re.compile(
 _SKIP_TITLES = re.compile(
     r"^\s*(contents?|table of contents|copyright|dedication|acknowledge?ments?"
     r"|about the author|index|glossary|bibliography|references|colophon"
-    r"|title page|cover|preface|foreword|epigraph|notes)\s*$",
+    r"|title page|cover|preface|foreword|epigraph|notes"
+    # A BARE "Introduction" is a chapter opener, not a lesson — measured at 230
+    # words in a real textbook, against sections of 2,500-5,700. Anchored, so
+    # "Introduction to Biology" (a real chapter) is untouched.
+    r"|introduction|summary|chapter summary|key terms|review questions"
+    r"|critical thinking questions|visual connection questions)\s*$",
     re.IGNORECASE)
 
 
@@ -142,12 +147,23 @@ class Book:
                 out.append(c.part)
         return out
 
+    @property
+    def hierarchical(self):
+        """Did the book's own table of contents have a level above the leaf?
+
+        A textbook groups sections under numbered chapters; a novel does not.
+        That difference decides whether the course gets modules, so it is read
+        from the source rather than guessed from the title.
+        """
+        return any((c.level or 1) > 1 for c in self.chapters) and bool(self.parts)
+
     def outline(self):
         return {
             "title": self.title,
             "format": self.format,
             "chapters": len(self.chapters),
             "parts": self.parts,
+            "hierarchical": self.hierarchical,
             "words": sum(c.words for c in self.chapters),
             "chapter_titles": [c.title for c in self.chapters],
         }
@@ -338,11 +354,39 @@ def _pdf_chapters(path, max_pages=None):
 
     if toc:
         entries = [(lvl, title, pg) for lvl, title, pg in toc if pg > 0]
+
+        # A TEXTBOOK'S TABLE OF CONTENTS IS A LADDER, NOT A LIST.
+        #
+        # Measured on a real OpenStax biology export: 4 level-1 entries, 19
+        # level-2 CHAPTERS ("Chapter 2: Chemistry of Life") and 86 level-3
+        # SECTIONS ("Water", "Passive Transport"). Flattening those into one
+        # list produced 83 "chapters" that were really chapters and sections
+        # mixed together — so a chapter and one of its own sections became
+        # siblings.
+        #
+        # The leaf level is what a learner actually studies in a sitting, so
+        # leaves become the chapters here and their parent is recorded. The
+        # skeleton then decides whether that parent is a module.
+        by_level = {}
+        for lvl, _, _ in entries:
+            by_level[lvl] = by_level.get(lvl, 0) + 1
+        # The deepest level with enough entries to be the real content level.
+        leaf = max((l for l, n in by_level.items() if n >= 5), default=1)
+
+        parent_of, current = {}, {}
+        for i, (lvl, title, pg) in enumerate(entries):
+            current[lvl] = title
+            parent_of[i] = current.get(leaf - 1) if leaf > 1 else None
+
         for i, (lvl, title, pg) in enumerate(entries):
             end = entries[i + 1][2] - 1 if i + 1 < len(entries) else len(doc)
             kind, label = _classify_heading(title)
-            if kind == "part" or lvl == 1 and _PART_RE.match(title or ""):
+            if kind == "part" or (lvl == 1 and _PART_RE.match(title or "")):
                 part = label or title
+                continue
+            # Only the content level becomes a chapter; the levels above it are
+            # groupings and are carried on `part`.
+            if leaf > 1 and lvl != leaf:
                 continue
             if _SKIP_TITLES.match((title or "").strip()):
                 continue
@@ -355,7 +399,9 @@ def _pdf_chapters(path, max_pages=None):
             body = _clean("\n".join(text))
             if len(body) < MIN_CHAPTER_CHARS:
                 continue
-            chapters.append(Chapter(title, body, len(chapters) + 1, part=part))
+            group = parent_of.get(i) or part
+            chapters.append(Chapter(title, body, len(chapters) + 1, part=group,
+                                    level=lvl))
 
     if not chapters:
         # No usable ToC: fall back to whole-document text split on headings that

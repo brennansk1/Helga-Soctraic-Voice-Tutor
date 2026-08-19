@@ -75,6 +75,19 @@ def choose_shape(book):
     n = len(chapters)
 
     # The lesson count is not a decision. It is len(chapters), always.
+    # A TEXTBOOK KEEPS THE MODULE LEVEL, because its chapters really are study
+    # blocks with a curriculum behind them — unlike a novel's parts, which are
+    # an author's dramatic division. Read from the book's own table of contents:
+    # a level above the leaf means the author built a ladder, not a list.
+    if getattr(book, "hierarchical", False) and parts and len(parts) >= 2:
+        return {
+            "shape": "textbook",
+            "why": f"the book's table of contents is a ladder — {len(parts)} "
+                   f"chapters over {n} sections, so chapters become modules and "
+                   f"sections become lessons",
+            "modules": len(parts), "units": len(parts), "lessons": n,
+        }
+
     if parts and len(parts) >= 2:
         return {
             "shape": "parts_as_units",
@@ -144,6 +157,30 @@ def build_structure(book, course_title=None, concepts_per_lesson=None):
                 for i in range(n_con)
             ],
         }
+
+    if shape["shape"] == "textbook":
+        # Chapter -> module, its sections -> lessons under one unit.
+        for m_i, chapter_name in enumerate(book.parts, 1):
+            secs = [c for c in book.chapters if c.part == chapter_name]
+            if not secs:
+                continue
+            course["modules"].append({
+                "uid": _uid("mod"), "title": chapter_name, "ordinal": m_i,
+                "units": [{"uid": _uid("unit"), "title": chapter_name,
+                           "ordinal": 1,
+                           "lessons": [_lesson(c, i + 1)
+                                       for i, c in enumerate(secs)]}]})
+        orphans = [c for c in book.chapters if not c.part]
+        if orphans:
+            course["modules"].append({
+                "uid": _uid("mod"), "title": "Additional Material",
+                "ordinal": len(course["modules"]) + 1,
+                "units": [{"uid": _uid("unit"), "title": "Additional Material",
+                           "ordinal": 1,
+                           "lessons": [_lesson(c, i + 1)
+                                       for i, c in enumerate(orphans)]}]})
+        logger.info(f"[BOOK] shape={shape['shape']} — {shape['why']}")
+        return course
 
     # ONE container module either way. It is a shell so the storage ladder
     # stays intact, not a pedagogical division the book does not have.

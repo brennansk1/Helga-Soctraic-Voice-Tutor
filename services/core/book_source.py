@@ -306,9 +306,18 @@ def compose_title(order, original, named=None):
     """
     subject = (named or "").strip().strip('".')
     if not needs_a_title(original) and original.strip():
-        # The author named it. Use theirs, prefixed only if it lacks a number.
-        base = original.strip()
-        return base if re.search(r"\d|[IVXLC]{1,7}\b", base) else f"Chapter {order} — {base}"
+        # THE AUTHOR NAMED IT. USE THEIRS, UNCHANGED.
+        #
+        # An earlier version added a "Chapter N —" prefix whenever the title
+        # contained no digit, which broke textbooks badly: a section called
+        # "The Process of Science" became "Chapter 1 — The Process of Science"
+        # even though it is a SECTION of chapter 1, and the next section of the
+        # same chapter became "Chapter 2 — ...". The number was the leaf
+        # ordinal, not the chapter, so the titles asserted a structure the book
+        # does not have.
+        #
+        # A title the author wrote needs nothing from us.
+        return original.strip()
     if subject:
         return f"Chapter {order} — {subject}"
     return original.strip() or f"Chapter {order}"
