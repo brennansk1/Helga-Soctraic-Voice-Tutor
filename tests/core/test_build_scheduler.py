@@ -116,3 +116,59 @@ class TestUnbuiltCourseIsHonest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSpeculativeOptionBuilds(unittest.TestCase):
+    """Real registration offers several courses per elective slot, and a learner
+    who picks at the last moment waits ~3.6 h for their choice to build.
+    Pre-building every option makes the choice instant and costs N times as much:
+    3 options across a bachelor's 9 elective slots is 18 extra builds, ~65 hours.
+    """
+
+    def _open(self, **kw):
+        base = _state(next_course_built=True)      # committed pipeline idle
+        base["open_options"] = [{"title": "Money and Banking", "likelihood": 0.6},
+                                {"title": "International Economics",
+                                 "likelihood": 0.3}]
+        base["speculative_in_flight"] = 0
+        base.update(kw)
+        return base
+
+    def test_it_builds_the_likeliest_option_when_idle(self):
+        d = bs.decide_speculative(self._open())
+        assert d["action"] == "start_build"
+        assert d["priority"] == bs.PRIORITY_SPECULATIVE
+        assert d["course"] == "Money and Banking"
+
+    def test_an_active_learner_stops_speculation(self):
+        d = bs.decide_speculative(self._open(seconds_since_turn=5))
+        assert d["action"] == "wait"
+        assert d["priority"] == bs.PRIORITY_INTERACTIVE
+
+    def test_committed_work_outranks_speculation(self):
+        """A half-built option is worth less than a chosen course started on
+        time."""
+        d = bs.decide_speculative(self._open(next_course_built=False))
+        assert d["action"] == "wait"
+        assert "committed pipeline is busy" in d["reason"]
+
+    def test_speculation_is_capped(self):
+        d = bs.decide_speculative(self._open(speculative_in_flight=1))
+        assert d["action"] == "wait"
+        assert bs.MAX_SPECULATIVE == 1
+
+    def test_nothing_to_speculate_on_is_not_an_error(self):
+        d = bs.decide_speculative(self._open(open_options=[]))
+        assert d["action"] == "wait"
+
+    def test_an_already_built_option_is_not_rebuilt(self):
+        d = bs.decide_speculative(self._open(open_options=[
+            {"title": "Money and Banking", "likelihood": 0.9, "built": True},
+            {"title": "International Economics", "likelihood": 0.2}]))
+        assert d["course"] == "International Economics"
+
+    def test_speculation_never_outranks_background(self):
+        """Priority ordering is the whole safety property."""
+        order = [bs.PRIORITY_INTERACTIVE, bs.PRIORITY_BACKGROUND,
+                 bs.PRIORITY_SPECULATIVE]
+        assert order[-1] == bs.PRIORITY_SPECULATIVE

@@ -424,3 +424,234 @@ def source_degree_slots(subject, template, llm_json_fn=None, search_fn=None):
             "note": ("no published curriculum found for this degree — the course "
                      "list is proposed rather than transcribed, and each course "
                      "is still evidence-gated individually")}
+
+
+# Course codes and numerals are how real catalogues ENCODE prerequisites, and
+# they are deterministic: "NUR 101" precedes "NUR 201" because a registrar said
+# so, not because a model guessed. Reading them costs nothing and cannot drift.
+_CODE = re.compile(r"^\s*([A-Z]{2,4})\s*[- ]?\s*(\d{3})\b")
+_NUMERAL = {"i": 1, "ii": 2, "iii": 3, "iv": 4, "v": 5, "vi": 6}
+_TRAIL_NUM = re.compile(r"\b(i{1,3}|iv|vi?|[1-6])\s*$", re.I)
+
+
+def _code_of(title):
+    """(subject-prefix, level) from a catalogue code, e.g. NUR 201 -> (NUR, 2)."""
+    m = _CODE.match(title or "")
+    if not m:
+        return None, None
+    return m.group(1).upper(), int(m.group(2)) // 100
+
+
+def _series_of(title):
+    """(base-name, part) for a numbered series, e.g. 'Calculus II' -> (calculus, 2).
+
+    Roman numerals and digits both, because catalogues use both and a learner
+    should not meet part II before part I either way.
+    """
+    t = re.sub(r"^\s*[A-Z]{2,4}\s*[- ]?\s*\d{3}\s*:?\s*", "", (title or "")).strip()
+    m = _TRAIL_NUM.search(t)
+    if not m:
+        return None, None
+    tok = m.group(1).lower()
+    part = _NUMERAL.get(tok) or (int(tok) if tok.isdigit() else None)
+    if not part:
+        return None, None
+    base = _TRAIL_NUM.sub("", t).strip(" :-").lower()
+    return (base or None), part
+
+
+def infer_prerequisites(courses, propose_fn=None):
+    """Add prerequisite edges. Deterministic first, model second.
+
+    Without this a degree has RIGHT NAMES AND NO ORDER: plan_from_template set
+    `requires: []` for every course, so validate() passed trivially and
+    "Medical-Surgical Nursing II" could sit in term 1 ahead of "Nursing
+    Foundations I". A programme that teaches II before I is not a programme.
+
+    Two sources, in the order this codebase always uses:
+
+      1. **Catalogue conventions** — NUR 101 -> NUR 201 -> NUR 301, and
+         "Calculus I" -> "Calculus II". These encode real prerequisites, decided
+         by registrars, and reading them is arithmetic.
+      2. **The model** — cross-subject dependencies conventions cannot express,
+         such as Statistics before Econometrics. Proposed, then filtered: an
+         edge is accepted only if both endpoints exist and it does not create a
+         cycle, so a confident wrong answer cannot make the programme
+         unteachable.
+    """
+    by_title = {c["title"]: c for c in courses}
+
+    # 1a. Same subject prefix, ascending level: NUR 101 -> NUR 201.
+    by_prefix = {}
+    for c in courses:
+        prefix, level = _code_of(c["title"])
+        if prefix and level:
+            by_prefix.setdefault(prefix, []).append((level, c))
+    for prefix, items in by_prefix.items():
+        items.sort(key=lambda x: x[0])
+        for i, (level, c) in enumerate(items):
+            earlier = [p for lv, p in items[:i] if lv < level]
+            if earlier:
+                # The immediately preceding level only. Requiring every earlier
+                # course would make the graph dense and the term assignment
+                # impossible for no pedagogical gain.
+                prev_level = max(lv for lv, _ in items[:i] if lv < level)
+                for lv, p in items[:i]:
+                    if lv == prev_level and p["title"] not in c["requires"]:
+                        c["requires"].append(p["title"])
+
+    # 1b. Numbered series: Calculus I -> Calculus II.
+    by_series = {}
+    for c in courses:
+        base, part = _series_of(c["title"])
+        if base and part:
+            by_series.setdefault(base, []).append((part, c))
+    for base, items in by_series.items():
+        items.sort(key=lambda x: x[0])
+        for i, (part, c) in enumerate(items):
+            for prev_part, p in items[:i]:
+                if prev_part == part - 1 and p["title"] not in c["requires"]:
+                    c["requires"].append(p["title"])
+
+    # 2. Model-proposed cross-subject edges, each one filtered.
+    if propose_fn:
+        try:
+            proposed = propose_fn([c["title"] for c in courses]) or []
+        except Exception as e:
+            logger.warning(f"prerequisite proposal failed: {e}")
+            proposed = []
+        for edge in proposed:
+            try:
+                course, needs = edge.get("course"), edge.get("requires")
+            except AttributeError:
+                continue
+            c, p = by_title.get(course), by_title.get(needs)
+            if not c or not p or c is p or needs in c["requires"]:
+                continue
+            c["requires"].append(needs)
+            if _creates_cycle(courses):
+                c["requires"].remove(needs)
+                logger.info(f"rejected proposed edge {course!r} <- {needs!r}: "
+                            f"it would create a cycle")
+    return courses
+
+
+def _creates_cycle(courses):
+    index = {c["title"]: c for c in courses}
+    colour = {}
+
+    def visit(title):
+        state = colour.get(title)
+        if state == "done":
+            return False
+        if state == "open":
+            return True
+        colour[title] = "open"
+        for req in (index.get(title, {}).get("requires") or []):
+            if visit(req):
+                return True
+        colour[title] = "done"
+        return False
+
+    return any(visit(t) for t in index)
+
+
+def assign_terms(courses, terms, per_term=None):
+    """Place courses in terms so every prerequisite comes strictly earlier.
+
+    Fill order is not good enough once edges exist: a course can be scheduled
+    before something it needs simply because it appeared earlier in the slot
+    list. This is a topological layering — a course sits one term after the
+    latest thing it requires — with a per-term cap so a term does not balloon.
+    """
+    index = {c["title"]: c for c in courses}
+    placed = {}
+
+    def depth(title, seen=None):
+        seen = seen or set()
+        if title in placed:
+            return placed[title]
+        if title in seen:                 # defensive; validate() rejects cycles
+            return 1
+        seen.add(title)
+        reqs = (index.get(title, {}).get("requires") or [])
+        d = 1 if not reqs else 1 + max(depth(r, seen) for r in reqs if r in index)
+        placed[title] = d
+        return d
+
+    # A CHAIN DEEPER THAN THE PROGRAMME CANNOT BE HONOURED.
+    #
+    # Clamping depth to the term count silently puts a course in the same term as
+    # its prerequisite — validate() caught exactly that twice: first "NURS 201
+    # (term 4) requires NURS 109 (term 4)", then again after a partial fix,
+    # because a final min(depth, terms) re-collapsed what pruning had just
+    # separated. A four-term associate cannot carry a six-deep chain, so the
+    # chain must be SHORTENED until it fits — never clamped afterwards.
+    def _recompute():
+        placed.clear()
+        for c in courses:
+            c["term"] = depth(c["title"])
+        return max((c["term"] for c in courses), default=1)
+
+    deepest = _recompute()
+    if deepest > terms:
+        logger.warning(
+            f"prerequisite chains run {deepest} deep in a {terms}-term "
+            f"programme — pruning inferred edges until the ordering can actually "
+            f"be honoured")
+    guard = 0
+    while deepest > terms and guard < 200:
+        guard += 1
+        # Drop one edge from the deepest course. These are INFERRED from
+        # catalogue conventions, not stated by a registrar, so they are the
+        # right thing to give up when the programme cannot carry them.
+        worst = max(courses, key=lambda c: (c["term"], len(c["requires"] or [])))
+        if not worst["requires"]:
+            logger.warning("cannot shorten further — a course with no "
+                           "prerequisites is still too deep; giving up")
+            break
+        dropped = worst["requires"].pop()
+        logger.info(f"  dropped inferred prerequisite {worst['title']!r} "
+                    f"<- {dropped!r}")
+        deepest = _recompute()
+
+    # Capacity: spill overflowing terms later, but never earlier than a
+    # prerequisite allows.
+    cap = per_term or max(1, round(len(courses) / max(1, terms)))
+    for t in range(1, terms + 1):
+        while True:
+            here = [c for c in courses if c["term"] == t]
+            if len(here) <= cap or t >= terms:
+                break
+            # A course may only be pushed later if BOTH directions still hold:
+            # its own prerequisites stay earlier, AND nothing that depends on it
+            # is already at or before the new term. Checking only the first
+            # direction let a prerequisite overtake its dependent — validate()
+            # caught "NUR 201 (term 4) requires NUR 109 (term 4)" three separate
+            # times before this was the fix.
+            dependents = {}
+            for other in courses:
+                for r in (other.get("requires") or []):
+                    dependents.setdefault(r, []).append(other)
+
+            def _can_move(c):
+                if any(index[r]["term"] >= t + 1
+                       for r in (c.get("requires") or []) if r in index):
+                    return False
+                return all(d["term"] > t + 1 for d in dependents.get(c["title"], []))
+
+            movable = [c for c in here if _can_move(c)]
+            if not movable:
+                break
+            movable[-1]["term"] = t + 1
+
+    # A capstone belongs at the end regardless of how shallow its graph is —
+    # but only if nothing depends on it, which for a capstone should be nothing
+    # at all. Moving it blindly would repeat the overtaking bug above.
+    dependents_of = set()
+    for c in courses:
+        dependents_of.update(c.get("requires") or [])
+    for c in courses:
+        if c.get("slot") == "capstone" and c["title"] not in dependents_of:
+            c["term"] = terms
+    return courses

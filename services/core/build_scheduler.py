@@ -52,6 +52,17 @@ SESSION_IDLE_SECONDS = 300
 
 PRIORITY_INTERACTIVE = "interactive"
 PRIORITY_BACKGROUND = "background"
+# Below background: building an elective the learner has NOT chosen, on the
+# chance they pick it. Real registration offers several options, and a learner
+# who chooses late would otherwise wait ~3.6 h for their pick to build.
+PRIORITY_SPECULATIVE = "speculative"
+
+# How many unchosen options may be pre-built. Each is a full course build, so
+# offering 3 options and building all 3 triples the cost of every elective slot —
+# on a 40-course bachelor's with 9 electives that is 18 extra builds, ~65 hours.
+# One is the compromise: the option most likely to be picked gets a head start,
+# the rest wait for the choice.
+MAX_SPECULATIVE = 1
 
 
 def decide(state):
@@ -111,6 +122,48 @@ def decide(state):
 
     return _r("start_build", PRIORITY_BACKGROUND,
               "next course is chosen, unbuilt, and the learner is idle")
+
+
+def decide_speculative(state):
+    """Should an UNCHOSEN option be pre-built? Only with capacity to spare.
+
+    Real registration offers several courses per elective slot, and a learner who
+    picks at the last moment waits for the build. Pre-building every option makes
+    the choice instant and costs N times as much: 3 options across a bachelor's 9
+    elective slots is 18 extra builds, roughly 65 hours.
+
+    So this is strictly subordinate. It runs only when the committed pipeline has
+    nothing to do, it never delays a chosen course, and a speculative build is
+    abandoned the moment real work appears — a half-built option is worth less
+    than a chosen course started on time.
+    """
+    s = state or {}
+    primary = decide(s)
+
+    # Anything the committed pipeline wants to do outranks speculation. That
+    # includes waiting: if it is waiting because a learner is active, the machine
+    # is not idle in the sense that matters.
+    if primary["action"] != "wait" or primary["priority"] == PRIORITY_INTERACTIVE:
+        return _r("wait", primary["priority"],
+                  f"committed pipeline is busy ({primary['action']}) — "
+                  f"speculation yields")
+
+    options = [o for o in (s.get("open_options") or []) if not o.get("built")]
+    if not options:
+        return _r("wait", PRIORITY_SPECULATIVE, "no unbuilt options open")
+    if int(s.get("speculative_in_flight") or 0) >= MAX_SPECULATIVE:
+        return _r("wait", PRIORITY_SPECULATIVE,
+                  f"already speculating on {s.get('speculative_in_flight')} "
+                  f"(cap {MAX_SPECULATIVE})")
+
+    # Prefer the option the learner is most likely to take. Without a signal,
+    # the first offered — which is the recommended one.
+    pick = max(options, key=lambda o: float(o.get("likelihood") or 0))
+    return {"action": "start_build", "priority": PRIORITY_SPECULATIVE,
+            "course": pick.get("title"),
+            "reason": ("pipeline idle and this option is open — pre-building it "
+                       "so a late choice does not mean a wait; abandoned if the "
+                       "learner chooses otherwise or real work appears")}
 
 
 def _r(action, priority, reason):

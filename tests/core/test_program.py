@@ -295,3 +295,92 @@ class TestDegreeGapFilling(unittest.TestCase):
             P.curated_degree = orig
         lowered = [t.lower() for t in r["slots"]["elective"]]
         assert len(lowered) == len(set(lowered))
+
+
+class TestPrerequisiteInference(unittest.TestCase):
+    """A degree had right names and NO order: plan_from_template set
+    `requires: []` for every course, so validate() passed trivially and
+    "Medical-Surgical Nursing II" could sit in term 1 ahead of "Foundations".
+    A programme that teaches II before I is not a programme.
+    """
+
+    def _courses(self, *titles, slot="core"):
+        return [{"title": t, "slot": slot, "term": 1, "requires": [],
+                 "built": False, "chosen": True} for t in titles]
+
+    def test_catalogue_levels_become_edges(self):
+        from services.core.program import infer_prerequisites
+        cs = self._courses("NUR 101: Intro", "NUR 201: Med-Surg I",
+                           "NUR 301: Community Health")
+        infer_prerequisites(cs)
+        assert cs[1]["requires"] == ["NUR 101: Intro"]
+        assert cs[2]["requires"] == ["NUR 201: Med-Surg I"]
+
+    def test_numbered_series_become_edges(self):
+        from services.core.program import infer_prerequisites
+        cs = self._courses("Calculus I", "Calculus II", "Calculus III")
+        infer_prerequisites(cs)
+        assert cs[1]["requires"] == ["Calculus I"]
+        assert cs[2]["requires"] == ["Calculus II"]
+
+    def test_only_the_immediately_preceding_level_is_required(self):
+        """Requiring every earlier course makes the graph dense and the term
+        assignment impossible, for no pedagogical gain."""
+        from services.core.program import infer_prerequisites
+        cs = self._courses("NUR 101: A", "NUR 201: B", "NUR 301: C")
+        infer_prerequisites(cs)
+        assert "NUR 101: A" not in cs[2]["requires"]
+
+    def test_unrelated_subjects_are_not_linked(self):
+        from services.core.program import infer_prerequisites
+        cs = self._courses("NUR 101: Nursing", "ENG 101: Composition")
+        infer_prerequisites(cs)
+        assert all(not c["requires"] for c in cs)
+
+    def test_a_proposed_edge_that_would_cycle_is_rejected(self):
+        """A confident wrong answer must not make the programme unteachable."""
+        from services.core.program import infer_prerequisites
+        cs = self._courses("Calculus I", "Calculus II")
+        infer_prerequisites(cs, propose_fn=lambda titles: [
+            {"course": "Calculus I", "requires": "Calculus II"}])
+        assert "Calculus II" not in cs[0]["requires"]
+
+
+class TestTermAssignment(unittest.TestCase):
+    def _chain(self, n, terms=4):
+        from services.core.program import assign_terms, infer_prerequisites
+        cs = [{"title": f"NUR {100 * (i + 1)}: C{i}", "slot": "core", "term": 1,
+               "requires": [], "built": False, "chosen": True} for i in range(n)]
+        infer_prerequisites(cs)
+        assign_terms(cs, terms)
+        return cs
+
+    def test_every_prerequisite_lands_strictly_earlier(self):
+        cs = self._chain(4)
+        index = {c["title"]: c for c in cs}
+        for c in cs:
+            for r in c["requires"]:
+                assert index[r]["term"] < c["term"], f"{c['title']} <- {r}"
+
+    def test_a_chain_deeper_than_the_programme_is_shortened_not_clamped(self):
+        """Clamping put a course in the same term as its prerequisite. The chain
+        has to be SHORTENED until it fits, never clamped afterwards."""
+        from services.core.program import validate
+        cs = self._chain(6, terms=3)
+        validate(cs)                      # raises if any prereq is not earlier
+        assert max(c["term"] for c in cs) <= 3
+
+    def test_the_capstone_is_last(self):
+        from services.core.program import assign_terms
+        cs = [{"title": "A", "slot": "core", "term": 1, "requires": []},
+              {"title": "Capstone", "slot": "capstone", "term": 1, "requires": []}]
+        assign_terms(cs, 4)
+        assert cs[1]["term"] == 4
+
+    def test_spilling_for_capacity_never_overtakes_a_dependent(self):
+        """Pushing a course later without checking its dependents let a
+        prerequisite overtake the course that needed it -- caught by validate()
+        three separate times before the check went both ways."""
+        from services.core.program import validate
+        cs = self._chain(8, terms=4)
+        validate(cs)
