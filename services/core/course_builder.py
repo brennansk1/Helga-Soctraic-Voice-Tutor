@@ -1924,11 +1924,32 @@ class SkeletonBuilder:
             if group:
                 groups.append(group)
 
+        def _name_group(group):
+            """Name a module after everything in it, not just its first chapter.
+
+            MEASURED: grouping Determinants + Eigenvalues named the module
+            "Determinants", so "Eigenvalues and Diagonalization" appeared as a
+            lesson under a heading that excluded it — and the model invented
+            vague filler ("Core Determinant Mechanics", "Advanced Eigenvalue
+            Topics") to bridge the gap between the title and the real content.
+            A heading that hides half its material invites exactly that.
+            """
+            if len(group) == 1:
+                return group[0]
+            # Two chapters join; three or more would make an unreadable title, so
+            # the first and last bracket the span the way a syllabus does.
+            if len(group) == 2:
+                a, b_ = group
+                # "Determinants and Eigenvalues and Eigenvectors" reads as three
+                # things joined badly. When either half already contains an
+                # "and", a comma carries the join instead.
+                sep = ", " if (" and " in a.lower() or " and " in b_.lower()) else " and "
+                return f"{a}{sep}{b_}"
+            return f"{group[0]} through {group[-1]}"
+
         picked, seen = [], set()
         for group in groups:
-            # The first chapter names the module; the rest become its declared
-            # scope so the substructure builder still knows what belongs in it.
-            title = group[0]
+            title = _name_group(group)
             key = title.lower()
             if key in seen:
                 continue

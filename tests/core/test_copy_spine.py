@@ -222,8 +222,9 @@ class TestCuratedSpine(unittest.TestCase):
         spine = b._spine_from_syllabus("Linear Algebra", 6)
         assert spine is not None, "curated spine was not consulted"
         assert b._spine_source["source"] == "curated"
-        titles = [m["title"] for m in spine]
-        assert titles[0] == "Introduction to Vectors"
+        # Modules are named for everything they group, so assert the content
+        # is present rather than pinning an exact string.
+        assert "Introduction to Vectors" in spine[0]["title"]
 
     def test_curated_spine_is_a_last_resort_not_a_default(self):
         """A real sequenced source from research must still win — the curated
@@ -270,7 +271,11 @@ class TestGroupingNotSampling(unittest.TestCase):
         b = _b([{"book": "Src", "relevance": 9.0, "source": "OpenStax",
                  "url": "u", "chapters": chapters}])
         titles = [m["title"] for m in b._spine_from_syllabus("Src", 3)]
-        assert titles == ["Vectors", "Vector Spaces", "Determinants"]
+        # Grouped modules carry more than one chapter name, so order is asserted
+        # by where each chapter LANDS rather than by exact equality.
+        assert titles[0].startswith("Vectors")
+        assert "Vector Spaces" in titles[1]
+        assert "Determinants" in titles[2]
 
 
 class TestSectionDetailReachesTheBuilder(unittest.TestCase):
@@ -306,3 +311,42 @@ class TestSectionDetailReachesTheBuilder(unittest.TestCase):
         b.status_callback = None
         b._syllabus_outlines = []
         assert b._spine_from_syllabus("Underwater Basket Weaving", 6) is None
+
+
+class TestGroupedModulesAreNamedForAllTheirContent(unittest.TestCase):
+    """A heading that hides half its material invites filler.
+
+    MEASURED: grouping Determinants + Eigenvalues named the module
+    "Determinants", so "Eigenvalues and Diagonalization" appeared as a lesson
+    under a heading that excluded it -- and the model invented "Core Determinant
+    Mechanics" and "Advanced Eigenvalue Topics" to bridge the gap between the
+    title and the real content.
+    """
+
+    def test_a_paired_module_names_both_chapters(self):
+        b = _b([{"book": "Src", "relevance": 9.0, "source": "OpenStax", "url": "u",
+                 "chapters": ["Determinants", "Eigenvalues", "Vectors", "Matrices"]}])
+        titles = [m["title"] for m in b._spine_from_syllabus("Src", 2)]
+        assert "Determinants" in titles[0] and "Eigenvalues" in titles[0]
+
+    def test_a_single_chapter_module_keeps_its_plain_name(self):
+        b = _b([{"book": "Src", "relevance": 9.0, "source": "OpenStax", "url": "u",
+                 "chapters": ["Vectors", "Matrices", "Determinants"]}])
+        assert b._spine_from_syllabus("Src", 3)[0]["title"] == "Vectors"
+
+    def test_a_double_and_is_avoided(self):
+        """'Determinants and Eigenvalues and Eigenvectors' reads as three things
+        joined badly."""
+        b = _b([{"book": "Src", "relevance": 9.0, "source": "OpenStax", "url": "u",
+                 "chapters": ["Determinants", "Eigenvalues and Eigenvectors",
+                              "Vectors", "Matrices"]}])
+        title = b._spine_from_syllabus("Src", 2)[0]["title"]
+        assert title.lower().count(" and ") <= 1, title
+
+    def test_three_or_more_chapters_bracket_the_span(self):
+        # NOT A,B,C,D,E,F — that is alphabetical, and the index guard refuses it,
+        # so the fixture would test the guard rather than the naming.
+        b = _b([{"book": "Src", "relevance": 9.0, "source": "OpenStax", "url": "u",
+                 "chapters": ["Vectors", "Solving Systems", "Determinants",
+                              "Eigenvalues", "Orthogonality", "Applications"]}])
+        assert "through" in b._spine_from_syllabus("Src", 2)[0]["title"]

@@ -166,3 +166,43 @@ def describe(assessment):
             f"a course of {a['requested_concepts']} concepts — the evidence found "
             f"supports roughly {a.get('suggested_concepts', '?')}. You can build "
             f"the smaller version, broaden the subject, or continue as asked.")
+
+
+def position_in_range(assessment, lo, hi):
+    """Where inside a lesson range this subject's evidence says to sit.
+
+    The range exists so a course can be as long as its material warrants. Left to
+    itself the model picks anywhere inside it, so a subject with 77 chapters of
+    real syllabus can still come out at the bottom — the range was permitting
+    variation rather than expressing evidence.
+
+    This makes it express evidence:
+
+        ratio >= 2.0   plenty of material         -> upper end
+        ratio ~ 1.0    about right                -> centre
+        ratio <  0.5   thin                       -> lower end, and the
+                                                     over-stretch warning fires
+
+    Returns (target, reason). On an unknown or degraded assessment it returns the
+    CENTRE, never the extremes: "we could not tell" must not become "build the
+    shortest possible course", which would let a throttled lookup quietly halve a
+    curriculum.
+    """
+    lo, hi = int(lo), int(max(lo, hi))
+    mid = (lo + hi) // 2
+    a = assessment or {}
+    if a.get("verdict") in (None, "unknown") or a.get("ratio") is None:
+        return mid, "evidence unknown — using the middle of the range"
+
+    ratio = float(a["ratio"])
+    if ratio >= 2.0:
+        return hi, (f"evidence supports ~{a.get('supportable_concepts')} concepts "
+                    f"against {a.get('requested_concepts')} requested — the "
+                    f"material carries the longer course")
+    if ratio >= 1.0:
+        target = mid + (hi - mid) // 2
+        return target, "evidence comfortably covers the request"
+    if ratio >= 0.5:
+        return mid, "evidence roughly matches the request"
+    return lo, (f"evidence supports only ~{a.get('supportable_concepts')} "
+                f"concepts — building at the short end rather than padding")
