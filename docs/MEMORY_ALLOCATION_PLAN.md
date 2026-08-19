@@ -96,18 +96,38 @@ Network-bound, not memory-bound. Nothing to tune.
 | **available for the LLM** | **~15.4** |
 | **guard** | keep the model ≤ **15.0** |
 
-**Recommended configuration:**
+**Recommended configuration: `num_ctx 32768`, resident 13.51 GB.**
 
-    nail-35b-a3b  IQ3_S   num_ctx 65536   ->  14.17 GB   (1.2 GB under)
+Not 64k, and the reason is the verifier. Sized from parameter counts:
 
-or, if the IQ3_M estimate holds when measured:
+| addition | resident |
+|---|---|
+| MiniLM `all-MiniLM-L6-v2` | 0.08 GB |
+| bge-m3 *(already local, 566.7M @ F16)* | 1.06 GB |
+| MiniCheck-Flan-T5-Large fp16 | 1.46 GB |
+| MiniCheck-Flan-T5-Large int8 | 0.73 GB |
 
-    nail-35b-a3b  IQ3_M   num_ctx 32768   ->  14.32 GB   (1.1 GB under)
+Against the 15.0 GB ceiling, co-residency works out as:
 
-64k is 4× today's window — far more than lesson-batched hydration needs (a
-lesson is 5–10 concepts) and enough to carry the retrieved ledger neighbours
-comfortably. **128k measured at 15.09 GB is technically under the ceiling but
-leaves no room for the container estimates being wrong; not recommended.**
+| LLM | + MiniLM | + bge-m3 | + MiniCheck fp16 | + MiniCheck int8 |
+|---|---|---|---|---|
+| @64k (14.17) | 14.25 OK | 15.23 **over** | 15.63 **over** | 14.90 OK |
+| **@32k (13.51)** | **13.59 OK** | **14.57 OK** | **14.97 OK** | **14.24 OK** |
+| @16k (13.18) | 13.26 OK | 14.24 OK | 14.64 OK | 13.91 OK |
+
+**At 32k every planned addition fits co-resident with the model; at 64k most do
+not.** That is worth more than the extra context: it means verification and
+ledger embedding can run *without* unloading and reloading a 12.7 GB model
+between phases, which costs ~142 s of cold load each time.
+
+32k is still 2× today's window and comfortably more than lesson-batched
+hydration needs (a lesson is 5–10 concepts). 64k stays available for a
+generation-only pass with nothing co-resident. 128k (15.09 GB) is under the
+ceiling on paper but leaves nothing for the container estimates being wrong.
+
+**No new Modelfile is needed** — `num_ctx` is accepted as a per-request option,
+which is how every measurement here was taken. Per-phase context is a request
+parameter, not a model variant, and avoids duplicating a 12.7 GB blob on disk.
 
 ### Phase 3 — Verification (LLM unloaded)
 
@@ -151,19 +171,23 @@ headroom.
 | phase | model config | resident | headroom |
 |---|---|---|---|
 | research | none | ~5.2 total | vast |
-| **build / hydrate** | **IQ3_S @ 64k** | **14.17** | **~1.2 GB** |
-| verify | MiniCheck only | ~6.5 total | vast |
+| **build / hydrate** | **IQ3_S @ 32k** | **13.51** | **~1.9 GB** |
+| build + MiniCheck fp16 co-resident | both | 14.97 | ~0.03 GB — works, no margin |
+| build + MiniCheck int8 co-resident | both | **14.24** | **~0.8 GB** |
+| verify (LLM unloaded) | MiniCheck only | ~6.5 total | vast |
 | **tutor** | **IQ3_S @ 16–32k** | **13.18–13.51** | **~1.1 GB** |
 
 Three rules hold it together:
 
-1. **Never exceed ~15.0 GB resident** for any single process. The cliff at ~16 GB
-   is abrupt and total.
-2. **Never co-resident two models.** Unload the LLM before MiniCheck; unload
-   MiniCheck before returning to generation.
-3. **Match `num_ctx` to the phase.** 64k while building, 16–32k while tutoring.
-   Context is cheap (20 KB/token measured) but not free, and tutoring is the
-   phase with the least room.
+1. **Never exceed ~15.0 GB resident.** The cliff at ~16 GB is abrupt and total —
+   throughput does not taper, generation simply stops returning usable output.
+2. **Prefer sequential phases; co-residency only at int8.** Unloading is always
+   safe. If avoiding the ~142 s reload is worth it, MiniCheck at **int8**
+   alongside the model at 32k leaves ~0.8 GB — fp16 leaves 0.03 GB, which is not
+   a margin.
+3. **Match `num_ctx` to the phase** via the per-request option: 32k building,
+   16–32k tutoring. Context is cheap (20 KB/token measured) but not free, and
+   tutoring is the phase with the least room.
 
 ---
 
