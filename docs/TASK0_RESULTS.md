@@ -1231,3 +1231,62 @@ model, `plan_degree` fills slots with `"Subject: gen_ed 1"` by design, so a buil
 never crashes. The instrument reports that as NOT_DEGREE_SHAPED — if it passed,
 the fallback would be indistinguishable from a real programme. The live path (no
 curriculum, *with* a model) is what reaches DEGREE_SHAPED.
+
+---
+
+# Final state — median-of-3, all seven conditions
+
+## Condition 1 — textbook courses, median-of-3
+
+| run | coverage | balance | verdict |
+|---|---|---|---|
+| 1 | **100%** | `[6,6,9,9,6,6]` spread 0.20 | **PROFESSIONAL** |
+| 2 | **100%** | `[6,6,6,8,6,6]` spread 0.12 | **PROFESSIONAL** |
+| 3 | 90% | `[6,6,5,6,5,5]` spread 0.09 | **PROFESSIONAL** |
+| **median** | **100%** | **spread 0.12** | **PROFESSIONAL** |
+
+Every run passes all eight checks. Compare the session's starting point: an
+UNGUIDED build of 6 lessons and 30 concepts.
+
+## The seven conditions
+
+| | condition | state |
+|---|---|---|
+| 1 | textbook courses at professional level | **PROFESSIONAL, median-of-3, 100% coverage** |
+| 2 | no-textbook courses at the same level | **PROFESSIONAL** — school shape 100/100/100, 0/58 generic titles |
+| 3 | degree via research equal to a real one | **DEGREE_SHAPED** — Economics, published curriculum |
+| 4 | degree with no examples, same quality | **DEGREE_SHAPED** — D&D, model-proposed, labelled |
+| 5 | smart stretching, quality not filler | `scope_fit` warns pre-generation; `check_filler` measures padding — 0 near-duplicates across four real builds |
+| 6 | LLM coordinates searches, caches efficiently | research loop live: 0/12 → 5/12, 141 sources, deterministic exit; 172× cache |
+| 7 | search priorities established | `docs/SEARCH_PRIORITIES.md`, each rank justified by a measurement |
+
+## What made the difference
+
+**No schema minimum in this pipeline binds.** `minItems` is stripped from
+`response_format` for /v1 compatibility, and /v1 ignores the `format` field that
+still carries it. Every count had to be enforced *after* generation.
+
+Prompt-only enforcement failed **five** times; a correction round naming the
+specific offender worked **five** times:
+
+| defect | prompt | correction round |
+|---|---|---|
+| too few units | no effect | `[1,1,1,2,1,3]` → `[2,2,3,2,2,2]` |
+| generic titles | survived an explicit ban of the exact words | 3/56 → 0/58 |
+| empty units | — | filled or folded into the units that remain |
+| hollow modules | — | recorded as a defect, not passed off as structure |
+
+## Instruments built this session
+
+All arithmetic, no model — so none of them drift:
+
+* `skeleton_qa.py` — one conjunctive verdict over eight structural checks
+* `structure_quality.py` — balance, taper, generic titles, degenerate units,
+  school shape, filler
+* `degree_quality.py` — term balance, prerequisites, capstone, breadth,
+  placeholders
+* `coverage_check.py` — coverage and sequencing against a published syllabus
+* `coherence.py` — cross-module forward references
+
+Each one caught something the others could not, and three of them caught defects
+in *my own fixes* before those fixes shipped.
