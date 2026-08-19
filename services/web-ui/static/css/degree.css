@@ -1,0 +1,89 @@
+/* The degree map. Tokens only; both themes free. The status colours are the
+ * information — a legend without colour salience would bury the product's
+ * best sentence: the university builds itself as you go. */
+.degree-shell { max-width: 1200px; margin: 0 auto; padding: var(--space-5, 1.5rem); }
+.degree-header { display: flex; justify-content: space-between; align-items: end;
+                 gap: var(--space-4); flex-wrap: wrap; margin-bottom: var(--space-4); }
+.degree-sub { color: var(--text-secondary); margin: .3em 0 0; max-width: 60ch; }
+.degree-legend { display: flex; gap: 1em; font-size: .82rem; color: var(--text-secondary); }
+.degree-legend .lg { display: inline-block; width: 10px; height: 10px;
+                     border-radius: 3px; margin-right: .4em; }
+.lg-complete { background: var(--success, #1b9e57); }
+.lg-ready    { background: var(--accent, #4759e4); }
+.lg-building { background: var(--warning, #c77d0a); }
+.lg-locked   { background: var(--border, #cbd2dd); }
+.lg-choice   { background: #9b59d0; }
+
+.degree-viewport {
+    position: relative; overflow: hidden;
+    height: 62vh; min-height: 380px;
+    border: 1px solid var(--border); border-radius: var(--radius-lg, 14px);
+    background: var(--surface-sunken, #f4f6f9);
+    cursor: grab; touch-action: none;
+}
+.degree-viewport.dragging { cursor: grabbing; }
+#deg-svg { width: 100%; height: 100%; transform-origin: 0 0;
+           transition: transform 80ms linear; }
+
+.deg-term-label { font-size: 15px; font-weight: 700; fill: var(--text-secondary, #667); }
+.deg-edge { fill: none; stroke: var(--border, #b9c0cc); stroke-width: 2;
+            marker-end: none; opacity: .8; }
+.deg-node-box { fill: var(--surface-raised, #fff); stroke-width: 2; }
+.deg-node-title { font-size: 13.5px; font-weight: 600; fill: var(--text-primary, #223); }
+.deg-node-slot { font-size: 11px; fill: var(--text-secondary, #778); letter-spacing: .03em; }
+.deg-node:focus-visible .deg-node-box { stroke: var(--focus-ring, #4759e4); stroke-width: 3; }
+
+.deg-complete .deg-node-box { stroke: var(--success, #1b9e57); }
+.deg-ready    .deg-node-box { stroke: var(--accent, #4759e4); }
+.deg-building .deg-node-box { stroke: var(--warning, #c77d0a); stroke-dasharray: 6 3; }
+.deg-locked   .deg-node-box { stroke: var(--border, #cbd2dd); }
+.deg-locked   .deg-node-title { fill: var(--text-secondary, #99a); }
+.deg-choice   .deg-node-box { stroke: #9b59d0; stroke-dasharray: 2 3; }
+.deg-node-pulse { fill: var(--warning, #c77d0a); animation: now-pulse 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .deg-node-pulse { animation: none; } }
+
+.degree-zoom { position: absolute; right: 12px; bottom: 12px; display: flex;
+               flex-direction: column; gap: 6px; }
+.degree-zoom button {
+    width: 40px; height: 34px; border-radius: var(--radius-md, 10px);
+    border: 1px solid var(--border); background: var(--surface-raised, #fff);
+    color: var(--text-primary); font-weight: 700; cursor: pointer;
+}
+
+.degree-choice { margin-top: var(--space-5); }
+.degree-choice-sub { color: var(--text-secondary); margin: .2em 0 1em; }
+.degree-choice-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+                       gap: var(--space-3); }
+.deg-choice-card {
+    text-align: left; padding: var(--space-4);
+    border: 2px dashed #9b59d0; border-radius: var(--radius-lg);
+    background: var(--surface-raised, #fff); cursor: pointer;
+    transition: transform var(--dur-fast, 140ms) ease, box-shadow var(--dur-fast) ease;
+}
+.deg-choice-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md);
+                         border-style: solid; }
+.deg-choice-card h3 { margin: 0 0 .35em; font-size: 1.02rem; }
+.deg-choice-card p { margin: 0; font-size: .87rem; color: var(--text-secondary); }
+
+.degree-empty { color: var(--text-secondary); padding: var(--space-6) 0; text-align: center; }
+.hidden { display: none !important; }
+@media (max-width: 760px) {
+    .degree-viewport { height: 52vh; }
+    .degree-legend { flex-wrap: wrap; gap: .6em; }
+}
+
+/* Locked-node explanation toast. */
+.deg-toast {
+    position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%) translateY(8px);
+    max-width: 480px; padding: .8em 1.2em;
+    border-radius: var(--radius-md, 10px);
+    background: var(--surface-raised, #fff);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-lg, 0 10px 30px rgba(0,0,0,.18));
+    font-size: .92rem; color: var(--text-primary);
+    opacity: 0; pointer-events: none;
+    transition: opacity var(--dur-base, 200ms) ease, transform var(--dur-base) ease;
+    z-index: 70;
+}
+.deg-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.deg-locked { cursor: pointer; }

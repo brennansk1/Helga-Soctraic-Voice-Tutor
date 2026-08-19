@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Degree — Helga{% endblock %}
+
+{% block head_scripts %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/degree.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="degree-shell">
+
+  <header class="degree-header">
+    <div>
+      <h1 id="deg-title">Your programme</h1>
+      <p class="degree-sub" id="deg-sub">Terms run left to right; arrows are
+         prerequisites. Courses build one ahead of you.</p>
+    </div>
+    <div class="degree-legend" aria-hidden="true">
+      <span><i class="lg lg-complete"></i>complete</span>
+      <span><i class="lg lg-ready"></i>ready</span>
+      <span><i class="lg lg-building"></i>building</span>
+      <span><i class="lg lg-locked"></i>locked</span>
+      <span><i class="lg lg-choice"></i>your choice</span>
+    </div>
+  </header>
+
+  <!-- Pan by dragging, zoom by wheel/pinch or the buttons. The whole map is
+       one SVG so edges, nodes and labels scale together. -->
+  <div class="degree-viewport" id="deg-viewport">
+    <svg id="deg-svg" role="group" aria-label="Programme map"></svg>
+    <div class="degree-zoom">
+      <button id="deg-zoom-in" aria-label="Zoom in">+</button>
+      <button id="deg-zoom-fit" aria-label="Fit to view">fit</button>
+      <button id="deg-zoom-out" aria-label="Zoom out">&minus;</button>
+    </div>
+  </div>
+
+  <!-- The registration moment: appears when a term's elective slot opens.
+       Choosing LOCKS the choice and triggers the lazy build — this is where
+       "the university builds itself as you go" becomes visible. -->
+  <section class="degree-choice hidden" id="deg-choice" aria-live="polite">
+    <h2>Choose your elective</h2>
+    <p class="degree-choice-sub">Pick one — it locks, and Helga builds it before
+       you arrive. The options you pass over cost nothing.</p>
+    <div class="degree-choice-cards" id="deg-choice-cards"></div>
+  </section>
+
+  <p class="degree-empty hidden" id="deg-empty">No programme yet — create one
+     from the <a href="/create">Create</a> page and choose a degree.</p>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{{ url_for('static', filename='js/degree.js') }}"></script>
+{% endblock %}

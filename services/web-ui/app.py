@@ -336,6 +336,11 @@ def courses_page():
 def course_wizard_page():
     return render_template('course_wizard.html')
 
+@app.route('/degree')
+def degree_page():
+    """The programme map — pannable, zoomable prerequisite DAG."""
+    return render_template('degree.html')
+
 @app.route('/create')
 def create_page():
     """The course-creation carousel — one decision per page.
