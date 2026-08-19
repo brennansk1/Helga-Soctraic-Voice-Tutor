@@ -2347,7 +2347,15 @@ class SkeletonBuilder:
             sys_prompt=sys_prompt,
             max_tokens=max_tokens,
             expected_type="dict",
-            schema=self.subtree_schema(min_units=base_units,
+            # The LESSON count is the calendar and is enforced; the UNIT count
+            # is a topical grouping and is not. Forcing >= N units splits
+            # material that naturally forms fewer groups, which is the opposite
+            # of "units may differ in size where the material warrants it".
+            #
+            # The floor that matters is lessons-per-module, so it is applied
+            # where it belongs: at least one unit, and enough lessons inside
+            # whatever units the model chooses.
+            schema=self.subtree_schema(min_units=1,
                                        min_lessons=base_lessons,
                                        min_concepts=base_concepts),
             progress_callback=self.status_callback,

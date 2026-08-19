@@ -905,3 +905,53 @@ no open syllabus must not be told it is not a subject.
 
 `supportable_courses()` now makes the per-course question the easy one to ask, so
 a programme planner cannot repeat the framing error.
+
+---
+
+# Condition 4 end-to-end, with a real build
+
+Not tests over a state dict — a Program, a scheduler decision, and the build that
+decision triggered:
+
+```
+PROGRAM
+   term 1: Linear Algebra I     requires=[]
+   term 2: Linear Algebra II    requires=['Linear Algebra I']
+
+1. learner is mid-session -> wait                     (interactive wins)
+2. learner idle           -> start_build [background]
+3. BUILDING 'Linear Algebra I' because the scheduler said so...
+   built in 1017s: 6 modules, 53 lessons, 148 concepts
+4. course 1 passed        -> start_build, next: 'Linear Algebra II'
+```
+
+The loop closes: a programme produces a next course, the scheduler decides
+whether now is the time, a real build runs, and passing the course triggers the
+next one.
+
+# How rigid should the ladder be?
+
+Worth stating explicitly, because the answer differs per level:
+
+| level | fixed? | why |
+|---|---|---|
+| **lessons** | **yes** | a lesson IS a class session, and a semester has ~45. A course with 20 is not a semester course, and time parity is condition 1. |
+| **units** | **no** | a unit is a topical grouping. Some are a week, some three. |
+| **concepts/lesson** | floor only | at least one, or the lesson cannot fill its session. |
+
+The unit floor was briefly enforced by mistake: `minItems` was added at every
+level to fix the volume shortfall, including units, which contradicts "units may
+differ in size where the material warrants it". Relaxed to 1 — the floor that
+matters is lessons per module, and it is applied there.
+
+## The tension this leaves, stated plainly
+
+**A fixed lesson budget and over-stretch detection pull against each other.** If
+the evidence supports 36 concepts and the ladder demands 144, the builder pads —
+which is precisely the hollow-content failure `scope_fit` exists to prevent.
+
+Right now those two systems do not talk: `scope_fit` *warns* while the ladder
+*forces*. The better design is for evidence to CAP the budget — a thin subject
+should produce a genuinely shorter course with the resize explained, rather than
+a padded one with a warning attached. That is not built, and it is the most
+substantive open item in this document.

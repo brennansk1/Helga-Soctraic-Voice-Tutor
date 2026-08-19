@@ -63,3 +63,25 @@ class TestTheStaticSchemaIsNotMutated(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestUnitsStayFlexible(unittest.TestCase):
+    """A unit is a TOPICAL grouping whose size should follow the material; the
+    lesson count is the calendar. Forcing a minimum unit count splits material
+    that naturally forms fewer groups, which contradicts the design decision that
+    units may differ in size.
+    """
+
+    def test_the_builder_does_not_impose_a_unit_floor(self):
+        import inspect
+        from services.core.course_builder import SkeletonBuilder
+        src = inspect.getsource(SkeletonBuilder._build_module_subtree_oneshot)
+        assert "min_units=1" in src, \
+            "a unit floor above 1 forces topical grouping the material may not support"
+
+    def test_lesson_and_concept_floors_are_still_passed(self):
+        import inspect
+        from services.core.course_builder import SkeletonBuilder
+        src = inspect.getsource(SkeletonBuilder._build_module_subtree_oneshot)
+        assert "min_lessons=base_lessons" in src
+        assert "min_concepts=base_concepts" in src
