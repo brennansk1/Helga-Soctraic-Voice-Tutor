@@ -239,10 +239,26 @@ def build_from_book(path, storage, course_title=None, llm_json_fn=None,
 
     course["status"] = "skeleton"
     course["source_path"] = path
+    # Handed back so the caller can give it to the hydrator: hydration reads the
+    # chapter a concept came from, and re-parsing the book per concept would
+    # cost the parse 177 times over.
+    course["_book"] = book
+    stored = {k: v for k, v in course.items() if not k.startswith("_")}
     try:
-        storage.courses.create_course(course)
+        storage.courses.create_course(stored)
     except Exception as e:
         logger.error(f"[BOOK] could not store course: {e}")
         return None
     logger.info(f"[BOOK] built {course['uid']}: {summarise(course)}")
     return course
+
+
+def hydrate_from_book(course, book, hydrator):
+    """Point a hydrator at the book this course was built from.
+
+    The one line that makes it a course built FROM a book rather than a course
+    ABOUT one: with `hydrator.book` set, every concept carrying a `book_chapter`
+    is written from that chapter's text instead of from the model's memory.
+    """
+    hydrator.book = book
+    return hydrator.hydrate(course["uid"] if isinstance(course, dict) else course)

@@ -198,6 +198,59 @@ def _split_on_chapters(text, start_order, part=None):
     return out
 
 
+_ROMAN = {"i":1,"ii":2,"iii":3,"iv":4,"v":5,"vi":6,"vii":7,"viii":8,"ix":9,
+          "x":10,"xi":11,"xii":12,"xiii":13,"xiv":14,"xv":15,"xvi":16,
+          "xvii":17,"xviii":18,"xix":19,"xx":20}
+
+
+def _chapter_number(title):
+    """The number a chapter heading claims, or None."""
+    m = re.search(r"(?:chapter|ch\.?|section|part)\s+([0-9]{1,3}|[ivxlc]{1,7})\b",
+                  title or "", re.IGNORECASE)
+    if not m:
+        return None
+    tok = m.group(1).lower()
+    if tok.isdigit():
+        return int(tok)
+    return _ROMAN.get(tok)
+
+
+def _drop_front_matter(chapters):
+    """Remove a leading block that is front matter wearing a chapter's title.
+
+    MEASURED on Gutenberg's Art of War: the Gutenberg header, the translator's
+    introduction and the table of contents come before chapter I as one
+    14,000-word block, and the split titled it from the LAST ToC line it
+    contained — "Chapter XIII. The Use of Spies". The book then began at its own
+    final chapter, which for a course built to follow a book's order is the
+    worst possible failure.
+
+    The tell is arithmetic: a leading chapter whose claimed number is higher
+    than the one that follows it is not where the book starts. Conservative on
+    purpose — it only ever drops from the FRONT, and only when the numbers
+    actually contradict the order.
+    """
+    if len(chapters) < 3:
+        return chapters
+    nums = [_chapter_number(c.title) for c in chapters]
+    dropped = 0
+    while (len(chapters) - dropped) >= 3:
+        a, b = nums[dropped], nums[dropped + 1]
+        if a is not None and b is not None and a > b:
+            logger.info(f"[BOOK] dropping front matter titled "
+                        f"{chapters[dropped].title[:48]!r} — it claims chapter "
+                        f"{a} but is followed by {b}")
+            dropped += 1
+            continue
+        break
+    if not dropped:
+        return chapters
+    kept = chapters[dropped:]
+    for i, c in enumerate(kept, 1):
+        c.order = i
+    return kept
+
+
 def _clean(text):
     text = re.sub(r"\r\n?", "\n", text or "")
     text = re.sub(r"[ \t]+", " ", text)
@@ -363,6 +416,7 @@ def open_book(path, max_pages=None):
     except Exception as e:
         logger.warning(f"[BOOK] parse failed for {path}: {e}")
         return None
+    chapters = _drop_front_matter(chapters)
     if not chapters:
         logger.warning(f"[BOOK] no chapters found in {path}")
         return None

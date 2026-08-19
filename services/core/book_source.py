@@ -48,6 +48,28 @@ logger = logging.getLogger(__name__)
 # 32k alongside the template and output, and roughly a long section of a book.
 PASSAGE_CHARS = 7000
 
+# ADAPTIVE DIGESTION — chapters are not the same size, and a fixed cap truncates.
+#
+# MEASURED on two real books:
+#
+#     Pride and Prejudice   59 chapters   median 11k chars   max 31k
+#     OpenStax biology      83 chapters   median 14k chars   max 36k
+#
+# The original 12,000-char cap therefore read only 33-38% of the largest
+# chapters and truncated the MEDIAN one in both books. Concepts were being named
+# from the first third of a chapter and the rest was never seen.
+#
+# 45,000 chars is roughly 11k tokens, which sits comfortably inside num_ctx
+# 32768 alongside the prompt scaffolding and the model's own output. It reads
+# every chapter of both books above whole.
+READ_WHOLE_CHARS = 45_000
+
+# Above that a chapter is digested rather than truncated: each chunk is reduced
+# to its teaching points and the concepts are named from the reduction. More
+# calls, but the alternative is silently ignoring two thirds of a chapter.
+DIGEST_CHUNK_CHARS = 14_000
+DIGEST_POINTS_PER_CHUNK = 6
+
 _STOP = {"the", "and", "for", "with", "that", "this", "from", "are", "was",
          "its", "into", "how", "why", "what", "when", "which", "their", "them"}
 
@@ -136,7 +158,83 @@ CONCEPT_SCHEMA = {
 }
 
 
-def concept_prompt(book, chapter_order, n, course_title="", chapter_part=None):
+# Digesting a long chapter costs one LLM call per 14k chars — 150 s for a
+# 115k-char chapter. `concept_prompt` calls `digest_chapter`, and so does any
+# caller that wants the text, so without this the same chapter is digested twice
+# and the second run is pure waste. Keyed on identity and length so a different
+# book with the same chapter number cannot collide.
+_DIGEST_CACHE = {}
+
+
+def clear_digest_cache():
+    _DIGEST_CACHE.clear()
+
+
+DIGEST_SCHEMA = {
+    "type": "object",
+    "properties": {"points": {"type": "array", "items": {"type": "string"}}},
+    "required": ["points"],
+}
+
+
+def digest_chapter(book, chapter_order, llm_json_fn=None):
+    """Chapter text that fits, whole where possible and reduced where not.
+
+    Returns (text, how) so the caller can record which path ran — a digested
+    chapter is a weaker source than a whole one, and that difference should be
+    visible rather than silent.
+
+    Reduction is map-only, not map-reduce: each chunk yields its teaching points
+    and they are concatenated in READING ORDER. A second reduce pass over the
+    points would compress further and lose the chapter's sequence, which is the
+    one thing a book's own structure is for.
+    """
+    ch = book.chapter(chapter_order) if book else None
+    if ch is None:
+        return "", "missing"
+    if len(ch.text) <= READ_WHOLE_CHARS:
+        return ch.text, "whole"
+
+    key = (id(book), chapter_order, len(ch.text))
+    if key in _DIGEST_CACHE:
+        return _DIGEST_CACHE[key]
+    if not llm_json_fn:
+        # No way to digest: take the opening, and SAY it is truncated so a
+        # thin result is attributable rather than mysterious.
+        logger.warning(f"[BOOK] chapter {chapter_order} is {len(ch.text)} chars "
+                       f"and no digester was supplied — truncating")
+        return ch.text[:READ_WHOLE_CHARS], "truncated"
+
+    chunks = ch.chunks(size=DIGEST_CHUNK_CHARS, overlap=600)
+    points = []
+    for i, chunk in enumerate(chunks, 1):
+        try:
+            raw = llm_json_fn(
+                prompt=(f"### CHAPTER EXCERPT ({i} of {len(chunks)}) — "
+                        f"{ch.title}\n{chunk}\n\n"
+                        f"List up to {DIGEST_POINTS_PER_CHUNK} teaching points "
+                        f"this excerpt makes, in the order it makes them. Each "
+                        f"is one sentence, taken from the text. Do not add what "
+                        f"the excerpt does not say."),
+                schema=DIGEST_SCHEMA, expected_type="dict", max_tokens=500)
+            got = (raw or {}).get("points") if isinstance(raw, dict) else None
+            for pt in (got or []):
+                if isinstance(pt, str) and len(pt.strip()) > 20:
+                    points.append(pt.strip())
+        except Exception as e:
+            logger.debug(f"[BOOK] digest chunk {i} failed: {e}")
+    if not points:
+        out = (ch.text[:READ_WHOLE_CHARS], "truncated")
+    else:
+        logger.info(f"[BOOK] chapter {chapter_order} digested: {len(ch.text)} "
+                    f"chars -> {len(points)} point(s) across {len(chunks)} chunk(s)")
+        out = ("\n".join(f"- {p}" for p in points), "digested")
+    _DIGEST_CACHE[key] = out
+    return out
+
+
+def concept_prompt(book, chapter_order, n, course_title="", chapter_part=None,
+                   llm_json_fn=None):
     """Ask the model to name this chapter's concepts, having read it.
 
     `chapter_part` splits a long chapter across several lessons — the model is
@@ -146,12 +244,16 @@ def concept_prompt(book, chapter_order, n, course_title="", chapter_part=None):
     ch = book.chapter(chapter_order)
     if ch is None:
         return None
-    text = ch.text
+    text, how = digest_chapter(book, chapter_order, llm_json_fn)
+    if not text:
+        return None
     if chapter_part:
         idx, total = chapter_part
         span = max(1, len(text) // max(1, total))
         text = text[idx * span:(idx + 1) * span]
-    text = text[:12000]
+    header = ("CHAPTER TEXT" if how == "whole"
+              else "CHAPTER DIGEST — teaching points, in order"
+              if how == "digested" else "CHAPTER TEXT (opening only)")
 
     part_note = ""
     if chapter_part:
@@ -160,7 +262,7 @@ def concept_prompt(book, chapter_order, n, course_title="", chapter_part=None):
                      f"chapter. Name only what THIS part teaches.\n")
 
     return (
-        f"### CHAPTER TEXT — {book.title}, chapter {chapter_order}: {ch.title}\n"
+        f"### {header} — {book.title}, chapter {chapter_order}: {ch.title}\n"
         f"{text}\n\n"
         f"### TASK\n"
         f"1. Give this chapter a SHORT DESCRIPTIVE TITLE of 3-7 words saying "
@@ -256,7 +358,8 @@ def attach_concepts(course, book, llm_json_fn, per_lesson=3):
                     continue
                 prompt = concept_prompt(book, ch_order, len(slots),
                                         course_title=course.get("title", ""),
-                                        chapter_part=lesson.get("chapter_part"))
+                                        chapter_part=lesson.get("chapter_part"),
+                                        llm_json_fn=llm_json_fn)
                 if not prompt:
                     skipped += len(slots)
                     continue

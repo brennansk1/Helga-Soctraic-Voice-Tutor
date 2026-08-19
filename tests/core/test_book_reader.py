@@ -205,6 +205,103 @@ class TestConceptParsing(unittest.TestCase):
         self.assertEqual(parse_concepts({"concepts": [{}]}, 3), [])
 
 
+class TestFrontMatter(unittest.TestCase):
+    """A leading block that is front matter wearing a chapter's title.
+
+    MEASURED on Gutenberg's Art of War: the header, translator's introduction
+    and table of contents arrive as one 14,000-word block, and the split titled
+    it from the LAST ToC line inside it — "Chapter XIII. The Use of Spies". The
+    course then began at the book's final chapter, which for a course built to
+    follow a book's order is the worst possible failure.
+    """
+
+    def _book(self, titles):
+        from services.research.book_reader import _drop_front_matter
+        return _drop_front_matter(
+            [Chapter(t, "word " * 400, i + 1) for i, t in enumerate(titles)])
+
+    def test_an_out_of_order_leading_chapter_is_dropped(self):
+        kept = self._book(["Chapter XIII. The Use of Spies", "Chapter I. Laying Plans",
+                           "Chapter II. Waging War", "Chapter III. Stratagem"])
+        self.assertEqual(len(kept), 3)
+        self.assertTrue(kept[0].title.startswith("Chapter I."))
+
+    def test_order_is_renumbered_after_dropping(self):
+        kept = self._book(["Chapter IX. Later", "Chapter I. A", "Chapter II. B",
+                           "Chapter III. C"])
+        self.assertEqual([c.order for c in kept], [1, 2, 3])
+
+    def test_a_correctly_ordered_book_is_untouched(self):
+        titles = ["Chapter I. A", "Chapter II. B", "Chapter III. C", "Chapter IV. D"]
+        self.assertEqual(len(self._book(titles)), 4)
+
+    def test_untitled_chapters_are_never_dropped(self):
+        """Only an arithmetic contradiction justifies dropping; absence of a
+        number is not evidence of anything."""
+        self.assertEqual(len(self._book(["Preface", "Opening", "Middle", "End"])), 4)
+
+    def test_a_very_short_book_is_left_alone(self):
+        self.assertEqual(len(self._book(["Chapter V. X", "Chapter I. Y"])), 2)
+
+
+class TestAdaptiveDigestion(unittest.TestCase):
+    """Chapters are not the same size. Measured: Pride and Prejudice runs a
+    median of 11k chars and a max of 31k; OpenStax biology 14k and 36k. The
+    original 12,000-char cap truncated the MEDIAN chapter of both books."""
+
+    def test_a_normal_chapter_is_read_whole(self):
+        from services.core.book_source import digest_chapter
+        b = Book("B", [Chapter("One", "word " * 3000, 1)])
+        text, how = digest_chapter(b, 1)
+        self.assertEqual(how, "whole")
+
+    def test_an_oversized_chapter_without_a_digester_says_it_truncated(self):
+        """A thin result must be attributable rather than mysterious."""
+        from services.core.book_source import digest_chapter
+        b = Book("B", [Chapter("One", "word " * 20000, 1)])
+        text, how = digest_chapter(b, 1)
+        self.assertEqual(how, "truncated")
+
+    def test_an_oversized_chapter_is_digested_in_reading_order(self):
+        from services.core.book_source import clear_digest_cache, digest_chapter
+        clear_digest_cache()
+        calls = []
+
+        def fake(prompt, **kw):
+            calls.append(prompt)
+            n = len(calls)
+            # Long enough to clear the >20-char filter that drops fragments.
+            return {"points": [f"point {n}a is a full teaching point here",
+                               f"point {n}b is a full teaching point here"]}
+
+        b = Book("B", [Chapter("One", "word " * 20000, 1)])
+        text, how = digest_chapter(b, 1, fake)
+        self.assertEqual(how, "digested")
+        self.assertGreater(len(calls), 1, "a long chapter needs several passes")
+        self.assertLess(text.index("point 1a"), text.index("point 2a"))
+
+    def test_the_digest_is_cached(self):
+        """One call per 14k chars is 150 s for a 115k-char chapter, and both the
+        prompt builder and the caller ask for it."""
+        from services.core.book_source import clear_digest_cache, digest_chapter
+        clear_digest_cache()
+        calls = []
+
+        def fake(prompt, **kw):
+            calls.append(1)
+            return {"points": ["a point that is long enough to keep"]}
+
+        b = Book("B", [Chapter("One", "word " * 20000, 1)])
+        digest_chapter(b, 1, fake)
+        first = len(calls)
+        digest_chapter(b, 1, fake)
+        self.assertEqual(len(calls), first, "second call must be cached")
+
+    def test_a_missing_chapter_is_reported_not_guessed(self):
+        from services.core.book_source import digest_chapter
+        self.assertEqual(digest_chapter(Book("B", []), 9)[1], "missing")
+
+
 class TestFormats(unittest.TestCase):
     def test_a_text_book_parses(self):
         d = tempfile.mkdtemp()

@@ -3915,6 +3915,9 @@ class ContentHydrator:
         # concepts are grounded in the user's OWN material rather than only in
         # web research. Previously uploaded files were never read at all.
         self.source_document = ""
+        # Set by the book pipeline so hydration can read the chapter a concept
+        # came from. None for a researched course.
+        self.book = None
         # A1: fact-check pass. Disable with HELGA_FACT_CHECK=0 (it costs an
         # extra LLM call per concept, plus a confirmation call per flagged
         # claim).
@@ -4159,7 +4162,31 @@ class ContentHydrator:
             # that is the entire point of uploading it. Web research is
             # appended as supporting context, not as a replacement.
             user_excerpt = ""
-            if self.source_document:
+            # THE BOOK IS READ BY STRUCTURE, NOT BY SEARCH.
+            #
+            # A concept built from an uploaded book carries the chapter it came
+            # from, written when the skeleton was built. That link is exact, so
+            # searching the whole book for the concept's words would be strictly
+            # worse: it can land in the wrong chapter, and a passage from the
+            # wrong chapter reads as authoritative while being about something
+            # else.
+            #
+            # Without this, a book course has its concepts NAMED from the book
+            # and their content written from the model's recollection of it —
+            # which is the difference between a course built from a book and a
+            # course about a book.
+            _ch = (concept_ref_map.get(uid) or {}).get("book_chapter")
+            if _ch and getattr(self, "book", None) is not None:
+                try:
+                    from services.core.book_source import passage_for
+                    user_excerpt = passage_for(
+                        self.book, _ch, title,
+                        learning_objectives_list) or ""
+                    if user_excerpt:
+                        source_type = "book"
+                except Exception as e:
+                    logger.debug(f"[BOOK] passage lookup failed for {title!r}: {e}")
+            if not user_excerpt and self.source_document:
                 user_excerpt = self._excerpt_for_concept(
                     self.source_document, title, h_ctx)
 
