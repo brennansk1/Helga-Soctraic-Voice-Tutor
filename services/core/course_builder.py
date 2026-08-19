@@ -1709,10 +1709,28 @@ class SkeletonBuilder:
         if not brief or not brief.get("found"):
             logger.warning(
                 f"[SKELETON] no curriculum evidence for {topic!r} "
-                f"(tried: {[topic] + broader}). Generating UNGUIDED — expect "
-                f"weaker coverage.")
+                f"(tried: {[topic] + broader}). Falling back to iterative "
+                f"research rather than generating UNGUIDED.")
             if self.status_callback:
                 self.status_callback("CHECK:SYLLABUS_EVIDENCE:NONE")
+            # THE SOURCELESS PATH RUNS *HERE*, NOT ONLY BELOW.
+            #
+            # Measured: with the evidence partition in place, a Dungeon
+            # Mastering build correctly reported itself sourceless — and then
+            # returned through this branch, which predates the loop and exits
+            # before reaching its trigger further down. So the change that was
+            # supposed to guarantee the loop ran for sourceless subjects
+            # guaranteed it never ran: partition sets found=False, this returns,
+            # and the trigger below is unreachable.
+            #
+            # Before the partition this branch only fired when the sweep found
+            # literally nothing, which was rare; now it is the normal sourceless
+            # route, so the fallback has to live on it.
+            try:
+                self._research_loop_result = self._run_sourceless_research(topic)
+            except Exception as e:
+                logger.warning(f"[LOOP] sourceless research failed: {e}")
+                self._research_loop_result = None
             return ""
 
         n = (sum(len(x["chapters"]) for x in brief.get("syllabi", []))

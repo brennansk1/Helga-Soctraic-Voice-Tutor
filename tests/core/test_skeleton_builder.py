@@ -1101,3 +1101,45 @@ class TestEvidencePartition(unittest.TestCase):
         out, supp = b._partition_brief(brief, "Linear Algebra")
         self.assertEqual(out["syllabi"], [])
         self.assertEqual(len(supp), 1)
+
+
+class TestSourcelessRouting(unittest.TestCase):
+    """The partition must not silently disable the fallback it exists to enable.
+
+    Measured: with _partition_brief in place, a Dungeon Mastering build
+    correctly reported itself sourceless and then returned through the
+    "no curriculum evidence" branch, which predates the research loop and exits
+    before reaching its trigger. The change meant to guarantee the loop ran for
+    sourceless subjects guaranteed it never ran.
+    """
+
+    def _builder(self):
+        import tempfile
+        from services.common.storage import StorageManager
+        return SkeletonBuilder(storage=StorageManager(
+            tempfile.mkdtemp(prefix="route_test_")), scope=2, mastery=2,
+            starting_from=1)
+
+    def test_a_sourceless_subject_reaches_the_research_loop(self):
+        b = self._builder()
+        b.course_params = {"total_concepts_approx": 100}
+        calls = []
+
+        def _fake_brief(topic, **kw):
+            return {"found": True, "level": "college", "courses": [],
+                    "canonical_texts": [],
+                    "syllabi": [{"source": "OpenStax", "book": "Sociology",
+                                 "relevance": 2.1, "chapters": ["Culture"]}]}
+
+        with patch.object(SkeletonBuilder, "_parent_subjects",
+                          return_value=([], False)), \
+             patch.object(SkeletonBuilder, "_run_sourceless_research",
+                          side_effect=lambda t: calls.append(t) or {"ran": True}), \
+             patch.dict("sys.modules", {}, clear=False), \
+             patch("services.research.curriculum_research.curriculum_brief",
+                   _fake_brief):
+            b._syllabus_evidence("Dungeon Mastering")
+
+        self.assertEqual(calls, ["Dungeon Mastering"],
+                         "an adjacent-only brief must route to iterative research")
+        self.assertEqual(b._research_loop_result, {"ran": True})
