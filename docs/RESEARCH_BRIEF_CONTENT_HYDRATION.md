@@ -4,12 +4,56 @@
 **From:** Project Helga
 **Question in one line:** For an offline AI tutor that generates its own
 course content, what should be *stored*, in *what format*, at *what size*, and
-*how retrieved* — and how can the generation be made faster without losing
-quality?
+*how retrieved* — how does each concept get generated with awareness of the
+whole course rather than in isolation, and how can all of it be made faster
+without losing quality?
 
 > Companion to `RESEARCH_BRIEF_LONG_HORIZON_LEARNING.md`, which covered
 > scheduling and retention. This one covers the layer beneath it: the content
 > those sessions actually teach from.
+
+---
+
+## 0. The task, stated plainly
+
+**Take a textbook and a pile of research, and distil them into a course good
+enough that someone who knows the subject would call it professional — for any
+subject, at any level, offline, on one machine.**
+
+That is the whole objective. Every question below is a sub-problem of it.
+
+Four things make it hard, and an answer that solves only some of them does not
+solve the task:
+
+1. **Many kinds of course, one pipeline.** Linear Algebra with a canonical
+   textbook and a published syllabus, and Dungeon Mastering with neither, must
+   both come out well. The subject with the *least* published material is the
+   one most likely to be taught badly, and it cannot be the one the system
+   quietly gives up on.
+
+2. **Distillation, not transcription.** The output is not a summary of a
+   textbook. It is teaching material: an explanation pitched at a stated mastery
+   level, a worked example carried to a result, the misconceptions a learner
+   actually holds, and questions that make them think. A faithful compression of
+   a chapter is not a lesson.
+
+3. **The whole must cohere, and it is built in pieces.** Concepts are generated
+   one at a time and have to add up to a course — no contradictions, no idea
+   used before it is introduced, no idea taught five times because five lessons
+   each decided they needed it first.
+
+4. **It has to be true.** This is where we are weakest, and §2.9 states it
+   honestly: generated courses contain verified false claims and roughly half of
+   concepts are hollow. **A faster or tidier pipeline that does not move that
+   number is not progress.**
+
+We have solved the equivalent problem one layer up. The *skeleton* — the
+structure of modules, units, lessons and concepts — now measures as
+professional-grade against a published syllabus, for a textbook-backed subject
+and a sourceless one alike, using instruments with no model in them. **We are
+asking how to do the same for what goes inside it.**
+
+---
 
 **How the content is consumed, since it determines everything else.** Helga
 teaches **Socratically and in text only** — it asks a question, grades the
@@ -161,7 +205,21 @@ never be readable as "this concept has no sources". That absent-vs-zero
 distinction has bitten this project several times and any caching or retrieval
 recommendation must preserve it.
 
-### 2.3 Caching that already exists
+### 2.5 How hydration is invoked — one concept at a time
+
+**Each concept is hydrated by its own LLM call, in isolation.** The prompt
+carries the concept title, its objectives, its Bloom level, the names of its
+lesson and module, and the research payload — and nothing about the rest of the
+course. There is no ledger of what has already been taught and no view of what
+comes later. Q7 and Q8 both follow from this.
+
+For contrast, the *skeleton* phase went the other way: a module's entire
+subtree is now generated in ONE call, which cut the number of calls and
+improved coherence, because the model could see the module as a unit. Whether
+that argument extends to hydration — and at what granularity it breaks against
+a 16k context — is Q8.
+
+### 2.6 Caching that already exists
 
 | layer | what | TTL |
 |---|---|---|
@@ -176,7 +234,7 @@ successful empty one — absent and zero must stay distinguishable.
 **What is NOT cached: the LLM generation calls themselves**, which is where the
 hydration time actually goes.
 
-### 2.4 The cost, measured
+### 2.7 The cost, measured
 
 * **~90 s per concept** hydrated on `nail-35b-a3b` (3 concepts in 269 s).
 * A parity-sized course is **~104-135 concepts** → **~2.5-3.5 hours** per
@@ -186,7 +244,7 @@ hydration time actually goes.
 That number is the reason question 6 exists. At 90 s/concept, a full degree's
 content is ~135 hours of generation.
 
-### 2.5 Supplementary-source policy (just implemented)
+### 2.8 Supplementary-source policy (just implemented)
 
 Sources are now split by relevance: only sources at or above a grounding bar may
 shape structure or be measured against; weaker but related sources are labelled
@@ -198,7 +256,7 @@ serve **this concept**?" is narrower and one it can legitimately pass.
 **We would like this reasoning stress-tested.** It is currently an argument, not
 a measurement.
 
-### 2.6 The known quality gap — please read this before answering
+### 2.9 The known quality gap — please read this before answering
 
 Independent of everything above, measured on real generated courses:
 
@@ -219,7 +277,7 @@ or more compact while leaving this gap untouched is worth less to us than one
 that attacks it — and a recommendation that would *worsen* factual grounding in
 exchange for speed is one we would reject.
 
-### 2.7 Things that have already gone wrong here
+### 2.10 Things that have already gone wrong here
 
 Offered so recommendations can be checked against them:
 
@@ -332,12 +390,99 @@ At ~90 s/concept this is the dominant cost in the product.
   with thinking enabled consumed the entire token budget and returned **empty**
   content, so naive knob-turning here has already cost us a full debugging cycle.
 
-### Q7. What repos or Python libraries would improve this stage?
+### Q7. How do we stop the same idea being re-taught across many lessons?
+
+**This is the failure mode we are most worried about and least able to detect.**
+
+A real course teaches dice probability *once*, then uses it. A generated one can
+teach it five or more times, because each lesson is hydrated independently and
+each one reasonably decides the learner needs the underlying idea explained
+before the lesson's own topic makes sense.
+
+Concretely, for a Dungeon Mastering course: *"Probability in Combat"*,
+*"Encounter Difficulty Math"*, *"Advantage and Disadvantage"*, *"Skill Check
+Design"* and *"Damage Expectation"* are five perfectly reasonable, entirely
+distinct lesson titles — and all five will plausibly open by explaining what a
+d20 distribution is.
+
+**Everything we currently have is title-level and therefore blind to this:**
+
+* `_is_duplicate` — normalised title comparison, per level, with domain-word
+  exclusion so "Causal Graphs" and "Causal Models" are not false positives
+* `check_filler` — near-duplicate titles, repeated stems ("Introduction to" six
+  times), shared-word saturation within a lesson
+* `check_uniformity` — duplicate rate ≤ 5%
+
+Not one of them can see two differently-titled lessons teaching the same
+content. The five titles above pass every check we own.
+
+Questions:
+
+* **How is this measured?** Ideally with an instrument that has no model in it,
+  since our LLM judge swings ±1.4/5. Is there a workable signal — n-gram or
+  embedding overlap between concept bodies, extracted-claim overlap, dependency
+  attribution? What threshold separates *legitimate reinforcement* from
+  *redundant re-teaching*?
+* **How much repetition is correct?** Real courses deliberately spiral, and our
+  companion brief found that spaced re-exposure is the mechanism that makes
+  material stick. So the target is not zero. What does a real curriculum's
+  repetition profile actually look like — how many times is a foundational idea
+  legitimately revisited, and in what form (re-taught vs. assumed vs. cited)?
+* **What is the fix?** Options we can see: a concept-level "already taught"
+  ledger consulted at hydration; explicit prerequisite links so a lesson *cites*
+  rather than re-explains; hydrating a whole lesson or module in one call
+  (which is what fixed an analogous problem in the skeleton builder); or a
+  post-pass that detects and collapses. Which of these actually works, and which
+  break under a 16k context?
+* **What should a lesson do instead of re-teaching?** A one-line callback, a
+  link, an assumed-knowledge note, a brief retrieval prompt? The tutor is
+  Socratic, so "briefly ask them to recall it" may be a better move than either
+  re-teaching or silence.
+
+### Q8. How does the hydrator become aware of the course as a whole?
+
+Today **each concept is hydrated in isolation.** The generation prompt sees the
+concept title, its objectives, its Bloom level, its module and lesson names, and
+the research payload — but not the rest of the course. It does not know what
+was taught in module 1, what module 6 will assume, or that this idea appears
+again in three lessons' time. Q7 is one consequence of that; hollow and
+misaimed content is another.
+
+The obvious fix is not available: **the whole course does not fit.** A parity
+course is 104–135 concepts against a served context of **16,384 tokens**, which
+must also hold the section template, research payload, and the generated output.
+
+So the question is what *compressed representation* of the course should
+accompany each hydration call, and how it is maintained:
+
+* What belongs in it — a running ledger of taught concepts, a prerequisite
+  graph, per-module summaries, extracted claims, the objectives alone?
+* **How is it compressed, and by what?** Rolling summarisation costs an LLM call
+  per step and drifts; a structured index does not drift but is coarser.
+* Is this better solved by **retrieval** (fetch the k most related already-taught
+  concepts for each hydration) than by carrying a global summary? If so, what
+  index — we already have FTS5, and an unused MiniLM.
+* Does **ordering** solve part of it for free? Hydrating in teaching order means
+  the ledger is always complete for everything prior. What does that cost in
+  parallelism, given hydration is already ~90 s/concept and cannot easily
+  afford to be serial?
+* **Precedent from our own skeleton builder:** consolidating a module's whole
+  subtree into ONE call reduced calls *and* improved coherence, because the
+  model could see the module as a unit. Does the same argument extend to
+  hydrating a full lesson's concepts in one call — and where does it break, at
+  a lesson, a unit, or a module, given 16k?
+* What is the right split between context the model is *given* and constraints
+  *checked afterwards* — our repeated finding is that prompt instructions do not
+  hold (0/5) while correction rounds naming a specific offender do (5/5).
+
+### Q9. What repos or Python libraries would improve this stage?
 
 Specifically for: document/section-aware storage, hybrid retrieval, structured
 LLM output with retries, factual verification against sources, Markdown
-schema validation, incremental/resumable long pipelines, and evaluation
-harnesses for generated educational content.
+schema validation, incremental/resumable long pipelines, evaluation
+harnesses for generated educational content, **near-duplicate / redundancy
+detection across documents** (Q7), and **context compression or hierarchical
+summarisation for long-document generation** (Q8).
 
 We prefer **small, well-maintained, offline-capable** dependencies. Naming a
 library is less useful than saying which of our specific problems it solves and
@@ -369,6 +514,9 @@ what it would replace.
   actually being a regression. This project has repeatedly found that its own
   measurements were the problem: a course once scored 100% coverage while being
   an unteachable alphabetical index.
+* **Rank the questions.** If Q7 (re-teaching) and Q8 (whole-course awareness)
+  turn out to have one shared answer, say so — we suspect they might, since
+  both are consequences of hydrating concepts in isolation.
 * **What to abandon.** If part of the current design — the section template, the
   word targets, one-file-per-concept, FTS5, the unused MiniLM — is wrong, say
   so plainly.
