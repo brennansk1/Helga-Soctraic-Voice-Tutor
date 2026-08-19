@@ -1150,3 +1150,48 @@ rather than mistaken for an improvement.
 | unit floor "fixed" (no-op) | 67% | taper 1.88 | 2 failures |
 | correction round on units | **100%** | spread 0.24 | 1 failure |
 | correction round on titles | **100%** | spread 0.22 | **PROFESSIONAL** |
+
+---
+
+# Conditions 1 and 2: both PROFESSIONAL
+
+**With a textbook** (Linear Algebra, curated Strang spine):
+
+```
+6 modules · 13 units · 37 lessons · 104 concepts
+coverage 90% · school shape 100/100/97 · balance spread 0.22 · VERDICT: PROFESSIONAL
+```
+
+**Without one** (Dungeon Mastering — no published syllabus exists):
+
+```
+6 modules · 13 units · 115 concepts
+school shape 100/100/100 · balance spread 0.17 · titles 0/58 · VERDICT: PROFESSIONAL
+coverage: NOT RUN
+```
+
+The sourceless course is structurally indistinguishable from the textbook-built
+one, which is what condition 2 asks. `coverage` reports **NOT RUN**, never
+"passed" — a course with no reference must not score better by having less
+measured about it.
+
+## The through-line: every count is advisory, so enforce after generation
+
+`minItems` is stripped from `response_format` for /v1 compatibility and /v1
+ignores the `format` field carrying it, so **no schema minimum in this pipeline
+binds**. Five defects, one pattern:
+
+| defect | prompt instruction | correction round |
+|---|---|---|
+| too few units | no effect | `[1,1,1,2,1,3]` → `[2,2,3,2,2,2]` |
+| generic titles | survived an explicit ban listing the exact words | 3/56 → 0/58 |
+| empty units | — | filled, or folded into the units that remain |
+| hollow modules | — | recorded as a defect rather than passed off as structure |
+
+Each correction is accepted only if it is *genuinely* better — more units without
+fewer lessons, fewer generic titles without lost structure — so a correction can
+never trade one defect for another.
+
+**Prompt-only enforcement failed five times; the correction round worked five
+times.** That is the reliable lever in this codebase, and it is worth reaching
+for first rather than fourth.
