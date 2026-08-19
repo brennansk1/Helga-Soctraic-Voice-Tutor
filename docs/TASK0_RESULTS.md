@@ -955,3 +955,48 @@ Right now those two systems do not talk: `scope_fit` *warns* while the ladder
 should produce a genuinely shorter course with the resize explained, rather than
 a padded one with a warning attached. That is not built, and it is the most
 substantive open item in this document.
+
+---
+
+# The lesson budget is a range, not a number
+
+A fixed count and over-stretch detection pull against each other: if evidence
+supports 36 concepts and the ladder demands 144, the builder pads — the exact
+hollow-content failure `scope_fit` exists to prevent. And real courses vary
+anyway: **MIT 18.06 runs 34 lectures against a nominal 15×3 = 45 calendar**, and
+it is a well-regarded course rather than a deficient one.
+
+So the calendar now sets a target and a tolerance (±25%, chosen because 34
+against 45 is −24% and a tighter band would call 18.06 short):
+
+| preset | target | range |
+|---|---|---|
+| College Course | 45 | **34–56** |
+| Full Discipline Survey | 68 | 51–85 |
+| Quick Overview | 11 | 8–14 |
+| Deep Dive | 4 | 3–5 |
+
+The prompt asks for the range and says to use it honestly — upper end when the
+material fills it, lower when it does not, because *"padding a thin module up to
+the maximum is worse than a shorter, denser one"*. The schema floor uses the
+range **minimum**: enforcing the target would make the range decorative, since a
+thin subject could never settle low.
+
+Measured on a real build: **31 lessons, in range 26–46**, against MIT's actual
+34. The gate accepts it instead of flagging a normal-length course as short.
+
+## An honest caveat on this run
+
+It settled at 31 lessons / 87 concepts, and Linear Algebra's evidence (77
+chapters ≈ 460 supportable concepts) could carry considerably more. **The range
+currently lets the model choose freely inside it; nothing pulls a well-evidenced
+subject toward the upper end.** Connecting `supportable_courses()` to the range —
+so evidence sets the position within it, not just a warning beside it — is the
+natural next step and is not built.
+
+## And a bug the real run caught that the tests could not
+
+The first implementation computed the range *after* the prompt that quotes it,
+and every build died on `UnboundLocalError`. The unit tests passed, because they
+inspect source text rather than execution order — the fourth time in this work
+that a change verified only by tests turned out not to run.

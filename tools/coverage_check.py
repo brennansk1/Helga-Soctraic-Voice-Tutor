@@ -203,9 +203,17 @@ def main():
     expect = a.expect_lessons or meta.get("lectures")
     if expect:
         delta = round((st["lessons"] - expect) / expect * 100)
+        # A RANGE, not a target. Real courses vary: MIT 18.06 runs 34 lectures
+        # against a nominal 45-session calendar and is not a deficient course.
+        # Judging against a single number would flag normal variation as a
+        # defect, and worse, would push the builder to pad a thin subject up to
+        # a figure its material cannot fill.
+        lo, hi = round(expect * 0.75), round(expect * 1.35)
+        in_range = lo <= st["lessons"] <= hi
         print(f"  volume   : {st['lessons']} lessons vs {expect} real lectures "
-              f"({delta:+d}%)")
-        if delta > 15 and result.get("coverage_pct", 0) < 100:
+              f"({delta:+d}%) — range {lo}-{hi}: "
+              f"{'in range' if in_range else 'OUT OF RANGE'}")
+        if not in_range and result.get("coverage_pct", 0) < 100:
             print("  NOTE     : longer than the real course AND not covering it — "
                   "length is being spent on depth in topics already chosen, "
                   "not on reaching the ones missed.")

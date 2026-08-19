@@ -80,8 +80,11 @@ class TestUnitsStayFlexible(unittest.TestCase):
             "a unit floor above 1 forces topical grouping the material may not support"
 
     def test_lesson_and_concept_floors_are_still_passed(self):
+        """The lesson floor now derives from the range MINIMUM rather than the
+        target — enforcing the target would make the range decorative, since a
+        thin subject could never settle at the low end."""
         import inspect
         from services.core.course_builder import SkeletonBuilder
         src = inspect.getsource(SkeletonBuilder._build_module_subtree_oneshot)
-        assert "min_lessons=base_lessons" in src
+        assert "min_lessons=" in src and "_lesson_lo" in src
         assert "min_concepts=base_concepts" in src

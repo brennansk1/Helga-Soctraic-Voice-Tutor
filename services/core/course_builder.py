@@ -337,6 +337,11 @@ def list_presets():
 # sessions. A lesson is one class session.
 WEEKS_PER_TERM = 15
 SESSIONS_PER_WEEK = 3
+# How far a real course may sit from the nominal calendar and still be that
+# course. MIT 18.06 runs 34 lectures against a nominal 45, which is -24%, so a
+# tolerance narrower than that would call a well-regarded semester course
+# deficient.
+LESSON_TOLERANCE = 0.25
 
 
 def compute_course_params(scope=2, mastery=2, starting_from=1):
@@ -365,13 +370,30 @@ def compute_course_params(scope=2, mastery=2, starting_from=1):
     # 6 lessons where the calendar calls for 45 lessons.
     lessons_total = int(round(SESSIONS_PER_WEEK * WEEKS_PER_TERM * s.get(
         "term_fraction", 1.0)))
+    # A RANGE, NOT A NUMBER.
+    #
+    # A fixed lesson count and over-stretch detection pull against each other: if
+    # the evidence supports 36 concepts and the ladder demands 144, the builder
+    # pads — the exact hollow-content failure scope_fit exists to prevent.
+    #
+    # Real courses vary anyway. MIT 18.06 runs 34 lectures where the nominal
+    # 15x3 calendar gives 45, and that is a normal, well-regarded course rather
+    # than a deficient one. So the calendar sets a TARGET and a tolerance, and a
+    # subject settles where its material actually lands: a rich one near the top,
+    # a thin one near the bottom, neither padded nor truncated.
+    lessons_min = max(1, int(round(lessons_total * (1 - LESSON_TOLERANCE))))
+    lessons_max = max(lessons_min, int(round(lessons_total * (1 + LESSON_TOLERANCE))))
     lessons_per_module = max(1, round(lessons_total / max(1, modules)))
+    lessons_per_module_min = max(1, round(lessons_min / max(1, modules)))
     concepts_per_lesson = m.get("concepts_per_lesson", 3)
     return {
         "modules": modules,
         "concepts_per_module": concepts_per_module,
         "lessons_total": lessons_total,
+        "lessons_min": lessons_min,
+        "lessons_max": lessons_max,
         "lessons_per_module": lessons_per_module,
+        "lessons_per_module_min": lessons_per_module_min,
         "concepts_per_lesson": concepts_per_lesson,
         "total_concepts_approx": modules * lessons_per_module * concepts_per_lesson,
         "bloom_floor": bloom_floor,
@@ -2261,6 +2283,16 @@ class SkeletonBuilder:
     ):
         """Generate one module's whole units->lessons->concepts tree in a single
         LLM call. Returns the list of summary lines for cross-module context."""
+
+        # The lesson RANGE for this module. Computed here because the prompt
+        # below quotes it — a first attempt derived it further down, next to the
+        # shortfall check that also uses it, and every build died on
+        # UnboundLocalError. The unit tests passed: they inspect source text,
+        # not execution order.
+        _nominal = max(1, base_units * base_lessons)
+        _lesson_lo = max(1, int(round(_nominal * (1 - LESSON_TOLERANCE))))
+        _lesson_hi = max(_lesson_lo, int(round(_nominal * (1 + LESSON_TOLERANCE))))
+
         m_title = m_ref["title"]
         m_role = m_ref["role_desc"]
         module_dict = m_ref["dict"]
@@ -2293,13 +2325,14 @@ class SkeletonBuilder:
             f"{prev_context_str}\n\n"
             f"{_evidence}"
             f"Design this module's COMPLETE structure in one pass:\n"
-            f"  - {base_units * base_lessons} lessons in this module. This is "
-            f"NOT approximate: a lesson is one ~50-minute class session and the "
-            f"course has a fixed number of them, so a module with fewer is a "
-            f"module that will not fill its weeks.\n"
-            f"  - group those lessons into about {base_units} unit(s) BY TOPIC. "
-            f"The unit count is flexible and units may differ in size where the "
-            f"material warrants it — the lesson total is what is fixed.\n"
+            f"  - between {_lesson_lo} and {_lesson_hi} lessons in this "
+            f"module, and use the range honestly: take the upper end when the "
+            f"material genuinely fills it and the lower end when it does not. "
+            f"A lesson is one ~50-minute class session. Padding a thin module up "
+            f"to the maximum is worse than a shorter, denser one.\n"
+            f"  - group those lessons into units BY TOPIC — around "
+            f"{base_units}, but units may differ in size where the material "
+            f"warrants it.\n"
             f"  - exactly {base_concepts} concept(s) per lesson\n"
             f"  - exactly 2 learning objectives per concept, written for Bloom "
             f"{module_bloom_level} ({_bloom_label})\n\n"
@@ -2355,9 +2388,14 @@ class SkeletonBuilder:
             # The floor that matters is lessons-per-module, so it is applied
             # where it belongs: at least one unit, and enough lessons inside
             # whatever units the model chooses.
-            schema=self.subtree_schema(min_units=1,
-                                       min_lessons=base_lessons,
-                                       min_concepts=base_concepts),
+            # The floor is the range MINIMUM, not the target. Enforcing the
+            # target would make the range decorative — the model could never
+            # settle at the low end for a thin subject, which is the whole point
+            # of having a range.
+            schema=self.subtree_schema(
+                min_units=1,
+                min_lessons=max(1, _lesson_lo // max(1, base_units)),
+                min_concepts=base_concepts),
             progress_callback=self.status_callback,
         )
         # Tolerate shape drift. A model (or a differently-configured server) may
@@ -2390,7 +2428,7 @@ class SkeletonBuilder:
         # Units may differ in size — that is deliberate — but the LESSON total is
         # the calendar and does not bend, so a shortfall is recorded rather than
         # absorbed.
-        _wanted = max(1, base_units * base_lessons)
+        _wanted = _lesson_lo
         _got = sum(len(u.get("lessons") or []) for u in units_data
                    if isinstance(u, dict))
         if _got and _got < _wanted * 0.7:
