@@ -1531,6 +1531,7 @@ class SkeletonBuilder:
 
         # Normalise degenerate lessons before persisting.
         self._merge_degenerate_lessons(course_dict)
+        self._drop_empty_units(course_dict)
 
         # Close the loop the syllabus check never closed. Until now the coverage
         # verdict was DIAGNOSTIC ONLY: it reported a hole and nothing acted on
@@ -2399,6 +2400,39 @@ class SkeletonBuilder:
                 f"Syllabus coverage {pct}% is below the {MIN_COVERAGE}% floor. "
                 f"Missing: {', '.join(missing[:8]) or 'n/a'}"
             )
+
+    def _drop_empty_units(self, course_dict):
+        """Remove units that hold no lessons.
+
+        An empty unit is strictly worse than no unit: it renders as a step in the
+        path, a learner clicks it, and there is nothing there. Measured in a real
+        build — a unit called "Session Zero" with zero lessons, which had passed
+        every other structural check.
+
+        These survive because the lesson minimum is advisory on the endpoint the
+        builder posts to (`minItems` is stripped from `response_format`, and /v1
+        ignores the `format` field carrying it), so nothing stops a unit coming
+        back empty. Pruning is the honest fix: the alternative is inventing a
+        lesson to fill a heading the model never had material for.
+        """
+        dropped = []
+        for module in (course_dict.get("modules") or []):
+            units = module.get("units") or []
+            keep = []
+            for unit in units:
+                if unit.get("lessons"):
+                    keep.append(unit)
+                else:
+                    dropped.append(unit.get("title", "?"))
+            # Never empty a module entirely — a module with no units at all is a
+            # worse defect than the one being fixed.
+            module["units"] = keep or units
+        if dropped:
+            logger.info(f"[STRUCTURE] dropped {len(dropped)} unit(s) with no "
+                        f"lessons: {dropped[:4]}")
+            if self.status_callback:
+                self.status_callback(f"STRUCT:EMPTY_UNITS:{len(dropped)}")
+        return len(dropped)
 
     def _merge_degenerate_lessons(self, course_dict, min_concepts=2):
         """Fold single-concept lessons into a sibling.
