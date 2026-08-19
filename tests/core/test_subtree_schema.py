@@ -72,12 +72,23 @@ class TestUnitsStayFlexible(unittest.TestCase):
     units may differ in size.
     """
 
-    def test_the_builder_does_not_impose_a_unit_floor(self):
+    def test_the_unit_floor_is_school_shaped_not_absent(self):
+        """A module is 2-3 weeks, so 2 units is structural rather than arbitrary.
+
+        This asserted `min_units=1` when the floor was relaxed to honour "units
+        may differ in size". Measured consequence: units-per-module came back
+        [3, 3, 1, 1, 1, 1] — four of six modules were one week wearing a
+        module's name — while coverage fell 100% -> 90% and lesson balance went
+        from spread 0.04 to a 3.0 taper.
+
+        Flexibility below the level a registrar would recognise is not
+        flexibility, it is collapse. Units remain uncapped above the floor.
+        """
         import inspect
         from services.core.course_builder import SkeletonBuilder
         src = inspect.getsource(SkeletonBuilder._build_module_subtree_oneshot)
-        assert "min_units=1" in src, \
-            "a unit floor above 1 forces topical grouping the material may not support"
+        assert "min_units=2" in src, \
+            "a module of one unit is a week, not a module"
 
     def test_lesson_and_concept_floors_are_still_passed(self):
         """The lesson floor now derives from the range MINIMUM rather than the

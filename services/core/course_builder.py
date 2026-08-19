@@ -2626,8 +2626,21 @@ class SkeletonBuilder:
             # Dividing by the OBSERVED unit count instead makes it bind. Slight
             # overshoot is the safer error: at ~50 lessons coverage measured
             # 100/100/100, at ~30 it measured 90/90/90.
+            # A MODULE IS 2-3 WEEKS, SO ITS FLOOR IS STRUCTURAL.
+            #
+            # This was relaxed from 3 to 1 to honour "units may differ in size",
+            # and modules promptly collapsed to a single unit: measured
+            # units-per-module [3, 3, 1, 1, 1, 1], where four of six modules are
+            # one week wearing a module's name. Coverage fell 100% -> 90% and
+            # lesson balance went from spread 0.04 to a 3.0 taper in the same
+            # change.
+            #
+            # 2 is the honest floor. Units may still differ in size — nothing
+            # caps them — but a module that is one week is not a module, and
+            # flexibility below the level a registrar would recognise is not
+            # flexibility, it is collapse.
             schema=self.subtree_schema(
-                min_units=1,
+                min_units=2,
                 min_lessons=max(2, -(-_lesson_lo // 2)),   # ceil(lo / 2)
                 min_concepts=base_concepts),
             progress_callback=self.status_callback,
