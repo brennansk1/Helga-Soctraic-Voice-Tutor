@@ -157,9 +157,13 @@ def extract_claims(markdown):
     m = re.search(r"##\s*Misconceptions\s*\n(.*?)(?=\n##\s|\Z)", md, re.DOTALL)
     if m:
         for line in m.group(1).splitlines():
-            line = line.strip().lstrip("-*• ").strip()
-            # The correction is the assertion; the belief is what is false, and
-            # putting a false statement on the ledger would be actively wrong.
+            # Strip the list marker but NOT the emphasis: `lstrip("-*• ")` eats
+            # the leading `**` of `**Correction**` and the label stops matching,
+            # which silently drops every correction from the ledger.
+            line = re.sub(r"^\s*[-•]\s*", "", line).strip()
+            # The correction is the assertion; the belief is what is FALSE, and
+            # putting a false statement on the ledger would be actively wrong —
+            # a later concept would then be told not to contradict it.
             if re.match(r"\*\*Correction\*\*", line, re.I):
                 body = re.sub(r"^\*\*Correction\*\*:?\s*", "", line, flags=re.I)
                 if len(body) > 15:

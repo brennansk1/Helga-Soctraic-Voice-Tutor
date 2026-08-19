@@ -628,6 +628,43 @@ class StorageManager:
                 cursor.execute("UPDATE schema_version SET version = 10")
                 logger.info("Schema migrated to v10: FSRS memory state on user_progress")
 
+            if current_version < 11:
+                # The taught-concepts ledger: what a course has already said, so
+                # a later concept can cite it instead of re-teaching it.
+                # Created here rather than lazily so a fresh install has it
+                # before the first hydration and the indexes exist before any
+                # rows do. See services/core/taught_ledger.py for the design.
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS taught_concepts (
+                        course_uid   TEXT NOT NULL,
+                        concept_uid  TEXT NOT NULL,
+                        title        TEXT NOT NULL,
+                        ordinal      INTEGER NOT NULL,
+                        module       TEXT,
+                        lesson       TEXT,
+                        embedding    BLOB,
+                        embedder     TEXT,
+                        body_hash    TEXT,
+                        shingles     TEXT,
+                        PRIMARY KEY (course_uid, concept_uid)
+                    )
+                """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS taught_claims (
+                        course_uid   TEXT NOT NULL,
+                        concept_uid  TEXT NOT NULL,
+                        ordinal      INTEGER NOT NULL,
+                        claim        TEXT NOT NULL,
+                        keywords     TEXT NOT NULL
+                    )
+                """)
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_taught_course "
+                               "ON taught_concepts(course_uid, ordinal)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_claims_course "
+                               "ON taught_claims(course_uid, ordinal)")
+                cursor.execute("UPDATE schema_version SET version = 11")
+                logger.info("Schema migrated to v11: taught-concepts ledger")
+
             conn.commit()
         finally:
             conn.close()

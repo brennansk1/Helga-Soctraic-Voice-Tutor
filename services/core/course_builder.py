@@ -4164,6 +4164,15 @@ class ContentHydrator:
             if self.status_callback:
                 self.status_callback(f"STRUCT:HYDRATING:{uid}:STRUCTURING:{title}")
 
+            # What the COURSE has already taught — retrieved, not carried.
+            #
+            # A running summary would cost an LLM call per concept and drift; a
+            # claim index does not drift and stays small at any course size,
+            # which is what keeps this affordable inside the context budget.
+            _ledger_ctx = self._ledger_context(course_uid, title,
+                                               learning_objectives_list,
+                                               ordinal=idx)
+
             # LLM structuring call (I/O-bound, benefits from parallelism)
             structured_md = self._condense_and_structure_content(
                 title,
@@ -4182,6 +4191,7 @@ class ContentHydrator:
                 learning_objectives=learning_objectives_list,
                 prerequisite_titles=prerequisite_titles,
                 research_structured=research_structured,
+                ledger_context=_ledger_ctx,
             )
 
             # WIZ-3: Detect fallback stubs
@@ -4292,6 +4302,16 @@ class ContentHydrator:
                     _prov_conn._get_db().commit()
             except Exception as _prov_err:
                 logger.debug(f"provenance write skipped: {_prov_err}")
+
+            # THE LEDGER IS WRITTEN AFTER VALIDATION, NEVER BEFORE.
+            #
+            # A concept that failed its depth contract and is about to be
+            # regenerated must not teach the ledger anything, or the retry would
+            # be told not to re-teach its own discarded draft.
+            self._record_taught(course_uid, uid, title, structured_md,
+                                ordinal=idx,
+                                module=(h_ctx or {}).get("module", ""),
+                                lesson=(h_ctx or {}).get("lesson", ""))
 
             if self.status_callback:
                 self.status_callback(f"STRUCT:HYDRATED:{uid}:{source_type}:{title}")
@@ -4800,6 +4820,86 @@ class ContentHydrator:
             self.status_callback(f"STRUCT:WARN:DEPTH_MISS:{title}")
         return best_md, {"ok": False, "problems": best_problems, **best_detail}
 
+    # --- taught-concepts ledger ---------------------------------------------
+    #
+    # Retrieval, not stuffing. See services/core/taught_ledger.py for why the
+    # index is structured rather than a rolling summary, and why the gate is
+    # "introduces from scratch a claim already introduced" rather than a
+    # similarity threshold.
+    #
+    # Every method here is best-effort: the ledger improves a course and must
+    # never fail one. Hydration failing means no course; the ledger failing
+    # means a course that might repeat itself.
+
+    def _ledger_conn(self):
+        prog = getattr(self.storage, "progress", None)
+        if prog is None:
+            return None
+        try:
+            return prog._get_db()
+        except Exception as e:
+            logger.debug(f"[LEDGER] no connection: {e}")
+            return None
+
+    def _ledger_context(self, course_uid, title, objectives, ordinal):
+        """Already-taught neighbours, rendered for the prompt. '' when unusable."""
+        conn = self._ledger_conn()
+        if conn is None:
+            return ""
+        try:
+            from services.core.taught_ledger import neighbours, format_context
+        except ImportError:
+            try:
+                from taught_ledger import neighbours, format_context
+            except ImportError:
+                return ""
+        try:
+            obj = " ".join(objectives or []) if isinstance(objectives, list) else str(objectives or "")
+            return format_context(neighbours(conn, course_uid, title, obj,
+                                             before_ordinal=ordinal))
+        except Exception as e:
+            logger.debug(f"[LEDGER] context lookup failed: {e}")
+            return ""
+
+    def _record_taught(self, course_uid, concept_uid, title, markdown,
+                       ordinal, module="", lesson=""):
+        """Add a validated concept to the ledger, and report if it repeated."""
+        conn = self._ledger_conn()
+        if conn is None:
+            return None
+        try:
+            from services.core.taught_ledger import (
+                record_concept, check_redundancy)
+        except ImportError:
+            try:
+                from taught_ledger import record_concept, check_redundancy
+            except ImportError:
+                return None
+        try:
+            red = check_redundancy(conn, course_uid, concept_uid, markdown, ordinal)
+            if not red.get("ok"):
+                # Recorded as a defect rather than silently accepted. The count
+                # is what a later QA pass reads; a build that quietly repeats
+                # itself is the failure mode this whole mechanism exists for.
+                self.redundant_concepts = getattr(self, "redundant_concepts", [])
+                self.redundant_concepts.append({
+                    "concept_uid": concept_uid, "title": title,
+                    "reintroduced": len(red.get("reintroduced") or []),
+                    "share": red.get("reintroduced_share"),
+                })
+                logger.warning(
+                    f"  [LEDGER] {title!r} re-introduces "
+                    f"{len(red.get('reintroduced') or [])} claim(s) already "
+                    f"taught (share {red.get('reintroduced_share')})")
+                if self.status_callback:
+                    self.status_callback(f"STRUCT:REDUNDANT:{title}")
+            record_concept(conn, course_uid, concept_uid, title, markdown,
+                           ordinal, module=module, lesson=lesson)
+            return red
+        except Exception as e:
+            logger.debug(f"[LEDGER] record failed for {title!r}: {e}")
+            return None
+
     def _condense_and_structure_content(
         self,
         title: str,
@@ -4818,8 +4918,16 @@ class ContentHydrator:
         learning_objectives: list = None,
         prerequisite_titles: list = None,
         research_structured: dict = None,
+        ledger_context: str = "",
     ) -> str:
-        """Transforms raw crawl data into structured Markdown for Socratic tutoring, Flashcards, and Review."""
+        """Transforms raw crawl data into structured Markdown for Socratic tutoring, Flashcards, and Review.
+
+        `ledger_context` carries what the COURSE has already taught, from
+        `taught_ledger`. The existing deduplication block below is titles only
+        and scoped to the lesson and module; it cannot see that a concept four
+        modules back already explained the same thing, which is the measured
+        failure this parameter exists to close.
+        """
         logger.info(f"  [MARKDOWN] Structuring {title} (Depth: {depth})...")
 
         h_str = ""
@@ -5020,6 +5128,10 @@ useful, one short real-world context sentence.]
 - Lesson concepts: {prev_str}
 - Module concepts: {module_prev_str}
 Focus ONLY on what makes "{title}" DISTINCT.
+{ledger_context}
+{("You may ASSUME the material above and refer to it, or ask the learner to "
+  "recall it. Re-explaining it from scratch is the defect to avoid — building "
+  "on it is not." if ledger_context else "")}
 {f"### USER NOTE:{chr(10)}{user_note}{chr(10)}" if user_note else ""}{research_input}
 Source Material: {source_material}
 
