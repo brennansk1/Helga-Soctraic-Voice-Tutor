@@ -30,24 +30,68 @@ class TestShapeAdapts(unittest.TestCase):
     one ladder onto every book produces invented scaffolding around real
     content."""
 
-    def test_parts_become_modules(self):
+    def test_parts_become_units_not_modules(self):
+        """A module is a pedagogical division a curriculum designer chose. A
+        novel or a self-help book has none, so the container module is a shell
+        and the level that adapts is the UNIT."""
         chs = _chapters(4, part="Part One") + _chapters(4, part="Part Two", start=5)
         s = choose_shape(Book("B", chs))
-        self.assertEqual(s["shape"], "parts_as_modules")
-        self.assertEqual(s["modules"], 2)
+        self.assertEqual(s["shape"], "parts_as_units")
+        self.assertEqual(s["units"], 2)
+        self.assertEqual(s["modules"], 1)
 
     def test_many_short_chapters_become_a_flat_lesson_list(self):
         s = choose_shape(Book("Novel", _chapters(30, words=800)))
         self.assertEqual(s["shape"], "chapters_as_lessons")
-        self.assertEqual(s["modules"], 0)
+        self.assertEqual(s["lessons"], 30, "one lesson per chapter")
 
-    def test_few_long_chapters_become_modules(self):
-        s = choose_shape(Book("Treatise", _chapters(8, words=9000)))
-        self.assertEqual(s["shape"], "chapters_as_modules")
+    def test_long_chapters_do_not_become_several_lessons(self):
+        """ONE CHAPTER IS ONE LESSON, ALWAYS.
+
+        An earlier version split long chapters across two to four lessons "for
+        balance", inventing boundaries the author did not put there — in the one
+        place where the author's boundaries are exactly what building from a
+        book is meant to preserve. Length buys CONCEPTS instead.
+        """
+        book = Book("Treatise", _chapters(8, words=9000))
+        c = build_structure(book)
+        lessons = [l for m in c["modules"] for u in m["units"]
+                   for l in u["lessons"]]
+        self.assertEqual(len(lessons), 8)
+        self.assertGreaterEqual(len(lessons[0]["concepts"]), 5,
+                                "a long chapter earns more concepts")
 
     def test_every_shape_decision_explains_itself(self):
         for book in (Book("A", _chapters(30)), Book("B", _chapters(6, words=9000))):
             self.assertTrue(choose_shape(book)["why"])
+
+
+class TestOneLessonPerChapter(unittest.TestCase):
+    """The invariant. The chapter is the author's unit of teaching and the
+    lesson is ours; that correspondence is the point of building from a book."""
+
+    def _lessons(self, book):
+        c = build_structure(book)
+        return [l for m in c["modules"] for u in m["units"] for l in u["lessons"]]
+
+    def test_a_novel(self):
+        self.assertEqual(len(self._lessons(Book("N", _chapters(59, words=900)))), 59)
+
+    def test_a_long_textbook(self):
+        self.assertEqual(len(self._lessons(Book("T", _chapters(12, words=9000)))), 12)
+
+    def test_with_parts(self):
+        chs = (_chapters(4, part="Part One")
+               + _chapters(4, part="Part Two", start=5))
+        self.assertEqual(len(self._lessons(Book("B", chs))), 8)
+
+    def test_a_very_short_book(self):
+        self.assertEqual(len(self._lessons(Book("S", _chapters(3)))), 3)
+
+    def test_concept_count_scales_with_chapter_length(self):
+        short = self._lessons(Book("A", _chapters(6, words=600)))
+        long = self._lessons(Book("B", _chapters(6, words=12000)))
+        self.assertLess(len(short[0]["concepts"]), len(long[0]["concepts"]))
 
 
 class TestStructure(unittest.TestCase):
@@ -59,12 +103,13 @@ class TestStructure(unittest.TestCase):
         self.assertEqual(len(lessons), 12)
         self.assertEqual([l["book_chapter"] for l in lessons], list(range(1, 13)))
 
-    def test_parts_produce_one_module_each(self):
+    def test_parts_produce_one_unit_each_under_a_container_module(self):
         chs = _chapters(3, part="Part One") + _chapters(3, part="Part Two", start=4)
         c = build_structure(Book("B", chs))
-        self.assertEqual(len(c["modules"]), 2)
-        self.assertEqual([m["title"] for m in c["modules"]],
-                         ["Part One", "Part Two"])
+        self.assertEqual(len(c["modules"]), 1)
+        self.assertTrue(c["modules"][0]["container_only"])
+        units = c["modules"][0]["units"]
+        self.assertEqual([u["title"] for u in units], ["Part One", "Part Two"])
 
     def test_chapters_before_the_first_part_are_not_lost(self):
         """Front matter chapters precede the first part heading and would
@@ -73,8 +118,9 @@ class TestStructure(unittest.TestCase):
                + _chapters(3, part="Part One", start=3)
                + _chapters(3, part="Part Two", start=6))
         c = build_structure(Book("B", chs))
-        self.assertEqual(c["modules"][0]["title"], "Introduction")
-        self.assertEqual(len(c["modules"]), 3)
+        units = c["modules"][0]["units"]
+        self.assertEqual(units[0]["title"], "Introduction")
+        self.assertEqual(len(units), 3)
 
     def test_concept_slots_start_empty(self):
         """The book decides what its chapters teach. Inventing concept names
@@ -88,6 +134,35 @@ class TestStructure(unittest.TestCase):
         s = summarise(build_structure(Book("N", _chapters(10))))
         self.assertEqual(s["lessons"], 10)
         self.assertEqual(s["chapters_linked"], 10)
+
+
+class TestChapterTitles(unittest.TestCase):
+    """"Chapter I" tells a learner nothing about what they are about to study."""
+
+    def test_a_bare_heading_is_recognised(self):
+        from services.core.book_source import needs_a_title
+        for t in ("Chapter I", "CHAPTER XXIII.", "", "Section 4"):
+            self.assertTrue(needs_a_title(t), t)
+
+    def test_an_authored_title_is_recognised(self):
+        from services.core.book_source import needs_a_title
+        for t in ("The Cell Membrane", "Chapter 4 — Enzymes"):
+            self.assertFalse(needs_a_title(t), t)
+
+    def test_a_bare_heading_gains_a_subject(self):
+        from services.core.book_source import compose_title
+        self.assertEqual(compose_title(2, "Chapter II", "Mr Bennet Visits"),
+                         "Chapter 2 — Mr Bennet Visits")
+
+    def test_an_authored_title_is_kept(self):
+        """The author's words beat ours where the author supplied them."""
+        from services.core.book_source import compose_title
+        self.assertEqual(compose_title(4, "The Cell Membrane", "Something Else"),
+                         "Chapter 4 — The Cell Membrane")
+
+    def test_a_bare_heading_with_no_subject_survives(self):
+        from services.core.book_source import compose_title
+        self.assertEqual(compose_title(7, "Chapter VII", None), "Chapter VII")
 
 
 class TestReadTool(unittest.TestCase):

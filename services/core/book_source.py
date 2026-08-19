@@ -119,6 +119,7 @@ def source_block(book, chapter_order, title="", objectives=None):
 CONCEPT_SCHEMA = {
     "type": "object",
     "properties": {
+        "chapter_title": {"type": "string"},
         "concepts": {
             "type": "array",
             "items": {
@@ -162,8 +163,14 @@ def concept_prompt(book, chapter_order, n, course_title="", chapter_part=None):
         f"### CHAPTER TEXT — {book.title}, chapter {chapter_order}: {ch.title}\n"
         f"{text}\n\n"
         f"### TASK\n"
-        f"Name the {n} concepts this chapter actually teaches, in the order the "
-        f"chapter presents them.{part_note}\n"
+        f"1. Give this chapter a SHORT DESCRIPTIVE TITLE of 3-7 words saying "
+        f"what it is about. Many books number their chapters and do not name "
+        f"them — \"Chapter I\" tells a learner nothing about what they are "
+        f"about to study, so name it from what you have just read. Do not "
+        f"include the word \"Chapter\" or a number; those are added "
+        f"separately.\n"
+        f"2. Name the {n} concepts this chapter actually teaches, in the order "
+        f"the chapter presents them.{part_note}\n"
         f"Rules:\n"
         f"- Take them FROM THE TEXT above. Do not add what the book does not "
         f"cover, and do not name a concept the chapter only mentions in passing.\n"
@@ -172,6 +179,37 @@ def concept_prompt(book, chapter_order, n, course_title="", chapter_part=None):
         f"- Give each 2 learning objectives, phrased as what the learner will "
         f"be able to do.\n"
     )
+
+
+# A chapter heading that names nothing. Austen's "Chapter I", a textbook's
+# "3.2", a manual's "Section Four" — all of them are positions, not subjects.
+_BARE_HEADING = re.compile(
+    r"^\s*(?:chapter|ch\.?|section|part|lesson|unit)?\s*"
+    r"[0-9IVXLCivxlc]*\s*[.:)-]?\s*$",
+    re.IGNORECASE)
+
+
+def needs_a_title(title):
+    """Does this chapter heading tell a learner anything?"""
+    return bool(_BARE_HEADING.match((title or "").strip()))
+
+
+def compose_title(order, original, named=None):
+    """"Chapter 3 — The Cell Membrane".
+
+    The number is kept because it locates the learner in the book they
+    uploaded, and the subject is added because the number alone does not say
+    what they are about to study. A book that already titles its chapters keeps
+    the author's words; only a bare heading is replaced.
+    """
+    subject = (named or "").strip().strip('".')
+    if not needs_a_title(original) and original.strip():
+        # The author named it. Use theirs, prefixed only if it lacks a number.
+        base = original.strip()
+        return base if re.search(r"\d|[IVXLC]{1,7}\b", base) else f"Chapter {order} — {base}"
+    if subject:
+        return f"Chapter {order} — {subject}"
+    return original.strip() or f"Chapter {order}"
 
 
 def parse_concepts(raw, want):
@@ -231,6 +269,21 @@ def attach_concepts(course, book, llm_json_fn, per_lesson=3):
                     skipped += len(slots)
                     continue
                 got = parse_concepts(raw, len(slots))
+                # Name the chapter too, when the book only numbered it.
+                #
+                # The model omits `chapter_title` often enough that half of a
+                # sample kept bare "Chapter I" headings, so the first concept is
+                # the fallback: it was drawn from the same reading and names the
+                # chapter's opening subject, which beats a Roman numeral.
+                # `chapter_name`, not `named` — the latter is the counter, and
+                # shadowing it turned the tally into a string mid-loop.
+                chapter_name = (raw.get("chapter_title")
+                                if isinstance(raw, dict) else None)
+                if not chapter_name and got:
+                    chapter_name = got[0]["title"]
+                if chapter_name:
+                    lesson["title"] = compose_title(
+                        ch_order, lesson.get("title", ""), chapter_name)
                 for slot, c in zip(slots, got):
                     slot["title"] = c["title"]
                     slot["learning_objectives"] = c["objectives"]

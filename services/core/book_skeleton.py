@@ -8,14 +8,34 @@ wrong instinct — the author already made those decisions, and they are usually
 better than ours because they had the whole subject in view and a publisher's
 editor.
 
-So for a book the structure is READ, and the shape adapts to what the book has:
+ONE CHAPTER IS ONE LESSON. ALWAYS.
+----------------------------------
+The chapter is the author's unit of teaching — the thing they decided was one
+sitting's worth of argument — so it maps to the lesson, which is our unit of
+one sitting. That correspondence is the whole point of building from a book,
+and nothing overrides it.
 
-    parts present          ->  PART becomes a MODULE, CHAPTER becomes a LESSON
-    no parts, many chapters ->  CHAPTER becomes a LESSON directly, no modules
-    few, very long chapters ->  CHAPTER becomes a MODULE, its sections LESSONS
+An earlier version split long chapters across two to four lessons "for balance".
+That was wrong: it invented boundaries the author did not put there, in the one
+place where the author's boundaries are exactly what we are trying to keep.
+**A long chapter earns MORE CONCEPTS, not more lessons.** Depth scales inside
+the lesson, where the book left it to us, never by subdividing the chapter.
 
-Concepts are then drawn from within each chapter, several per lesson, which is
-the one level the book does not hand us.
+NO MODULES FOR A GENERAL BOOK
+-----------------------------
+A module is a pedagogical division — a block of study a curriculum designer
+chose. A novel, a memoir, a self-help book has no such thing, and inventing one
+is the same error as splitting chapters. So a general book gets ONE container
+module holding the course, and the level that adapts is the UNIT:
+
+    parts/sections present  ->  each PART becomes a UNIT, each CHAPTER a LESSON
+    no parts                ->  one unit, each CHAPTER a LESSON
+
+A TEXTBOOK is different and keeps the module level, because its parts really are
+study blocks with a curriculum behind them.
+
+Concepts are the one level the book does not hand us, and their COUNT is what
+absorbs a chapter's length.
 
 WHY NOT FORCE THE USUAL LADDER
 ------------------------------
@@ -35,16 +55,12 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Below this a "chapter" is really a section of a longer argument, and the book
-# is better modelled with chapters as modules.
-LONG_CHAPTER_WORDS = 6000
-
-# Fewer chapters than this and a flat lesson list is too thin to be a course.
-MIN_CHAPTERS_FOR_FLAT = 5
-
-# Concepts per lesson, matching the researched-course ladder so the two paths
-# produce comparably sized study units.
-CONCEPTS_PER_LESSON = (2, 4)
+# Concepts per lesson. A long chapter earns more of them — this is the ONLY
+# dimension that flexes with chapter length, because it is the only level the
+# book does not already define.
+MIN_CONCEPTS_PER_LESSON = 2
+MAX_CONCEPTS_PER_LESSON = 6
+WORDS_PER_CONCEPT = 1500
 
 
 def choose_shape(book):
@@ -57,42 +73,35 @@ def choose_shape(book):
     chapters = book.chapters
     parts = book.parts
     n = len(chapters)
-    mean_words = (sum(c.words for c in chapters) / n) if n else 0
 
+    # The lesson count is not a decision. It is len(chapters), always.
     if parts and len(parts) >= 2:
         return {
-            "shape": "parts_as_modules",
-            "why": f"the book has {len(parts)} parts, which are the author's "
-                   f"own top-level grouping",
-            "modules": len(parts),
-            "lessons": n,
-        }
-
-    if n and mean_words >= LONG_CHAPTER_WORDS and n <= 15:
-        return {
-            "shape": "chapters_as_modules",
-            "why": f"{n} chapters averaging {int(mean_words)} words — each is "
-                   f"long enough to be a module, its sections lessons",
-            "modules": n,
-            "lessons": None,
-        }
-
-    if n >= MIN_CHAPTERS_FOR_FLAT:
-        return {
-            "shape": "chapters_as_lessons",
-            "why": f"{n} chapters and no parts — a flat lesson sequence follows "
-                   f"the book's own order",
-            "modules": 0,
-            "lessons": n,
+            "shape": "parts_as_units",
+            "why": f"the book has {len(parts)} parts, which become units; each "
+                   f"of its {n} chapters is a lesson",
+            "modules": 1, "units": len(parts), "lessons": n,
         }
 
     return {
         "shape": "chapters_as_lessons",
-        "why": f"only {n} chapter(s); using them as lessons and relying on "
-               f"concepts for depth",
-        "modules": 0,
-        "lessons": n,
+        "why": f"{n} chapters and no parts — one unit, one lesson per chapter, "
+               f"in the book's own order",
+        "modules": 1, "units": 1, "lessons": n,
     }
+
+
+def concepts_for(chapter):
+    """How many concepts a chapter's length supports.
+
+    The ONLY thing that flexes with chapter length. A 900-word chapter of Austen
+    carries two ideas; a 9,000-word chapter of a textbook carries six. Neither
+    becomes more than one lesson.
+    """
+    n = max(MIN_CONCEPTS_PER_LESSON,
+            min(MAX_CONCEPTS_PER_LESSON,
+                round(chapter.words / WORDS_PER_CONCEPT)))
+    return int(n)
 
 
 def _uid(prefix):
@@ -100,7 +109,7 @@ def _uid(prefix):
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
 
 
-def build_structure(book, course_title=None, concepts_per_lesson=3):
+def build_structure(book, course_title=None, concepts_per_lesson=None):
     """A course structure mirroring the book, with concepts left to be filled.
 
     Concepts are the one level the book does not provide, so they are emitted as
@@ -119,6 +128,9 @@ def build_structure(book, course_title=None, concepts_per_lesson=3):
     }
 
     def _lesson(ch, ordinal):
+        # Fixed count only if the caller insists; otherwise the chapter's own
+        # length decides, which is what lets one lesson carry a long chapter.
+        n_con = concepts_per_lesson or concepts_for(ch)
         return {
             "uid": _uid("less"),
             "title": ch.title or f"Chapter {ch.order}",
@@ -129,52 +141,37 @@ def build_structure(book, course_title=None, concepts_per_lesson=3):
             "concepts": [
                 {"uid": _uid("con"), "title": "", "ordinal": i + 1,
                  "book_chapter": ch.order, "from_book": True}
-                for i in range(concepts_per_lesson)
+                for i in range(n_con)
             ],
         }
 
-    if shape["shape"] == "parts_as_modules":
-        for m_i, part in enumerate(book.parts, 1):
-            chs = [c for c in book.chapters if c.part == part]
-            module = {"uid": _uid("mod"), "title": part, "ordinal": m_i,
-                      "units": [{"uid": _uid("unit"), "title": part,
-                                 "ordinal": 1,
-                                 "lessons": [_lesson(c, i + 1)
-                                             for i, c in enumerate(chs)]}]}
-            course["modules"].append(module)
-        # Chapters before the first part heading would otherwise be lost.
+    # ONE container module either way. It is a shell so the storage ladder
+    # stays intact, not a pedagogical division the book does not have.
+    units = []
+    if shape["shape"] == "parts_as_units":
+        # Chapters before the first part heading get their own unit rather than
+        # being dropped or folded into a part they do not belong to.
         orphans = [c for c in book.chapters if not c.part]
         if orphans:
-            course["modules"].insert(0, {
-                "uid": _uid("mod"), "title": "Introduction", "ordinal": 0,
-                "units": [{"uid": _uid("unit"), "title": "Introduction",
-                           "ordinal": 1,
-                           "lessons": [_lesson(c, i + 1)
-                                       for i, c in enumerate(orphans)]}]})
+            units.append({"uid": _uid("unit"), "title": "Introduction",
+                          "ordinal": 1,
+                          "lessons": [_lesson(c, i + 1)
+                                      for i, c in enumerate(orphans)]})
+        for part in book.parts:
+            chs = [c for c in book.chapters if c.part == part]
+            units.append({"uid": _uid("unit"), "title": part,
+                          "ordinal": len(units) + 1,
+                          "lessons": [_lesson(c, i + 1)
+                                      for i, c in enumerate(chs)]})
+    else:
+        units.append({"uid": _uid("unit"), "title": course["title"],
+                      "ordinal": 1,
+                      "lessons": [_lesson(c, i + 1)
+                                  for i, c in enumerate(book.chapters)]})
 
-    elif shape["shape"] == "chapters_as_modules":
-        for m_i, ch in enumerate(book.chapters, 1):
-            # Long chapters get several lessons over the same chapter text;
-            # hydration splits the material by concept rather than by heading,
-            # because a chapter's internal headings are unreliable across books.
-            n_lessons = max(2, min(4, ch.words // 3000))
-            unit = {"uid": _uid("unit"), "title": ch.title, "ordinal": 1,
-                    "lessons": []}
-            for l_i in range(n_lessons):
-                lesson = _lesson(ch, l_i + 1)
-                lesson["title"] = f"{ch.title} ({l_i + 1}/{n_lessons})"
-                lesson["chapter_part"] = [l_i, n_lessons]
-                unit["lessons"].append(lesson)
-            course["modules"].append({"uid": _uid("mod"), "title": ch.title,
-                                      "ordinal": m_i, "units": [unit]})
-
-    else:  # chapters_as_lessons
-        course["modules"].append({
-            "uid": _uid("mod"), "title": course["title"], "ordinal": 1,
-            "units": [{"uid": _uid("unit"), "title": course["title"],
-                       "ordinal": 1,
-                       "lessons": [_lesson(c, i + 1)
-                                   for i, c in enumerate(book.chapters)]}]})
+    course["modules"].append({"uid": _uid("mod"), "title": course["title"],
+                              "ordinal": 1, "container_only": True,
+                              "units": units})
 
     logger.info(f"[BOOK] shape={shape['shape']} — {shape['why']}")
     return course
