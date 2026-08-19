@@ -241,7 +241,7 @@ hydration time actually goes.
   course.
 * A bachelor's programme is ~40 courses → **~5,400 concepts**.
 
-That number is the reason question 6 exists. At 90 s/concept, a full degree's
+That number is the reason Q6 exists. At 90 s/concept, a full degree's
 content is ~135 hours of generation.
 
 ### 2.8 Supplementary-source policy (just implemented)
@@ -341,7 +341,7 @@ whatever was retrieved during hydration.
 * Does a Socratic tutor actually need source text at question time, or only at
   generation and grading time? **We do not know**, and it changes the storage
   design substantially.
-* How should this interact with the caching in 2.3 — is the cache the right
+* How should this interact with the caching in 2.6 — is the cache the right
   place for source text to live, or does it need a durable home?
 
 ### Q4. Should we worry about file size across many courses?
@@ -381,7 +381,7 @@ At ~90 s/concept this is the dominant cost in the product.
   enabling batching, and what it costs in RAM at IQ3_S.
 * Is **IQ3_S the right quantisation** for content that must be factually
   correct, or is aggressive quantisation itself contributing to the false-claim
-  problem in 2.6? A higher-quality quant that is slower per concept but needs
+  problem in 2.9? A higher-quality quant that is slower per concept but needs
   fewer correction retries could be faster end to end.
 * Is there a **quality-improving** speedup — e.g. generating a whole lesson's
   concepts in one call the way the skeleton builder now does per module, which
