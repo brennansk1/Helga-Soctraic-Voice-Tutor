@@ -126,3 +126,50 @@ class TestSequencing(unittest.TestCase):
         from tools.coverage_check import sequencing_check
         r = sequencing_check(_course("Alpha", "Beta", "Gamma"))
         assert r["checked"] is False
+
+
+class TestFillerDetection(unittest.TestCase):
+    """Condition 5 asks for smart stretching that fills a thin subject with
+    quality content rather than filler. scope_fit warns when a subject cannot
+    carry the requested size; this measures whether the course padded anyway.
+    """
+
+    def _course_of(self, *titles):
+        return {"modules": [{"title": "M", "units": [{"title": "u", "lessons": [
+            {"title": "l", "concepts": [{"title": t} for t in titles]}]}]}]}
+
+    def test_reordered_titles_are_caught(self):
+        from tools.structure_quality import check_filler
+        c = self._course_of("Matrix Inverse Properties", "Properties of Matrix Inverse",
+                            "Determinants", "Eigenvalues", "Projections",
+                            "Least Squares", "Orthogonality", "Rank")
+        r = check_filler(c)
+        assert r["near_duplicates"] >= 1, r["examples"]
+
+    def test_acronyms_are_not_collapsed(self):
+        """REGRESSION: dropping tokens under four characters made "QR
+        Decomposition" and "LU Decomposition" identical, and in mathematics the
+        acronym IS the distinguishing part."""
+        from tools.structure_quality import check_filler
+        c = self._course_of("QR Decomposition", "LU Decomposition",
+                            "SVD Applications", "PCA Basics", "Eigenvalues",
+                            "Determinants", "Projections", "Rank")
+        assert check_filler(c)["near_duplicates"] == 0
+
+    def test_a_course_that_keeps_introducing_is_flagged(self):
+        """Six concepts opening "Introduction to" is a course that never
+        arrives."""
+        from tools.structure_quality import check_filler
+        c = self._course_of(*[f"Introduction to Topic {i}" for i in range(8)])
+        assert check_filler(c)["repeated_openings"]
+
+    def test_a_real_course_is_not_flagged(self):
+        from tools.structure_quality import check_filler
+        c = self._course_of("Vector Spaces", "Linear Independence", "Basis",
+                            "Rank and Nullity", "Determinants", "Eigenvalues",
+                            "Orthogonal Projections", "Gram-Schmidt")
+        assert check_filler(c)["ok"]
+
+    def test_too_few_concepts_is_not_judged(self):
+        from tools.structure_quality import check_filler
+        assert check_filler(self._course_of("A", "B"))["checked"] is False

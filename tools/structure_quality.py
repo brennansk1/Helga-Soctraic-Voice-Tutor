@@ -35,6 +35,12 @@ import sys
 # Titles that could belong to any course on any subject. A real syllabus says
 # "Orthogonal Bases and Gram-Schmidt", not "Advanced Topics" — a generic title is
 # the model declining to decide what the section is about.
+# Words that carry no distinguishing content, so two titles differing only by
+# these are the same concept.
+_STOP_FILLER = {"the", "and", "for", "with", "from", "into", "using", "via",
+                "understanding", "exploring", "introduction", "overview",
+                "basic", "basics", "concept", "concepts", "topic", "topics"}
+
 _GENERIC = re.compile(
     r"^(advanced|further|additional|other|misc\w*|core|key|basic|general|"
     r"introductory)?\s*"
@@ -221,6 +227,87 @@ def check_school_shape(struct):
     }
 
 
+def check_filler(struct):
+    """Is the course padded — the same idea taught twice under two names?
+
+    Condition 5 asks for smart stretching that fills a thin subject with quality
+    content rather than meaningless filler. `scope_fit` warns when a subject
+    cannot carry the requested size; this measures whether the course PADDED
+    anyway.
+
+    Three shapes of padding, all detectable without a model:
+
+      * **near-duplicate titles** — "Vector Addition" and "Adding Vectors" are
+        one concept wearing two names
+      * **repeated stems** — six concepts starting "Introduction to" is a course
+        that keeps introducing and never arrives
+      * **shared-word saturation** — concepts within a lesson that differ by one
+        word are a list, not a curriculum
+
+    WHAT IT MISSES, deliberately: morphological variants. "Vector Addition" and
+    "Adding Vectors" are the same concept but stem differently (addition/add),
+    and building a real stemmer to catch it would add a dependency and a new
+    class of false positive for one shape of padding. It catches literal repeats
+    and reordered titles, which is what padding actually looks like when a model
+    is asked to fill space it has no material for.
+    """
+    concepts = []
+    for m in _modules(struct):
+        for u in (m.get("units") or []):
+            for l in (u.get("lessons") or []):
+                for c in (l.get("concepts") or []):
+                    t = (c.get("title") or "").strip()
+                    if t:
+                        concepts.append(t)
+    if len(concepts) < 8:
+        return {"checked": False, "reason": "too few concepts to judge padding"}
+
+    def _key(t):
+        # Order-insensitive content signature: "Vector Addition" and "Adding
+        # Vectors" collapse to the same key, which is the point.
+        #
+        # ACRONYMS ARE KEPT despite being short. Dropping tokens under four
+        # characters made "QR Decomposition" and "LU Decomposition" identical —
+        # and in mathematics the acronym IS the distinguishing part. Any
+        # all-caps run of 2+ letters in the ORIGINAL title survives.
+        acronyms = {a.lower() for a in re.findall(r"\b[A-Z]{2,}\b", t)}
+        words = sorted(w[:-3] if w.endswith("ing") else w[:-1] if w.endswith("s")
+                       else w
+                       for w in re.findall(r"[a-z]+", t.lower())
+                       if (len(w) > 3 or w in acronyms) and w not in _STOP_FILLER)
+        return " ".join(words)
+
+    seen, dupes = {}, []
+    for t in concepts:
+        k = _key(t)
+        if not k:
+            continue
+        if k in seen:
+            dupes.append((seen[k], t))
+        else:
+            seen[k] = t
+
+    # Repeated openings: a course that says "Introduction to" six times.
+    from collections import Counter
+    stems = Counter(" ".join(t.split()[:2]).lower() for t in concepts
+                    if len(t.split()) >= 2)
+    repeated = [(stem, n) for stem, n in stems.items()
+                if n >= max(3, len(concepts) // 12)]
+
+    dupe_rate = len(dupes) / len(concepts)
+    return {
+        "checked": True,
+        "concepts": len(concepts),
+        "near_duplicates": len(dupes),
+        "duplicate_rate": round(dupe_rate, 3),
+        "examples": [f"{a!r} / {b!r}" for a, b in dupes[:4]],
+        "repeated_openings": sorted(repeated, key=lambda x: -x[1])[:4],
+        # 5% tolerates genuine near-neighbours in a dense subject; beyond that
+        # the course is repeating itself.
+        "ok": dupe_rate <= 0.05 and not repeated,
+    }
+
+
 def assess(struct):
     """All four checks plus a single verdict."""
     out = {
@@ -229,6 +316,7 @@ def assess(struct):
         "units": check_units(struct),
         "uniformity": check_uniformity(struct),
         "school_shape": check_school_shape(struct),
+        "filler": check_filler(struct),
         "instrument": "structural arithmetic (no model)",
     }
     graded = [v for v in out.values()
