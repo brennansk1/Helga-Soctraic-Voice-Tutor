@@ -2126,6 +2126,33 @@ class SkeletonBuilder:
     # duplicate rejection, fallback synthesis + counting, Bloom stamping, uid
     # generation and the STRUCT:* progress events.
 
+    @staticmethod
+    def subtree_schema(min_units=1, min_lessons=1, min_concepts=1):
+        """SUBTREE_SCHEMA with minimum counts baked in.
+
+        The static schema below has NO minItems, so constrained decoding
+        cheerfully accepted one unit per module. Measured: modules asked for 3
+        units and 9 lessons returned ~1.7 units and ~5 lessons, and firming the
+        PROMPT from "about N units" to "this is NOT approximate" changed nothing
+        — because the grammar the model was decoding against still permitted the
+        short answer.
+
+        A count the schema does not enforce is a count the prompt is merely
+        requesting. This is the lever; the wording was not.
+
+        Units may still differ in size — `min_lessons` is a floor per unit, not a
+        quota — so the topical grouping the design calls for is preserved.
+        """
+        import copy
+        schema = copy.deepcopy(SkeletonBuilder.SUBTREE_SCHEMA)
+        units = schema["properties"]["units"]
+        units["minItems"] = max(1, int(min_units))
+        lessons = units["items"]["properties"]["lessons"]
+        lessons["minItems"] = max(1, int(min_lessons))
+        concepts = lessons["items"]["properties"]["concepts"]
+        concepts["minItems"] = max(1, int(min_concepts))
+        return schema
+
     SUBTREE_SCHEMA = {
         "type": "object",
         "properties": {
@@ -2242,15 +2269,28 @@ class SkeletonBuilder:
 
         # Budget scales with the tree size; a truncated tree is the one real
         # failure mode of consolidating, so give it room.
+        # The budget has to cover what the SCHEMA now REQUIRES, not what the
+        # model might volunteer. Adding minItems raised the floor on output size
+        # while this estimate stayed put, and the result was measured: the
+        # one-shot returned empty for 5 of 6 modules, fell back to the chunked
+        # path, and the course came out at 30 lessons against a 45-lesson
+        # calendar. A constraint the budget cannot pay for is a constraint that
+        # silently disables the path enforcing it.
+        #
+        # 160 tokens per leaf assumed a bare title. A concept carries a title
+        # plus two Bloom-levelled objectives, and every level adds JSON
+        # scaffolding, so the real cost is closer to 260.
         est_leaves = max(1, base_units) * max(1, base_lessons) * max(1, base_concepts)
-        max_tokens = min(6000, 700 + est_leaves * 160)
+        max_tokens = min(9000, 900 + est_leaves * 260)
 
         data = llm_generate_json(
             prompt,
             sys_prompt=sys_prompt,
             max_tokens=max_tokens,
             expected_type="dict",
-            schema=self.SUBTREE_SCHEMA,
+            schema=self.subtree_schema(min_units=base_units,
+                                       min_lessons=base_lessons,
+                                       min_concepts=base_concepts),
             progress_callback=self.status_callback,
         )
         # Tolerate shape drift. A model (or a differently-configured server) may

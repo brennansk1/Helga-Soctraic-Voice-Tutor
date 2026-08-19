@@ -755,3 +755,61 @@ This is a regression against condition 1's volume target introduced by the chang
 that stabilised condition 2's coverage. It is the clearest next piece of work,
 and it is a real trade the two conditions are currently making against each
 other — which is worth knowing even unresolved.
+
+---
+
+# ROOT CAUSE: a 4096-token context window
+
+Everything above about volume was a symptom.
+
+```
+request (4212 tokens) exceeds the available context size (4096 tokens)
+n_prompt_tokens: 4212, n_ctx: 4096
+```
+
+**Ollama serves a model at 4096 tokens unless the Modelfile says otherwise, and
+this one never did** — `ollama show` reports the model itself supports 262144.
+The one-shot subtree prompt is ~4212 tokens, so it 400'd for 5 of 6 modules in
+*every* build, fell back to the chunked path, and produced a course a third
+shorter than its calendar.
+
+It also explains why the problem got **worse as the prompts got better**: adding
+real syllabus detail to a module's scope pushed more prompts over a line nobody
+knew was there. The instinct to add evidence was right; it was silently punished.
+
+## Fix and result
+
+`PARAMETER num_ctx 16384` on the model (`nail-35b-a3b-ctx`, created from the
+existing blob — no re-download).
+
+| | before | **after** | target |
+|---|---|---|---|
+| context 400s per build | **24** | **0** | 0 |
+| one-shot fallbacks | **5 of 6** | **0 of 6** | 0 |
+| coverage vs MIT 18.06 | 80% median | **100%** | — |
+| sequencing | ok | **ok** | ok |
+| lessons | 29–30 | **53** | 45 |
+| **concepts** | 87–90 | **144** | **144** |
+
+**144 concepts is exactly the parity figure** derived from the calendar ladder,
+and it arrived by fixing a config default rather than by tuning anything.
+
+## Four hypotheses were tested and discarded first
+
+Prompt wording · token budget · schema `minItems` · payload fields. Each cost a
+full build to eliminate. **A single logged error body answered it in one line** —
+and the body was not being logged: 24 identical `400 Client Error` lines per
+build with the reason discarded. That is now fixed, and it is the more
+transferable lesson: an error you cannot read is an error you will bisect around
+for hours.
+
+The three earlier changes are kept — they were correct, just not the cause. The
+schema minimums now actually bind, since the request reaches the model.
+
+## What this means for the conditions
+
+* **Condition 1 volume: met.** 144 concepts, 2.72 per lesson. Lessons at 53
+  against a 45 target (+18%) — over rather than under for the first time.
+* **Condition 2: 100% coverage with correct sequencing** on this run. Single run,
+  so by this project's own rule it needs median-of-3 before being quoted as the
+  headline — but the mechanism is now unobstructed for the first time.

@@ -509,10 +509,37 @@ def llm_generate(
                 # free-form shape that failed a strict parse; `response_format` -> 202
                 # chars matching the schema exactly. Send BOTH so the same payload
                 # works against a native endpoint and against /v1 (and mlx_lm).
+                # ...but the two endpoints do not accept the same SCHEMA.
+                # Ollama's native `format` honours minItems (verified: minItems=5
+                # took a 8-unit answer to 10). The /v1 json_schema validator
+                # REJECTS it with a 400 in ~0.3 s. Sending one schema to both
+                # therefore turned a working call into an instant failure — and
+                # because the caller treats a failure as "empty", it silently
+                # disabled the whole one-shot path for 5 of 6 modules and made
+                # every course a third shorter, with no error surfaced.
+                #
+                # So: full schema to `format`, a /v1-safe reduction to
+                # `response_format`. The strictest endpoint must not get to
+                # dictate what the permissive one is allowed to enforce.
+                # CONTEXT WINDOW. Ollama defaults to 4096 unless told otherwise,
+                # and nothing here ever told it. Measured: the one-shot subtree
+                # prompt is ~4212 tokens, so it 400'd with
+                # "exceeds the available context size (4096)" for 5 of 6 modules
+                # in EVERY build, silently falling back to the chunked path and
+                # making every course a third shorter than its calendar.
+                #
+                # It also explains why the failure got worse as the prompts got
+                # better: adding real syllabus detail to a module's scope pushed
+                # more prompts over a line nobody knew was there. Three separate
+                # hypotheses (prompt wording, token budget, schema keywords) were
+                # tested and discarded before the error BODY was logged and
+                # answered it in one line.
+                "options": {"num_ctx": _num_ctx()},
                 **({"format": json_format,
                     "response_format": {
                         "type": "json_schema",
-                        "json_schema": {"name": "helga_schema", "schema": json_format},
+                        "json_schema": {"name": "helga_schema",
+                                        "schema": _v1_safe_schema(json_format)},
                     }} if isinstance(json_format, dict) else
                    {"format": json_format} if json_format else {}),
             }
@@ -568,7 +595,21 @@ def llm_generate(
                 time.sleep(2)
         except Exception as e:
             heartbeat_stop.set()
-            logger.error(f"LLM Error (attempt {attempt + 1}): {e}")
+            # A 4xx carries its reason in the BODY, and logging only the status
+            # line made this undiagnosable: 24 identical "400 Client Error" lines
+            # per build, disabling the one-shot subtree path for 5 of 6 modules
+            # and shortening every course by a third, with nothing to act on.
+            # Hours were spent bisecting payload fields that a single logged
+            # body would have answered immediately.
+            _body = ""
+            _resp = getattr(e, "response", None)
+            if _resp is not None:
+                try:
+                    _body = (_resp.text or "")[:600]
+                except Exception:
+                    _body = "<unreadable response body>"
+            logger.error(f"LLM Error (attempt {attempt + 1}): {e}"
+                         + (f" | body: {_body}" if _body else ""))
             if attempt < retries - 1:
                 time.sleep(2**attempt)
     return ""
@@ -610,6 +651,37 @@ def _describe_schema_mismatch(result, schema, path="root"):
     except Exception:
         pass
     return "" if schema else ""
+
+# JSON Schema keywords the OpenAI-compatible /v1 json_schema validator rejects.
+# Ollama's native `format` accepts them, so they are kept there and stripped only
+# from the /v1 copy.
+_V1_UNSUPPORTED = ("minItems", "maxItems", "minLength", "maxLength", "minimum",
+                   "maximum", "pattern", "uniqueItems", "minProperties",
+                   "maxProperties")
+
+
+def _num_ctx():
+    """Context window to request. Ollama's default of 4096 is smaller than this
+    project's real prompts, which carry syllabus evidence and module scope."""
+    try:
+        return max(4096, int(os.getenv("OLLAMA_NUM_CTX", "16384")))
+    except (TypeError, ValueError):
+        return 16384
+
+
+def _v1_safe_schema(schema):
+    """A copy of `schema` with keywords /v1 refuses removed.
+
+    Returns a COPY: mutating the caller's schema would strip the constraint from
+    the native `format` field too, which is the one place it works.
+    """
+    if isinstance(schema, dict):
+        return {k: _v1_safe_schema(v) for k, v in schema.items()
+                if k not in _V1_UNSUPPORTED}
+    if isinstance(schema, list):
+        return [_v1_safe_schema(v) for v in schema]
+    return schema
+
 
 def llm_generate_json(
     prompt: str,
