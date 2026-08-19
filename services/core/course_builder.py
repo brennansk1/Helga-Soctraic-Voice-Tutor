@@ -1661,6 +1661,7 @@ class SkeletonBuilder:
                 self.course_params["lessons_total"] = _target
                 self.course_params["lessons_per_module"] = max(
                     1, round(_target / max(1, self.course_params.get("modules", 6))))
+                self._length_steer = _why
                 logger.info(f"[VOLUME] lesson target {_target} of {_lo}-{_hi} — "
                             f"{_why}")
                 if self.status_callback:
@@ -2365,6 +2366,24 @@ class SkeletonBuilder:
         _nominal = max(1, base_units * base_lessons)
         _lesson_lo = max(1, int(round(_nominal * (1 - LESSON_TOLERANCE))))
         _lesson_hi = max(_lesson_lo, int(round(_nominal * (1 + LESSON_TOLERANCE))))
+        # A range on its own is only PERMISSION to vary, and the model reads it
+        # as licence to stop early: evidence set a target of 56 lessons and the
+        # build came back with 39, because nothing in the prompt said which end
+        # this subject belonged at. The research verdict is the missing sentence.
+        _ev = (getattr(self, "_length_steer", "") or "").strip()
+        if _ev.startswith("evidence supports ~") and "carries the longer" in _ev:
+            _steer = (f"The research for this subject says: {_ev}. Use the UPPER "
+                      f"end — there is more than enough material, and stopping "
+                      f"short leaves the course thinner than the subject.")
+        elif "short end" in _ev or "only" in _ev:
+            _steer = (f"The research for this subject says: {_ev}. Use the LOWER "
+                      f"end — padding a thin module is worse than a short one.")
+        elif _ev:
+            _steer = f"The research for this subject says: {_ev}. Aim mid-range."
+        else:
+            _steer = ("Use the upper end when the material genuinely fills it and "
+                      "the lower end when it does not; padding is worse than "
+                      "being short.")
 
         m_title = m_ref["title"]
         m_role = m_ref["role_desc"]
@@ -2399,10 +2418,8 @@ class SkeletonBuilder:
             f"{_evidence}"
             f"Design this module's COMPLETE structure in one pass:\n"
             f"  - between {_lesson_lo} and {_lesson_hi} lessons in this "
-            f"module, and use the range honestly: take the upper end when the "
-            f"material genuinely fills it and the lower end when it does not. "
-            f"A lesson is one ~50-minute class session. Padding a thin module up "
-            f"to the maximum is worse than a shorter, denser one.\n"
+            f"module. A lesson is one ~50-minute class session.\n"
+            f"    {_steer}\n"
             f"  - group those lessons into units BY TOPIC — around "
             f"{base_units}, but units may differ in size where the material "
             f"warrants it.\n"

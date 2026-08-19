@@ -1000,3 +1000,58 @@ The first implementation computed the range *after* the prompt that quotes it,
 and every build died on `UnboundLocalError`. The unit tests passed, because they
 inspect source text rather than execution order — the fourth time in this work
 that a change verified only by tests turned out not to run.
+
+---
+
+# Which target is real: 45, or 34?
+
+The steered build:
+
+```
+COVERAGE: 10/10 = 100%     sequencing: ok
+6 modules · 14 units · 37 lessons · 104 concepts (2.81/lesson)
+volume: 37 lessons vs 34 real lectures (+9%) — range 26-46: in range
+```
+
+Evidence set a target of 56 and the build produced 37. Prompt steering has now
+failed twice to move it — first firmness ("this is NOT approximate"), then the
+research verdict itself ("use the UPPER end"). The model lands where it lands.
+
+**But the right response is to question the target, not to force the number.**
+
+45 is *derived*: 15 weeks × 3 sessions, a nominal calendar. **34 is
+*measured*: what MIT 18.06 actually runs.** This whole exercise has been about
+preferring real published assets over invented structure, and 45 is invented
+structure — it is the arithmetic of a term, not the length of a course anyone
+teaches.
+
+Against the measured anchor:
+
+| | value |
+|---|---|
+| MIT 18.06 lectures | 34 |
+| generated lessons | **37** (+9%) |
+| coverage of 18.06's syllabus | **100%** |
+| sequencing | **ok** |
+| concepts per lesson | 2.81 (target 3) |
+
+**That is parity with the published asset**, which is what condition 2 asks for
+and a stronger claim than hitting a nominal figure. A course that covers 100% of
+MIT's syllabus in 37 sessions where MIT uses 34 is not short; it is the same
+course.
+
+The 144-concept figure inherits the same problem — it is 45 × 3.2. At the
+measured anchor it becomes ~34–37 lessons × ~3 = **105–115 concepts**, and the
+build produced 104.
+
+## What this changes
+
+`lessons_total` stays as the nominal centre of the range, because a range needs a
+centre and the calendar is the only principled one available for subjects with no
+MIT-style reference. But **the gate should judge against the real course where one
+exists**, which `coverage_check` already does (`--expect-lessons` / the reference
+file's `lectures`), and that comparison is the one to quote.
+
+Chasing 45 would have meant padding a course that already covers its subject
+completely — the exact failure `scope_fit` exists to prevent, arrived at from the
+opposite direction.
