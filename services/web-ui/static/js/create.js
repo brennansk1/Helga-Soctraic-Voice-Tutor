@@ -347,7 +347,63 @@
         }
     }
 
+    /* THE SMART-STRETCH NOTIFIER. A bachelor's in Dungeon Mastering is a
+       legitimate wish and an impossible promise: the scope check knows how
+       much real material exists, and asking for 40 courses of it deserves a
+       plain conversation before compute is spent — not a padded programme and
+       not a silent downgrade. */
+    function stretchWarning() {
+        var isDegree = state.template === "associate" || state.template === "bachelors";
+        var thin = state.scope && state.scope.available !== false &&
+                   state.scope.verdict && state.scope.verdict !== "ok";
+        if (!isDegree || !thin) return Promise.resolve(true);
+        return new Promise(function (resolve) {
+            var veil = document.createElement("div");
+            veil.className = "stretch-veil";
+            var card = document.createElement("div");
+            card.className = "stretch-card";
+            card.setAttribute("role", "alertdialog");
+            card.setAttribute("aria-modal", "true");
+            var h = document.createElement("h2");
+            h.textContent = "This subject looks thin for a " +
+                (state.template === "bachelors" ? "bachelor's" : "degree");
+            var p1 = document.createElement("p");
+            p1.textContent = (state.scope.reason || "The evidence sweep found " +
+                "less material than a full programme needs.") +
+                " Helga will not pad the gap with filler — the honest options " +
+                "are a smaller programme, or continuing with courses that are " +
+                "labelled where they stretch.";
+            var acts = document.createElement("div");
+            acts.className = "stretch-actions";
+            var down = document.createElement("button");
+            down.className = "btn-secondary";
+            down.textContent = "Scale down to a course";
+            var goOn = document.createElement("button");
+            goOn.className = "btn-primary";
+            goOn.textContent = "Continue anyway";
+            down.addEventListener("click", function () {
+                state.template = "course";
+                veil.remove(); renderReview(); resolve(false);
+            });
+            goOn.addEventListener("click", function () {
+                veil.remove(); resolve(true);
+            });
+            acts.appendChild(down); acts.appendChild(goOn);
+            card.appendChild(h); card.appendChild(p1); card.appendChild(acts);
+            veil.appendChild(card);
+            document.body.appendChild(veil);
+            goOn.focus();
+        });
+    }
+
     createBtn.addEventListener("click", function () {
+        stretchWarning().then(function (proceed) {
+            if (!proceed) { createBtn.disabled = false; return; }
+            startCreate();
+        });
+    });
+
+    function startCreate() {
         createBtn.disabled = true;
         createBtn.querySelector(".create-btn-label").textContent = "Starting…";
         if (state.source === "book") {
@@ -377,7 +433,7 @@
             reviewNote.textContent = "Could not start the build: " + e.message +
                 " — nothing was created.";
         });
-    });
+    }
 
     /* Touch swipe: phones and iPads navigate by gesture as well as arrows.
        Threshold 48px so a scroll wobble does not change pages. */

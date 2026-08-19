@@ -249,6 +249,53 @@
     display: grid; gap: 6px;
     max-width: 560px;
     margin-bottom: var(--space-5);
+    padding: var(--space-5);
+    border-radius: var(--radius-lg);
+    /* DELIBERATELY DIFFERENT PER THEME, not just inverted. Light gets a paper
+       card with the accent as a left spine; dark gets a translucent panel with
+       an accent glow — the same information wearing clothes that suit each
+       room, which is what "variety between modes" means as a token rule. */
+    background: var(--surface-raised);
+    border-left: 4px solid var(--accent);
+    box-shadow: var(--shadow-md);
+}
+:root[data-theme="dark"] .review-panel,
+[data-theme="dark"] .review-panel {
+    background: color-mix(in srgb, var(--accent) 9%, transparent);
+    border-left-color: color-mix(in srgb, var(--accent) 70%, white);
+    box-shadow: 0 0 34px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/* --- the smart-stretch notifier -------------------------------------------*/
+.stretch-veil {
+    position: fixed; inset: 0; z-index: 60;
+    background: color-mix(in srgb, black 55%, transparent);
+    display: grid; place-items: center;
+    animation: fade-in var(--dur-base, 200ms) ease;
+}
+@keyframes fade-in { from { opacity: 0; } }
+.stretch-card {
+    max-width: 520px; width: calc(100% - 2rem);
+    /* Fallback is mandatory: this modal can mount on pages that load a
+       smaller token set, and a transparent alert card is unreadable. */
+    background: var(--surface-raised, #fff);
+    border-radius: var(--radius-lg);
+    border-top: 5px solid var(--warning, #c77d0a);
+    box-shadow: var(--shadow-lg);
+    padding: var(--space-5);
+}
+.stretch-card h2 { margin: 0 0 .4em; font-size: 1.25rem; }
+.stretch-card p { color: var(--text-secondary); line-height: 1.5; margin: 0 0 1em; }
+.stretch-actions { display: flex; gap: var(--space-3); justify-content: flex-end; }
+.stretch-actions .btn-secondary {
+    padding: .7em 1.3em; border-radius: var(--radius-md);
+    border: 1.5px solid var(--border); background: transparent;
+    color: var(--text-primary); cursor: pointer;
+}
+.stretch-actions .btn-primary {
+    padding: .7em 1.3em; border-radius: var(--radius-md);
+    border: none; background: var(--warning, #c77d0a); color: #fff;
+    font-weight: 600; cursor: pointer;
 }
 .review-row { display: flex; align-items: baseline; gap: .8em;
               padding: .55em 0; border-bottom: 1px solid var(--border); }
@@ -317,3 +364,5 @@
 @media (pointer: coarse) {
     .car-page { touch-action: pan-y; }
 }
+
+:root[data-theme="dark"] .stretch-card, [data-theme="dark"] .stretch-card { background: var(--surface-raised, #1d2129); }
