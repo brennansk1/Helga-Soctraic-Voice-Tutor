@@ -747,6 +747,89 @@ class StorageManager:
                 cursor.execute("UPDATE schema_version SET version = 13")
                 logger.info("Schema migrated to v13: append-only session notes")
 
+            if current_version < 14:
+                # The teaching object: a concept parsed into addressable
+                # structure — claims, worked steps, belief/correction pairs,
+                # question seeds per Bloom band, the grade-3 threshold.
+                #
+                # NOT a migration of where content lives. The Markdown stays
+                # canonical; this is a parsed view stored beside it, because the
+                # only consumer is a model and prose cannot express "the seed
+                # question for Bloom 3-4" without a regex at session time.
+                #
+                # `completeness` is stored with it so hollowness is a query
+                # rather than a re-parse: a concept can pass the section
+                # template and fill almost none of these fields, which is what
+                # "structurally complete, substantively empty" means.
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS teaching_objects (
+                        course_uid   TEXT NOT NULL,
+                        concept_uid  TEXT NOT NULL,
+                        obj          TEXT NOT NULL,
+                        completeness REAL,
+                        PRIMARY KEY (course_uid, concept_uid)
+                    )
+                """)
+                cursor.execute("UPDATE schema_version SET version = 14")
+                logger.info("Schema migrated to v14: teaching objects")
+
+            if current_version < 15:
+                # CONCEPT BODIES IN THE DATABASE, WITH THE .md AS A MIRROR.
+                #
+                # Concepts are 1-6 KB with a ~15 KB ceiling under the depth
+                # contract, and SQLite's own benchmark puts small blobs ~35%
+                # faster to read and write in-database than as individual files,
+                # at ~20% less disk, with the filesystem only winning above
+                # ~100 KB. So the performance argument points here.
+                #
+                # But speed is not the reason. Three things this buys that
+                # one-file-per-concept structurally cannot:
+                #
+                #   * ABSENT-VS-ZERO BECOMES STRUCTURAL. A row with an empty
+                #     body is a concept we hydrated and got nothing from; a
+                #     missing row is one never attempted. On disk both are "no
+                #     file", and this project has been bitten by that confusion
+                #     repeatedly.
+                #   * Structure (JSON), state (progress) and content become
+                #     transactionally consistent instead of three stores that
+                #     can disagree after a crash.
+                #   * The ledger, sources, claims and teaching objects become
+                #     co-resident with the content they index, so retrieval is a
+                #     JOIN rather than a filesystem walk plus a separate index.
+                #
+                # The .md files are still written, and reads fall back to them,
+                # so this is additive rather than a migration with a cutover.
+                # `content_hash` is what makes drift between the two detectable
+                # instead of silent.
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS concepts (
+                        course_uid   TEXT NOT NULL,
+                        concept_uid  TEXT NOT NULL,
+                        title        TEXT,
+                        content      TEXT,
+                        content_hash TEXT,
+                        path         TEXT,
+                        words        INTEGER,
+                        updated_at   TEXT,
+                        PRIMARY KEY (course_uid, concept_uid)
+                    )
+                """)
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_concepts_course "
+                               "ON concepts(course_uid)")
+                # FTS5 over content, so search stops being a substring scan.
+                try:
+                    cursor.execute("""
+                        CREATE VIRTUAL TABLE IF NOT EXISTS concepts_fts
+                        USING fts5(concept_uid UNINDEXED, course_uid UNINDEXED,
+                                   title, content)
+                    """)
+                except sqlite3.OperationalError as e:
+                    # FTS5 is compiled in on every build we target, but a search
+                    # index that cannot be created must not stop a migration.
+                    logger.warning(f"FTS5 unavailable, search stays substring: {e}")
+                cursor.execute("UPDATE schema_version SET version = 15")
+                logger.info("Schema migrated to v15: concept bodies in SQLite + FTS5")
+
             conn.commit()
         finally:
             conn.close()
@@ -918,6 +1001,27 @@ class CourseStore:
         # Set by StorageManager to the search index's upserter. Left None here
         # so a CourseStore built standalone (tests, scripts) still works.
         self.on_content_saved = None
+
+    def _get_db(self) -> sqlite3.Connection:
+        """Thread-local connection to the same helga.db every other store uses.
+
+        CourseStore was the one store with no database handle, because it began
+        as pure JSON-and-Markdown. Concept bodies now live in `concepts` (v15)
+        alongside the ledger and retained sources that key off them, so it needs
+        one. Thread-local for the same reason the other stores are: hydration
+        runs in a ThreadPoolExecutor and SQLite connections are not shareable
+        across threads.
+        """
+        if not hasattr(self, "_tl"):
+            import threading
+            self._tl = threading.local()
+        conn = getattr(self._tl, "conn", None)
+        if conn is None:
+            conn = sqlite3.connect(os.path.join(self.data_dir, "helga.db"),
+                                   timeout=30)
+            conn.execute("PRAGMA journal_mode=WAL")
+            self._tl.conn = conn
+        return conn
 
     def create_course(self, course_dict: dict) -> str:
         """Write course structure.json and sync metadata to SQLite."""
@@ -1197,7 +1301,27 @@ class CourseStore:
         return None
 
     def get_concept_content(self, course_uid: str, concept_uid: str) -> str:
-        """Read concept .md file content. Checks content/ then topics/ for compat."""
+        """Concept content: the database first, the .md file as fallback.
+
+        DB-first because a row can be EMPTY, and a file cannot. "Hydrated and
+        produced nothing" and "never hydrated" are different states that the
+        filesystem renders identically as a missing file, and this project has
+        repeatedly been bitten by exactly that confusion.
+
+        The disk fallback keeps every course built before v15 readable, so this
+        is additive rather than a cutover.
+        """
+        try:
+            row = self._get_db().execute(
+                "SELECT content FROM concepts WHERE course_uid=? AND concept_uid=?",
+                (course_uid, concept_uid)).fetchone()
+            if row is not None:
+                return row[0] or ""
+        except sqlite3.OperationalError:
+            pass  # pre-v15 database
+        except Exception as e:
+            logger.debug(f"concept read from DB failed for {concept_uid}: {e}")
+
         for subdir in ["content", "topics"]:
             path = os.path.join(self.courses_dir, course_uid, subdir, f"{concept_uid}.md")
             if os.path.exists(path):
@@ -1205,13 +1329,128 @@ class CourseStore:
                     return f.read()
         return ""
 
+    def add_session_note(self, course_uid, concept_uid, role, text,
+                         student_id=None, grade=None):
+        """Append one turn of a tutoring session. Never fails a session."""
+        try:
+            db = self._get_db()
+            db.execute(
+                "INSERT INTO session_notes (course_uid, concept_uid, student_id, "
+                "role, text, grade, created_at) VALUES (?,?,?,?,?,?,?)",
+                (course_uid, concept_uid, student_id, role, text, grade,
+                 datetime.now().isoformat()))
+            db.commit()
+        except Exception as e:
+            logger.debug(f"session note skipped: {e}")
+
+    def compact_session_notes(self, older_than_days=90, keep_per_concept=6):
+        """Collapse old raw turns, keeping a recent tail per concept.
+
+        Notes are the one component that grows without bound: content is ~32 MB
+        for a bachelor's and negligible, while ~50 turns a session over four
+        years is not. The compaction BOUNDARY was designed in before there was
+        anything to compact, because retrofitting it onto years of rows is the
+        painful path.
+
+        What is dropped is the raw TEXT, not the row: the grade, the timestamp
+        and the concept survive, because those are what FSRS and the retention
+        curves read. A compacted note is still evidence that a turn happened —
+        deleting the row would silently shorten a learner's history.
+
+        Returns a summary of what it did, so a caller can log it rather than
+        guess.
+        """
+        try:
+            db = self._get_db()
+            cutoff = (datetime.now() - timedelta(days=older_than_days)).isoformat()
+            # The newest `keep_per_concept` turns per concept stay verbatim even
+            # when old: they are what a resumed session reads for continuity.
+            keep = {r[0] for r in db.execute(
+                "SELECT note_id FROM ("
+                "  SELECT note_id, ROW_NUMBER() OVER ("
+                "    PARTITION BY concept_uid ORDER BY created_at DESC) rn"
+                "  FROM session_notes WHERE compacted = 0"
+                ") WHERE rn <= ?", (keep_per_concept,))}
+            candidates = [r[0] for r in db.execute(
+                "SELECT note_id FROM session_notes "
+                "WHERE compacted = 0 AND created_at < ?", (cutoff,))]
+            targets = [n for n in candidates if n not in keep]
+            for nid in targets:
+                db.execute("UPDATE session_notes SET text = NULL, compacted = 1 "
+                           "WHERE note_id = ?", (nid,))
+            db.commit()
+            return {"compacted": len(targets), "kept_recent": len(keep),
+                    "cutoff_days": older_than_days}
+        except Exception as e:
+            logger.warning(f"session-note compaction failed: {e}")
+            return {"compacted": 0, "error": str(e)[:120]}
+
+    def concept_content_state(self, course_uid: str, concept_uid: str) -> str:
+        """'absent' | 'empty' | 'present' — the distinction a file cannot make.
+
+        `get_concept_content` returns "" for both a concept that was never
+        attempted and one that hydrated to nothing. Callers that need to tell
+        them apart — a resume path deciding what to build, a QA harness counting
+        failures — must use this instead of truthiness on the content.
+        """
+        try:
+            row = self._get_db().execute(
+                "SELECT content FROM concepts WHERE course_uid=? AND concept_uid=?",
+                (course_uid, concept_uid)).fetchone()
+            if row is None:
+                return "absent"
+            return "present" if (row[0] or "").strip() else "empty"
+        except Exception:
+            # Without the table we genuinely cannot tell, and saying so beats
+            # guessing.
+            return "unknown"
+
     def save_concept_content(self, course_uid: str, concept_uid: str, markdown: str) -> str:
-        """Write concept .md file. Returns the file path."""
+        """Write concept content to SQLite AND mirror it to the .md file.
+
+        Both, deliberately. The database is what everything else joins against —
+        the ledger, retained sources, claims and teaching objects are all keyed
+        the same way — while the file keeps the content human-readable, greppable
+        and exportable without a query. `content_hash` makes drift between the
+        two detectable rather than silent.
+        """
         content_dir = os.path.join(self.courses_dir, course_uid, "content")
         os.makedirs(content_dir, exist_ok=True)
         path = os.path.join(content_dir, f"{concept_uid}.md")
         with open(path, "w") as f:
             f.write(markdown)
+
+        try:
+            import hashlib
+            h = hashlib.sha256((markdown or "").encode("utf-8")).hexdigest()[:16]
+            title = ""
+            try:
+                title = (self.get_concept_by_uid(course_uid, concept_uid) or {}).get("title", "")
+            except Exception:
+                pass
+            db = self._get_db()
+            db.execute(
+                "INSERT OR REPLACE INTO concepts (course_uid, concept_uid, title, "
+                "content, content_hash, path, words, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (course_uid, concept_uid, title, markdown, h, path,
+                 len((markdown or "").split()), datetime.now().isoformat()))
+            try:
+                db.execute("DELETE FROM concepts_fts WHERE concept_uid=?",
+                           (concept_uid,))
+                db.execute("INSERT INTO concepts_fts (concept_uid, course_uid, "
+                           "title, content) VALUES (?,?,?,?)",
+                           (concept_uid, course_uid, title, markdown))
+            except sqlite3.OperationalError:
+                pass  # FTS5 unavailable; substring search still works
+            db.commit()
+        except sqlite3.OperationalError:
+            pass  # pre-v15 database
+        except Exception as e:
+            # The file is already written, so the content is not lost. A failed
+            # index write must not cost the caller their content.
+            logger.debug(f"concept DB write skipped for {concept_uid}: {e}")
+
         if self.on_content_saved:
             # Best-effort: a search index that cannot be updated must never
             # cost the caller their content write.

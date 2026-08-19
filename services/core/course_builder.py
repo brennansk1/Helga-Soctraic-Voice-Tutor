@@ -4908,6 +4908,48 @@ class ContentHydrator:
             logger.debug(f"[LEDGER] context lookup failed: {e}")
             return ""
 
+    def _store_teaching_object(self, conn, course_uid, concept_uid, title,
+                               markdown, ordinal=None):
+        """Parse the concept into addressable structure and store it beside the
+        prose. Deterministic, no model, so it cannot fail a build.
+
+        `prerequisites` are filled from the LEDGER rather than left empty: the
+        concepts this one was actually shown as already-taught neighbours are
+        the ones it was written to build on, which is a better answer than the
+        preceding-five-titles heuristic and the field the "cite, don't
+        re-teach" rule needs.
+        """
+        try:
+            from services.core.teaching_object import build, completeness, to_json
+        except ImportError:
+            try:
+                from teaching_object import build, completeness, to_json
+            except ImportError:
+                return
+        try:
+            prereqs = []
+            if ordinal is not None:
+                try:
+                    from services.core.taught_ledger import neighbours
+                    prereqs = [n["concept_uid"] for n in neighbours(
+                        conn, course_uid, title, "", k=4,
+                        before_ordinal=ordinal)]
+                except Exception:
+                    prereqs = []
+            obj = build(markdown, concept_uid, title, prerequisites=prereqs)
+            c = completeness(obj)
+            conn.execute(
+                "INSERT OR REPLACE INTO teaching_objects "
+                "(course_uid, concept_uid, obj, completeness) VALUES (?,?,?,?)",
+                (course_uid, concept_uid, to_json(obj), c["score"]))
+            conn.commit()
+            if c["score"] < 0.5:
+                logger.warning(f"  [HOLLOW] {title!r} filled only "
+                               f"{c['present']}/{c['of']} fields — missing "
+                               f"{c['missing']}")
+        except Exception as e:
+            logger.debug(f"[TEACHING_OBJECT] store failed for {title!r}: {e}")
+
     def _correct_redundancy(self, markdown, course_uid, concept_uid, title,
                             ordinal, course_title, complexity_role, source_type,
                             h_ctx, research_sources, research_confidence,
@@ -5095,6 +5137,8 @@ class ContentHydrator:
                     self.status_callback(f"STRUCT:REDUNDANT:{title}")
             record_concept(conn, course_uid, concept_uid, title, markdown,
                            ordinal, module=module, lesson=lesson)
+            self._store_teaching_object(conn, course_uid, concept_uid, title,
+                                        markdown, ordinal=ordinal)
             return red
         except Exception as e:
             logger.debug(f"[LEDGER] record failed for {title!r}: {e}")

@@ -56,6 +56,7 @@ degraded check is never mistaken for a clean one.
 import json
 import logging
 import math
+import os
 import re
 
 logger = logging.getLogger(__name__)
@@ -85,6 +86,53 @@ _STOP = {
     "his", "her", "she", "him", "all", "any", "one", "two", "may", "each",
     "also", "more", "most", "some", "other", "used", "use", "using", "about",
 }
+
+
+# --- embeddings --------------------------------------------------------------
+#
+# Served by Ollama rather than loaded into this process. bge-m3 is already
+# pulled (1.08 GB, 566.7M @ F16) and going through the same daemon that holds
+# the generation model means one memory budget to reason about instead of two —
+# which matters on a box measured at a ~15.0 GB ceiling where the tutor model is
+# already 13.51 GB.
+#
+# OPTIONAL BY CONSTRUCTION. Every failure path returns None and retrieval falls
+# back to lexical, because a course that builds without embeddings is strictly
+# better than a build that fails for want of them. `embedder_name` records which
+# path ran, so a degraded retrieval is never mistaken for a clean one.
+
+EMBED_MODEL = os.getenv("HELGA_EMBED_MODEL", "bge-m3")
+_EMBED_URL = os.getenv("OLLAMA_URL", "http://localhost:11434") + "/api/embed"
+_EMBED_STATE = {"failed": False}
+
+
+def embed(text):
+    """Vector for `text`, or None. Never raises, never blocks a build."""
+    if not text or _EMBED_STATE["failed"] or \
+            os.getenv("HELGA_EMBEDDINGS", "1").lower() in ("0", "false", "no"):
+        return None
+    try:
+        import requests
+        r = requests.post(_EMBED_URL,
+                          json={"model": EMBED_MODEL, "input": text[:2000]},
+                          timeout=30)
+        if r.status_code != 200:
+            return None
+        vecs = (r.json() or {}).get("embeddings") or []
+        return vecs[0] if vecs else None
+    except Exception as e:
+        # One failure disables it for the run. Retrying per concept would add a
+        # 30 s timeout to every hydration when the daemon is simply not serving
+        # embeddings, which is the difference between a slow build and a stalled
+        # one.
+        logger.info(f"[LEDGER] embeddings unavailable, retrieval stays lexical: {e}")
+        _EMBED_STATE["failed"] = True
+        return None
+
+
+def embedder_name():
+    """Which embedder actually ran, or None. Absent-vs-zero, again."""
+    return None if _EMBED_STATE["failed"] else EMBED_MODEL
 
 
 def ensure_schema(conn):
@@ -225,6 +273,12 @@ def record_concept(conn, course_uid, concept_uid, title, markdown,
     ensure_schema(conn)
     claims = extract_claims(markdown)
     sh = shingles(markdown)
+    if embedding is None:
+        # Embed the TITLE plus claims rather than the whole body: retrieval asks
+        # "what is this concept about", and a 600-word explanation dilutes that
+        # into the vocabulary of its examples.
+        embedding = embed(f"{title}. " + " ".join(claims[:6]))
+        embedder = embedder or embedder_name()
     cur = conn.cursor()
     cur.execute("DELETE FROM taught_concepts WHERE course_uid=? AND concept_uid=?",
                 (course_uid, concept_uid))
@@ -280,6 +334,8 @@ def neighbours(conn, course_uid, title, objectives="", k=DEFAULT_K,
     if not rows:
         return []
 
+    if embedding is None:
+        embedding = embed(f"{title}. {objectives}")
     want = set(_content_words(f"{title} {objectives}"))
     scored = []
     for uid, t, ordinal, emb in rows:

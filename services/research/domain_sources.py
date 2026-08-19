@@ -180,12 +180,235 @@ def wikidata_facts(query, limit=1):
     return out
 
 
+
+# --- open educational / scientific sources (2026-08-19) ----------------------
+#
+# The hydration research asked for sources that fill the SOURCELESS case, which
+# is the weakest path in the pipeline. Each of these was chosen for three
+# properties the existing set already demands: a machine-readable or blanket
+# open licence, no key, and a stable endpoint.
+#
+# LICENCE NOTES THAT COST REAL MONEY TO GET WRONG:
+#   * OpenAlex is CC0 with no restrictions, and offers a full bulk snapshot --
+#     the best fit for a system that must work offline.
+#   * PubChem is public domain (US government).
+#   * arXiv METADATA is CC0 and safe; arXiv FULL TEXT is not ours to
+#     redistribute, so only abstracts are taken here.
+#   * Stack Exchange dumps are deliberately NOT wired: the content is CC-BY-SA
+#     but since 2024 the dump terms exclude commercial use, redistribution and
+#     LLM training. That is a licence trap, not an oversight.
+#   * NC and ND variants are avoided everywhere, as elsewhere in this project.
+
+
+def openalex_works(query, limit=3):
+    """OpenAlex — CC0 scholarly metadata and abstracts, no key, no tier.
+
+    The broadest single answer to "this subject has no textbook": almost every
+    field has literature, and CC0 means the abstract can be used without any
+    downstream licence question.
+    """
+    data = _get_json("https://api.openalex.org/works",
+                     {"search": query, "per-page": limit,
+                      "mailto": "helga@localhost"}, timeout=20)
+    if not data:
+        return []
+    out = []
+    for w in (data.get("results") or [])[:limit]:
+        # OpenAlex stores abstracts as an inverted index to sidestep publisher
+        # restrictions, so it has to be rebuilt into prose.
+        inv = w.get("abstract_inverted_index") or {}
+        text = ""
+        if inv:
+            positions = {}
+            for word, idxs in inv.items():
+                for i in idxs:
+                    positions[i] = word
+            text = " ".join(positions[i] for i in sorted(positions))
+        if not text:
+            continue
+        out.append({
+            "type": "scholarly", "source": "OpenAlex",
+            "title": w.get("display_name") or query,
+            "url": w.get("doi") or w.get("id") or "",
+            "text": text[:600], "license": "CC0",
+        })
+    return out
+
+
+def pubchem_compound(query, limit=1):
+    """PubChem — public-domain chemistry ground truth."""
+    data = _get_json(
+        f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{query}/JSON",
+        {}, timeout=20)
+    if not data:
+        return []
+    out = []
+    for c in (data.get("PC_Compounds") or [])[:limit]:
+        props = {}
+        for p in (c.get("props") or []):
+            label = (p.get("urn") or {}).get("label")
+            val = (p.get("value") or {})
+            v = val.get("sval") or val.get("fval") or val.get("ival")
+            if label and v is not None:
+                props[label] = v
+        if not props:
+            continue
+        cid = ((c.get("id") or {}).get("id") or {}).get("cid")
+        out.append({
+            "type": "structured_fact", "source": "PubChem",
+            "title": f"{query} (PubChem)",
+            "url": f"https://pubchem.ncbi.nlm.nih.gov/compound/{cid}" if cid else "",
+            "text": "; ".join(f"{k}: {v}" for k, v in list(props.items())[:6])[:400],
+            "license": "public domain",
+        })
+    return out
+
+
+def arxiv_abstracts(query, limit=2):
+    """arXiv ABSTRACTS only. Metadata is CC0; full text is not ours to mirror.
+
+    Deliberately not fetching PDFs. The default arXiv licence grants arXiv
+    distribution rights, not ours, and a system that generates teaching material
+    from mirrored papers would be redistributing them by another name.
+    """
+    import re as _re
+    from urllib.parse import urlencode
+    import urllib.request
+    url = ("http://export.arxiv.org/api/query?"
+           + urlencode({"search_query": f"all:{query}", "max_results": limit}))
+    try:
+        with urllib.request.urlopen(url, timeout=20) as r:
+            xml = r.read().decode("utf-8", "replace")
+    except Exception as e:
+        logger.debug(f"arxiv failed for {query!r}: {e}")
+        return []
+    out = []
+    for entry in _re.findall(r"<entry>(.*?)</entry>", xml, _re.DOTALL)[:limit]:
+        t = _re.search(r"<title>(.*?)</title>", entry, _re.DOTALL)
+        a = _re.search(r"<summary>(.*?)</summary>", entry, _re.DOTALL)
+        u = _re.search(r"<id>(.*?)</id>", entry, _re.DOTALL)
+        if not (t and a):
+            continue
+        out.append({
+            "type": "scholarly", "source": "arXiv",
+            "title": " ".join(t.group(1).split())[:200],
+            "url": u.group(1).strip() if u else "",
+            "text": " ".join(a.group(1).split())[:600],
+            "license": "metadata CC0; abstract only",
+        })
+    return out
+
+
+def gutenberg_texts(query, limit=2):
+    """Project Gutenberg via Gutendex — public-domain full texts.
+
+    The humanities counterpart to OpenAlex: strong where a subject is old
+    enough to be out of copyright and poorly served by open textbooks.
+    """
+    data = _get_json("https://gutendex.com/books", {"search": query}, timeout=20)
+    if not data:
+        return []
+    out = []
+    for b in (data.get("results") or [])[:limit]:
+        authors = ", ".join(a.get("name", "") for a in (b.get("authors") or []))
+        out.append({
+            "type": "book", "source": "Project Gutenberg",
+            "title": b.get("title") or query,
+            "url": (b.get("formats") or {}).get("text/html") or "",
+            "text": f"{b.get('title')} by {authors}. Subjects: "
+                    + "; ".join((b.get("subjects") or [])[:6]),
+            "license": "public domain",
+        })
+    return out
+
+
+def oeis_sequence(query, limit=1):
+    """OEIS — the authoritative reference for integer sequences.
+
+    Narrow but unmatched where it applies: a concept about Fibonacci or Catalan
+    numbers gets the canonical definition and terms rather than a recollection.
+    """
+    data = _get_json("https://oeis.org/search",
+                     {"q": query, "fmt": "json"}, timeout=20)
+    if not data:
+        return []
+    results = data if isinstance(data, list) else (data.get("results") or [])
+    out = []
+    for r in (results or [])[:limit]:
+        if not isinstance(r, dict) or not r.get("name"):
+            continue
+        out.append({
+            "type": "structured_fact", "source": "OEIS",
+            "title": f"A{r.get('number', ''):06d}" if r.get("number") is not None else query,
+            "url": f"https://oeis.org/A{r.get('number', 0):06d}",
+            "text": f"{r.get('name')}. Terms: {(r.get('data') or '')[:200]}",
+            "license": "CC BY-SA 4.0",
+        })
+    return out
+
+
+def doab_books(query, limit=2):
+    """Directory of Open Access Books — 94k+ peer-reviewed open books.
+
+    Filtered to derivative-safe licences only. DOAB indexes NC and ND titles
+    alongside open ones, and a course generated from a NoDerivatives book is a
+    derivative work — so an unrecognised licence is dropped rather than assumed,
+    the same fail-closed rule the image sources use.
+    """
+    data = _get_json("https://directory.doabooks.org/rest/search",
+                     {"query": query, "expand": "metadata"}, timeout=25)
+    if not data:
+        return []
+    out = []
+    for b in (data if isinstance(data, list) else [])[:limit * 3]:
+        meta = {m.get("key"): m.get("value")
+                for m in (b.get("metadata") or []) if isinstance(m, dict)}
+        lic = (meta.get("dc.rights.uri") or meta.get("dc.rights") or "").lower()
+        if not lic or "nc" in lic or "nd" in lic:
+            continue  # unknown, NonCommercial or NoDerivatives -> refuse
+        out.append({
+            "type": "book", "source": "DOAB",
+            "title": meta.get("dc.title") or b.get("name") or query,
+            "url": meta.get("dc.identifier.uri") or "",
+            "text": (meta.get("dc.description.abstract") or "")[:600],
+            "license": lic[:80],
+        })
+        if len(out) >= limit:
+            break
+    return out
+
+
+# PROBED AND NOT WIRED (2026-08-19), recorded so nobody re-adds them from a list:
+#
+#   * LibreTexts   — the largest open STEM corpus, and exactly what the
+#                    sourceless case wants, but it exposes no search API. It is
+#                    a MediaWiki farm per subject; reaching it means per-domain
+#                    endpoints and per-book licence checks (CC-BY / BY-SA /
+#                    BY-NC-SA vary by book), which is a project rather than a
+#                    function.
+#   * PhET         — CC-BY and ideal for diagrams, but its catalogue is a
+#                    JavaScript app with no public JSON index.
+#   * NIST DLMF    — authoritative for special functions and published as HTML
+#                    only; no API.
+#
+# All three are worth having and none is a one-function addition.
+
+
 # Registry: source -> domains it serves. "*" means every subject.
 DOMAIN_SOURCES = (
     ("met_museum", met_museum, ("art",)),
     ("art_institute", art_institute, ("art",)),
     ("loc_newspapers", loc_chronicling_america, ("history", "social")),
+    ("pubchem", pubchem_compound, ("science",)),
+    ("oeis", oeis_sequence, ("science",)),
+    ("doab", doab_books, ("history", "philosophy", "social", "art")),
+    ("arxiv", arxiv_abstracts, ("science",)),
+    ("gutenberg", gutenberg_texts, ("history", "philosophy", "art")),
     ("wikidata", wikidata_facts, ("*",)),
+    # OpenAlex last and universal: it answers for almost any subject, which is
+    # exactly why it must not crowd out a domain-specific source that knows
+    # more. `budget` in fetch_domain_sources is what enforces that ordering.
+    ("openalex", openalex_works, ("*",)),
 )
 
 
