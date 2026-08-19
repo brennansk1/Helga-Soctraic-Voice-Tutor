@@ -3883,20 +3883,95 @@ class MnemosyneFSM:
                 if hasattr(self, '_pending_course_params'):
                     del self._pending_course_params
 
-                sb = SkeletonBuilder(
-                    providers=providers,
-                    status_callback=self.send_status_update,
-                    course_depth=depth,
-                    teaching_style=teaching_style,
-                    storage=self.storage,
-                    scope=_scope,
-                    mastery=_mastery,
-                    starting_from=_start,
-                )
-                try:
-                    course_uid = sb.build(topic, max_depth=depth)
-                finally:
-                    sb.close()
+                # AN UPLOADED BOOK'S STRUCTURE DOMINATES.
+                #
+                # Two pipelines that make opposite decisions. The researched
+                # path INVENTS structure and sizes it to a calendar; when the
+                # user supplies the file, the author already divided the
+                # subject with the whole of it in view, and the course conforms
+                # to their divisions: a textbook's chapters become modules and
+                # its sections lessons, a novel's chapters become lessons with
+                # no invented modules at all.
+                #
+                # Previously an upload was flattened to text and handed to the
+                # researched builder as a SUPPLEMENT — the advertised feature
+                # ("build a course from your book") routed through a path where
+                # the book merely seasoned an invented skeleton.
+                uploaded_book = None
+                if epub_filepath:
+                    try:
+                        from services.research.book_reader import open_book
+                        from services.core.book_skeleton import (
+                            build_from_book, summarise as book_summarise)
+                        from services.common.llm_utils import llm_generate_json
+                        self.send_status_update(
+                            f"Reading {os.path.basename(epub_filepath)} — "
+                            f"structure first, then every chapter...")
+                        uploaded_book = open_book(epub_filepath)
+                    except Exception as e:
+                        logging.error(f"[BOOK] reader unavailable: {e}")
+
+                if uploaded_book:
+                    shape_course = build_from_book(
+                        epub_filepath, self.storage,
+                        course_title=topic or None,
+                        llm_json_fn=llm_generate_json,
+                        status_callback=self.send_status_update)
+                    if not shape_course:
+                        msg = (f"Could not build a course from "
+                               f"{os.path.basename(epub_filepath)}.")
+                        self.send_status_update(msg)
+                        self.speak(msg)
+                        return
+                    course_uid = shape_course["uid"]
+                    _summary = book_summarise(shape_course)
+                    logging.info(f"[PIPELINE] book course {course_uid}: {_summary}")
+                    self.send_status_update(
+                        f"STRUCT:BOOK:{_summary['shape']}:{_summary['modules']}"
+                        f":{_summary['lessons']}:{_summary['concepts']}")
+                    # THE GATE. A book course's quality criterion is fidelity to
+                    # its book — linkage, order, naming, density — which the
+                    # researched course's school-shape bands would wrongly fail
+                    # (a 59-lesson novel is CORRECT for a novel). Recorded on
+                    # the course either way; a failed gate warns rather than
+                    # aborts, because a course with two bare titles is a course
+                    # with two bare titles, not no course.
+                    try:
+                        sys.path.insert(0, os.path.join(
+                            os.path.dirname(os.path.dirname(
+                                os.path.dirname(os.path.abspath(__file__)))),
+                            "tools"))
+                        from book_course_qa import run as book_qa
+                        _qa = book_qa(shape_course,
+                                      book_chapters=len(uploaded_book.chapters))
+                        shape_course["book_qa"] = {
+                            "verdict": _qa["verdict"], "failed": _qa["failed"]}
+                        self.storage.courses.create_course(shape_course)
+                        logging.info(f"[PIPELINE] book QA: {_qa['verdict']}"
+                                     + (f" failed={_qa['failed']}"
+                                        if _qa["failed"] else ""))
+                        self.send_status_update(
+                            f"CHECK:BOOK_QA:{_qa['verdict']}")
+                        if _qa["failed"]:
+                            self.send_status_update(
+                                f"CHECK:BOOK_QA_FAILED:{','.join(_qa['failed'])}")
+                    except Exception as e:
+                        logging.warning(f"[PIPELINE] book QA skipped: {e}")
+                else:
+                    sb = SkeletonBuilder(
+                        providers=providers,
+                        status_callback=self.send_status_update,
+                        course_depth=depth,
+                        teaching_style=teaching_style,
+                        storage=self.storage,
+                        scope=_scope,
+                        mastery=_mastery,
+                        starting_from=_start,
+                    )
+                    try:
+                        course_uid = sb.build(topic, max_depth=depth)
+                    finally:
+                        sb.close()
 
                 if not course_uid:
                     self.send_status_update("Skeleton generation failed.")
@@ -3942,6 +4017,12 @@ class MnemosyneFSM:
                 # A3: if the user supplied a document, teach from IT. Previously
                 # the uploaded file was only used to guess a topic from its
                 # filename and its contents were never read.
+                # The hydrator READS the uploaded book chapter by chapter —
+                # each concept carries the chapter it came from, so its content
+                # is written from that chapter's text rather than from the
+                # model's recollection of the book.
+                if uploaded_book is not None:
+                    hydrator.book = uploaded_book
                 if source_text:
                     hydrator.source_document = source_text
                     # B13.13: a book-sourced course illustrates itself. Handing

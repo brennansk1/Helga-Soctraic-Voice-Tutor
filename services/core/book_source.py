@@ -349,7 +349,8 @@ def parse_concepts(raw, want):
     return out[:want]
 
 
-def attach_concepts(course, book, llm_json_fn, per_lesson=3):
+def attach_concepts(course, book, llm_json_fn, per_lesson=3,
+                    status_callback=None):
     """Name every empty concept in a book-shaped course, chapter by chapter.
 
     One call per lesson, not per concept: the model reads the chapter once and
@@ -358,6 +359,11 @@ def attach_concepts(course, book, llm_json_fn, per_lesson=3):
     named ones do.
     """
     named, skipped = 0, 0
+    all_lessons = [l for m in (course.get("modules") or [])
+                   for u in (m.get("units") or [])
+                   for l in (u.get("lessons") or [])]
+    total = len(all_lessons)
+    done = 0
     for m in (course.get("modules") or []):
         for u in (m.get("units") or []):
             for lesson in (u.get("lessons") or []):
@@ -365,6 +371,16 @@ def attach_concepts(course, book, llm_json_fn, per_lesson=3):
                 slots = lesson.get("concepts") or []
                 if not ch_order or not slots:
                     continue
+                done += 1
+                if status_callback:
+                    try:
+                        # Chapter-by-chapter progress: a 59-chapter book takes
+                        # tens of minutes, and a spinner with no counter is
+                        # indistinguishable from a hang.
+                        status_callback(f"BOOK:READING:{done}:{total}:"
+                                        f"{lesson.get('title','')[:60]}")
+                    except Exception:
+                        pass
                 prompt = concept_prompt(book, ch_order, len(slots),
                                         course_title=course.get("title", ""),
                                         chapter_part=lesson.get("chapter_part"),
@@ -378,6 +394,12 @@ def attach_concepts(course, book, llm_json_fn, per_lesson=3):
                 except Exception as e:
                     logger.warning(f"[BOOK] concept naming failed for chapter "
                                    f"{ch_order}: {e}")
+                    if status_callback:
+                        try:
+                            status_callback(f"BOOK:WARN:CHAPTER_SKIPPED:"
+                                            f"{lesson.get('title','')[:50]}")
+                        except Exception:
+                            pass
                     skipped += len(slots)
                     continue
                 got = parse_concepts(raw, len(slots))

@@ -1172,7 +1172,16 @@ def upload_epub():
         }
         try:
             resp = requests.post(f'{SERVICES["core"]}/event', json=event, timeout=60)
-            return jsonify({'status': 'processing', 'message': 'EPUB uploaded and course creation started. Check progress in the status bar.'}), 202
+            # The message states what the feature ACTUALLY does now: the book's
+            # own structure becomes the course (a textbook's chapters become
+            # modules and its sections lessons; a novel's chapters become
+            # lessons), and every concept is written from the chapter it came
+            # from. Advertising must match the machinery.
+            return jsonify({'status': 'processing', 'message':
+                'Book uploaded. The course will follow the book\'s own '
+                'structure — chapters become lessons — and every concept is '
+                'read from the chapter it belongs to. Progress appears in the '
+                'status bar chapter by chapter.'}), 202
         except Exception as e:
             logger.error(f"Failed to forward EPUB to core: {e}")
             return jsonify({'error': 'Upload succeeded but course creation service is unavailable. Try again later.'}), 503

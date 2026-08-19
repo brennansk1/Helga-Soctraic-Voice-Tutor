@@ -52,6 +52,7 @@ band.
 """
 
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -230,7 +231,8 @@ def summarise(course):
 
 
 def build_from_book(path, storage, course_title=None, llm_json_fn=None,
-                    concepts_per_lesson=3, max_pages=None):
+                    concepts_per_lesson=None, max_pages=None,
+                    status_callback=None):
     """The product promise, end to end: a book file becomes a course.
 
     Adjacent to the researched-course pipeline rather than inside it, because
@@ -250,13 +252,28 @@ def build_from_book(path, storage, course_title=None, llm_json_fn=None,
     except ImportError:
         from book_reader import open_book
 
+    def _say(msg):
+        if status_callback:
+            try:
+                status_callback(msg)
+            except Exception:
+                pass  # a progress line must never cost the build
+
     book = open_book(path, max_pages=max_pages)
     if not book:
         logger.warning(f"[BOOK] could not read {path}")
+        _say(f"BOOK:UNREADABLE:{os.path.basename(path)}")
         return None
+    o = book.outline()
+    logger.info(f"[BOOK] {book.title!r}: format={o['format']} "
+                f"chapters={o['chapters']} parts={len(o['parts'])} "
+                f"words={o['words']:,}")
+    _say(f"BOOK:PARSED:{o['format']}:{o['chapters']}:{len(o['parts'])}:{o['words']}")
 
     course = build_structure(book, course_title=course_title,
                              concepts_per_lesson=concepts_per_lesson)
+    _say(f"BOOK:SHAPE:{course['book_shape']['shape']}:"
+         f"{course['book_shape']['why']}")
 
     # Concepts are named by READING the chapter, never invented from the title.
     # Without this the lessons carry empty concept slots, which is a visibly
@@ -268,7 +285,8 @@ def build_from_book(path, storage, course_title=None, llm_json_fn=None,
             from book_source import attach_concepts
         try:
             course["book_concepts"] = attach_concepts(
-                course, book, llm_json_fn, per_lesson=concepts_per_lesson)
+                course, book, llm_json_fn, per_lesson=concepts_per_lesson,
+                status_callback=status_callback)
         except Exception as e:
             logger.warning(f"[BOOK] concept naming failed: {e}")
     else:
