@@ -109,16 +109,44 @@ def check_coherence(struct, max_report=10):
             counts[term] = counts.get(term, 0) + 1
     salient = {t for t, n in counts.items() if n >= 2}
 
+    # NARROWED, because the first version was mostly false positives.
+    #
+    # Defining "introduced" as the LEADING word means a multi-word title cannot
+    # introduce its own subject, and the check fired on:
+    #
+    #   "Matrix Transpose"      flagged for using 'transpose'
+    #   "Vector Space Elements" flagged for using 'space'
+    #   "Linear Transformations" at #24 vs 'transformation' at #25
+    #
+    # Each of those concepts IS the introduction. A dense subject reuses its
+    # vocabulary constantly, and a check that fires on that is noise — worse
+    # than no check, because a gate people learn to ignore stops protecting
+    # anything.
+    #
+    # The defect actually worth catching is narrow: a concept using an idea that
+    # the course does not treat ANYWHERE until a later MODULE. Same-module
+    # ordering is editorial; crossing a module boundary is a curriculum error.
+    module_of = {i: m for i, (m, _) in enumerate(concepts)}
     forward = []
     for idx, (module, title) in enumerate(concepts):
-        for term in _terms(title):
+        terms = _terms(title)
+        for term in terms:
             if term not in salient:
                 continue
             intro = first_seen.get(term, idx)
-            # Same-position use is the introduction itself.
-            if intro > idx:
-                forward.append({"concept": title, "term": term,
-                                "introduced_at": intro, "used_at": idx})
+            if intro <= idx:
+                continue
+            # Only across a module boundary. Within a module, ordering is
+            # editorial and the leading-word heuristic is too weak to judge it:
+            # "Matrix Transpose" introduces the transpose as surely as
+            # "Transpose Rules" does, and no title-text rule separates them.
+            # Across modules the claim is stronger — the course spends a whole
+            # module using an idea it does not treat until a later one.
+            if module_of.get(intro, module) <= module:
+                continue
+            forward.append({"concept": title, "term": term,
+                            "introduced_at": intro, "used_at": idx,
+                            "modules": f"{module} -> {module_of.get(intro)}"})
 
     total = len(concepts)
     rate = len(forward) / max(1, total)
