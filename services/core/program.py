@@ -216,3 +216,81 @@ def scheduler_state(program, progress=0.0, seconds_since_turn=None,
         "builds_in_flight": builds_in_flight,
         "build_paused": build_paused,
     }
+
+
+def propose_slot_subjects(subject, template, llm_json_fn, brief_fn=None):
+    """Real course titles for each slot, or {} .
+
+    THE GAP THIS FILLS
+    ------------------
+    `plan_from_template` accepted `slot_subjects` and nothing ever populated it,
+    so an "Associate in Nursing" produced twenty courses named "Nursing: gen_ed
+    1" through "Nursing: elective 3". The structure was right — 20 courses, 4
+    terms, a validated prerequisite graph — wrapped around twenty empty names.
+
+    A degree is the one place where naming the courses IS the design. Getting
+    "Anatomy & Physiology I, Microbiology, Pharmacology" rather than "core 1,
+    core 2, core 3" is the difference between a curriculum and a placeholder.
+
+    THE DIVISION OF LABOUR, AGAIN
+    -----------------------------
+    The model PROPOSES the course list — which subjects make up a nursing
+    associate is world knowledge, and there is no machine-readable registry of
+    degree compositions to look it up in. Deterministic code DISPOSES: each
+    proposed course is a subject in its own right, and the ordinary per-course
+    machinery then decides whether it has evidence, how long it should be, and
+    whether it is over-stretched.
+
+    So the model never gets to say "this degree is well-sourced". It only says
+    "these are the courses", and each course is then held to the same bar as any
+    other course — which is exactly the guarantee asked for.
+    """
+    tpl = TEMPLATES.get(template)
+    if not tpl:
+        return {}
+    wanted = {slot: n for slot, n in tpl["slots"].items() if n > 0}
+    if not wanted:
+        return {}
+
+    lines = "\n".join(f"  {slot}: {n} courses" for slot, n in wanted.items())
+    try:
+        data = llm_json_fn(
+            prompt=(f"Name the actual courses in a real {tpl['label']} programme "
+                    f"in {subject}. Use the titles a real institution would "
+                    f"print in its catalogue.\n\nSlots to fill:\n{lines}\n\n"
+                    f"gen_ed is general education outside the major; core is the "
+                    f"major itself in teaching order; elective is optional "
+                    f"depth; capstone is the final project or practicum."),
+            sys_prompt="You know how degree programmes are composed. JSON only.",
+            schema={"type": "object", "properties": {
+                slot: {"type": "array", "items": {"type": "string"}}
+                for slot in wanted}, "required": list(wanted)},
+            max_tokens=900,
+        )
+    except Exception as e:
+        logger.warning(f"slot proposal failed for {subject!r}: {e}")
+        return {}
+
+    # Shape drift: the schema asks for an object and a list wrapping it comes
+    # back often enough that rejecting it has cost real builds three times.
+    if isinstance(data, list):
+        data = next((d for d in data if isinstance(d, dict)), None)
+    if not isinstance(data, dict):
+        return {}
+
+    out = {}
+    for slot, n in wanted.items():
+        titles = [t.strip() for t in (data.get(slot) or [])
+                  if isinstance(t, str) and t.strip()]
+        # Deduplicate: the same subject filling two slots under one name is the
+        # padding `validate()` rejects, and it is better caught here where a
+        # retry is cheap.
+        seen, uniq = set(), []
+        for t in titles:
+            k = t.lower()
+            if k not in seen:
+                seen.add(k)
+                uniq.append(t)
+        if uniq:
+            out[slot] = uniq[:n]
+    return out

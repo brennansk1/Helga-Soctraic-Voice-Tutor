@@ -1502,6 +1502,9 @@ class SkeletonBuilder:
         _sf = getattr(self, "_scope_fit", None)
         if _sf:
             course_dict["scope_fit"] = _sf
+        _rl = getattr(self, "_research_loop_result", None)
+        if _rl:
+            course_dict["research_loop"] = _rl
 
         self._backfill_uncovered_chapters(course_dict, topic)
 
@@ -1666,6 +1669,26 @@ class SkeletonBuilder:
                             f"{_why}")
                 if self.status_callback:
                     self.status_callback(f"STRUCT:LENGTH:{_target}:{_why}")
+
+            # SOURCELESS SUBJECTS GET AN ITERATIVE SEARCH, NOT A SINGLE SWEEP.
+            #
+            # With a published syllabus the structure comes from the book and one
+            # sweep is enough. Without one, a single pass of fixed queries is all
+            # a subject like "Dungeon Mastering" ever gets — precisely the case
+            # where the pipeline has least to work with.
+            #
+            # The model proposes the checklist and the queries, because knowing
+            # what a course on a subject should cover is world knowledge. The
+            # EXIT is measured coverage of that checklist, never the model's
+            # satisfaction — see services/research/research_loop.py for why that
+            # distinction is load-bearing.
+            if not (brief or {}).get("found"):
+                try:
+                    self._research_loop_result = self._run_sourceless_research(
+                        topic)
+                except Exception as e:
+                    logger.warning(f"[LOOP] sourceless research failed: {e}")
+                    self._research_loop_result = None
 
             _msg = describe(self._scope_fit)
             if _msg:
@@ -2031,6 +2054,99 @@ class SkeletonBuilder:
                 "from_syllabus": True,
             })
         return out
+
+    def _run_sourceless_research(self, topic):
+        """Iterative research for a subject with no published syllabus.
+
+        Returns the loop's record, or None. Never raises into the build: a
+        subject with no syllabus is already the degraded case, and failing the
+        whole build because the fallback failed would be worse than proceeding
+        with what the single sweep found.
+        """
+        try:
+            from services.research.research_loop import (
+                checklist_from, run_research_loop)
+        except ImportError:
+            from research_loop import checklist_from, run_research_loop
+
+        # 1. The model proposes what a course on this must cover. World
+        #    knowledge, which is what it is good at.
+        proposed = []
+        try:
+            data = llm_generate_json(
+                prompt=(f"A course on \"{topic}\" is being built and no published "
+                        f"syllabus exists for it. List the 8-12 topics such a "
+                        f"course must cover to be taken seriously by someone who "
+                        f"knows the subject. Specific topics, not chapter "
+                        f"headings."),
+                sys_prompt="You design curricula. Answer only with JSON.",
+                schema={"type": "object", "properties": {"topics": {
+                    "type": "array", "items": {"type": "string"}}},
+                    "required": ["topics"]},
+                max_tokens=500,
+            )
+            # SHAPE DRIFT, third occurrence. The schema asks for an object and
+            # the model returns [{"topics": [...]}] — a list wrapping it. The
+            # earlier two cost a whole build each ('str' has no attribute 'get'
+            # in the lesson path, 'list' has no attribute 'get' in the subtree).
+            # Unwrap rather than reject: the content was correct both times.
+            if isinstance(data, list):
+                data = next((d for d in data if isinstance(d, dict)), None)
+            if isinstance(data, dict):
+                topics = data.get("topics")
+                # And the object itself may be a bare list of strings.
+                if not topics and len(data) == 1:
+                    only = next(iter(data.values()))
+                    topics = only if isinstance(only, list) else None
+                proposed = [t for t in (topics or [])
+                            if isinstance(t, str) and t.strip()][:12]
+            elif isinstance(data, list):
+                proposed = [t for t in data if isinstance(t, str) and t.strip()][:12]
+        except Exception as e:
+            logger.warning(f"[LOOP] checklist proposal failed: {e}")
+
+        checklist = checklist_from({"syllabi": []}, model_fallback=proposed)
+        if not checklist["items"]:
+            return None
+        logger.info(f"[LOOP] {len(checklist['items'])} checklist items "
+                    f"({checklist['source']}) for {topic!r}")
+
+        # 2. Search each outstanding item through the research service. The
+        #    queries are the model's items; the COVERAGE test is deterministic.
+        import requests as _rq
+        base = os.getenv("RESEARCH_URL", "http://helga-research:5006")
+
+        def _search(query):
+            try:
+                r = _rq.post(f"{base}/api/research_concept",   # NOT /api/research/concept — 404
+                             json={"title": query, "module_title": topic,
+                                   "course_title": topic, "mastery": self.mastery},
+                             timeout=90)
+                if r.status_code != 200:
+                    return []
+                payload = r.json() or {}
+                # A DEGRADED result is not a covered topic. Returning its sources
+                # would let a throttled search retire a checklist item.
+                if payload.get("search_degraded") and not payload.get("sources"):
+                    return []
+                return payload.get("sources") or []
+            except Exception as e:
+                logger.debug(f"[LOOP] search failed for {query!r}: {e}")
+                return []
+
+        result = run_research_loop(checklist["items"], search_fn=_search)
+        result["checklist_source"] = checklist["source"]
+        result["authoritative"] = checklist["authoritative"]
+        if not checklist["authoritative"]:
+            result["note"] = checklist.get("note", "")
+        logger.info(f"[LOOP] {result.get('covered')}/{result.get('items')} "
+                    f"covered in {result.get('rounds')} round(s); stopped "
+                    f"because {result.get('stopped_because')}")
+        if self.status_callback:
+            self.status_callback(
+                f"CHECK:RESEARCH_LOOP:{result.get('coverage_pct')}:"
+                f"{result.get('stopped_because')}")
+        return result
 
     def _backfill_uncovered_chapters(self, course_dict, topic, cap=6):
         """Add lessons for real syllabus chapters the outline never reached.

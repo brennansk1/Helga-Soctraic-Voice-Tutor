@@ -135,3 +135,66 @@ class TestSchedulerIntegration(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSlotSubjectsAreProposed(unittest.TestCase):
+    """A degree is the one place where naming the courses IS the design.
+
+    `plan_from_template` accepted `slot_subjects` and NOTHING ever populated it,
+    so an "Associate in Nursing" produced twenty courses called
+    "Nursing: gen_ed 1" ... "Nursing: elective 3". Correct structure -- 20
+    courses, 4 terms, a validated prerequisite graph -- wrapped around twenty
+    empty names.
+    """
+
+    def _fake_llm(self, payload):
+        return lambda **kw: payload
+
+    def test_proposed_titles_replace_the_placeholders(self):
+        from services.core.program import propose_slot_subjects
+        payload = {"gen_ed": ["ENG 101"], "core": ["NUR 101"],
+                   "elective": ["NUR 301"], "capstone": ["NUR 490"]}
+        slots = propose_slot_subjects("Nursing", "associate",
+                                      self._fake_llm(payload))
+        p = plan_from_template("Nursing", "associate", slot_subjects=slots)
+        titles = [c["title"] for c in p["courses"]]
+        assert "ENG 101" in titles and "NUR 490" in titles
+
+    def test_a_wrapped_list_is_unwrapped(self):
+        """Shape drift again: the schema asks for an object and a list wrapping
+        it comes back often enough that rejecting it has cost real builds."""
+        from services.core.program import propose_slot_subjects
+        payload = [{"gen_ed": ["ENG 101"], "core": ["NUR 101"],
+                    "elective": ["X"], "capstone": ["Y"]}]
+        slots = propose_slot_subjects("Nursing", "associate",
+                                      self._fake_llm(payload))
+        assert slots["gen_ed"] == ["ENG 101"]
+
+    def test_duplicates_within_a_slot_are_dropped(self):
+        """The same subject twice under one name is the padding validate()
+        rejects, and it is cheaper to catch here."""
+        from services.core.program import propose_slot_subjects
+        payload = {"gen_ed": ["ENG 101", "eng 101", "BIO 101"], "core": ["N"],
+                   "elective": ["E"], "capstone": ["C"]}
+        slots = propose_slot_subjects("Nursing", "associate",
+                                      self._fake_llm(payload))
+        assert slots["gen_ed"] == ["ENG 101", "BIO 101"]
+
+    def test_a_failed_proposal_degrades_to_placeholders(self):
+        """A degree with placeholder names is poor; a crash is worse."""
+        from services.core.program import propose_slot_subjects
+
+        def boom(**kw):
+            raise RuntimeError("model down")
+
+        assert propose_slot_subjects("Nursing", "associate", boom) == {}
+        p = plan_from_template("Nursing", "associate", slot_subjects={})
+        assert len(p["courses"]) == 20
+
+    def test_a_slot_is_never_overfilled(self):
+        from services.core.program import propose_slot_subjects
+        payload = {"gen_ed": [f"G{i}" for i in range(20)], "core": ["C"],
+                   "elective": ["E"], "capstone": ["K"]}
+        slots = propose_slot_subjects("Nursing", "associate",
+                                      self._fake_llm(payload))
+        assert len(slots["gen_ed"]) == TEMPLATES["associate"]["slots"]["gen_ed"]
