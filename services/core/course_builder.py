@@ -2676,6 +2676,21 @@ class SkeletonBuilder:
                     self.fallback_count += 1
                     logger.warning(f"  [FALLBACK] Using fallback lesson title for unit '{u_title}' — LLM returned empty.")
 
+                # SHAPE DRIFT KILLS A WHOLE BUILD. Measured: 1 run in 3 died
+                # here with "'str' object has no attribute 'get'" because the
+                # model returned ["Lesson one", "Lesson two"] where a list of
+                # objects was asked for. Every other stage in this file already
+                # tolerates that -- the one-shot subtree does it for units -- and
+                # this one did not, so a stylistic choice by the model destroyed
+                # a 20-minute build.
+                #
+                # Coerce rather than reject: a bare string IS the title, which is
+                # the only field required here.
+                lessons_data = [
+                    ({"title": item} if isinstance(item, str) else item)
+                    for item in (lessons_data or [])
+                    if isinstance(item, (str, dict))
+                ]
                 lessons_data = lessons_data[:base_lessons]
 
                 # Track all concepts within this unit for cross-lesson dedup

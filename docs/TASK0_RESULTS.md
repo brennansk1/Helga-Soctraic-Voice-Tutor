@@ -668,3 +668,53 @@ structural one: a gap that was reproducible is now not.
 `_spine_from_syllabus` began with `if not outlines: return None`, so a subject
 where research found nothing at all — precisely when a curated spine is most
 useful — never consulted one. Fixed, with a test.
+
+---
+
+# Median-of-3: the honest number is 80%, and one build in three crashed
+
+Applying this project's own rule to its own headline. Three identical runs:
+
+| run | coverage | missed |
+|---|---|---|
+| 1 | **80%** | Gram-Schmidt/QR · symmetric & positive definite |
+| 2 | **80%** | symmetric & positive definite · applications |
+| 3 | **crashed** | — |
+
+**Median: 80%.** The 90% figures quoted from single runs were the optimistic tail
+of the distribution, not the centre. This is exactly the discipline that was
+written down after the 70/90/80 spread and then not applied to the next result —
+worth noticing, because the temptation to quote the best run is strongest when
+the best run agrees with the change just made.
+
+## The crash is the more serious finding
+
+```
+File "course_builder.py", line 2686, in _build_substructures_progressive
+    l_title = self._normalize_title(lesson_data.get("title", ""))
+AttributeError: 'str' object has no attribute 'get'
+```
+
+The model returned `["Lesson one", "Lesson two"]` where a list of objects was
+requested — a stylistic choice, not an error — and it destroyed a 20-minute
+build. **One run in three.** Every other stage in this file already tolerates
+that drift (the one-shot subtree does it for units); this one did not.
+
+Now coerced rather than rejected: a bare string *is* the title, which is the only
+field required at that point. A test asserts the normalisation happens before any
+`.get()` is reached, so the guard cannot be quietly removed.
+
+A 33% build failure rate would have made every other measurement in this document
+unreliable, and it only surfaced because three runs were done instead of one.
+
+## Volume regressed and is not yet explained
+
+Both successful runs produced **30 lessons / 88–89 concepts**, against 42–47
+lessons and 124–155 in earlier runs, and a target of 45/144. Section detail in
+the module scope appears to have made the builder produce *fewer, denser*
+modules. Concepts-per-lesson stayed on target (2.93–2.97 vs 3), so the ladder's
+shape is intact — the course is simply shorter than a semester.
+
+Not diagnosed here, and recorded rather than glossed: it is a regression against
+condition 1's volume target introduced by a change that improved condition 2's
+coverage stability.
