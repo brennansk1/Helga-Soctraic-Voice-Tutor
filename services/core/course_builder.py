@@ -1642,6 +1642,30 @@ class SkeletonBuilder:
             _requested = int(self.course_params.get("total_concepts_approx") or 0)
             self._scope_fit = assess_scope(brief, _requested,
                                            requested_courses=1)
+
+            # EVIDENCE SETS THE LENGTH, within the range.
+            #
+            # The range exists so a course can be as long as its material
+            # warrants, but until now nothing connected the two: the model chose
+            # freely inside it, and a subject with 77 chapters of real syllabus
+            # still came out at the bottom. The range was permitting variation
+            # rather than expressing evidence.
+            try:
+                from services.core.scope_fit import position_in_range
+            except ImportError:
+                from scope_fit import position_in_range
+            _lo = self.course_params.get("lessons_min")
+            _hi = self.course_params.get("lessons_max")
+            if _lo and _hi:
+                _target, _why = position_in_range(self._scope_fit, _lo, _hi)
+                self.course_params["lessons_total"] = _target
+                self.course_params["lessons_per_module"] = max(
+                    1, round(_target / max(1, self.course_params.get("modules", 6))))
+                logger.info(f"[VOLUME] lesson target {_target} of {_lo}-{_hi} — "
+                            f"{_why}")
+                if self.status_callback:
+                    self.status_callback(f"STRUCT:LENGTH:{_target}:{_why}")
+
             _msg = describe(self._scope_fit)
             if _msg:
                 logger.warning(f"[SCOPE] {self._scope_fit['verdict']}: "
@@ -1804,6 +1828,34 @@ class SkeletonBuilder:
         judge_result["judge_coverage_pct"] = judge_result.get("coverage_pct")
         judge_result["coverage_pct"] = kw.get("coverage_pct")
         judge_result["coverage_source"] = "keyword"
+        # Internal coherence runs in BOTH configurations, and is the replacement
+        # for the source criteria when there is no textbook. N/A must not mean
+        # easier, or "no source" becomes the way to pass — so a sourceless course
+        # still has to answer the strongest question available without an
+        # external reference: is it coherent on its own terms?
+        try:
+            from services.core.coherence import check_coherence, gate_summary
+        except ImportError:
+            from coherence import check_coherence, gate_summary
+        _coh = check_coherence(course_dict)
+        judge_result["internal_coherence"] = _coh
+        if _coh.get("verdict") == "INCOHERENT":
+            logger.warning(
+                f"[COHERENCE] {_coh['forward_references']} forward reference(s) "
+                f"in {_coh['concepts']} concepts — the course uses ideas before "
+                f"it teaches them; e.g. "
+                + "; ".join(f"{e['concept'][:40]!r} needs {e['term']!r}"
+                            for e in _coh.get("examples", [])[:2]))
+            if self.status_callback:
+                self.status_callback(f"CHECK:COHERENCE:INCOHERENT:"
+                                     f"{_coh['forward_references']}")
+
+        _has_source = bool(getattr(self, "_syllabus_chapters", None))
+        judge_result["gate_configuration"] = gate_summary({
+            "internal_coherence": _coh.get("verdict") == "ok",
+            "sequencing": (judge_result["sequencing"] or {}).get("verdict") == "ok",
+        }, has_source=_has_source)
+
         logger.info(f"[SYLLABUS] keyword coverage {kw.get('coverage_pct')}% "
                     f"({kw.get('areas_covered')}/{kw.get('areas_checked')} chapters); "
                     f"judge said {judge_result.get('judge_coverage_pct')}%")
