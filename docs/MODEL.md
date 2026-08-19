@@ -82,3 +82,51 @@ send the union of the disable-fields:
 Measured, same prompt: without → 0 content chars / 300 tokens burned; with →
 598 chars of valid JSON in 108 tokens. Deleting either field silently empties
 every structured generation in the product.
+
+---
+
+## REQUIRED: `num_ctx` — the model must be registered with a real context window
+
+**Ollama serves a model at 4096 tokens unless its Modelfile says otherwise**, and
+that is smaller than this project's prompts. `ollama show` reporting a 262144
+context is describing the *architecture*, not what the server is doing.
+
+Measured consequence of missing this: the one-shot subtree prompt is ~4212
+tokens, so it returned
+
+```
+400 — request (4212 tokens) exceeds the available context size (4096 tokens)
+```
+
+for **5 of 6 modules in every build**. The builder treats that as an empty
+result and falls back to the chunked path, so nothing surfaces as an error — the
+course is simply a third shorter than its calendar. It also gets **worse as the
+prompts improve**: adding real syllabus evidence to a module's scope pushes more
+prompts over the line.
+
+### Setup
+
+```bash
+printf 'FROM nail-35b-a3b\nPARAMETER num_ctx 16384\n' > Modelfile.ctx
+ollama create nail-35b-a3b-ctx -f Modelfile.ctx     # reuses the blob, no re-download
+```
+
+`nail-35b-a3b-ctx` is now the default in `docker-compose.yml` and in the code
+defaults, so nothing needs setting by hand. Override with `OLLAMA_MODEL` if you
+register it under a different name.
+
+### It is enforced, not just documented
+
+`SkeletonBuilder._run_preflight_checks` probes the serving context and **refuses
+to build below 8192 tokens**, naming the exact fix. An unreachable probe reports
+UNKNOWN and proceeds — refusing to build because a probe went unanswered would be
+the absent-vs-zero error in the place that blocks every course.
+
+### Measured effect
+
+| | 4096 (default) | 16384 |
+|---|---|---|
+| context 400s per build | 24 | **0** |
+| one-shot fallbacks | 5 of 6 | **0 of 6** |
+| coverage vs MIT 18.06 | 80% median | **100% median (3/3)** |
+| concepts per course | 87–90 | **145** (target 144) |

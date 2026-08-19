@@ -26,7 +26,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 OLLAMA_URL = os.environ.get('OLLAMA_URL', 'http://host.docker.internal:11434')
-OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'qwen3.5:9b')
+OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'nail-35b-a3b-ctx')
 # How long Ollama should keep the weights resident after a request. "-1" pins
 # them indefinitely, which is what a single-user tutor on a dedicated machine
 # wants: the alternative is paying a multi-second cold load every time the

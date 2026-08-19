@@ -127,7 +127,7 @@ def _post(messages, schema=None, max_tokens=900, model=None):
     import requests
     url = os.getenv("LLM_API_URL",
                     "http://host.docker.internal:11434/v1/chat/completions")
-    mdl = model or os.getenv("LLM_MODEL") or os.getenv("OLLAMA_MODEL", "qwen3.5:9b")
+    mdl = model or os.getenv("LLM_MODEL") or os.getenv("OLLAMA_MODEL", "nail-35b-a3b-ctx")
     body = {"model": mdl, "messages": messages, "max_tokens": max_tokens,
             "temperature": 0.0, "stream": False, "reasoning_effort": "none"}
     if schema:

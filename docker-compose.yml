@@ -56,7 +56,7 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       - OLLAMA_URL=http://host.docker.internal:11434
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-nail-35b-a3b}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-nail-35b-a3b-ctx}
       # B23.1: GPU gate cap — must equal the host's OLLAMA_NUM_PARALLEL
       - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-4}
       # B15.6: per-student FSM registry sizing
@@ -101,7 +101,7 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       - OLLAMA_URL=http://host.docker.internal:11434
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-nail-35b-a3b}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-nail-35b-a3b-ctx}
       - HF_HOME=/app/data/hf_cache
       - TRANSFORMERS_CACHE=/app/data/hf_cache
       - FLASK_ENV=production

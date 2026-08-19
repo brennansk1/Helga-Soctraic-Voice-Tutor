@@ -3526,7 +3526,7 @@ class ContentHydrator:
                                       "type": s.get("type"),
                                       "tier": s.get("domain_tier")}
                                      for s in (research_sources or [])]),
-                         os.getenv("OLLAMA_MODEL", "qwen3.5:9b")))
+                         os.getenv("OLLAMA_MODEL", "nail-35b-a3b-ctx")))
                     _prov_conn._get_db().commit()
             except Exception as _prov_err:
                 logger.debug(f"provenance write skipped: {_prov_err}")
