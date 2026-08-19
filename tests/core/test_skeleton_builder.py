@@ -795,6 +795,42 @@ class TestConsolidatedSubtree(unittest.TestCase):
         )
 
     def _subtree_reply(self):
+        """A reply that needs no correcting — TWO units, the school-shape floor.
+
+        A one-unit reply is below that floor and legitimately earns a correction
+        round, so it cannot be the fixture for the single-call guarantee.
+        `_one_unit_reply` below covers that case deliberately.
+        """
+        return {
+            "units": [{
+                "title": "Sigma and Pi Bonding",
+                "description": "Orbital overlap geometry.",
+                "lessons": [{
+                    "title": "Hybridisation of Carbon Orbitals",
+                    "concepts": [
+                        {"title": "sp3 Tetrahedral Geometry",
+                         "objectives": ["Predict bond angles", "Relate hybridisation to shape"]},
+                        {"title": "sp2 Planar Geometry",
+                         "objectives": ["Identify planar centres", "Explain pi overlap"]},
+                    ],
+                }],
+            }, {
+                "title": "Resonance and Delocalisation",
+                "description": "Where electrons are not where they look.",
+                "lessons": [{
+                    "title": "Drawing Resonance Contributors",
+                    "concepts": [
+                        {"title": "Curved-Arrow Notation",
+                         "objectives": ["Push electrons correctly", "Avoid invalid arrows"]},
+                        {"title": "Relative Contributor Weight",
+                         "objectives": ["Rank contributors", "Justify the ranking"]},
+                    ],
+                }],
+            }]
+        }
+
+    def _one_unit_reply(self):
+        """Below the school-shape floor, so it must earn exactly one correction."""
         return {
             "units": [{
                 "title": "Sigma and Pi Bonding",
@@ -831,7 +867,11 @@ class TestConsolidatedSubtree(unittest.TestCase):
             mock.side_effect = side_effect
             lines = b._build_module_subtree_oneshot(
                 m_ref, "Organic Chemistry", "Understanding",
-                base_units=1, base_lessons=1, base_concepts=2,
+                # 2, not 1: the caller clamps base_units to the school-shape
+                # floor, so 1 is an argument production never passes — and
+                # testing with it hid the fact that `units_data[:base_units]`
+                # would have truncated a floor-respecting reply back down.
+                base_units=2, base_lessons=1, base_concepts=2,
                 module_bloom_level=2, module_specific_depth=2,
                 prev_context_str="No modules covered yet.",
                 mastery_constraint="",
@@ -842,9 +882,38 @@ class TestConsolidatedSubtree(unittest.TestCase):
         b, m_ref, lines, mock = self._run(self._subtree_reply())
         self.assertEqual(mock.call_count, 1, "consolidation must use ONE call per module")
         units = m_ref["dict"]["units"]
-        self.assertEqual(len(units), 1)
+        self.assertEqual(len(units), 2)
         self.assertEqual(len(units[0]["lessons"]), 1)
         self.assertEqual(len(units[0]["lessons"][0]["concepts"]), 2)
+
+    def test_a_deficient_reply_costs_exactly_one_correction(self):
+        """The correction round is bounded — one extra call, never a retry loop.
+
+        The floor is unenforceable in the schema (`minItems` is stripped from
+        `response_format` for /v1 compatibility, and /v1 ignores the `format`
+        field that still carries it), so it is enforced here instead. That makes
+        the SECOND call intentional; what must not happen is a third.
+        """
+        b, m_ref, lines, mock = self._run(self._one_unit_reply())
+        self.assertEqual(mock.call_count, 2,
+                         "one unit is below the school-shape floor: correct once")
+        # The mock returns the same deficient reply, so the correction cannot
+        # improve on it — and a correction that is no better must be discarded
+        # rather than allowed to overwrite what we already had.
+        self.assertEqual(len(m_ref["dict"]["units"]), 1)
+
+    def test_the_correction_prompt_names_the_shortfall(self):
+        """Naming the specific defect is what makes a correction round work.
+
+        Measured: a prompt-only ban of generic titles changed nothing 5/5, while
+        a correction naming the offending titles fixed them 5/5.
+        """
+        b, m_ref, lines, mock = self._run(self._one_unit_reply())
+        correction = self.captured[1][0]
+        self.assertIn("CORRECTION", correction)
+        self.assertIn("1 unit", correction, "must name the count it actually got")
+        self.assertIn("do not simply rename", correction,
+                      "must forbid the cheap fix of renaming the unit it had")
 
     def test_shapes_match_the_chunked_path(self):
         b, m_ref, lines, mock = self._run(self._subtree_reply())

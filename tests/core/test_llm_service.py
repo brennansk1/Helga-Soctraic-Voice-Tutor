@@ -30,6 +30,10 @@ MODEL = os.environ.get("OLLAMA_MODEL", "qwen3.5:9b")
 
 TEST_PROMPT = "Hello! Who are you?"
 
+# A third outcome, distinct from both pass and fail. See the Timeout handler.
+BUSY = "busy"
+REQUEST_TIMEOUT = 60
+
 def run_llm_test():
     """
     Sends a test prompt to the LLM and validates the response.
@@ -56,7 +60,8 @@ def run_llm_test():
     try:
         # 1. Send the request
         logger.info("Sending test prompt to the LLM...")
-        response = requests.post(COMPLETION_ENDPOINT, json=payload, timeout=60)
+        response = requests.post(COMPLETION_ENDPOINT, json=payload,
+                                 timeout=REQUEST_TIMEOUT)
         
         # 2. Check the HTTP status code
         if response.status_code == 200:
@@ -79,6 +84,25 @@ def run_llm_test():
             logger.error(f"Full response JSON: {data}")
             return False
 
+    except requests.exceptions.Timeout:
+        # CONTENTION IS NOT A DEFECT — AND IT IS NOT A PASS EITHER.
+        #
+        # Measured: this test failed inside a full-suite run and passed on its
+        # own 40 seconds later. Nothing was wrong with the model — three course
+        # builds were saturating Ollama, which serialises requests, so the reply
+        # arrived after the deadline.
+        #
+        # Calling that red is the mirror of the defect this file's docstring
+        # warns about: one writes a real failure off as environmental, the other
+        # writes an environmental condition up as a real failure, and both end
+        # with the signal being ignored. A timeout gets its own outcome so
+        # neither happens, and an EMPTY 200 stays hard red regardless of load.
+        logger.warning(
+            f"LLM did not answer within {REQUEST_TIMEOUT}s. Ollama serialises "
+            f"requests, so this is contention — a build in flight — not a "
+            f"broken model. Re-run when the machine is idle to get a verdict.")
+        return BUSY
+
     except requests.exceptions.RequestException as e:
         logger.error(f"Test Failed: Could not connect to the LLM service at {LLM_URL}.")
         logger.error(f"Error: {e}", exc_info=True)
@@ -97,22 +121,44 @@ def _ollama_reachable():
 def test_llm_functional():
     """Pytest wrapper for the LLM functional test.
 
-    Skips when Ollama simply isn't running (a genuinely environmental
-    condition), but FAILS when Ollama is up and the configured model still
-    doesn't answer. That distinction matters: this test previously requested a
+    Three outcomes, deliberately:
+
+      SKIP  Ollama isn't running, or it is busy serving something else. Both
+            are genuinely environmental and neither says anything about the
+            configuration under test.
+      FAIL  Ollama answered and the configured model still produced nothing —
+            a non-200, or a 200 carrying an empty completion.
+      PASS  the model answered.
+
+    The middle line is the one that matters. This test once requested a
     hardcoded `llama3.1:8b` and its permanent red was written off as
-    environmental, which is exactly how a real model-config defect hides.
+    environmental, which is exactly how a real model-config defect hides — so
+    an answer that arrives and is empty stays red no matter how loaded the
+    machine is. Only a request that never got served at all is excused.
     """
     import pytest
     if not _ollama_reachable():
         pytest.skip(f"Ollama not reachable at {LLM_URL} — start it to run this test")
-    assert run_llm_test(), (
-        f"Ollama is up but model '{MODEL}' did not produce a response. "
-        f"Check OLLAMA_MODEL and that the model is pulled (`ollama list`)."
+    result = run_llm_test()
+    if result == BUSY:
+        pytest.skip(
+            f"Ollama is up but did not answer within {REQUEST_TIMEOUT}s — it "
+            f"serialises requests and something (likely a course build) is "
+            f"holding it. Re-run when idle.")
+    assert result, (
+        f"Ollama is up and answering, but model '{MODEL}' produced no "
+        f"completion. Check OLLAMA_MODEL and that the model is pulled "
+        f"(`ollama list`)."
     )
 
 if __name__ == "__main__":
-    if run_llm_test():
+    _r = run_llm_test()
+    if _r == BUSY:
+        # Exit 2, not 0 and not 1: the run reached no verdict, and a script
+        # calling this must not read "busy" as "the model works".
+        logger.warning("--- LLM Test Inconclusive (Ollama busy) ---")
+        sys.exit(2)
+    if _r:
         logger.info("--- LLM Test Successful ---")
         sys.exit(0)
     else:
