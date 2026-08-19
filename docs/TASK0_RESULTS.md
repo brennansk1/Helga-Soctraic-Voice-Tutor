@@ -1055,3 +1055,42 @@ file's `lectures`), and that comparison is the one to quote.
 Chasing 45 would have meant padding a course that already covers its subject
 completely — the exact failure `scope_fit` exists to prevent, arrived at from the
 opposite direction.
+
+---
+
+# The range regressed things, and median-of-3 is what caught it
+
+Applying the project's own rule to a change the project had just made.
+
+| configuration | coverage (median-of-3) | lessons | concepts |
+|---|---|---|---|
+| before the range | **100 / 100 / 100** | 46–53 | 135–153 |
+| after range + evidence steer | **90 / 90 / 90** | 29–31 | 85–90 |
+| after the floor fix | **100** _(1 run)_ | 36 | 103 |
+
+The middle row is a regression **introduced while trying to improve things**, and
+a single run would have shown 90% and looked like ordinary noise. Three runs
+showed 90/90/90 with **the same area missing every time** (Gram-Schmidt/QR),
+which is a signature, not variance.
+
+## Why the range cost coverage
+
+The schema floor was computed as `module_floor // base_units` — 7 // 3 = **2
+lessons per unit**. But the unit count is deliberately flexible, and the model
+returns **2** units, not 3. So the binding constraint was 2 units × 2 lessons =
+4 lessons per module, against a module floor of 7 and a course range of 34–56.
+
+**The floor was not binding on the shape the model actually returns.** A range
+whose floor does not bind is not a range, it is permission to shrink — and the
+model took it, from ~50 lessons to ~30, taking a coverage area with it.
+
+Dividing by the *observed* unit count instead makes it bind: 4 lessons per unit,
+so 2 units still clears 8 per module. Slight overshoot is the safer error, and
+the data says so directly — at ~50 lessons coverage measured 100/100/100, at ~30
+it measured 90/90/90.
+
+## The honest status of the last row
+
+**One run.** By the rule this section is about, that is not a measurement, and it
+should be read as "the fix points the right way" rather than "the fix is
+confirmed". A median-of-3 on this configuration is the outstanding validation.

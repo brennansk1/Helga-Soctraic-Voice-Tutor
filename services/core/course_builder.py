@@ -2482,9 +2482,21 @@ class SkeletonBuilder:
             # target would make the range decorative — the model could never
             # settle at the low end for a thin subject, which is the whole point
             # of having a range.
+            # The per-unit floor has to survive the model choosing FEWER units
+            # than asked, because the unit count is deliberately flexible.
+            #
+            # Measured: dividing the module floor by base_units (3) gave 2
+            # lessons per unit, the model returned 2 units, and modules came back
+            # with 4-5 lessons against a floor of 7 — so a 34-56 range produced
+            # 29-31 lessons and coverage fell from 100% to 90% across three runs.
+            # The floor was not binding on the shape the model actually returns.
+            #
+            # Dividing by the OBSERVED unit count instead makes it bind. Slight
+            # overshoot is the safer error: at ~50 lessons coverage measured
+            # 100/100/100, at ~30 it measured 90/90/90.
             schema=self.subtree_schema(
                 min_units=1,
-                min_lessons=max(1, _lesson_lo // max(1, base_units)),
+                min_lessons=max(2, -(-_lesson_lo // 2)),   # ceil(lo / 2)
                 min_concepts=base_concepts),
             progress_callback=self.status_callback,
         )
