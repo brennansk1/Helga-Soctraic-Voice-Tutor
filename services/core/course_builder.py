@@ -2712,6 +2712,55 @@ class SkeletonBuilder:
             units_data = []
         # Every element must be a mapping — a list of strings is not a subtree.
         units_data = [u for u in units_data if isinstance(u, dict)]
+
+        # THE SCHEMA MINIMUM NEVER REACHED THE DECODER ON THIS ENDPOINT.
+        #
+        # minItems is stripped from `response_format` for /v1 compatibility, and
+        # /v1 reads `response_format` while ignoring the `format` field that
+        # still carries it. Verified directly: minItems binds on /api/chat — 8
+        # units without it, 10 with minItems=5 — and is silently dropped on /v1,
+        # which is what the builder posts to.
+        #
+        # Measured consequence: zero fallbacks, a shape asking for 3 units, and
+        # NINE unit events across six modules. The floor was never enforced at
+        # all, so every earlier attempt to tune it was a no-op — including
+        # raising it from 1 to 2 and making base_units respect it.
+        #
+        # Enforced here instead, where it demonstrably can be: one correction
+        # round naming the shortfall, the same self-correction the module
+        # generation already uses.
+        _min_units = _shape_lo("units_per_module", 2)
+        if 0 < len(units_data) < _min_units:
+            logger.info(f"  [ONESHOT] {m_title!r} returned {len(units_data)} "
+                        f"unit(s), needs {_min_units} — one correction round")
+            try:
+                fix = llm_generate_json(
+                    prompt=(prompt + f"\n\n### CORRECTION\n"
+                            f"Your previous answer had {len(units_data)} unit(s). "
+                            f"This module spans {_min_units}+ weeks and one unit "
+                            f"is one week, so it needs at least {_min_units} "
+                            f"units. Split the material BY TOPIC into "
+                            f"{base_units} units — do not simply rename the one "
+                            f"you had."),
+                    sys_prompt=sys_prompt,
+                    max_tokens=max_tokens,
+                    schema=self.subtree_schema(
+                        min_units=_min_units,
+                        min_lessons=max(_shape_lo("lessons_per_unit", 2),
+                                        -(-_lesson_lo // 2)),
+                        min_concepts=base_concepts),
+                    progress_callback=self.status_callback,
+                )
+                if isinstance(fix, list):
+                    fix = next((f for f in fix if isinstance(f, dict)), None)
+                retry_units = [u for u in ((fix or {}).get("units") or [])
+                               if isinstance(u, dict)]
+                if len(retry_units) > len(units_data):
+                    logger.info(f"  [ONESHOT] correction gave "
+                                f"{len(retry_units)} units")
+                    units_data = retry_units
+            except Exception as e:
+                logger.warning(f"  [ONESHOT] correction round failed: {e}")
         if not units_data:
             logger.warning(
                 f"  [ONESHOT] Empty subtree for module '{m_title}' — "
