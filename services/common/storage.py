@@ -665,6 +665,88 @@ class StorageManager:
                 cursor.execute("UPDATE schema_version SET version = 11")
                 logger.info("Schema migrated to v11: taught-concepts ledger")
 
+            if current_version < 12:
+                # RETAINED SOURCE PASSAGES — the durable home.
+                #
+                # What reaches the tutor today is generated Markdown, a lossy
+                # re-expression of whatever research returned. The research
+                # CACHE holds the originals but it is a speed layer with a
+                # 24h/7d TTL, so it must never be the only copy: a claim cannot
+                # be verified against a passage that has expired.
+                #
+                # `retrieved_at` and `degraded` preserve absent-vs-zero through
+                # this layer too. A retained row with no text is a source we
+                # fetched and got nothing from; a missing row is a source we
+                # never fetched. Those must not look alike.
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS sources (
+                        source_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+                        course_uid   TEXT NOT NULL,
+                        concept_uid  TEXT,
+                        title        TEXT,
+                        url          TEXT,
+                        passage      TEXT,
+                        source_type  TEXT,
+                        domain_tier  TEXT,
+                        grounding    REAL,
+                        degraded     INTEGER DEFAULT 0,
+                        retrieved_at TEXT
+                    )
+                """)
+                # Which claims rest on which sources. This is what makes
+                # "claims grounded ONLY in supplementary material" a measurable
+                # share rather than an assertion — the policy recorded on the
+                # course counts claims, and this is where the count comes from.
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS claim_sources (
+                        course_uid   TEXT NOT NULL,
+                        concept_uid  TEXT NOT NULL,
+                        claim        TEXT NOT NULL,
+                        source_id    INTEGER,
+                        supplementary INTEGER DEFAULT 0
+                    )
+                """)
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_sources_course "
+                               "ON sources(course_uid, concept_uid)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_claim_sources "
+                               "ON claim_sources(course_uid, concept_uid)")
+                cursor.execute("UPDATE schema_version SET version = 12")
+                logger.info("Schema migrated to v12: retained sources + claim links")
+
+            if current_version < 13:
+                # SESSION NOTES, append-only, WITH ITS COMPACTION BOUNDARY
+                # DESIGNED IN FROM THE START.
+                #
+                # Content is ~32 MB for a bachelor's and negligible; notes are
+                # the one component that grows without bound — ~50 turns a
+                # session, over four years. Retrofitting compaction onto years
+                # of rows is the painful path, so `compacted` exists before
+                # there is anything to compact: raw turns are kept verbatim for
+                # a retention window, then collapsed to FSRS state plus a
+                # summary and the raw text dropped.
+                #
+                # Kept out of the concepts table on purpose — append churn from
+                # notes would otherwise bloat content pages and the WAL.
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS session_notes (
+                        note_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                        course_uid   TEXT,
+                        concept_uid  TEXT,
+                        student_id   TEXT,
+                        role         TEXT,
+                        text         TEXT,
+                        grade        INTEGER,
+                        created_at   TEXT NOT NULL,
+                        compacted    INTEGER DEFAULT 0
+                    )
+                """)
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_notes_concept "
+                               "ON session_notes(concept_uid, created_at)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_notes_compaction "
+                               "ON session_notes(compacted, created_at)")
+                cursor.execute("UPDATE schema_version SET version = 13")
+                logger.info("Schema migrated to v13: append-only session notes")
+
             conn.commit()
         finally:
             conn.close()

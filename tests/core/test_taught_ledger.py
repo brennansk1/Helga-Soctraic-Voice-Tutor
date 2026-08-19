@@ -189,3 +189,134 @@ class TestShingles(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRedundancyCorrectionRound(unittest.TestCase):
+    """One regeneration naming the offender — the enforcement shape that works.
+
+    A prompt instruction not to repeat changed nothing 5/5 in this pipeline;
+    a correction naming the exact duplicated claim worked 5/5.
+    """
+
+    DICE = ("## Key Facts\n"
+            "- A twenty-sided die is uniform across all twenty faces.\n"
+            "- The expected value of a d20 is 10.5.\n")
+    BETTER = ("## Key Facts\n"
+              "- Encounter difficulty scales with party level and action economy.\n"
+              "- Legendary resistance lets a monster auto-succeed three saves per day.\n"
+              "- Lair actions fire on initiative twenty.\n")
+
+    def _hydrator(self):
+        import tempfile
+        from services.common.storage import StorageManager
+        from services.core.course_builder import ContentHydrator
+        h = ContentHydrator(storage=StorageManager(
+            tempfile.mkdtemp(prefix="corr_test_")), mastery=3)
+        record_concept(h._ledger_conn(), "c1", "con_a",
+                       "Probability in Combat", self.DICE, 0)
+        return h
+
+    def _run(self, h, draft, retry_value, uid="con_b"):
+        from unittest.mock import patch
+        from services.core.course_builder import ContentHydrator
+        with patch.object(ContentHydrator, "_condense_and_structure_content",
+                          return_value=retry_value):
+            return h._correct_redundancy(draft, "c1", uid, "T", 1, "DM", "", "",
+                                         {}, [], 0.0, "", 3, [], [], {}, "raw")
+
+    def test_a_genuine_fix_is_accepted(self):
+        h = self._hydrator()
+        self.assertEqual(self._run(h, self.DICE, self.BETTER), self.BETTER)
+
+    def test_a_retry_that_repeats_as_much_is_rejected(self):
+        h = self._hydrator()
+        self.assertEqual(self._run(h, self.DICE, self.DICE), self.DICE)
+
+    def test_a_retry_that_passes_by_saying_less_is_rejected(self):
+        """The cheapest way to stop repeating is to stop saying anything.
+        Without a length floor the gate would reward exactly that."""
+        h = self._hydrator()
+        self.assertEqual(self._run(h, self.DICE, "## Key Facts\n- Dice.\n"),
+                         self.DICE)
+
+    def test_a_clean_concept_costs_no_llm_call(self):
+        from unittest.mock import patch
+        from services.core.course_builder import ContentHydrator
+        h = self._hydrator()
+        calls = []
+        with patch.object(ContentHydrator, "_condense_and_structure_content",
+                          side_effect=lambda *a, **k: calls.append(1) or ""):
+            h._correct_redundancy(self.BETTER, "c1", "con_e", "Clean", 1, "DM",
+                                  "", "", {}, [], 0.0, "", 3, [], [], {}, "raw")
+        self.assertEqual(calls, [], "no repeat means no regeneration")
+
+    def test_a_failed_retry_leaves_the_original(self):
+        h = self._hydrator()
+        self.assertEqual(self._run(h, self.DICE, "[Hydration failed]"), self.DICE)
+
+
+class TestSourceRetention(unittest.TestCase):
+    """Retained passages, and the supplementary share measured in CLAIMS.
+
+    The research reviewing the supplementary policy caught the unit being wrong:
+    one weak book can dominate a course's content while being a small minority
+    of the source LIST, so a cap counted per source bounds nothing that matters.
+    """
+
+    MD = ("## Key Facts\n"
+          "- A d20 is uniform across twenty faces.\n"
+          "- The expected value is 10.5.\n")
+    SUPP = ["Introduction to Sociology"]
+
+    def _hydrator(self):
+        import tempfile
+        from services.common.storage import StorageManager
+        from services.core.course_builder import ContentHydrator
+        return ContentHydrator(storage=StorageManager(
+            tempfile.mkdtemp(prefix="src_test_")), mastery=3)
+
+    def test_claims_on_a_weak_source_alone_are_marked_supplementary(self):
+        h = self._hydrator()
+        h._retain_sources("c1", "con_a", self.MD,
+                          [{"title": "Introduction to Sociology", "url": "u1",
+                            "snippet": "t"}], supplementary_books=self.SUPP)
+        self.assertEqual(h.supplementary_claim_share("c1")["share"], 1.0)
+
+    def test_the_share_is_of_claims_not_of_sources(self):
+        h = self._hydrator()
+        h._retain_sources("c1", "con_a", self.MD,
+                          [{"title": "Introduction to Sociology", "url": "u1",
+                            "snippet": "t"}], supplementary_books=self.SUPP)
+        h._retain_sources("c1", "con_b", self.MD,
+                          [{"title": "Strang Linear Algebra", "url": "u2",
+                            "snippet": "t"}], supplementary_books=self.SUPP)
+        share = h.supplementary_claim_share("c1")
+        self.assertEqual(share["claims"], 4)
+        self.assertEqual(share["share"], 0.5)
+        self.assertFalse(share["within_cap"], "50% must breach a 20% cap")
+
+    def test_a_degraded_lookup_is_distinguishable_from_an_empty_one(self):
+        """A retained row with no text is a source we fetched and got nothing
+        from; a missing row is a source we never fetched."""
+        h = self._hydrator()
+        h._retain_sources("c1", "con_c", self.MD,
+                          [{"title": "X", "url": "u3", "snippet": "",
+                            "search_degraded": True}])
+        row = h._ledger_conn().execute(
+            "SELECT degraded, passage FROM sources WHERE concept_uid='con_c'"
+        ).fetchone()
+        self.assertEqual(row[0], 1)
+        self.assertEqual(row[1], "")
+
+    def test_no_sources_means_unknown_rather_than_zero(self):
+        h = self._hydrator()
+        self.assertIsNone(h.supplementary_claim_share("never_built"))
+
+    def test_re_retaining_replaces_rather_than_duplicates(self):
+        h = self._hydrator()
+        for _ in range(3):
+            h._retain_sources("c1", "con_a", self.MD,
+                              [{"title": "B", "url": "u", "snippet": "t"}])
+        n = h._ledger_conn().execute(
+            "SELECT COUNT(*) FROM sources WHERE concept_uid='con_a'").fetchone()[0]
+        self.assertEqual(n, 1, "a re-hydration must not accumulate rows")

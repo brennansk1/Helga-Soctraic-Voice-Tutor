@@ -3953,6 +3953,22 @@ class ContentHydrator:
 
         course_title = course.get("title", "General Knowledge")
 
+        # Which sources were classified SUPPLEMENTARY at skeleton time.
+        #
+        # Read off the course rather than passed in memory: the builder that
+        # made the classification and the hydrator that consumes it are
+        # different objects, and hydration can run later or in another process.
+        # Without this the retention path silently marked nothing as
+        # supplementary and the claim-share measurement always read zero.
+        self._supplementary_books = [
+            (s or {}).get("book") for s in (course.get("supplementary_sources") or [])
+            if isinstance(s, dict) and s.get("book")
+        ]
+        if self._supplementary_books:
+            logger.info(f"  [SOURCES] {len(self._supplementary_books)} supplementary "
+                        f"source(s) usable for content only: "
+                        f"{self._supplementary_books[:3]}")
+
         # A1: resolve the domain once per course rather than guessing per
         # concept from a topic string. Keyword matching on a title is fragile
         # ("the french revolution" contains no history keyword), so this is a
@@ -4230,6 +4246,23 @@ class ContentHydrator:
                         "problems": contract_detail.get("problems", []),
                     })
 
+            # REDUNDANCY CORRECTION — one round, naming the offender.
+            #
+            # The same enforcement shape as the depth contract above and the
+            # skeleton builder's unit/title corrections, for the same measured
+            # reason: a prompt instruction not to repeat changed nothing 5/5,
+            # while a correction naming the exact duplicated claim worked 5/5.
+            # The ledger context is already in the prompt; this is what happens
+            # when the model ignores it.
+            if not is_fallback:
+                structured_md = self._correct_redundancy(
+                    structured_md, course_uid, uid, title, idx,
+                    course_title, complexity_role, source_type, h_ctx,
+                    research_sources, research_confidence, user_note,
+                    bloom_level, learning_objectives_list, prerequisite_titles,
+                    research_structured, content_to_use,
+                )
+
             # A1: fact-check. The depth contract checks that rigor is PRESENT;
             # substance_check showed the real defect is that it can be WRONG —
             # 50% of sampled concepts contained false technical claims that
@@ -4322,6 +4355,10 @@ class ContentHydrator:
                                 ordinal=idx,
                                 module=(h_ctx or {}).get("module", ""),
                                 lesson=(h_ctx or {}).get("lesson", ""))
+            self._retain_sources(course_uid, uid, structured_md,
+                                 research_sources,
+                                 supplementary_books=getattr(
+                                     self, "_supplementary_books", None))
 
             if self.status_callback:
                 self.status_callback(f"STRUCT:HYDRATED:{uid}:{source_type}:{title}")
@@ -4870,6 +4907,159 @@ class ContentHydrator:
         except Exception as e:
             logger.debug(f"[LEDGER] context lookup failed: {e}")
             return ""
+
+    def _correct_redundancy(self, markdown, course_uid, concept_uid, title,
+                            ordinal, course_title, complexity_role, source_type,
+                            h_ctx, research_sources, research_confidence,
+                            user_note, bloom_level, learning_objectives,
+                            prerequisite_titles, research_structured, raw_text):
+        """One regeneration when a concept re-teaches. Returns the better draft.
+
+        Accepted only if the correction actually corrected — a retry that
+        removes the repetition by removing the substance is not an improvement,
+        so the replacement must both repeat less and remain a real document.
+        """
+        conn = self._ledger_conn()
+        if conn is None:
+            return markdown
+        try:
+            from services.core.taught_ledger import (
+                check_redundancy, correction_hint)
+        except ImportError:
+            try:
+                from taught_ledger import check_redundancy, correction_hint
+            except ImportError:
+                return markdown
+        try:
+            before = check_redundancy(conn, course_uid, concept_uid,
+                                      markdown, ordinal)
+            if before.get("ok"):
+                return markdown
+            hint = correction_hint(before)
+            if not hint:
+                return markdown
+
+            logger.info(f"  [LEDGER] correcting {title!r}: "
+                        f"{len(before.get('reintroduced') or [])} repeated claim(s)")
+            retry = self._condense_and_structure_content(
+                title, raw_text, course_title, self.mastery_level,
+                complexity_role, source_type,
+                hierarchy_context=h_ctx, previous_concepts=[],
+                module_concepts=[], research_sources=research_sources,
+                research_confidence=research_confidence, user_note=user_note,
+                bloom_level=bloom_level,
+                learning_objectives=learning_objectives,
+                prerequisite_titles=prerequisite_titles,
+                research_structured=research_structured,
+                ledger_context=hint,
+            )
+            if not retry or "[Hydration failed]" in retry:
+                return markdown
+            after = check_redundancy(conn, course_uid, concept_uid, retry, ordinal)
+            # Fewer repeated claims AND not a hollowed-out shell. Without the
+            # second test the cheapest way to pass is to say less.
+            better = (len(after.get("reintroduced") or [])
+                      < len(before.get("reintroduced") or [])
+                      and len(retry) > len(markdown) * 0.7)
+            if better:
+                logger.info(f"  [LEDGER] correction reduced repeats "
+                            f"{len(before.get('reintroduced') or [])} -> "
+                            f"{len(after.get('reintroduced') or [])}")
+                return retry
+            logger.info("  [LEDGER] correction was not an improvement — keeping original")
+        except Exception as e:
+            logger.debug(f"[LEDGER] redundancy correction skipped: {e}")
+        return markdown
+
+    def _retain_sources(self, course_uid, concept_uid, markdown,
+                        research_sources, supplementary_books=None):
+        """Keep the passages a concept was built from, and link them to claims.
+
+        The research cache is a SPEED layer with a 24h/7d TTL; a claim cannot be
+        verified against a passage that has expired, so the originals need a
+        durable home. `degraded` carries the absent-vs-zero distinction through:
+        a retained row with no text is a source we fetched and got nothing from,
+        which is not the same as a source we never fetched.
+
+        The claim->source links are also what turn the supplementary policy from
+        an assertion into a measurement: the share that matters is of claims
+        resting only on below-bar material, not of sources in a list.
+        """
+        conn = self._ledger_conn()
+        if conn is None or not research_sources:
+            return
+        try:
+            from services.core.taught_ledger import extract_claims
+        except ImportError:
+            try:
+                from taught_ledger import extract_claims
+            except ImportError:
+                return
+        try:
+            supp = {(b or "").lower() for b in (supplementary_books or [])}
+            from datetime import datetime as _dt
+            now = _dt.now().isoformat()
+            cur = conn.cursor()
+            cur.execute("DELETE FROM sources WHERE course_uid=? AND concept_uid=?",
+                        (course_uid, concept_uid))
+            cur.execute("DELETE FROM claim_sources WHERE course_uid=? AND concept_uid=?",
+                        (course_uid, concept_uid))
+            ids = []
+            for s in research_sources:
+                if not isinstance(s, dict):
+                    continue
+                text = s.get("snippet") or s.get("text") or s.get("passage") or ""
+                cur.execute(
+                    "INSERT INTO sources (course_uid, concept_uid, title, url, "
+                    "passage, source_type, domain_tier, grounding, degraded, "
+                    "retrieved_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (course_uid, concept_uid, s.get("title"), s.get("url"),
+                     text[:4000], s.get("type"), s.get("domain_tier"),
+                     s.get("grounding"), 1 if s.get("search_degraded") else 0,
+                     now))
+                ids.append((cur.lastrowid,
+                            (s.get("title") or "").lower() in supp))
+            # Attribution here is coarse on purpose: it records THAT a concept's
+            # claims rest on this source set, not which sentence came from which
+            # passage. Span-level attribution needs the generator to cite as it
+            # writes, which is a later change; this is enough to measure the
+            # supplementary share and to give a verifier something to check
+            # against.
+            only_supp = bool(ids) and all(is_supp for _, is_supp in ids)
+            for c in extract_claims(markdown):
+                cur.execute(
+                    "INSERT INTO claim_sources (course_uid, concept_uid, claim, "
+                    "source_id, supplementary) VALUES (?,?,?,?,?)",
+                    (course_uid, concept_uid, c[:400],
+                     ids[0][0] if ids else None, 1 if only_supp else 0))
+            conn.commit()
+        except Exception as e:
+            logger.debug(f"[SOURCES] retention skipped for {concept_uid}: {e}")
+
+    def supplementary_claim_share(self, course_uid):
+        """Share of claims resting ONLY on below-bar sources. None if unknown.
+
+        The unit the policy should have used from the start: one weak book can
+        dominate a course's content while being a small minority of its source
+        list.
+        """
+        conn = self._ledger_conn()
+        if conn is None:
+            return None
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*), SUM(supplementary) FROM claim_sources "
+                "WHERE course_uid=?", (course_uid,)).fetchone()
+            total, supp = (row or (0, 0))
+            if not total:
+                return None
+            return {"claims": total, "supplementary_only": supp or 0,
+                    "share": round((supp or 0) / total, 3),
+                    "cap": SUPPLEMENTARY_MAX_SHARE,
+                    "within_cap": (supp or 0) / total <= SUPPLEMENTARY_MAX_SHARE}
+        except Exception as e:
+            logger.debug(f"[SOURCES] share query failed: {e}")
+            return None
 
     def _record_taught(self, course_uid, concept_uid, title, markdown,
                        ordinal, module="", lesson=""):
