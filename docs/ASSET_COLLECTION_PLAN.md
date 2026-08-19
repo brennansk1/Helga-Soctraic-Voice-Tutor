@@ -231,3 +231,124 @@ coverage, caption hallucination, relevance-vs-safety separation, and the
 measurement items — are **extrapolated adjacent questions** rather than answers
 to the numbered brief, because the full question list was not available to it.
 Q1–Q4b are answered directly. Treat the rest as well-argued but unprompted.
+
+---
+
+## DECISION (2026-08-19) — where we depart from the research, and why
+
+The research recommends **no photographs at all**. We are adopting a narrower
+rule instead, on an explicit product decision: **photographs are allowed from
+vetted public educational collections where the item carries an affirmative
+open licence.**
+
+This is not a rejection of the finding. It is a claim that the research's two
+legs need separating, because only one of them is answered by "no photographs".
+
+### Leg 1 — safety. The caveat answers this properly.
+
+The safety case is about **scraping**: unvetted images needing a pixel-level
+gate, and no available gate being good enough. Every number holds — a general
+9B VLM at 4-bit is not a safety classifier, Falconsai misses >59% of unsafe
+content at default threshold, 4-bit erodes exactly the tail-case calibration a
+gate exists for.
+
+But that argument is about **inspecting an unknown image**. It says nothing
+about an image whose provenance is a curated educational collection that has
+already done editorial selection. **Provenance is a stronger gate than pixel
+inspection**, and the research says so itself: fail-closed licensing "is the one
+part of the current safety story that actually works."
+
+So the gate becomes allowlist + affirmative licence, not a classifier. That is
+the design the research would endorse if the question were "curated source"
+rather than "open web".
+
+### Leg 2 — pedagogy. This one survives, and needs a different fix.
+
+The seductive-details evidence is real (g = −0.16 over 177 effect sizes;
+−0.33 in the earlier meta-analysis) and worst for exactly our learners.
+
+**But it is about DECORATIVE images, and the research uses "photograph" as a
+proxy for "decorative".** Levin's taxonomy classifies by FUNCTION, not medium: a
+photograph of an actual mitochondrion, of the Berlin Wall, of Jupiter's storms
+is **representational**, doing precisely the job a diagram does. A stock photo
+of a smiling student is decorative — and so is an irrelevant diagram.
+
+Medium was chosen as the proxy because it is easy to filter on and function is
+not. The caveat gives a better proxy: **a curated educational collection has
+already filtered by function.** NASA, USGS, CDC PHIL, Wellcome and the
+Smithsonian publish images because they illustrate something.
+
+**The rule we adopt is therefore representational-vs-decorative, enforced by
+source curation plus a required role**, not diagram-vs-photograph.
+
+### What this obliges us to do
+
+An asset must attach to a concept with a **stated role** — `illustrates`,
+`worked_example`, `data`, `schematic` — and an asset that is merely *related*
+is refused. That is what keeps the seductive-details risk bounded once the
+medium restriction is gone, and it is a deterministic check.
+
+---
+
+## What we will implement, in order
+
+### Do now — independent of the photo question
+
+1. **Math for TTS.** The sleeper item and the best value on the list:
+   model-free, mature, cheap, and unaffected by anything contested. KaTeX
+   renders but cannot speak. At hydration, for every `$…$`: keep LaTeX
+   canonical, generate a **ClearSpeak** string via the MathJax Speech Rule
+   Engine, optionally store MathML. Table `concept_math(concept_id, latex,
+   mathml, speech_clearspeak)`.
+   **Test that it works:** assert no LaTeX control sequences survive into the
+   speech string — SRE silently reading "backslash frac" passes a non-empty
+   check and fails only when a human listens.
+
+2. **Assets as BLOBs in SQLite**, mirroring what v15 just did for concepts and
+   for the same reason: a single-file database cannot develop dangling
+   references to missing image files. `assets(sha256, bytes, mime, width,
+   height, source, license, license_verified_at, provenance_url, alt_text,
+   caption, caption_verified)` joined by `concept_assets(concept_id, asset_id,
+   role)`. Spill to disk only above a few MB.
+
+### Do — under the amended photo rule
+
+3. **Expand the source allowlist to vetted educational collections**, each with
+   machine-readable per-item licence: Smithsonian Open Access (CC0, minus
+   culturally-sensitive), NASA, USGS, CDC PHIL, Wellcome, Rijksmuseum, PhET
+   (CC-BY, ideal for diagrams), plus the existing five.
+4. **Keep fail-closed licensing exactly as it is.** Unknown licence = refused.
+   Note the traps: "No Known Copyright Restrictions" ≠ CC0, and institutional
+   terms can differ from the per-item licence.
+5. **Require a role on every concept-asset link.** No role, no attachment.
+6. **Captions come from the source's own published title/description**, verified
+   by string match. Zero generation, so zero caption hallucination — and no
+   CHAIR metric needed because nothing is generated.
+
+### Drop
+
+7. **The VLM-as-sole-safety-gate, including the model-swap plan I proposed.**
+   The evidence against it is strong and the model authors disclaim the use
+   case. Safety comes from provenance, not pixels.
+8. **The uncurated photographic scrape path.**
+
+### Defer, with a gate
+
+9. **MinerU.** The reversal is well-argued — 1.2B VLM at 90.67 OmniDocBench, an
+   MLX backend at ~38 s/page against ~148, and the April 2026 move off AGPL.
+   But this project has paid the adopt-then-remove cost twice (KuzuDB, ZIM), so:
+   **benchmark PyMuPDF4LLM (zero-dependency) and Docling (MIT, CPU) first** on
+   10-20 real syllabi, and adopt MinerU only on a pre-declared margin (≥10
+   points on heading/table/formula fidelity). Ingestion only, never the asset
+   path, and batch/offline since its VLM competes for the same resident slot.
+10. **The NSFW classifier cascade.** Only needed if uncurated photos are ever
+    scraped. Under the amended rule they are not, so building it now would be
+    protection against a path we are not taking.
+
+### The measurement that would overturn this
+
+If a rejection log shows the allowlist admitting anything inappropriate, the
+provenance gate has failed and Stage 1's classifier cascade becomes mandatory.
+**Track the rejection rate and read the rejected items** — a filter that rejects
+almost nothing is indistinguishable from a broken one, and that is this
+project's recurring failure pattern applied to safety.
