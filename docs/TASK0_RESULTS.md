@@ -1094,3 +1094,59 @@ it measured 90/90/90.
 **One run.** By the rule this section is about, that is not a measurement, and it
 should be read as "the fix points the right way" rather than "the fix is
 confirmed". A median-of-3 on this configuration is the outstanding validation.
+
+---
+
+# First PROFESSIONAL verdict
+
+```
+6 modules · 13 units · 37 lessons · 104 concepts (2.81/lesson)
+
+PASS coverage       90% of the published syllabus
+PASS sequencing     in-order pairs 0.6
+PASS school_shape   modules 100% · units 100% · lessons 97%
+PASS balance        [5, 6, 9, 6, 6, 5]  spread 0.22, taper 1.0
+PASS titles         1/56 name nothing
+PASS units          0/13 hold one lesson or none
+PASS uniformity     units per module [2, 2, 3, 2, 2, 2]
+PASS coherence      2 forward references in 104 concepts
+
+VERDICT: PROFESSIONAL
+```
+
+## The root cause behind weeks of failed tuning
+
+**`minItems` was stripped from `response_format` for /v1 compatibility, and /v1
+ignores the `format` field that still carried it.** Every schema minimum was
+advisory. Verified against the server directly: `minItems` binds on `/api/chat`
+(8 units, or 10 with `minItems=5`) and is silently dropped on `/v1`, which is
+what the builder posts to.
+
+So raising the unit floor from 1 to 2, and then making `base_units` respect it,
+were both **no-ops** — as was every earlier attempt to tune counts through the
+schema. The measurement that proved it: **zero fallbacks, a shape asking for 3
+units, and nine unit events across six modules.**
+
+## The pattern that actually works
+
+Four times now, prompt-only enforcement has failed in this file — unit counts,
+lesson counts twice, generic titles — and four times a **correction round naming
+the specific offender** has worked:
+
+| defect | prompt ban | correction round |
+|---|---|---|
+| modules of one unit | no effect | `[1,1,1,2,1,3]` → `[2,2,3,2,2,2]` |
+| generic titles | survived an explicit list of the exact words | 3/56 → 1/56 |
+
+The correction is accepted only if the result is at least as complete *and*
+genuinely better, so a rewrite that trades specificity for structure is rejected
+rather than mistaken for an improvement.
+
+## Progression across the session
+
+| | school shape | balance | verdict |
+|---|---|---|---|
+| range introduced | 33% | taper 3.0 | 3 failures |
+| unit floor "fixed" (no-op) | 67% | taper 1.88 | 2 failures |
+| correction round on units | **100%** | spread 0.24 | 1 failure |
+| correction round on titles | **100%** | spread 0.22 | **PROFESSIONAL** |
