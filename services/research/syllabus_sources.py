@@ -264,7 +264,8 @@ def _wikipedia_sections(subject):
     syllabus, and treated as such by the caller.
     """
     data = _get_json(WIKIPEDIA_API, {
-        "action": "parse", "page": subject.replace(" ", "_"),
+        "action": "parse",
+        "page": _resolve_wikipedia_title(subject).replace(" ", "_"),
         "prop": "sections", "format": "json",
     })
     if not data:
@@ -549,6 +550,74 @@ _ADMIN_CAT = re.compile(
     r"unprintworthy|redirects|harv|engvarb|wikidata)", re.I)
 
 
+def _plausible_article(title, expect_terms):
+    """Does this article look like it is about the expected subject?
+
+    Blind first-hit resolution picks the LEXICALLY closest article, not the
+    topically right one. Measured:
+
+        "Learning to be a Dungeon Master" -> an Ace Books NOVEL
+                                             (categories: Ace Books books,
+                                              Action novels)
+        "Competitive Yo-Yo"               -> the toy's history
+                                             (categories: 1930s fads and trends)
+
+    So a resolution has to be checked, not trusted. Categories are the check:
+    they are human-curated and they say what a page is ABOUT, which a title
+    match does not.
+    """
+    if not expect_terms:
+        return True
+    cats = " ".join(wikipedia_parent_subjects(title, limit=8)).lower()
+    if not cats:
+        return True          # unknown, not disproven — do not reject on silence
+    return any(t.lower() in cats for t in expect_terms if t)
+
+
+def _resolve_wikipedia_title(topic, candidates=None, expect_terms=None):
+    """The real article title for a topic, or the topic unchanged.
+
+    Both Wikipedia lookups here did EXACT-TITLE matching, so a topic phrased the
+    way a learner would phrase it returned nothing:
+
+        "Dungeon Mastering"   -> 0 parents, 0 sections
+        "Dungeon Master"      -> 1 parent,  2 sections
+        "Dungeons & Dragons"  -> 2 parents, 26 sections
+
+    A search for "Dungeon Mastering" returns "Dungeon Master" as its first hit,
+    so the information was always one call away. This matters most for subjects
+    with no textbook, where Wikipedia is the last line of evidence rather than a
+    supplement — the case where returning nothing is most expensive.
+    """
+    if not topic:
+        return topic
+
+    # CANDIDATES FIRST, when a caller has better knowledge than a keyword match.
+    # A model knows "Dungeon Mastering" means running a role-playing session and
+    # will offer "Game master" or "Dungeon Master (Dungeons & Dragons)"; a search
+    # engine offers whatever shares the most letters. The model PROPOSES and this
+    # code DISPOSES — the proposal is checked against categories before use,
+    # because asking a model to confirm its own suggestion is the self-referential
+    # move this codebase keeps having to undo.
+    for cand in (candidates or []):
+        if not cand:
+            continue
+        hits = _search_book(WIKIPEDIA_API, cand, limit=1)
+        if hits and _plausible_article(hits[0], expect_terms):
+            if hits[0].strip().lower() != topic.strip().lower():
+                logger.info(f"wikipedia: {topic!r} -> {hits[0]!r} (suggested)")
+            return hits[0]
+
+    for hit in _search_book(WIKIPEDIA_API, topic, limit=3):
+        if _plausible_article(hit, expect_terms):
+            if hit.strip().lower() != topic.strip().lower():
+                logger.info(f"wikipedia: resolved {topic!r} -> {hit!r}")
+            return hit
+
+    logger.info(f"wikipedia: no article plausibly about {topic!r}")
+    return topic
+
+
 def wikipedia_parent_subjects(topic, limit=3):
     """Discipline names for a topic, from Wikipedia's own categories.
 
@@ -561,7 +630,8 @@ def wikipedia_parent_subjects(topic, limit=3):
     "Pythagorean theorem" -> Euclidean geometry, Theorems about right triangles.
     """
     data = _get_json(WIKIPEDIA_API, {
-        "action": "query", "prop": "categories", "titles": topic,
+        "action": "query", "prop": "categories",
+        "titles": _resolve_wikipedia_title(topic),
         "cllimit": 30, "clshow": "!hidden", "format": "json",
         "redirects": 1,
     }, timeout=15)
