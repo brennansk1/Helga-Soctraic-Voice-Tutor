@@ -198,3 +198,100 @@ class TestSlotSubjectsAreProposed(unittest.TestCase):
         slots = propose_slot_subjects("Nursing", "associate",
                                       self._fake_llm(payload))
         assert len(slots["gen_ed"]) == TEMPLATES["associate"]["slots"]["gen_ed"]
+
+
+class TestDegreeSourcingCascade(unittest.TestCase):
+    """A published PROGRAMME is to a degree what a textbook is to a course.
+
+    The course tier falls through four priorities before inventing anything. The
+    degree tier jumped straight to "ask the model", which is the same mistake as
+    generating a course skeleton without looking for a textbook first.
+    """
+
+    def test_a_transcribed_curriculum_is_preferred(self):
+        from services.core.program import source_degree_slots
+        r = source_degree_slots("Economics", "associate")
+        assert r["source"] == "published curriculum"
+        assert r["authoritative"] is True
+        assert "Principles of Microeconomics" in r["slots"]["core"]
+
+    def test_an_alias_finds_the_curriculum(self):
+        from services.core.program import curated_degree
+        assert curated_degree("econ", "associate") is not None
+
+    def test_the_template_must_match(self):
+        """An associate curriculum is not a bachelor's curriculum."""
+        from services.core.program import curated_degree
+        assert curated_degree("Economics", "bachelors") is None
+
+    def test_an_unknown_subject_falls_through_and_says_so(self):
+        from services.core.program import source_degree_slots
+        r = source_degree_slots("Underwater Basket Weaving", "associate")
+        assert r["source"] == "model-proposed"
+        assert r["authoritative"] is False
+        assert "still evidence-gated individually" in r["note"]
+
+
+class TestDegreeGapFilling(unittest.TestCase):
+    """A partial curriculum must be completed, not discarded.
+
+    Published curricula differ in how many electives they name. Falling back to a
+    fully-invented list because of a partial gap throws away the authoritative
+    part; filling only the gap keeps it.
+    """
+
+    def _curated_with_gap(self):
+        import json
+        import services.core.program as P
+        orig = P.curated_degree
+
+        def patched(subject, template):
+            d = orig(subject, template)
+            if d:
+                d = json.loads(json.dumps(d))
+                d["slots"]["elective"] = ["Money and Banking"]
+            return d
+        return P, orig, patched
+
+    def test_a_gap_is_filled_and_the_transcribed_courses_survive(self):
+        from services.core.program import source_degree_slots
+        P, orig, patched = self._curated_with_gap()
+        P.curated_degree = patched
+        try:
+            r = source_degree_slots(
+                "Economics", "associate",
+                llm_json_fn=lambda **kw: {"elective": ["International Economics",
+                                                       "Public Finance"]})
+        finally:
+            P.curated_degree = orig
+        assert r["slots"]["elective"][0] == "Money and Banking", \
+            "the transcribed course must come first and survive"
+        assert len(r["slots"]["elective"]) == 3
+        assert r["gaps"] == []
+        assert r["authoritative"] is True, \
+            "a filled gap does not make a real curriculum unauthoritative"
+
+    def test_a_gap_remains_when_nothing_fills_it(self):
+        from services.core.program import source_degree_slots
+        P, orig, patched = self._curated_with_gap()
+        P.curated_degree = patched
+        try:
+            r = source_degree_slots("Economics", "associate",
+                                    llm_json_fn=lambda **kw: {})
+        finally:
+            P.curated_degree = orig
+        assert "elective" in r["gaps"]
+
+    def test_duplicates_are_not_introduced_by_the_fill(self):
+        from services.core.program import source_degree_slots
+        P, orig, patched = self._curated_with_gap()
+        P.curated_degree = patched
+        try:
+            r = source_degree_slots(
+                "Economics", "associate",
+                llm_json_fn=lambda **kw: {"elective": ["money and banking",
+                                                       "Public Finance"]})
+        finally:
+            P.curated_degree = orig
+        lowered = [t.lower() for t in r["slots"]["elective"]]
+        assert len(lowered) == len(set(lowered))

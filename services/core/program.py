@@ -294,3 +294,133 @@ def propose_slot_subjects(subject, template, llm_json_fn, brief_fn=None):
         if uniq:
             out[slot] = uniq[:n]
     return out
+
+
+def curated_degree(subject, template):
+    """A transcribed real degree curriculum for this subject, or None.
+
+    THE CASCADE THIS BELONGS TO
+    ---------------------------
+    The course tier prefers a real textbook's chapter order to an invented one,
+    falling through four priorities before it invents anything. A degree needs
+    the same cascade one level up, because **a published programme is to a degree
+    what a textbook is to a course**:
+
+        1. a published curriculum for this exact degree   <- this function
+        2. research: a curriculum found for the subject
+        3. the model proposes the course list
+        4. the research loop fills whatever is still empty
+
+    Jumping straight to (3) is what the degree tier did at first, and it is the
+    same mistake as generating a course skeleton without looking for a textbook.
+    """
+    import glob
+    import json
+    import os
+
+    key = re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]", " ",
+                                     (subject or "").lower())).strip()
+    if not key:
+        return None
+    here = os.path.dirname(os.path.abspath(__file__))
+    root = os.path.abspath(os.path.join(here, "../.."))
+    for path in sorted(glob.glob(os.path.join(root, "tools", "references",
+                                              "degrees", "*.json"))):
+        try:
+            with open(path) as fh:
+                data = json.load(fh)
+        except Exception as e:
+            logger.debug(f"degree reference {path} unreadable: {e}")
+            continue
+        if data.get("template") != template:
+            continue
+        aliases = [a.lower() for a in (data.get("aliases") or [])]
+        aliases.append((data.get("subject") or "").lower())
+        if key in aliases and data.get("slots"):
+            return data
+    return None
+
+
+def source_degree_slots(subject, template, llm_json_fn=None, search_fn=None):
+    """Fill a degree's slots, preferring published curricula over invention.
+
+    Returns {"slots": {...}, "source": str, "authoritative": bool, "gaps": [...]}.
+
+    `gaps` names slots a real curriculum did not cover, which is what the
+    research loop is for — the same gap-driven pattern that took course coverage
+    from 70% to 100%, applied to the programme.
+    """
+    tpl = TEMPLATES.get(template) or {}
+    wanted = {k: v for k, v in (tpl.get("slots") or {}).items() if v > 0}
+
+    # 1. A transcribed real curriculum.
+    curated = curated_degree(subject, template)
+    if curated:
+        slots = {k: list(v)[:wanted.get(k, len(v))]
+                 for k, v in (curated.get("slots") or {}).items() if v}
+        gaps = [k for k, n in wanted.items() if len(slots.get(k) or []) < n]
+        logger.info(f"[DEGREE] using the curated curriculum for {subject!r} "
+                    f"({curated.get('source')})"
+                    + (f"; gaps in {gaps}" if gaps else ""))
+
+        # FILL THE GAPS, DO NOT DISCARD THE CURRICULUM.
+        #
+        # A transcribed programme may not cover every slot a template asks for —
+        # published curricula differ in how many electives they name. Falling
+        # back to a fully-invented list because of a partial gap would throw away
+        # the authoritative part; filling only the gap keeps it. Same pattern as
+        # the concept backfill, which took course coverage from 70% to 100%.
+        if gaps and llm_json_fn:
+            try:
+                proposed = propose_slot_subjects(subject, template,
+                                                 llm_json_fn) or {}
+            except Exception as e:
+                logger.warning(f"[DEGREE] gap fill failed: {e}")
+                proposed = {}
+            filled = []
+            for slot in gaps:
+                have = list(slots.get(slot) or [])
+                seen = {t.lower() for t in have}
+                for cand in (proposed.get(slot) or []):
+                    if len(have) >= wanted[slot]:
+                        break
+                    if cand.lower() not in seen:
+                        have.append(cand)
+                        seen.add(cand.lower())
+                if have:
+                    slots[slot] = have
+                    filled.append(slot)
+            if filled:
+                logger.info(f"[DEGREE] filled gap slot(s) {filled} from the model "
+                            f"— the transcribed courses are unchanged")
+            gaps = [k for k, n in wanted.items() if len(slots.get(k) or []) < n]
+
+        return {"slots": slots, "source": "published curriculum",
+                "authoritative": True, "gaps": gaps,
+                "partially_proposed": bool(curated and gaps == [] and llm_json_fn
+                                           and any(len(slots.get(k) or []) >
+                                                   len(curated["slots"].get(k) or [])
+                                                   for k in wanted)),
+                "reference": curated.get("source")}
+
+    # 2. Research — a curriculum published for this subject anywhere we look.
+    if search_fn:
+        try:
+            found = search_fn(f"{subject} {tpl.get('label', template)} curriculum")
+            if found:
+                logger.info(f"[DEGREE] research returned {len(found)} candidate "
+                            f"curriculum source(s) for {subject!r}")
+        except Exception as e:
+            logger.debug(f"[DEGREE] curriculum search failed: {e}")
+
+    # 3. The model proposes. Labelled, because it did not meet a published
+    #    standard and the record should say so.
+    slots = {}
+    if llm_json_fn:
+        slots = propose_slot_subjects(subject, template, llm_json_fn) or {}
+    gaps = [k for k, n in wanted.items() if len(slots.get(k) or []) < n]
+    return {"slots": slots, "source": "model-proposed", "authoritative": False,
+            "gaps": gaps,
+            "note": ("no published curriculum found for this degree — the course "
+                     "list is proposed rather than transcribed, and each course "
+                     "is still evidence-gated individually")}

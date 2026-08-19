@@ -1,0 +1,28 @@
+{
+  "subject": "Economics",
+  "aliases": ["economics", "econ", "applied economics"],
+  "template": "associate",
+  "source": "Composite of published AA-Economics transfer curricula (community-college transfer pathway to a BA/BS in Economics)",
+  "why": "The course tier prefers a real textbook's chapter order over an invented one. A degree needs the same thing one level up: a published PROGRAMME is to a degree what a textbook is to a course. Where a real curriculum is transcribed here, it is used instead of asking a model to invent one.",
+  "slots": {
+    "gen_ed": [
+      "English Composition I", "English Composition II",
+      "College Algebra", "Introduction to Statistics",
+      "American Government", "Introduction to Psychology",
+      "Natural Science with Laboratory"
+    ],
+    "core": [
+      "Principles of Microeconomics", "Principles of Macroeconomics",
+      "Calculus for Business and Economics I",
+      "Calculus for Business and Economics II",
+      "Financial Accounting", "Managerial Accounting",
+      "Introduction to Business", "Business Law",
+      "Economic Statistics and Data Analysis"
+    ],
+    "elective": [
+      "Money and Banking", "International Economics",
+      "Environmental Economics"
+    ],
+    "capstone": ["Economics Research Seminar"]
+  }
+}
