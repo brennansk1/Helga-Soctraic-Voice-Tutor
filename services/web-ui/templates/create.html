@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+{% block title %}Create — Helga{% endblock %}
+
+{% block head_scripts %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/create.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="create-shell" id="create-shell">
+
+    <!-- Carousel: one decision per page. Arrows either side, dots below.
+         Every interactive element is keyboard-reachable; arrows also answer
+         to ArrowLeft/ArrowRight when focus is inside the shell. -->
+    <button class="car-arrow car-arrow-left" id="car-prev"
+            aria-label="Previous step" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+
+    <div class="car-viewport" id="car-viewport"
+         role="group" aria-roledescription="carousel"
+         aria-label="Course creation steps">
+        <div class="car-track" id="car-track">
+
+            <!-- ============ PAGE 1: SOURCE ============ -->
+            <section class="car-page" data-page="source"
+                     aria-label="Step 1: choose your source">
+                <h1 class="car-title">What are we building from?</h1>
+                <p class="car-sub">A book you own, or research from open sources
+                   — the course takes its shape from what you choose.</p>
+
+                <div class="source-split">
+                    <button type="button" class="source-card" id="src-book"
+                            aria-pressed="false">
+                        <div class="source-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4a2 2 0 0 0-2-2H6.5A2.5 2.5 0 0 0 4 4.5v15zM6.5 17H20v5H6.5a2.5 2.5 0 0 1 0-5z"/></svg>
+                        </div>
+                        <h2>Upload a book</h2>
+                        <p>EPUB, PDF, Markdown or text. The course follows the
+                           book's own structure — a textbook's chapters become
+                           modules, a novel's chapters become lessons — and
+                           every concept is read from its chapter.</p>
+                        <span class="source-badge">Your material</span>
+                    </button>
+
+                    <button type="button" class="source-card" id="src-research"
+                            aria-pressed="false">
+                        <div class="source-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                        </div>
+                        <h2>Build from research</h2>
+                        <p>Helga sweeps open textbooks, encyclopedias and
+                           archives, measures whether the subject can carry the
+                           size you ask for, and builds against a real
+                           syllabus where one exists.</p>
+                        <span class="source-badge">Open sources</span>
+                    </button>
+                </div>
+
+                <!-- Upload drop zone appears when "book" is picked -->
+                <div class="upload-zone hidden" id="upload-zone">
+                    <input type="file" id="book-file" accept=".epub,.pdf,.md,.markdown,.txt"
+                           class="visually-hidden">
+                    <label for="book-file" class="upload-label" id="upload-label">
+                        <span class="upload-hint">Drop a book here, or click to choose
+                        <br><small>.epub · .pdf · .md · .txt</small></span>
+                    </label>
+                    <div class="upload-parse hidden" id="upload-parse"
+                         role="status" aria-live="polite"></div>
+                </div>
+            </section>
+
+            <!-- ============ PAGE 2: TEMPLATE ============ -->
+            <section class="car-page" data-page="template"
+                     aria-label="Step 2: choose the scale">
+                <h1 class="car-title">How far do you want to go?</h1>
+                <p class="car-sub">From a single course to a full degree
+                   programme — built like a real one, course by course.</p>
+
+                <div class="template-grid">
+                    <!-- Degrees front and center: the two large cards -->
+                    <button type="button" class="tpl-card tpl-degree" data-template="associate">
+                        <span class="tpl-flag">Degree</span>
+                        <h2>Associate</h2>
+                        <p class="tpl-ladder">20 courses · 4 terms · ~2 years</p>
+                        <p class="tpl-desc">General education, a core sequence
+                           with real prerequisites, electives you choose as you
+                           go, and a capstone. Courses are generated one ahead
+                           of you — pick an elective and it is built before you
+                           arrive.</p>
+                    </button>
+                    <button type="button" class="tpl-card tpl-degree" data-template="bachelors">
+                        <span class="tpl-flag">Degree</span>
+                        <h2>Bachelor's</h2>
+                        <p class="tpl-ladder">40 courses · 8 terms · ~4 years</p>
+                        <p class="tpl-desc">The full programme: levelled
+                           sequences, breadth requirements, elective choice each
+                           term, and retention checked long after each course —
+                           something a one-shot exam never proves.</p>
+                    </button>
+
+                    <!-- Smaller cards -->
+                    <button type="button" class="tpl-card" data-template="course">
+                        <h2>College Course</h2>
+                        <p class="tpl-ladder">1 course · 1 semester</p>
+                        <p class="tpl-desc">~8 modules, ~45 lessons — a real
+                           semester's pacing.</p>
+                    </button>
+                    <button type="button" class="tpl-card" data-template="sequence">
+                        <h2>Two-Semester Sequence</h2>
+                        <p class="tpl-ladder">2 courses · 2 terms</p>
+                        <p class="tpl-desc">A year-long arc, second course built
+                           when you near the end of the first.</p>
+                    </button>
+                    <button type="button" class="tpl-card" data-template="seminar">
+                        <h2>Seminar</h2>
+                        <p class="tpl-ladder">focused · assumes background</p>
+                        <p class="tpl-desc">Depth over breadth, sized by how
+                           much you already know.</p>
+                    </button>
+                    <button type="button" class="tpl-card" data-template="overview">
+                        <h2>Quick Overview</h2>
+                        <p class="tpl-ladder">lightweight survey</p>
+                        <p class="tpl-desc">The map of a subject in a few
+                           sittings.</p>
+                    </button>
+                </div>
+            </section>
+
+            <!-- ============ PAGE 3: SUBJECT & LEVEL ============ -->
+            <section class="car-page" data-page="subject"
+                     aria-label="Step 3: subject and level">
+                <h1 class="car-title">What, and how deep?</h1>
+                <p class="car-sub">The level is enforced, not decorative — each
+                   step requires more of the content, and the build regenerates
+                   anything that falls short.</p>
+
+                <div class="subject-form">
+                    <label class="field">
+                        <span class="field-label">Subject</span>
+                        <input type="text" id="topic" placeholder="e.g. Linear Algebra, the French Revolution, Dungeon Mastering"
+                               autocomplete="off" maxlength="120">
+                    </label>
+
+                    <div class="field">
+                        <span class="field-label">Mastery level</span>
+                        <div class="mastery-slider">
+                            <input type="range" id="mastery" min="1" max="5" value="3"
+                                   aria-describedby="mastery-desc">
+                            <div class="mastery-stops" aria-hidden="true">
+                                <span>Awareness</span><span>Understanding</span>
+                                <span>Application</span><span>Proficiency</span>
+                                <span>Expertise</span>
+                            </div>
+                        </div>
+                        <p class="mastery-desc" id="mastery-desc" role="status"></p>
+                    </div>
+
+                    <label class="field">
+                        <span class="field-label">Teaching style <small>(optional)</small></span>
+                        <input type="text" id="style" placeholder="e.g. Academic, ELI5, hands-on"
+                               autocomplete="off" maxlength="60">
+                    </label>
+                </div>
+            </section>
+
+            <!-- ============ PAGE 4: SCOPE CHECK ============ -->
+            <section class="car-page" data-page="scope"
+                     aria-label="Step 4: can the subject carry it?">
+                <h1 class="car-title">Checking the subject can carry it</h1>
+                <p class="car-sub">Helga measures the available material before
+                   building — a thin subject gets an honest warning here, not
+                   filler later.</p>
+
+                <div class="scope-panel" id="scope-panel" aria-live="polite">
+                    <div class="scope-idle" id="scope-idle">
+                        <p>The check runs when you arrive on this page with a
+                           subject filled in.</p>
+                    </div>
+                    <div class="scope-running hidden" id="scope-running">
+                        <div class="scope-pulse" aria-hidden="true"></div>
+                        <p>Sweeping open textbooks and archives for
+                           “<span id="scope-topic"></span>”…</p>
+                    </div>
+                    <div class="scope-result hidden" id="scope-result"></div>
+                </div>
+            </section>
+
+            <!-- ============ PAGE 5: REVIEW & CREATE ============ -->
+            <section class="car-page" data-page="review"
+                     aria-label="Step 5: review and create">
+                <h1 class="car-title">Ready to build</h1>
+                <div class="review-panel" id="review-panel"></div>
+                <button type="button" class="create-btn" id="create-btn" disabled>
+                    <span class="create-btn-label">Create</span>
+                    <span class="create-btn-sub" id="create-btn-sub"></span>
+                </button>
+                <p class="review-note" id="review-note"></p>
+            </section>
+
+        </div>
+    </div>
+
+    <button class="car-arrow car-arrow-right" id="car-next"
+            aria-label="Next step">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+    </button>
+
+    <!-- Dots -->
+    <div class="car-dots" id="car-dots" role="tablist" aria-label="Step"></div>
+</div>
+
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{{ url_for('static', filename='js/create.js') }}"></script>
+{% endblock %}

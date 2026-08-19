@@ -336,6 +336,38 @@ def courses_page():
 def course_wizard_page():
     return render_template('course_wizard.html')
 
+@app.route('/create')
+def create_page():
+    """The course-creation carousel — one decision per page.
+
+    Replaces the wizard as the primary entry; the wizard remains at
+    /courses/new for the custom-module flow until the carousel absorbs it.
+    """
+    return render_template('create.html')
+
+@app.route('/api/scope_check', methods=['POST'])
+def scope_check():
+    """Advisory pre-build scope check for the creation flow.
+
+    Runs the same evidence sweep the build itself uses, so the warning shown
+    on the carousel's scope page is the REAL verdict, not a mock. Advisory by
+    design: the build re-checks before generating, so a failure here degrades
+    to 'unavailable' rather than blocking creation.
+    """
+    data = request.get_json(silent=True) or {}
+    topic = (data.get('topic') or '').strip()
+    if len(topic) < 3:
+        return jsonify({'available': False, 'error': 'topic too short'}), 400
+    try:
+        resp = requests.post(f'{SERVICES["core"]}/scope_check',
+                             json={'topic': topic,
+                                   'template': data.get('template')},
+                             timeout=90)
+        return jsonify(resp.json()), resp.status_code
+    except Exception as e:
+        logger.warning(f"scope_check unavailable: {e}")
+        return jsonify({'available': False}), 200
+
 @app.route('/api/suggest_modules', methods=['POST'])
 def suggest_modules():
     """LLM suggests modules for the custom course wizard."""

@@ -1,0 +1,311 @@
+/* ============================================================================
+ * Course-creation carousel.
+ *
+ * Refines the existing token system rather than inventing one — every colour
+ * and duration below is a design-system token, so both themes come for free
+ * and nothing here is "a light-mode constant waiting to look broken".
+ *
+ * Layout: one decision per page. The viewport clips, the track slides, arrows
+ * sit OUTSIDE the content column so they never overlap copy, and the dots are
+ * buttons because a step indicator you cannot click is a lie about affordance.
+ * ==========================================================================*/
+
+.create-shell {
+    position: relative;
+    max-width: 1060px;
+    margin: 0 auto;
+    padding: var(--space-6, 2rem) var(--space-8, 3.5rem);
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    grid-template-rows: 1fr auto;
+    gap: var(--space-4, 1rem);
+    align-items: start;
+    /* Sized to content, not the viewport: a 78vh minimum left a third of the
+       screen empty below the dots on short pages. The shell hugs its content
+       and the page's own padding provides the breathing room. */
+    min-height: 0;
+    padding-top: clamp(1rem, 4vh, 3rem);
+}
+
+.car-viewport {
+    grid-column: 2;
+    overflow: hidden;
+    /* Inner padding so card shadows and focus rings are not clipped at the
+       viewport edge — the right-hand card was losing its border. */
+    padding: 4px;
+}
+
+.car-track {
+    display: flex;
+    transition: transform var(--dur-slow, 320ms) var(--ease-out, ease-out);
+    will-change: transform;
+}
+
+.car-page {
+    flex: 0 0 100%;
+    min-width: 100%;
+    /* Symmetric breathing room so the last card's border and shadow are never
+       flush against the clip edge. box-sizing keeps 100% meaning 100%. */
+    box-sizing: border-box;
+    padding: var(--space-4, 1rem) var(--space-4, 1rem);
+    /* Off-screen pages are inert: no tab-stops inside a page the user cannot
+       see, or keyboard order becomes a tour of hidden content. Enforced in JS
+       with the `inert` attribute; opacity here is only the visual. */
+    opacity: .25;
+    transition: opacity var(--dur-base, 200ms) ease;
+}
+.car-page.active { opacity: 1; }
+
+.car-title {
+    font-size: clamp(1.6rem, 3.2vw, 2.2rem);
+    margin: 0 0 .35em;
+    letter-spacing: -0.015em;
+}
+.car-sub {
+    color: var(--text-secondary, #667);
+    max-width: 56ch;
+    margin: 0 0 var(--space-5, 1.5rem);
+}
+
+/* --- arrows ---------------------------------------------------------------*/
+.car-arrow {
+    grid-row: 1;
+    align-self: center;
+    width: 52px; height: 52px;
+    border-radius: 50%;
+    border: 1px solid var(--border, #d5d9e0);
+    background: var(--surface-raised, #fff);
+    color: var(--text-primary, #223);
+    cursor: pointer;
+    display: grid; place-items: center;
+    transition: transform var(--dur-fast, 140ms) ease,
+                box-shadow var(--dur-fast, 140ms) ease,
+                opacity var(--dur-fast, 140ms) ease;
+}
+.car-arrow svg { width: 22px; height: 22px; fill: none; stroke: currentColor;
+                 stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.car-arrow:hover:not(:disabled) { transform: scale(1.06); box-shadow: var(--shadow-md, 0 4px 14px rgba(0,0,0,.12)); }
+.car-arrow:disabled { opacity: .3; cursor: default; }
+.car-arrow-left  { grid-column: 1; }
+.car-arrow-right { grid-column: 3; }
+
+/* --- dots ------------------------------------------------------------------*/
+.car-dots {
+    grid-column: 1 / -1;
+    display: flex; justify-content: center; gap: 10px;
+    padding-top: var(--space-3, .75rem);
+}
+.car-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    border: none; padding: 0; cursor: pointer;
+    background: var(--border, #cfd4dd);
+    transition: transform var(--dur-fast, 140ms) ease,
+                background var(--dur-fast, 140ms) ease;
+}
+.car-dot[aria-selected="true"] {
+    background: var(--accent, #4759e4);
+    transform: scale(1.35);
+}
+.car-dot:focus-visible { outline: 2px solid var(--focus-ring, #4759e4); outline-offset: 3px; }
+
+/* --- page 1: source ---------------------------------------------------------*/
+.source-split { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4, 1rem); }
+.source-card {
+    text-align: left;
+    padding: var(--space-5, 1.5rem);
+    border-radius: var(--radius-lg, 14px);
+    border: 2px solid var(--border, #d5d9e0);
+    background: var(--surface-raised, #fff);
+    cursor: pointer;
+    transition: border-color var(--dur-fast) ease, transform var(--dur-fast) ease,
+                box-shadow var(--dur-fast) ease;
+}
+.source-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.source-card[aria-pressed="true"] {
+    border-color: var(--accent, #4759e4);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #4759e4) 22%, transparent);
+}
+.source-card h2 { margin: .6em 0 .3em; font-size: 1.15rem; }
+.source-card p { color: var(--text-secondary); font-size: .92rem; line-height: 1.45; margin: 0 0 .8em; }
+.source-icon svg { width: 34px; height: 34px; fill: none; stroke: var(--accent, #4759e4); stroke-width: 1.8; }
+.source-badge {
+    font-size: .74rem; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--accent, #4759e4);
+    background: color-mix(in srgb, var(--accent, #4759e4) 12%, transparent);
+    padding: 3px 9px; border-radius: 999px;
+}
+
+.upload-zone { margin-top: var(--space-4); }
+.upload-label {
+    display: block;
+    border: 2px dashed var(--border, #cbd2dd);
+    border-radius: var(--radius-lg, 14px);
+    padding: var(--space-5, 1.5rem);
+    text-align: center;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: border-color var(--dur-fast) ease, background var(--dur-fast) ease;
+}
+.upload-label.dragover, .upload-label:hover {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent, #4759e4) 6%, transparent);
+}
+.upload-parse {
+    margin-top: var(--space-3);
+    padding: var(--space-3);
+    border-radius: var(--radius-md, 10px);
+    background: var(--surface-sunken, #f4f6f9);
+    font-size: .92rem;
+}
+.upload-parse .parse-shape { color: var(--accent); font-weight: 600; }
+
+/* --- page 2: templates -------------------------------------------------------*/
+.template-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--space-3, .75rem);
+}
+.tpl-card {
+    text-align: left;
+    padding: var(--space-4, 1rem);
+    border-radius: var(--radius-lg, 14px);
+    border: 2px solid var(--border);
+    background: var(--surface-raised, #fff);
+    cursor: pointer;
+    transition: border-color var(--dur-fast) ease, transform var(--dur-fast) ease,
+                box-shadow var(--dur-fast) ease;
+    position: relative;
+}
+/* Degrees front and center: span two columns each, first row, larger type. */
+.tpl-degree { grid-column: span 2; padding: var(--space-5, 1.5rem); }
+.tpl-degree h2 { font-size: 1.5rem; }
+.tpl-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.tpl-card.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.tpl-flag {
+    position: absolute; top: 12px; right: 12px;
+    font-size: .72rem; letter-spacing: .05em; text-transform: uppercase;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    padding: 3px 9px; border-radius: 999px;
+}
+.tpl-card h2 { margin: 0 0 .25em; }
+.tpl-ladder { font-size: .85rem; color: var(--accent); font-weight: 600; margin: 0 0 .5em; }
+.tpl-desc { font-size: .9rem; color: var(--text-secondary); line-height: 1.45; margin: 0; }
+
+/* --- page 3: subject ---------------------------------------------------------*/
+.subject-form { max-width: 620px; display: grid; gap: var(--space-4); }
+.field-label { display: block; font-weight: 600; margin-bottom: .4em; }
+.field input[type="text"] {
+    width: 100%; padding: .8em 1em;
+    border-radius: var(--radius-md, 10px);
+    border: 1.5px solid var(--border);
+    background: var(--surface-raised);
+    color: var(--text-primary);
+    font-size: 1rem;
+}
+.field input[type="text"]:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.mastery-slider input[type="range"] { width: 100%; accent-color: var(--accent); }
+.mastery-stops {
+    display: flex; justify-content: space-between;
+    font-size: .74rem; color: var(--text-secondary);
+}
+.mastery-desc { font-size: .9rem; color: var(--text-secondary); min-height: 2.6em; }
+
+/* --- page 4: scope ------------------------------------------------------------*/
+.scope-panel {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5);
+    background: var(--surface-raised);
+    min-height: 180px;
+}
+.scope-pulse {
+    width: 44px; height: 44px; border-radius: 50%;
+    border: 3px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    border-top-color: var(--accent);
+    animation: scope-spin 900ms linear infinite;
+    margin-bottom: var(--space-3);
+}
+@keyframes scope-spin { to { transform: rotate(360deg); } }
+.scope-verdict { font-size: 1.1rem; font-weight: 700; margin: 0 0 .4em; }
+.scope-verdict.ok { color: var(--success, #1b9e57); }
+.scope-verdict.warn { color: var(--warning, #c77d0a); }
+.scope-detail { color: var(--text-secondary); font-size: .95rem; }
+.scope-tier {
+    margin-top: var(--space-3); padding: var(--space-3);
+    border-left: 3px solid var(--warning, #c77d0a);
+    background: color-mix(in srgb, var(--warning, #c77d0a) 8%, transparent);
+    border-radius: 0 var(--radius-md) var(--radius-md) 0;
+    font-size: .92rem;
+}
+
+/* --- page 5: review -------------------------------------------------------------*/
+.review-panel {
+    display: grid; gap: 6px;
+    max-width: 560px;
+    margin-bottom: var(--space-5);
+}
+.review-row { display: flex; justify-content: space-between; gap: var(--space-4);
+              padding: .55em 0; border-bottom: 1px solid var(--border); }
+.review-row .k { color: var(--text-secondary); }
+.review-row .v { font-weight: 600; text-align: right; }
+
+.create-btn {
+    display: inline-flex; flex-direction: column; align-items: center;
+    padding: 1.05em 3.2em;
+    font-size: 1.25rem; font-weight: 700;
+    color: #fff;
+    background: var(--accent, #4759e4);
+    border: none; border-radius: var(--radius-lg, 14px);
+    cursor: pointer;
+    box-shadow: var(--shadow-lg, 0 10px 30px rgba(71,89,228,.35));
+    transition: transform var(--dur-fast) ease, box-shadow var(--dur-fast) ease,
+                opacity var(--dur-fast) ease;
+}
+.create-btn:hover:not(:disabled) { transform: translateY(-2px); }
+.create-btn:disabled { opacity: .45; cursor: default; box-shadow: none; }
+.create-btn-sub { font-size: .8rem; font-weight: 500; opacity: .85; }
+.review-note { margin-top: var(--space-3); color: var(--text-secondary); font-size: .9rem; }
+
+.hidden { display: none !important; }
+.visually-hidden {
+    position: absolute; width: 1px; height: 1px;
+    clip: rect(0 0 0 0); overflow: hidden; white-space: nowrap;
+}
+
+/* --- iPad / small laptop -------------------------------------------------*/
+@media (max-width: 1024px) {
+    .create-shell { padding-left: var(--space-4); padding-right: var(--space-4); }
+    .car-arrow { width: 44px; height: 44px; }
+    .template-grid { grid-template-columns: repeat(2, 1fr); }
+    .tpl-degree { grid-column: span 2; }
+    .tpl-card:not(.tpl-degree) { grid-column: span 1; }
+}
+
+/* --- phones ----------------------------------------------------------------*/
+@media (max-width: 760px) {
+    .create-shell { grid-template-columns: 1fr; padding: var(--space-3); }
+    /* Arrows stay but move under the content as compact chevrons: swipe is
+       not discoverable and dots alone bury "next" — the primary action. */
+    .car-arrow {
+        grid-row: 2; width: 40px; height: 40px;
+        justify-self: center;
+    }
+    .car-arrow-left  { grid-column: 1; justify-self: start; }
+    .car-arrow-right { grid-column: 1; justify-self: end; }
+    .car-viewport { grid-column: 1; grid-row: 1; }
+    .car-dots { grid-row: 2; grid-column: 1; padding-top: 0; align-self: center; }
+    .car-title { font-size: 1.35rem; }
+    .source-split { grid-template-columns: 1fr; }
+    .template-grid { grid-template-columns: 1fr; }
+    .tpl-degree { grid-column: span 1; }
+    .create-btn { width: 100%; }
+}
+
+/* Touch swipe affordance on coarse pointers regardless of width */
+@media (pointer: coarse) {
+    .car-page { touch-action: pan-y; }
+}

@@ -4337,6 +4337,50 @@ def handle_event():
 # SocketIO handler removed (core-logic is REST-only)
 
 
+@app.route("/scope_check", methods=["POST"])
+def scope_check_endpoint():
+    """Pre-build scope check for the creation UI.
+
+    The same instruments the build uses — curriculum evidence plus scope_fit —
+    so the carousel's warning is the real verdict rather than a mock. Kept
+    lightweight: one evidence sweep, no LLM generation, and the sweep itself is
+    cached for 7 days so repeated checks on the same topic are free.
+    """
+    from flask import request as _rq, jsonify as _js
+    data = _rq.get_json(silent=True) or {}
+    topic = (data.get("topic") or "").strip()
+    if len(topic) < 3:
+        return _js({"available": False, "error": "topic too short"}), 400
+    try:
+        from services.research.curriculum_research import curriculum_brief
+        from services.core.scope_fit import assess_scope, practice_tier
+    except ImportError:
+        try:
+            from curriculum_research import curriculum_brief
+            from scope_fit import assess_scope, practice_tier
+        except ImportError:
+            return _js({"available": False}), 200
+    try:
+        template = data.get("template") or "course"
+        requested = {"course": 135, "sequence": 270, "seminar": 90,
+                     "overview": 40, "associate": 2700,
+                     "bachelors": 5400}.get(template, 135)
+        brief = curriculum_brief(topic)
+        fit = assess_scope(brief, requested, requested_courses=1)
+        out = {"available": True,
+               "verdict": fit.get("verdict", "ok"),
+               "reason": fit.get("reason", ""),
+               "chapters": fit.get("chapter_count", 0),
+               "sources": fit.get("structural_sources", 0)}
+        tier = practice_tier(topic)
+        if tier:
+            out["practice_tier"] = tier["message"]
+        return _js(out), 200
+    except Exception as e:
+        logging.warning(f"scope_check failed for {topic!r}: {e}")
+        return _js({"available": False}), 200
+
+
 @app.route("/state", methods=["GET"])
 def get_state():
     return registry.get(_student_id_from_request()).get_state()

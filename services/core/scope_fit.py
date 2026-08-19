@@ -206,3 +206,52 @@ def position_in_range(assessment, lo, hi):
         return mid, "evidence roughly matches the request"
     return lo, (f"evidence supports only ~{a.get('supportable_concepts')} "
                 f"concepts — building at the short end rather than padding")
+
+
+# --- conceptual-sufficiency tiers ---------------------------------------------
+#
+# The design (AI_UNIVERSITY_DESIGN.md) calls for three tiers, and for naming the
+# SPECIFIC missing practice rather than a generic "AI may be inaccurate" banner
+# — legal noise trains learners to ignore the one warning that is real. The doc
+# described these; nothing had implemented them until now.
+#
+# Tier 1 (conceptual-complete) is the absence of a match: philosophy, maths,
+# history need no warning, and issuing one anyway would be the noise the design
+# warns against.
+
+PRACTICE_TIERS = {
+    "practice_required": {
+        "keywords": ["programming", "coding", "python", "javascript", "software",
+                     "statistics", "data science", "chemistry", "language",
+                     "spanish", "french", "japanese", "german", "mandarin",
+                     "drawing", "music theory", "photography"],
+        "message": ("Text tutoring covers the concepts, but this subject needs "
+                    "practice this course cannot provide — a compiler, a lab, "
+                    "a speaking partner, or an instrument. Plan for that "
+                    "alongside the course."),
+    },
+    "embodied": {
+        "keywords": ["surgery", "welding", "cooking", "electrical work",
+                     "aviation", "piloting", "nursing", "dentistry", "plumbing",
+                     "carpentry", "scuba", "climbing", "martial arts",
+                     "first aid", "phlebotomy"],
+        "message": ("This subject is fundamentally hands-on or safety-critical. "
+                    "A text course can teach the THEORY only — it cannot make "
+                    "you competent to practise, and no completion here should "
+                    "be read as a practical qualification."),
+    },
+}
+
+
+def practice_tier(topic):
+    """The sufficiency warning for a topic, or None for tier 1.
+
+    Embodied is checked FIRST: "surgical nursing" must get the stronger warning,
+    not the weaker one, when a topic matches both.
+    """
+    blob = (topic or "").lower()
+    for tier in ("embodied", "practice_required"):
+        spec = PRACTICE_TIERS[tier]
+        if any(k in blob for k in spec["keywords"]):
+            return {"tier": tier, "message": spec["message"]}
+    return None
