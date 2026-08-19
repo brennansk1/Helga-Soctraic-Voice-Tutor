@@ -2413,29 +2413,20 @@ class SkeletonBuilder:
             logger.info("[BACKFILL] outline already covers every syllabus chapter")
             return
 
-        # THE CAP IS A SHARE OF THE COURSE, NOT A FLAT SIX.
+        # NO SHARE CAP HERE, DELIBERATELY.
         #
-        # A flat cap means the same six additions are a rounding error on a
-        # 45-lesson course and a fifth of a 12-lesson one. Backfill appends to
-        # the LAST module, so on a short course an uncapped-in-proportion list
-        # visibly tilts the whole thing toward whatever the source emphasised.
+        # A proportional cap was tried and removed. Chapters reaching this point
+        # have already cleared GROUNDING_RELEVANCE in _partition_brief, so they
+        # come from a source that genuinely speaks for the subject — this is the
+        # course's own material, not adjacent material leaking in. Capping it at
+        # a share of the course fights the coverage goal directly: the case this
+        # function exists for is MIT 18.06's orthogonality cluster, three
+        # chapters of core linear algebra that the outline simply never selected.
         #
-        # Chapters reaching here have already cleared GROUNDING_RELEVANCE, so
-        # this is not protection against the wrong subject — that happens
-        # upstream. It bounds how much of a course can be steered by a coverage
-        # checklist at all, which is a different and still necessary limit.
-        _total_lessons = sum(
-            len(u.get("lessons") or [])
-            for m in (course_dict.get("modules") or [])
-            for u in (m.get("units") or []))
-        _share_cap = max(1, int(SUPPLEMENTARY_MAX_SHARE * _total_lessons))
-        _cap = min(cap, _share_cap)
-        if len(missing) > _cap:
-            logger.info(
-                f"[BACKFILL] {len(missing)} uncovered, adding {_cap} "
-                f"({SUPPLEMENTARY_MAX_SHARE:.0%} of {_total_lessons} lessons). "
-                f"The rest are recorded as uncovered rather than bolted on.")
-        missing = missing[:_cap]
+        # SUPPLEMENTARY_MAX_SHARE bounds weak sources, and it does that where
+        # they are actually used — at hydration. Applying it twice would bound
+        # the wrong thing in the wrong place.
+        missing = missing[:cap]
         logger.warning(f"[BACKFILL] {len(missing)} syllabus chapter(s) uncovered: "
                        f"{missing}")
         if self.status_callback:

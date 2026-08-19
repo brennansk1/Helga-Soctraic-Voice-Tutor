@@ -11,6 +11,19 @@ quality?
 > scheduling and retention. This one covers the layer beneath it: the content
 > those sessions actually teach from.
 
+**How the content is consumed, since it determines everything else.** Helga
+teaches **Socratically and in text only** — it asks a question, grades the
+answer 1–5, and picks the next move from the grade. It cycles six question types
+(Scenario, Mechanism, Contrast, Application, Edge Case, Synthesis) and switches
+from QUESTION to LECTURE mode by rule when a learner is lost. Bloom level is the
+difficulty controller and moves *within* a session: two grades ≥3 advance a
+level, a grade ≤1 drops one. Per-concept memory state (stability, difficulty,
+lapses, next review) is scheduled by **FSRS-5**, and the tutor's 1–5 grade is
+the FSRS rating.
+
+**The human never reads these files.** The only consumer is the model, at
+question-generation and grading time. That is directly relevant to Q2.
+
 ---
 
 ## 1. What the system is
@@ -18,8 +31,29 @@ quality?
 **Helga** is an offline, self-hosted Socratic AI tutor on a single **Mac Mini
 M4 Pro, 24 GB**, with no cloud dependency at tutoring time.
 
-* **LLM:** one local model via Ollama, `nail-35b-a3b` (MoE, 34.7B total /
-  ~3B active). One model in memory at a time.
+* **LLM — this is load-bearing for most of the questions below:**
+  `nail-35b-a3b-ctx`, served by **Ollama** on the host.
+
+  | | |
+  |---|---|
+  | architecture | `qwen35moe` — Mixture of Experts, **256 experts, 8 used per token**, 40 blocks |
+  | size | **34.7B total parameters, ~3B active** per token |
+  | quantisation | **IQ3_S** |
+  | context — model maximum | **262,144 tokens** |
+  | context — **as actually served** | **`num_ctx 16384`** |
+  | cold load | **~142 s** |
+
+  The gap between 262k and 16k is deliberate and is a **memory** decision on a
+  24 GB box, not an oversight — but it is exactly the constraint that shapes
+  Q2 (how much content can be in a prompt), Q3 (how much source text can be
+  retrieved at once) and Q6 (whether concepts can be batched into one call).
+  **`-ctx` is a custom Modelfile variant**: the stock tag runs Ollama's default
+  4096, which silently truncated generation for a full debugging cycle before
+  it was found.
+
+  Any recommendation that assumes a large context should say what it would cost
+  in RAM at this quantisation, and whether it still fits alongside the
+  containers. One model is resident at a time.
 * **Storage today:** SQLite (WAL, schema v10) for structured state, JSON for
   course structures, **Markdown files for concept content**, one file per
   concept at `data/courses/{course_uid}/content/{concept_uid}.md`.
@@ -68,17 +102,64 @@ regex-extracts specific sections — `## Socratic Hooks`, `## Advanced Notes` /
 functioning as a **section-addressed store queried by a parser**, which is part
 of why question 1 is live.
 
-### 2.2 Quality enforcement that already exists
+### 2.2 The depth contract — how mastery level is enforced
 
-* **Depth contract** — a generated concept is checked and regenerated if too
-  thin (`HELGA_ENFORCE_DEPTH`, default on, 2 retries).
+This is the most important existing mechanism and any recommendation has to fit
+it. It exists because of a measured failure: **every concept in the first real
+course landed between 626 and 876 words (stdev 57.7) regardless of Bloom level,
+module position, or requested mastery.** The mastery slider was declared in
+prompts and verified nowhere, so the model converged on its own comfortable
+length and the slider was decorative.
+
+The insight was that **length is the wrong proxy** — a graduate treatment is not
+an undergraduate one with more words. So each level requires *structural
+elements*, detected heuristically (LaTeX, unicode maths, or plain prose all
+accepted — the goal is catching categorically missing rigour, not enforcing a
+house style):
+
+| level | words | required elements |
+|---|---|---|
+| 1 Awareness | 120–1000 | any_source |
+| 2 Understanding | 200–1300 | worked_example, any_source |
+| 3 Application | 320–1500 | formal_definition, worked_example, any_source |
+| 4 Proficiency | 500–1800 | + named_result, derivation_or_proof, primary_source |
+| 5 Expertise | 700–2200 | + formal_notation, exercise |
+
+`validate_concept()` returns *which* elements are missing, so the generator
+regenerates against a named deficiency rather than blindly retrying — and a
+course that cannot meet its level can be refused the label instead of shipping
+silently. Default 2 retries (`HELGA_DEPTH_RETRIES`).
+
+Note the word bands here are wider than the `content_words` targets in 2.1;
+those are prompt hints, these are the enforced contract.
+
+### 2.3 Other quality enforcement
+
 * **Grounding threshold** — below a minimum, content is not presented as
   verified.
-* **Fact-check pass** with a correction hint.
+* **Fact-check pass** (`check_content` / `correction_hint`) against source text.
 * **Correction rounds beat prompts.** Measured repeatedly in this codebase:
-  prompt-only enforcement of a rule changed nothing 5/5, while one correction
-  round *naming the specific offender* fixed it 5/5. Any recommendation that
-  amounts to "put it in the prompt" should say why it would work here.
+  prompt-only enforcement changed nothing 5/5, while one correction round
+  *naming the specific offender* fixed it 5/5. Any recommendation that amounts
+  to "put it in the prompt" should say why it would work here.
+
+### 2.4 What the research service actually returns per concept
+
+`POST /api/research_concept` returns `{key_facts, examples, edge_cases,
+sources, confidence, search_degraded}`, and those are injected into the
+generation prompt as labelled blocks to be synthesised into the matching
+sections.
+
+Beyond the general sources, there is **domain-specific routing**:
+`classify_domains()` keyword-matches a topic to domains, and `fetch_domain_sources()`
+then queries **Met Museum**, **Art Institute of Chicago**, **LoC Chronicling
+America**, and **Wikidata** as appropriate. Q5 should treat this as the pattern
+to extend — domain-routed authoritative APIs — rather than more general search.
+
+`search_degraded` exists because a throttled search returning zero sources must
+never be readable as "this concept has no sources". That absent-vs-zero
+distinction has bitten this project several times and any caching or retrieval
+recommendation must preserve it.
 
 ### 2.3 Caching that already exists
 
@@ -116,6 +197,43 @@ serve **this concept**?" is narrower and one it can legitimately pass.
 
 **We would like this reasoning stress-tested.** It is currently an argument, not
 a measurement.
+
+### 2.6 The known quality gap — please read this before answering
+
+Independent of everything above, measured on real generated courses:
+
+* **Generated content states verified false claims.** Not hedged or vague —
+  wrong.
+* **Roughly half of concepts come out hollow** — structurally complete, passing
+  the section template, saying little.
+* **An LLM judge scoring the same course twice swings ±1.4 / 5.** We do not gate
+  on a single judged run for that reason, and we distrust model-graded quality
+  metrics generally.
+
+So the honest state is: **the skeleton is measurably good and the content is
+not.** Every instrument that currently passes is structural — it reads titles,
+counts, and section presence. Nothing reads the content for truth.
+
+This matters for how you answer. A recommendation that makes hydration faster
+or more compact while leaving this gap untouched is worth less to us than one
+that attacks it — and a recommendation that would *worsen* factual grounding in
+exchange for speed is one we would reject.
+
+### 2.7 Things that have already gone wrong here
+
+Offered so recommendations can be checked against them:
+
+* **A 4096-token context ceiling** (Ollama's default without `num_ctx`) silently
+  truncated generation. It was found only after four wrong hypotheses and
+  logging raw response bodies.
+* **A reasoning model with thinking enabled** consumed the whole token budget
+  and returned **empty** content for every concept.
+* **`minItems` is stripped** from `response_format` for /v1 compatibility, and
+  /v1 ignores the `format` field that carries it — so **no JSON-schema minimum
+  binds in this pipeline.** Any structured-output recommendation must not assume
+  schema constraints are enforced.
+* **KuzuDB and ZIM were both adopted and later removed.** Relevant to Q1: we
+  have paid adoption cost twice.
 
 ---
 
@@ -194,10 +312,19 @@ SearXNG. We already respect documented rate limits per host.
 
 At ~90 s/concept this is the dominant cost in the product.
 
-* Where does the time actually go for a MoE model of this size, and what are the
-  real levers — batching, prompt caching / KV reuse across concepts sharing
-  context, shorter targets, structured output, speculative decoding, quantisation
-  trade-offs, concurrency on a single 24 GB box?
+* Where does the time actually go for a **256-expert MoE with ~3B active
+  parameters at IQ3_S**, and what are the real levers? Specifically: does an MoE
+  of this shape behave like a 3B model for throughput and a 35B model for
+  memory, and what does that imply for batching? Is expert-routing overhead or
+  memory bandwidth the binding constraint on Apple Silicon?
+* Prompt caching / KV reuse across concepts that share a lesson's context;
+  speculative decoding; MLX vs the Ollama/llama.cpp path; concurrency on one
+  24 GB box; whether a **larger `num_ctx` than 16384** would pay for itself by
+  enabling batching, and what it costs in RAM at IQ3_S.
+* Is **IQ3_S the right quantisation** for content that must be factually
+  correct, or is aggressive quantisation itself contributing to the false-claim
+  problem in 2.6? A higher-quality quant that is slower per concept but needs
+  fewer correction retries could be faster end to end.
 * Is there a **quality-improving** speedup — e.g. generating a whole lesson's
   concepts in one call the way the skeleton builder now does per module, which
   cut calls *and* improved coherence?
@@ -223,7 +350,7 @@ what it would replace.
 | constraint | detail |
 |---|---|
 | **Offline at tutoring time** | no cloud APIs during a session; hydration may use the network |
-| **One local model, 24 GB** | one model resident; ~90 s per concept measured |
+| **One local model, 24 GB** | `nail-35b-a3b-ctx`, MoE 34.7B/~3B active, IQ3_S, **`num_ctx` 16384** (model max 262144), ~142 s cold load, ~90 s per concept |
 | **Mac Mini M4 Pro** | Apple Silicon; MLX available; no CUDA |
 | **SQLite is incumbent** | WAL, schema v10, migrations exist; replacing it needs a real argument |
 | **Self-hosted only** | SearXNG is ours; no paid APIs |
