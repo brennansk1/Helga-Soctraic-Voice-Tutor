@@ -1198,3 +1198,90 @@ Three fixes now precede any university work, all in the existing pipeline rather
 than in this design: the cold-start/cache fix, passing the outline into
 `check_structure`, and unit/lesson fan-out. Then re-run Task 0 and apply the R1
 decision rule to a number that means something.
+
+---
+
+# Should the model drive the research loop until satisfied?
+
+Proposal: let the LLM call the research service iteratively, accumulating and
+caching sources, until it judges it has enough to build the preset at depth —
+with strong instructions and guards for textbook-level quality.
+
+**Verdict: adopt the loop, reject the exit condition.** The model should decide
+*what to look for*; it must not decide *when there is enough*.
+
+## What argues for it — measured today
+
+* **Query formulation is exactly what world knowledge is for.** Resolving
+  "Learning to be a Dungeon Master": blind search returned *Dungeon Crawler
+  Carl*, a novel. Category filtering still returned the novel. A model-suggested
+  candidate returned **Gamemaster**. The model knows what a topic *means*; search
+  knows only what it *spells*.
+* **Caching makes iteration nearly free.** Measured 73.93 s → 0.43 s on repeat
+  lookups (172×). A loop that re-queries costs little after the first pass, so
+  the usual objection to iterative research does not apply here.
+* **Gap-driven retry already works.** The coverage backfill does this at the
+  structure layer — detect uncovered chapters, generate against the named gap —
+  and it is the pattern that moved coverage from 70% to 90–100%.
+* **Sourceless subjects benefit most.** For D&D DMing there is no textbook. A
+  model that knows to search "encounter design", "session pacing", "player
+  agency" assembles something a fixed query template cannot.
+
+## What argues against the exit condition — also measured today
+
+* **"Until it is satisfied" is the one judgment there is direct evidence the
+  model is bad at.** `scope_fit` exists precisely because asking a model "is
+  there enough material?" invites the same optimism that produces padding. The
+  model that would emit forty hollow courses will also declare its research
+  sufficient. **Self-assessed sufficiency is the weakest possible stopping rule.**
+* **Judges swing ±10 points on identical input.** An exit condition that is a
+  model judgment is nondeterministic: the same course built twice gets different
+  research depth, and the difference is invisible afterwards.
+* **Failures here are silent by construction.** The 4096-token ceiling produced
+  24 identical 400s per build and a course a third short, with no error surfaced.
+  A loop whose exit depends on results would have looped on failures, or exited
+  early believing it had looked.
+* **"Same quality as a textbook" is unmeasurable in the case this is for.** The
+  only credible instrument is comparison against an actual textbook
+  (`coverage_check`). For a sourceless subject there is no textbook to compare
+  against — so the guard the proposal most wants cannot be applied exactly where
+  the loop is most needed.
+
+## The split that keeps the benefit and drops the risk
+
+> **The model proposes what to search. Deterministic code decides when to stop.**
+
+The same division that fixed Wikipedia resolution an hour ago, and the one this
+codebase keeps having to relearn.
+
+Concretely, the exit condition becomes **measured coverage of a checklist**, not
+satisfaction:
+
+1. The model produces a target list — *what must a course on X cover?* This is
+   world knowledge and it is good at it.
+2. Where a real syllabus exists, that list is **replaced** by the syllabus, not
+   merged with it. An invented checklist is a fallback, never a supplement to a
+   real one.
+3. Each iteration searches for uncovered items, using model-proposed queries.
+4. A **deterministic** check marks items sourced or not — the keyword matcher,
+   no judge.
+5. The loop exits when the checklist is covered, or a hard budget is spent.
+
+## Guards, in order of importance
+
+| guard | why |
+|---|---|
+| **Exit on measured coverage, never on self-report** | the one judgment the model demonstrably cannot make |
+| **Hard iteration and token budget** | a model-controlled loop has no natural end; builds already run 17 min |
+| **No-progress detector** — stop after 2 rounds adding no new sources | prevents looping on a dry subject or on silent failures |
+| **Degraded research never counts as "searched"** | a throttled lookup must not retire a checklist item; absent-vs-zero, again |
+| **A course built on an invented checklist is labelled as such** | it did not meet a published standard, and the record should say so |
+| **Per-round cache reuse** | already built; makes the loop affordable |
+
+## What this does not solve
+
+Textbook-parity for a subject with no textbook remains **unmeasurable**, and no
+amount of instruction changes that. What the loop can honestly promise is
+*better sourcing*, judged by breadth of independent sources and by the depth
+contract — not equivalence to a book that does not exist. Claiming otherwise in
+the UI would be the same overreach as reading 100% keyword coverage as quality.

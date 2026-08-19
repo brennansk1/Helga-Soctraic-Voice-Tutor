@@ -2366,6 +2366,22 @@ class SkeletonBuilder:
         _nominal = max(1, base_units * base_lessons)
         _lesson_lo = max(1, int(round(_nominal * (1 - LESSON_TOLERANCE))))
         _lesson_hi = max(_lesson_lo, int(round(_nominal * (1 + LESSON_TOLERANCE))))
+
+        # WHEN EVIDENCE SAYS "GO LONG", THE FLOOR MOVES WITH IT.
+        #
+        # The range let a thin subject shrink, which is its purpose — but the
+        # floor stayed at the range MINIMUM even for subjects whose evidence
+        # supports three courses' worth of material. Measured across two
+        # median-of-3 runs: at ~50 lessons coverage was 100/100/100, at ~39 it
+        # was 90/100/90. The missing 10% is lessons the subject had material for
+        # and the floor did not ask for.
+        #
+        # So a rich subject raises its own floor toward the target, while a thin
+        # one keeps the low floor. Flexibility for the subject that needs it,
+        # not for the one that does not.
+        _steer_txt = (getattr(self, "_length_steer", "") or "")
+        if "carries the longer" in _steer_txt:
+            _lesson_lo = max(_lesson_lo, _nominal)
         # A range on its own is only PERMISSION to vary, and the model reads it
         # as licence to stop early: evidence set a target of 56 lessons and the
         # build came back with 39, because nothing in the prompt said which end
