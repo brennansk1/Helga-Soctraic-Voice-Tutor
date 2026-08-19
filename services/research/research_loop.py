@@ -127,6 +127,23 @@ def run_research_loop(checklist, search_fn, propose_queries_fn=None,
     }
 
 
+def topic_name(item):
+    """The topic, without its explanation.
+
+    Models answer "list the topics" with "Topic: a sentence explaining it", and
+    a 20-word item can never be matched against source titles — measured, the
+    loop found 248 sources and scored 0/12 because every item was a sentence.
+    The part before the colon is the topic; the rest is prose about it.
+    """
+    head = (item or "").split(":", 1)[0].strip()
+    # A dash is the other common separator, but only when it is separating
+    # rather than hyphenating a word ("Gram-Schmidt" must survive).
+    for sep in (" — ", " – ", " - "):
+        if sep in head:
+            head = head.split(sep, 1)[0].strip()
+    return head or (item or "").strip()
+
+
 def _default_is_covered(item, sources):
     """Deterministic containment. No judge, so it cannot drift or hallucinate.
 
@@ -134,7 +151,9 @@ def _default_is_covered(item, sources):
     question the loop needs, and leaves "is it any good" to the depth contract
     and fact-check, which run over the content afterwards.
     """
-    words = [w for w in item.lower().split() if len(w) > 3]
+    # Match on the topic, not on its explanation, and cap the words considered —
+    # requiring half of a long phrase is a test nothing can pass.
+    words = [w for w in topic_name(item).lower().split() if len(w) > 3][:6]
     if not words:
         return False
     blob = " ".join(

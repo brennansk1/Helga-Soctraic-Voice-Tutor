@@ -2121,8 +2121,12 @@ class SkeletonBuilder:
                 prompt=(f"A course on \"{topic}\" is being built and no published "
                         f"syllabus exists for it. List the 8-12 topics such a "
                         f"course must cover to be taken seriously by someone who "
-                        f"knows the subject. Specific topics, not chapter "
-                        f"headings."),
+                        f"knows the subject.\n\n"
+                        f"Each entry must be a SHORT TOPIC NAME of 2-6 words — "
+                        f"the kind of phrase that would appear in a syllabus. No "
+                        f"colons, no explanations, no sentences. These are used "
+                        f"as search terms, and a sentence cannot be searched "
+                        f"for."),
                 sys_prompt="You design curricula. Answer only with JSON.",
                 schema={"type": "object", "properties": {"topics": {
                     "type": "array", "items": {"type": "string"}}},

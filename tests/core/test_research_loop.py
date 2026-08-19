@@ -110,3 +110,40 @@ class TestChecklistProvenance(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTopicNameExtraction(unittest.TestCase):
+    """Models answer "list the topics" with "Topic: a sentence explaining it".
+
+    MEASURED against the live service: the loop found 248 sources and scored
+    0/12, because every checklist item was a 20-word sentence and matching half
+    its words against source titles is a test nothing can pass.
+    """
+
+    def test_the_explanation_is_stripped(self):
+        from services.research.research_loop import topic_name
+        item = ("Narrative Architecture and Pacing: Structuring sessions with "
+                "clear acts, rising tension, and satisfying resolutions.")
+        assert topic_name(item) == "Narrative Architecture and Pacing"
+
+    def test_a_hyphenated_term_survives(self):
+        """Gram-Schmidt must not be split at its hyphen."""
+        from services.research.research_loop import topic_name
+        assert topic_name("Gram-Schmidt Orthogonalization") == \
+            "Gram-Schmidt Orthogonalization"
+
+    def test_a_separating_dash_is_stripped(self):
+        from services.research.research_loop import topic_name
+        assert topic_name("Projections — how to compute them") == "Projections"
+
+    def test_a_plain_topic_is_unchanged(self):
+        from services.research.research_loop import topic_name
+        assert topic_name("Least Squares") == "Least Squares"
+
+    def test_a_verbose_item_can_now_be_covered(self):
+        from services.research.research_loop import _default_is_covered
+        item = ("Narrative Architecture and Pacing: Structuring sessions with "
+                "clear acts and rising tension while managing time.")
+        sources = [{"title": "Narrative architecture in tabletop RPGs",
+                    "snippet": "pacing a session"}]
+        assert _default_is_covered(item, sources) is True
