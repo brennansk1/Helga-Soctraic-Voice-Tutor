@@ -1881,6 +1881,9 @@ class SkeletonBuilder:
             from coherence import check_coherence, gate_summary
         _coh = check_coherence(course_dict)
         judge_result["internal_coherence"] = _coh
+        _titles = self._flag_generic_titles(course_dict)
+        if _titles:
+            judge_result["titles"] = _titles
         if _coh.get("verdict") == "INCOHERENT":
             logger.warning(
                 f"[COHERENCE] {_coh['forward_references']} forward reference(s) "
@@ -2164,6 +2167,31 @@ class SkeletonBuilder:
             self.status_callback(
                 f"CHECK:RESEARCH_LOOP:{result.get('coverage_pct')}:"
                 f"{result.get('stopped_because')}")
+        return result
+
+    def _flag_generic_titles(self, course_dict):
+        """Record titles that name nothing. Measured in nearly every build.
+
+        "Applications" appeared as a unit AND a lesson in the same course;
+        "Advanced Topics" in another. A generic title is the model declining to
+        decide what a section is about, and it is invisible to coverage — the
+        course still "reaches" the material, in a box labelled nothing.
+
+        Recorded rather than rewritten: renaming a section without regenerating
+        its contents would paper over the decision the model declined to make.
+        """
+        try:
+            from tools.structure_quality import check_titles
+        except ImportError:
+            return None
+        result = check_titles(course_dict)
+        if result.get("checked") and not result.get("specific"):
+            logger.warning(
+                f"[TITLES] {result['generic']} of {result['titles']} titles name "
+                f"nothing ({result['rate']:.1%}): {result['examples'][:4]}")
+            if self.status_callback:
+                self.status_callback(
+                    f"CHECK:TITLES:GENERIC:{result['generic']}")
         return result
 
     def _backfill_uncovered_chapters(self, course_dict, topic, cap=6):
@@ -2587,6 +2615,12 @@ class SkeletonBuilder:
             f"  - a reader must know exactly what is taught from the title alone\n"
             f"  - do NOT use: Introduction to X, Overview of X, Understanding X, X Part N,\n"
             f"    Fundamentals, Principles, Framework, Dynamics, Axioms, Modelling\n"
+            f"  - BANNED as a WHOLE title, at every level: Applications, "
+            f"Advanced Topics, Core Concepts, Key Ideas, Further Study, Other "
+            f"Topics, Additional Material, Review, Summary. These name nothing "
+            f"— a reader learns only that the section exists. If a section is "
+            f"about applications, say WHICH: \"Markov Chains in Population "
+            f"Models\", not \"Applications\".\n"
             f"{mastery_constraint}\n"
             f"Return JSON only, shaped exactly:\n"
             f'{{"units": [{{"title": "...", "description": "...", "lessons": '
