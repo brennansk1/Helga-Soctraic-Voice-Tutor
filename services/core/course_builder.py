@@ -2427,6 +2427,18 @@ class SkeletonBuilder:
             # Never empty a module entirely — a module with no units at all is a
             # worse defect than the one being fixed.
             module["units"] = keep or units
+        # A module that ends with no lessons at all teaches nothing. Pruning
+        # cannot fix it — dropping every unit leaves a module with no units — so
+        # it is recorded as a defect rather than passed off as structure.
+        hollow = [m.get("title", "?") for m in (course_dict.get("modules") or [])
+                  if not any(u.get("lessons") for u in (m.get("units") or []))]
+        if hollow:
+            course_dict["hollow_modules"] = hollow
+            logger.warning(f"[STRUCTURE] {len(hollow)} module(s) contain no "
+                           f"lessons at all: {hollow[:3]} — these teach nothing")
+            if self.status_callback:
+                self.status_callback(f"STRUCT:HOLLOW_MODULES:{len(hollow)}")
+
         if dropped:
             logger.info(f"[STRUCTURE] dropped {len(dropped)} unit(s) with no "
                         f"lessons: {dropped[:4]}")
@@ -2829,6 +2841,55 @@ class SkeletonBuilder:
         # A generic title is the model declining to decide what a section is
         # about, and it is invisible to coverage: the course still "reaches" the
         # material, in a box labelled nothing.
+        # UNITS WITH NO LESSONS ARE THE SAME CLASS OF DEFECT AS TOO FEW UNITS,
+        # and the same fix applies. The lesson minimum is advisory on this
+        # endpoint, so a unit can come back with an empty lesson list — and a
+        # module whose units are ALL empty produces a module that teaches
+        # nothing. Measured: lessons-per-module [6, 0, 9, 6, 5, 6], where module
+        # 2 had three units and zero lessons.
+        #
+        # Pruning alone cannot fix that: dropping every unit would leave a module
+        # with no units, which is a worse defect. The material has to be asked
+        # for again.
+        _empty_units = [u.get("title", "?") for u in units_data
+                        if not (u.get("lessons") or [])]
+        if _empty_units:
+            logger.info(f"  [ONESHOT] {m_title!r} has {len(_empty_units)} unit(s) "
+                        f"with no lessons: {_empty_units[:3]} — one correction round")
+            try:
+                fix = llm_generate_json(
+                    prompt=(prompt + f"\n\n### CORRECTION\n"
+                            f"These units came back with NO lessons: "
+                            f"{_empty_units[:5]}. Every unit is about a week of "
+                            f"study and must contain lessons. Either give each "
+                            f"one real lessons, or drop it and put its material "
+                            f"in the units that remain — an empty unit is a step "
+                            f"a learner clicks with nothing behind it."),
+                    sys_prompt=sys_prompt,
+                    max_tokens=max_tokens,
+                    schema=self.subtree_schema(
+                        min_units=_min_units,
+                        min_lessons=max(_shape_lo("lessons_per_unit", 2),
+                                        -(-_lesson_lo // 2)),
+                        min_concepts=base_concepts),
+                    progress_callback=self.status_callback,
+                )
+                if isinstance(fix, list):
+                    fix = next((f for f in fix if isinstance(f, dict)), None)
+                retry_units = [u for u in ((fix or {}).get("units") or [])
+                               if isinstance(u, dict)]
+                retry_empty = [u for u in retry_units if not (u.get("lessons") or [])]
+                # Accept only if it has fewer empty units AND has not shrunk the
+                # lesson count overall.
+                _lessons = lambda us: sum(len(u.get("lessons") or []) for u in us)
+                if (len(retry_empty) < len(_empty_units)
+                        and _lessons(retry_units) >= _lessons(units_data)):
+                    logger.info(f"  [ONESHOT] correction filled "
+                                f"{len(_empty_units) - len(retry_empty)} empty unit(s)")
+                    units_data = retry_units
+            except Exception as e:
+                logger.warning(f"  [ONESHOT] empty-unit correction failed: {e}")
+
         _generic = _generic_titles_in(units_data)
         if _generic:
             logger.info(f"  [ONESHOT] {m_title!r} has {len(_generic)} title(s) "

@@ -65,3 +65,25 @@ class TestEmptyUnitPruning(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestHollowModules(unittest.TestCase):
+    """A module with no lessons at all teaches nothing, and pruning cannot fix
+    it — dropping every unit leaves a module with no units, which is worse.
+
+    MEASURED: lessons-per-module [6, 0, 9, 6, 5, 6], where module 2 had three
+    units and zero lessons between them.
+    """
+
+    def test_a_lessonless_module_is_recorded_as_a_defect(self):
+        c = {"modules": [
+            {"title": "Real", "units": [{"title": "u", "lessons": [{"title": "L"}]}]},
+            {"title": "Hollow", "units": [{"title": "a", "lessons": []},
+                                          {"title": "b", "lessons": []}]}]}
+        _b()._drop_empty_units(c)
+        assert c.get("hollow_modules") == ["Hollow"]
+
+    def test_a_healthy_course_records_nothing(self):
+        c = _course(("A", 3), ("B", 2))
+        _b()._drop_empty_units(c)
+        assert "hollow_modules" not in c
