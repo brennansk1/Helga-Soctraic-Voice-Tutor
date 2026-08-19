@@ -37,44 +37,99 @@ no study group, and no exam week to force consolidation.
 
 ## 2. What already exists (please build on, not replace)
 
-### 2.1 Spaced repetition — FSRS-5
+This section is deliberately detailed. The three mechanisms below already
+interact, and a recommendation that ignores how they are wired will not be
+implementable.
 
-A direct FSRS-5 implementation (not a wrapper) drives **both** flashcards and
-concepts. Per-concept memory state (stability, difficulty, lapses) is persisted.
+### 2.1 The Socratic loop — what a session actually is
 
-**Measured interval growth on successful recall:** 3 → 11 → 35 → 101 days.
+A session covers **one concept**. The tutor does not present material and then
+test it; it asks a question, grades the answer 1–5, and chooses the next move
+from the grade.
 
-### 2.2 The mastery gate
+**Six question types, cycled** — the learner is not asked the same *kind* of
+question repeatedly:
 
-A concept is *not* completed until the learner clears a conjunctive gate:
+| type | asks for |
+|---|---|
+| **Scenario** | apply the idea to a situation |
+| **Mechanism** | explain how/why it works |
+| **Contrast** | distinguish it from a neighbouring idea |
+| **Application** | use it on a concrete problem |
+| **Edge Case** | where it breaks or does not apply |
+| **Synthesis** | connect it to other concepts |
 
-* a **streak** of grades ≥ 3 (band-dependent: 2 correct for young learners,
-  3 of 4 for senior),
-* a **Bloom level** target — the gate rises through Remember → Understand →
-  Apply → Analyze → Evaluate → Create,
-* **question-type diversity** — the learner must pass several *kinds* of
-  question, not the same kind repeatedly.
+**Two teaching modes**, chosen per turn by rule (not by a model call):
 
-### 2.3 A bounded session
+* **QUESTION** — the default Socratic move.
+* **LECTURE** — the tutor explains instead of asking. Triggered when the learner
+  says they do not know, when the last grade was ≤ 1, or when they have given
+  two consecutive partial (grade-2) answers. This is the "stop interrogating
+  someone who is lost" valve.
 
-Measured: a stalled learner could run indefinitely on one concept. There is now
-an escalation — ease the explanation at 2 misses, offer to move on at 4, and at
-20 questions the concept is **parked**: explicitly *not* completed, returned to
-the FSRS queue, and the learner continues.
+**Escalation when a learner stalls** (adult bands): at 2 consecutive misses the
+tutor changes the explanation rather than pressing harder; at 4 it offers to move
+on; at 20 questions the concept is **parked** — explicitly *not* completed, handed
+back to the review scheduler, and the learner proceeds.
 
-### 2.4 Grade provenance
+*Relevant to your answer:* the tutor is a question-asking machine, so the
+**testing effect and generation effect are already exploited continuously** —
+every interaction is retrieval practice. What it does *not* currently do is space
+those retrievals deliberately; spacing is handled by a separate system (2.3).
 
-A grade produced during an LLM outage is marked `graded: false` so it cannot be
-mistaken for a real assessment by FSRS or by a mastery calculation.
+### 2.2 Bloom's taxonomy — how it is actually wired
 
-### 2.5 Content provenance
+Bloom is not decoration here; it is the **difficulty controller**, and it moves
+during a session.
 
-Courses are built from real published syllabi where they exist (OpenStax,
-Wikibooks, transcribed textbook chapter orders). Coverage against a real syllabus
-is measured — 100% against MIT 18.06 for linear algebra. Where no published
-source exists, the course is labelled as such.
+* Each concept carries a **Bloom target**; each course a **floor and ceiling**
+  from its preset (e.g. a College Course runs 1–4, a Graduate Seminar 3–6).
+* The learner starts at the floor. **Two consecutive grades ≥ 3 advance one
+  level**, up to the course ceiling.
+* A grade ≤ 1 **drops the level by one**; a grade of 2 holds it and resets the
+  streak.
+* For younger bands, repeated misses also ease the level *downward* toward the
+  floor, so the next question is genuinely simpler rather than merely rephrased.
+* Levels: 1 Remember · 2 Understand · 3 Apply · 4 Analyze · 5 Evaluate ·
+  6 Create.
 
----
+So the tutor is continuously hunting for the edge of the learner's competence
+within a concept, and the mastery gate (below) requires reaching the concept's
+Bloom target — not merely answering correctly at an easy level.
+
+*Relevant to your answer:* this is a within-session adaptive difficulty
+mechanism. **We do not know what should happen to Bloom level across a
+four-year horizon** — whether a review months later should restart at the floor,
+resume at the level attained, or drop by some function of elapsed time.
+
+### 2.3 FSRS-5 — how it is used, and where it is thin
+
+A direct FSRS-5 implementation (not a wrapper around a library). Per-concept
+memory state — **stability, difficulty, lapses, next-review date** — is persisted
+on the progress row (schema v10), so concepts *and* flashcards are both scheduled
+by it.
+
+* The tutor's **1–5 grade is passed to FSRS as the rating**, so the same judgement
+  that drives Bloom movement also drives scheduling.
+* Measured interval growth on repeated successful recall:
+  **3 → 11 → 35 → 101 days**.
+* A grade produced during a model outage is marked `graded: false` so it cannot
+  silently enter the scheduler as a real assessment.
+
+**Where it is thin, and why we are asking:**
+
+* Scheduling is **per concept**. There is no notion of a *course* or a
+  *programme* in the scheduler — nothing knows that Calculus II depends on
+  Calculus I, or that a term-1 concept is a prerequisite for term-5 material.
+* **Cross-course review is not implemented.** The schema supports it (review
+  dates are indexed independently of course), but nothing currently resurfaces a
+  Calculus I concept while a learner is inside Calculus II.
+* Nothing connects **mastery-gate completion** to **initial FSRS state**. A
+  concept that was hard-won and one that was easy enter the scheduler the same
+  way.
+* Nothing connects **review failure** back to **course status**. A learner can
+  fail a review of a concept in a module they have already "passed", and the
+  module stays passed.
 
 ## 3. The problem we cannot resolve ourselves
 
