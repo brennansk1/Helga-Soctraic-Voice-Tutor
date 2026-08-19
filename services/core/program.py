@@ -655,3 +655,73 @@ def assign_terms(courses, terms, per_term=None):
         if c.get("slot") == "capstone" and c["title"] not in dependents_of:
             c["term"] = terms
     return courses
+
+
+def plan_degree(subject, template, llm_json_fn=None, search_fn=None,
+                preset="college"):
+    """The single entry point: a subject and a degree tier in, a plan out.
+
+    Everything above this is a step; this is the thing a caller invokes. The
+    pieces existed and nothing joined them, so the whole degree tier was
+    orphaned from the build pipeline — real course names, a real prerequisite
+    graph, a real term layout, and no way to ask for any of it.
+
+    The full cascade, in the order the course tier established:
+
+        1. a transcribed curriculum for this degree, if one exists
+        2. gaps in it filled rather than the curriculum discarded
+        3. otherwise the model proposes the course list, labelled as such
+        4. prerequisites inferred from catalogue conventions, then the model
+        5. terms laid out topologically, chains shortened to fit the programme
+        6. validated — cycles, missing prerequisites, duplicates, ordering
+
+    Raises ProgramError only if the result is genuinely unteachable, which is
+    worth failing on: an incoherent programme is invisible until a learner
+    reaches a course they cannot follow, months in.
+    """
+    tpl = TEMPLATES.get(template)
+    if not tpl:
+        raise ProgramError(f"unknown template {template!r}")
+
+    sourced = source_degree_slots(subject, template,
+                                  llm_json_fn=llm_json_fn, search_fn=search_fn)
+    plan = plan_from_template(subject, template,
+                              slot_subjects=sourced.get("slots"), preset=preset)
+
+    propose = None
+    if llm_json_fn:
+        def propose(titles):
+            data = llm_json_fn(
+                prompt=("Which of these courses require another as a "
+                        "prerequisite? Only real dependencies — a course that "
+                        "genuinely cannot be taken first.\n\n"
+                        + "\n".join(f"  - {t}" for t in titles)),
+                sys_prompt="You know degree prerequisites. JSON only.",
+                schema={"type": "object", "properties": {"edges": {
+                    "type": "array", "items": {"type": "object", "properties": {
+                        "course": {"type": "string"},
+                        "requires": {"type": "string"}},
+                        "required": ["course", "requires"]}}},
+                    "required": ["edges"]},
+                max_tokens=700)
+            if isinstance(data, list):
+                data = next((d for d in data if isinstance(d, dict)), None)
+            return (data or {}).get("edges") or []
+
+    infer_prerequisites(plan["courses"], propose_fn=propose)
+    assign_terms(plan["courses"], tpl["terms"])
+    validate(plan["courses"])
+
+    plan["curriculum_source"] = sourced.get("source")
+    plan["authoritative"] = sourced.get("authoritative")
+    if sourced.get("reference"):
+        plan["reference"] = sourced["reference"]
+    if sourced.get("note"):
+        plan["note"] = sourced["note"]
+    plan["prerequisite_edges"] = sum(len(c.get("requires") or [])
+                                     for c in plan["courses"])
+    logger.info(f"[DEGREE] {subject!r} {tpl['label']}: "
+                f"{len(plan['courses'])} courses, "
+                f"{plan['prerequisite_edges']} prerequisite edges, "
+                f"{tpl['terms']} terms, source={plan['curriculum_source']}")
+    return plan

@@ -384,3 +384,53 @@ class TestTermAssignment(unittest.TestCase):
         from services.core.program import validate
         cs = self._chain(8, terms=4)
         validate(cs)
+
+
+class TestPlanDegreeEntryPoint(unittest.TestCase):
+    """The pieces existed and nothing joined them, so the whole degree tier was
+    orphaned: real course names, a real prerequisite graph, a real term layout,
+    and no way for a caller to ask for any of it."""
+
+    def test_a_known_degree_uses_its_published_curriculum(self):
+        from services.core.program import plan_degree
+        p = plan_degree("Economics", "associate")
+        assert p["curriculum_source"] == "published curriculum"
+        assert p["authoritative"] is True
+        assert len(p["courses"]) == TEMPLATES["associate"]["courses"]
+
+    def test_an_unknown_degree_still_produces_a_valid_plan(self):
+        """The D&D case: same shape, same validation, labelled differently."""
+        from services.core.program import plan_degree
+        p = plan_degree("Underwater Basket Weaving", "associate")
+        assert p["authoritative"] is False
+        assert len(p["courses"]) == TEMPLATES["associate"]["courses"]
+        assert p["terms"] == TEMPLATES["associate"]["terms"]
+
+    def test_the_plan_is_always_validated(self):
+        """plan_degree calls validate(), so anything it returns is teachable --
+        every prerequisite earlier, no cycles, no duplicates."""
+        from services.core.program import plan_degree, validate
+        for subject in ("Economics", "Basket Weaving"):
+            p = plan_degree(subject, "associate")
+            validate(p["courses"])          # raises if not
+
+    def test_prerequisites_are_inferred_without_a_model(self):
+        """Catalogue conventions are deterministic, so a plan built with no LLM
+        still gets its levelling."""
+        from services.core.program import plan_degree
+        p = plan_degree("Economics", "associate", llm_json_fn=None)
+        assert p["prerequisite_edges"] > 0
+
+    def test_an_unknown_template_is_rejected(self):
+        from services.core.program import ProgramError, plan_degree
+        with self.assertRaises(ProgramError):
+            plan_degree("Economics", "doctorate")
+
+    def test_provenance_reaches_the_caller(self):
+        """Whether a curriculum was transcribed or proposed is the single most
+        important thing about a degree plan, so it must survive to the caller."""
+        from services.core.program import plan_degree
+        p = plan_degree("Economics", "associate")
+        assert "reference" in p
+        q = plan_degree("Basket Weaving", "associate")
+        assert "note" in q and "still evidence-gated" in q["note"]
