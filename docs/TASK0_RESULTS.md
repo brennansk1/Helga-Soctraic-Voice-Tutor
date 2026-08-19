@@ -1195,3 +1195,39 @@ never trade one defect for another.
 **Prompt-only enforcement failed five times; the correction round worked five
 times.** That is the reliable lever in this codebase, and it is worth reaching
 for first rather than fourth.
+
+---
+
+# Conditions 3 and 4: both DEGREE_SHAPED
+
+`tools/degree_quality.py` grades a *programme*, which fails in ways no
+course-level check can see: a capstone in term 1, a prerequisite nobody can
+satisfy, nine courses in one term and one in another, or twenty courses that are
+the same subject renamed.
+
+| | Economics (published curriculum exists) | Dungeon Mastering (none exists) |
+|---|---|---|
+| source | **published curriculum** | model-proposed |
+| term balance | `[6,5,5,4]` spread 0.14 | `[7,5,5,3]` spread 0.28 |
+| prerequisites | 7 edges, all earlier | 37 edges, all earlier |
+| capstone | at the end | at the end |
+| breadth | 15 subjects, all 4 slots | 6 subjects, all 4 slots |
+| placeholders | 0/20 | 0/20 |
+| **verdict** | **DEGREE_SHAPED** | **DEGREE_SHAPED** |
+
+A degree for a subject with no published programme anywhere is arranged like a
+real degree. That is condition 4.
+
+## Two calibration corrections the tests forced
+
+**The placeholder pattern matched a real course.** `"NUR 490: Capstone"` was
+flagged, but a capstone course is genuinely called Capstone in real catalogues.
+The trailing *number* is what makes `"Nursing: gen_ed 1"` a placeholder, so the
+pattern now requires one — except for `gen_ed`, whose underscore no catalogue
+would ever print.
+
+**The no-model fallback is caught, not passed.** With no curriculum *and* no
+model, `plan_degree` fills slots with `"Subject: gen_ed 1"` by design, so a build
+never crashes. The instrument reports that as NOT_DEGREE_SHAPED — if it passed,
+the fallback would be indistinguishable from a real programme. The live path (no
+curriculum, *with* a model) is what reaches DEGREE_SHAPED.
