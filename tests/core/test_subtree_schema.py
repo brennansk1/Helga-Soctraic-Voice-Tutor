@@ -41,8 +41,9 @@ class TestMinimumsAreEnforced(unittest.TestCase):
 
 class TestItRemainsAFloorNotAQuota(unittest.TestCase):
     def test_no_maximum_is_imposed(self):
-        """Units may differ in size — the topical grouping the design calls for
-        depends on a module being allowed MORE than the minimum."""
+        """Only the LOWER bound is enforced, because that is where collapse
+        lives. Nothing caps the upper end, so a module with more material is
+        free to carry more — the range is a floor plus guidance, not a cage."""
         u, l, c = _levels(SkeletonBuilder.subtree_schema(3, 3, 3))
         for level in (u, l, c):
             assert "maxItems" not in level
@@ -84,11 +85,15 @@ class TestUnitsStayFlexible(unittest.TestCase):
         Flexibility below the level a registrar would recognise is not
         flexibility, it is collapse. Units remain uncapped above the floor.
         """
-        import inspect
-        from services.core.course_builder import SkeletonBuilder
-        src = inspect.getsource(SkeletonBuilder._build_module_subtree_oneshot)
-        assert "min_units=2" in src, \
+        from services.core.course_builder import _shape_lo, _shape_range
+        from tools.structure_quality import SCHOOL_SHAPE
+
+        lo, hi = _shape_range("units_per_module", 2, 4)
+        assert (lo, hi) == SCHOOL_SHAPE["units_per_module"], \
+            "the builder must ask for the shape the checker grades"
+        assert _shape_lo("units_per_module", 2) >= 2, \
             "a module of one unit is a week, not a module"
+        assert hi > lo, "the shape is a range, not a fixed count"
 
     def test_lesson_and_concept_floors_are_still_passed(self):
         """The lesson floor now derives from the range MINIMUM rather than the

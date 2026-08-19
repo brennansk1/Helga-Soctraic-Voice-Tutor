@@ -536,6 +536,24 @@ def _curated_spine(topic):
     return None
 
 
+def _shape_lo(level, default):
+    """Lower bound of a school-shape band, from the shared definition."""
+    try:
+        from tools.structure_quality import SCHOOL_SHAPE
+    except ImportError:
+        return default
+    return int(SCHOOL_SHAPE.get(level, (default, default))[0])
+
+
+def _shape_range(level, default_lo, default_hi):
+    try:
+        from tools.structure_quality import SCHOOL_SHAPE
+    except ImportError:
+        return default_lo, default_hi
+    lo, hi = SCHOOL_SHAPE.get(level, (default_lo, default_hi))
+    return int(lo), int(hi)
+
+
 def _looks_alphabetical(titles, sample=25, threshold=0.9):
     """Is this list sorted rather than sequenced?
 
@@ -2482,6 +2500,7 @@ class SkeletonBuilder:
         _nominal = max(1, base_units * base_lessons)
         _lesson_lo = max(1, int(round(_nominal * (1 - LESSON_TOLERANCE))))
         _lesson_hi = max(_lesson_lo, int(round(_nominal * (1 + LESSON_TOLERANCE))))
+        _ulo, _uhi = _shape_range("units_per_module", 2, 4)
 
         # WHEN EVIDENCE SAYS "GO LONG", THE FLOOR MOVES WITH IT.
         #
@@ -2552,9 +2571,10 @@ class SkeletonBuilder:
             f"  - between {_lesson_lo} and {_lesson_hi} lessons in this "
             f"module. A lesson is one ~50-minute class session.\n"
             f"    {_steer}\n"
-            f"  - group those lessons into units BY TOPIC — around "
-            f"{base_units}, but units may differ in size where the material "
-            f"warrants it.\n"
+            f"  - group those lessons into {_ulo}-{_uhi} units BY TOPIC. A unit "
+            f"is about a week of study, so a module of one unit is a week "
+            f"wearing a module's name. Within that range units may differ in "
+            f"size where the material warrants it.\n"
             f"  - exactly {base_concepts} concept(s) per lesson\n"
             f"  - exactly 2 learning objectives per concept, written for Bloom "
             f"{module_bloom_level} ({_bloom_label})\n\n"
@@ -2626,22 +2646,23 @@ class SkeletonBuilder:
             # Dividing by the OBSERVED unit count instead makes it bind. Slight
             # overshoot is the safer error: at ~50 lessons coverage measured
             # 100/100/100, at ~30 it measured 90/90/90.
-            # A MODULE IS 2-3 WEEKS, SO ITS FLOOR IS STRUCTURAL.
+            # RANGES, FROM THE SHARED DEFINITION OF A SCHOOL-SHAPED COURSE.
             #
-            # This was relaxed from 3 to 1 to honour "units may differ in size",
-            # and modules promptly collapsed to a single unit: measured
-            # units-per-module [3, 3, 1, 1, 1, 1], where four of six modules are
-            # one week wearing a module's name. Coverage fell 100% -> 90% and
-            # lesson balance went from spread 0.04 to a 3.0 taper in the same
-            # change.
+            # tools/structure_quality.SCHOOL_SHAPE holds the bands once, so the
+            # builder asks for the same shape the checker grades. Two copies
+            # would drift and the checker would grade against a standard the
+            # builder never heard.
             #
-            # 2 is the honest floor. Units may still differ in size — nothing
-            # caps them — but a module that is one week is not a module, and
-            # flexibility below the level a registrar would recognise is not
-            # flexibility, it is collapse.
+            # Only the LOWER bound is enforced, because that is where collapse
+            # lives: relaxing the unit floor to 1 produced units-per-module
+            # [3, 3, 1, 1, 1, 1] — four of six modules a single week — with
+            # coverage falling 100% -> 90% and balance from spread 0.04 to a 3.0
+            # taper. Nothing caps the upper end, so a module with more material
+            # is free to carry more.
             schema=self.subtree_schema(
-                min_units=2,
-                min_lessons=max(2, -(-_lesson_lo // 2)),   # ceil(lo / 2)
+                min_units=_shape_lo("units_per_module", 2),
+                min_lessons=max(_shape_lo("lessons_per_unit", 2),
+                                -(-_lesson_lo // 2)),
                 min_concepts=base_concepts),
             progress_callback=self.status_callback,
         )

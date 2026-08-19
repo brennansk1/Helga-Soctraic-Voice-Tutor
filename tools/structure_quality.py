@@ -44,6 +44,23 @@ _GENERIC = re.compile(
     r"(\d+|i{1,3})?$", re.I)
 
 
+# THE SHAPE OF A SCHOOL COURSE, AS RANGES.
+#
+# One definition, used by the builder to ask for a shape and by this tool to
+# check it. Two copies would drift, and the checker would end up grading against
+# a standard the builder was never told about.
+#
+# Ranges rather than fixed counts, because real courses vary: a module may run
+# two weeks or four, a week may hold two sessions or five. What is NOT flexible
+# is the level below the range — a module of one unit is a week wearing a
+# module's name, and that is collapse rather than variation.
+SCHOOL_SHAPE = {
+    "units_per_module": (2, 4),      # a module is ~2-4 weeks
+    "lessons_per_unit": (2, 5),      # a week is ~3 class sessions
+    "concepts_per_lesson": (2, 4),   # a 50-minute session covers 2-4 ideas
+}
+
+
 def _modules(struct):
     return (struct or {}).get("modules") or []
 
@@ -182,9 +199,10 @@ def check_school_shape(struct):
 
     # Shares rather than medians: a median hides four collapsed modules behind
     # two healthy ones, which is exactly the [3,3,1,1,1,1] case.
-    mod_ok = _share_in(units_per, 2, 4)
-    unit_ok = _share_in(lessons_per_unit, 2, 5)
-    lesson_ok = _share_in(concepts_per_lesson, 2, 4)
+    mod_ok = _share_in(units_per, *SCHOOL_SHAPE["units_per_module"])
+    unit_ok = _share_in(lessons_per_unit, *SCHOOL_SHAPE["lessons_per_unit"])
+    lesson_ok = _share_in(concepts_per_lesson,
+                          *SCHOOL_SHAPE["concepts_per_lesson"])
 
     return {
         "checked": True,
