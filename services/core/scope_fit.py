@@ -47,8 +47,37 @@ CONCEPTS_PER_CHAPTER = 6
 WARN_RATIO = 0.5
 
 
+def supportable_courses(brief, concepts_per_course=144):
+    """How many courses of THIS subject the evidence can carry.
+
+    The unit that makes sense for a programme. `assess_scope` compares one
+    subject's evidence against one ask, so handing it a whole degree's concept
+    count asks the wrong question: a bachelor's in Biology is not forty courses
+    of biology chapters, it spans gen-ed, core and electives, each with its own
+    subject and its own evidence.
+
+    A sweep across real subjects made that error visible — Linear Algebra and
+    Chemistry both read "unsupported" at degree scope, which is nonsense for two
+    of the best-documented subjects there are. The detector was right; the
+    question was wrong.
+
+    **A programme must be assessed per COURSE, against each course's own
+    subject.** This is the helper that makes that the easy thing to do.
+    """
+    if not isinstance(brief, dict) or brief.get("degraded"):
+        return None
+    chapters = int(brief.get("chapter_count") or 0)
+    if not chapters:
+        return 0.0
+    return round(chapters * CONCEPTS_PER_CHAPTER / max(1, concepts_per_course), 1)
+
+
 def assess_scope(brief, requested_concepts, requested_courses=1):
-    """Compare evidence volume against the requested course/program size.
+    """Compare ONE SUBJECT's evidence against what was asked of that subject.
+
+    NOTE ON PROGRAMMES: `requested_concepts` must be what is being asked of the
+    subject this brief describes — not a whole degree's total. See
+    `supportable_courses` for why.
 
     Returns a verdict dict. `verdict` is one of:
       "ok"            — enough evidence for what was asked

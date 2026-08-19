@@ -872,3 +872,36 @@ Three properties worth noting, all deliberate:
 The same subject at a certificate scope passes cleanly — the trigger is evidence
 volume *relative to what was asked*, so a niche practice is not being told it is
 not a real subject.
+
+## Condition 3 at scale — and a mis-framed question it exposed
+
+Six subjects across three programme sizes. The first sweep looked like a
+calibration failure:
+
+> Linear Algebra, Biology and Chemistry all read **unsupported** at associate and
+> bachelor's scope.
+
+That is nonsense for three of the best-documented subjects there are — and the
+detector was right. **The question was wrong.** A bachelor's in Biology is not
+forty courses of biology chapters; it spans gen-ed, core and electives, each with
+its own subject and its own evidence. One subject's brief was being compared
+against a whole degree's concept total.
+
+Asking the per-course question instead:
+
+| subject | chapters | courses supported | 1 course | 3-course sequence |
+|---|---|---|---|---|
+| Linear Algebra | 77 | **3.2** | ok | ok |
+| Biology | 98 | **4.1** | ok | ok |
+| Chemistry | 117 | **4.9** | ok | ok |
+| World History | 62 | **2.6** | ok | ok |
+| Dungeons & Dragons | 10 | **0.4** | stretched | **unsupported** |
+| Competitive Yo-Yo | 0 | 0.0 | **unknown** | **unknown** |
+
+Every real subject passes at realistic course counts; the thin one fires; and
+**Competitive Yo-Yo reports UNKNOWN rather than unsupported** — no evidence found
+is not an accusation that the subject is too small to teach. A real practice with
+no open syllabus must not be told it is not a subject.
+
+`supportable_courses()` now makes the per-course question the easy one to ask, so
+a programme planner cannot repeat the framing error.

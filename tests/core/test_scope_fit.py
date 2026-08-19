@@ -97,3 +97,43 @@ class TestMessage(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestProgrammeScopeAsksThePerCourseQuestion(unittest.TestCase):
+    """A sweep across real subjects exposed a mis-framed question, not a broken
+    detector: Linear Algebra and Chemistry both read "unsupported" at degree
+    scope, which is nonsense for two of the best-documented subjects there are.
+
+    A bachelor's in Biology is not forty courses of biology chapters — it spans
+    gen-ed, core and electives, each with its own subject and its own evidence.
+    One subject's brief must be compared against what is asked of THAT subject.
+    """
+
+    def test_a_well_documented_subject_supports_several_courses(self):
+        from services.core.scope_fit import supportable_courses
+        # Linear Algebra measured at 77 chapters
+        assert supportable_courses(_brief(77)) >= 3.0
+
+    def test_a_thin_subject_supports_less_than_one(self):
+        from services.core.scope_fit import supportable_courses
+        assert supportable_courses(_brief(10)) < 1.0
+
+    def test_real_subjects_pass_at_realistic_course_counts(self):
+        """The calibration that matters: these must not fire."""
+        for chapters in (77, 98, 117, 62):        # LinAlg, Bio, Chem, History
+            assert assess_scope(_brief(chapters), 144, 1)["verdict"] == "ok"
+            assert assess_scope(_brief(chapters), 3 * 144, 3)["verdict"] == "ok"
+
+    def test_a_thin_subject_fires_at_a_sequence_but_is_only_stretched_at_one(self):
+        assert assess_scope(_brief(10), 144, 1)["verdict"] == "stretched"
+        assert assess_scope(_brief(10), 3 * 144, 3)["verdict"] == "unsupported"
+
+    def test_no_evidence_is_unknown_not_an_accusation(self):
+        """Competitive Yo-Yo returned 0 chapters. That is "we found nothing",
+        not "this subject is too small to teach" — a real practice with no open
+        syllabus must not be told it is not a subject."""
+        assert assess_scope(_brief(0, sources=0), 144, 1)["verdict"] == "unknown"
+
+    def test_degraded_research_never_reports_a_course_count(self):
+        from services.core.scope_fit import supportable_courses
+        assert supportable_courses(_brief(0, degraded=True)) is None
