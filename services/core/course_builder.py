@@ -536,6 +536,28 @@ def _curated_spine(topic):
     return None
 
 
+def _generic_titles_in(units_data):
+    """Titles in a subtree that name nothing, at any level."""
+    try:
+        from tools.structure_quality import _GENERIC
+    except ImportError:
+        return []
+    out = []
+    for u in (units_data or []):
+        if not isinstance(u, dict):
+            continue
+        for title in ([u.get("title")]
+                      + [l.get("title") for l in (u.get("lessons") or [])
+                         if isinstance(l, dict)]
+                      + [c.get("title") for l in (u.get("lessons") or [])
+                         if isinstance(l, dict)
+                         for c in (l.get("concepts") or []) if isinstance(c, dict)]):
+            t = (title or "").strip()
+            if t and _GENERIC.match(t):
+                out.append(t)
+    return out
+
+
 def _shape_lo(level, default):
     """Lower bound of a school-shape band, from the shared definition."""
     try:
@@ -2761,6 +2783,54 @@ class SkeletonBuilder:
                     units_data = retry_units
             except Exception as e:
                 logger.warning(f"  [ONESHOT] correction round failed: {e}")
+
+        # GENERIC TITLES GET THE SAME TREATMENT, FOR THE SAME REASON.
+        #
+        # "Advanced Topics", "Applications" and "Advanced Applications" survived
+        # an explicit prompt ban listing those exact words. Prompt-only
+        # enforcement has now failed four times in this file — on unit counts, on
+        # lesson counts twice, and here — while a correction round naming the
+        # specific offender has worked every time.
+        #
+        # A generic title is the model declining to decide what a section is
+        # about, and it is invisible to coverage: the course still "reaches" the
+        # material, in a box labelled nothing.
+        _generic = _generic_titles_in(units_data)
+        if _generic:
+            logger.info(f"  [ONESHOT] {m_title!r} has {len(_generic)} title(s) "
+                        f"that name nothing: {_generic[:3]} — one correction round")
+            try:
+                fix = llm_generate_json(
+                    prompt=(prompt + f"\n\n### CORRECTION\n"
+                            f"These titles name nothing: {_generic[:6]}. A reader "
+                            f"learns only that the section exists. Replace each "
+                            f"with the actual subject matter — if a section is "
+                            f"about applications, say WHICH application. Keep "
+                            f"every other title and the structure unchanged."),
+                    sys_prompt=sys_prompt,
+                    max_tokens=max_tokens,
+                    schema=self.subtree_schema(
+                        min_units=_min_units,
+                        min_lessons=max(_shape_lo("lessons_per_unit", 2),
+                                        -(-_lesson_lo // 2)),
+                        min_concepts=base_concepts),
+                    progress_callback=self.status_callback,
+                )
+                if isinstance(fix, list):
+                    fix = next((f for f in fix if isinstance(f, dict)), None)
+                retry_units = [u for u in ((fix or {}).get("units") or [])
+                               if isinstance(u, dict)]
+                # Accept only if it is at least as complete AND genuinely less
+                # generic — a correction that trades specificity for structure is
+                # not an improvement.
+                if (len(retry_units) >= len(units_data)
+                        and len(_generic_titles_in(retry_units)) < len(_generic)):
+                    logger.info(f"  [ONESHOT] correction removed "
+                                f"{len(_generic) - len(_generic_titles_in(retry_units))} "
+                                f"generic title(s)")
+                    units_data = retry_units
+            except Exception as e:
+                logger.warning(f"  [ONESHOT] title correction failed: {e}")
         if not units_data:
             logger.warning(
                 f"  [ONESHOT] Empty subtree for module '{m_title}' — "
