@@ -837,3 +837,38 @@ from an unguided 30-concept starting point.
 
 Lessons run 13% over target (51 vs 45), which is the remaining tuning gap and the
 opposite of the problem this document opened with.
+
+---
+
+# Condition 3 demonstrated on a live build
+
+Not a unit test — a real `SkeletonBuilder.build("Dungeons & Dragons Lore")` at the
+widest, deepest preset (scope 5, mastery 5), which asks for 280 concepts.
+
+Research found **6 chapters across 1 source**. The detector fired during the
+build, before generation:
+
+```
+[SCOPE] unsupported: 6 chapters across 1 source(s) support roughly 36 concepts,
+        but 280 were requested (12% of what the evidence carries)
+```
+
+and the learner sees:
+
+> There may not be enough published material on this subject to fill a course of
+> 280 concepts — the evidence found supports roughly 36. You can build the
+> smaller version, broaden the subject, or continue as asked.
+
+Three properties worth noting, all deliberate:
+
+* **It is arithmetic, not the model's opinion.** The brief counted 6 chapters;
+  280 was requested. Asking a model "is there enough material?" invites the same
+  optimism that generates the padding.
+* **It offers the right-sized alternative.** A warning with only *accept* and
+  *cancel* trains people to accept. Naming "roughly 36" makes it actionable.
+* **It fires before generation**, so the alternatives are still real. After three
+  hours of building, "build the smaller version" is no longer an offer.
+
+The same subject at a certificate scope passes cleanly — the trigger is evidence
+volume *relative to what was asked*, so a niche practice is not being told it is
+not a real subject.
