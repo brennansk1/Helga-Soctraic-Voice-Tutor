@@ -304,6 +304,33 @@ class AssetCollector:
         self._say(
             f"ASSET:DONE:{self.stats['generated']}:{self.stats['images']}:"
             f"{self.stats['skipped']}:{self.stats['seconds']}")
+
+        # THE WHOLE-COURSE SWEEP — the reason this is a whole-course pass.
+        #
+        # Per-concept work structurally cannot see that two institutions
+        # supplied the same diagram under different bytes, or that six concepts
+        # each attached the same picture until it became wallpaper. This
+        # docstring has claimed "duplicate figures are the most visible way this
+        # feature could go wrong" since the module was written; this is where
+        # that finally gets acted on rather than asserted.
+        #
+        # It runs LAST, after every concept has had its turn, and reports what
+        # it changed — an asset vanishing from a concept with no record is the
+        # kind of change that is impossible to debug later.
+        try:
+            sweep = self.storage.courses.sweep_course_assets(course_uid)
+            if sweep.get("ran"):
+                manifest["sweep"] = sweep
+                if sweep.get("collapsed") or sweep.get("detached"):
+                    logger.info(
+                        f"[ASSETS] sweep: collapsed {len(sweep['collapsed'])} "
+                        f"duplicate group(s), detached {sweep['detached']} "
+                        f"over-used attachment(s)")
+                    self._say(f"ASSET:SWEPT:{len(sweep['collapsed'])}:"
+                              f"{sweep['detached']}")
+        except Exception as e:
+            logger.debug(f"[ASSETS] sweep skipped: {e}")
+
         return manifest
 
     # -- per concept --------------------------------------------------------
@@ -617,6 +644,58 @@ Return: {{"aids":[{{"slot":"...","kind":"...","title":"...","caption":"...","spe
             logger.warning(f"[ASSETS] image search failed for {title[:40]}: {e}")
         return None
 
+    def _record_asset_row(self, course_uid, uid, record, label=None, caption=None):
+        """Mirror a cached image into the `assets` tables (schema v16).
+
+        The media cache stays the serving path — a same-origin file is what the
+        browser actually loads — and this is the INDEX beside it: licence,
+        provenance, caption and the role that links it to a concept, in the same
+        database as the ledger and the concept bodies that reference it.
+
+        Recorded here rather than replacing the cache because the two answer
+        different questions. The cache answers "what bytes does the browser
+        get"; the table answers "may we use this, where did it come from, what
+        job does it do, and is it a duplicate of something three concepts along"
+        — and only the second can be swept whole-course.
+
+        Best-effort throughout: an index write must never cost a learner the
+        picture that is already on disk.
+        """
+        try:
+            import hashlib
+            src = record.get("src") or ""
+            path = None
+            data = None
+            try:
+                from services.common.media_cache import media_root
+                cand = os.path.join(media_root(), os.path.basename(src))
+                if os.path.exists(cand):
+                    path = cand
+                    if os.path.getsize(cand) <= 2_000_000:
+                        with open(cand, "rb") as fh:
+                            data = fh.read()
+            except Exception:
+                pass
+            digest = (hashlib.sha256(data).hexdigest() if data
+                      else hashlib.sha256(src.encode()).hexdigest())
+            cap = caption or record.get("caption") or ""
+            asset_id = self.storage.courses.save_asset(
+                digest, data=data, path=path, mime=record.get("mime"),
+                source=record.get("source"), license=record.get("license"),
+                provenance_url=record.get("page") or record.get("url"),
+                alt_text=cap or label, caption=cap,
+                # A book figure's caption is the author's own words; a fetched
+                # image's is the institution's. Neither is generated, so both
+                # are verified in the only sense that matters here.
+                caption_verified=bool(cap))
+            if asset_id:
+                self.storage.courses.attach_asset(
+                    course_uid, uid, asset_id, "illustrates")
+            return asset_id
+        except Exception as e:
+            logger.debug(f"[ASSETS] index row skipped for {uid}: {e}")
+            return None
+
     def _attach_image(self, course_uid, uid, record, label=None, caption=None):
         """Add a cached image as an `image` aid in the concept.
 
@@ -624,6 +703,7 @@ Return: {{"aids":[{{"slot":"...","kind":"...","title":"...","caption":"...","spe
         more accurate than anything a model would write about the picture, and
         it costs nothing.
         """
+        self._record_asset_row(course_uid, uid, record, label, caption)
         try:
             content = self.storage.courses.get_concept_content(course_uid, uid) or ""
             existing = parse_concept_aids(content)

@@ -1533,6 +1533,105 @@ class CourseStore:
                  "alt_text": r[3], "caption": r[4],
                  "caption_verified": bool(r[5]), "role": r[6]} for r in rows]
 
+    def all_course_assets(self, course_uid):
+        """Every asset attached anywhere in a course, with its bytes."""
+        try:
+            rows = self._get_db().execute(
+                "SELECT DISTINCT a.asset_id, a.bytes, a.source, a.license, "
+                "a.width, a.height, a.caption, a.alt_text, a.caption_verified "
+                "FROM assets a JOIN concept_assets ca ON ca.asset_id = a.asset_id "
+                "WHERE ca.course_uid=?", (course_uid,)).fetchall()
+        except Exception:
+            return []
+        return [{"asset_id": r[0], "bytes": r[1], "source": r[2], "license": r[3],
+                 "width": r[4], "height": r[5], "caption": r[6],
+                 "alt_text": r[7], "caption_verified": bool(r[8])} for r in rows]
+
+    def course_attachments(self, course_uid):
+        try:
+            rows = self._get_db().execute(
+                "SELECT concept_uid, asset_id, role FROM concept_assets "
+                "WHERE course_uid=?", (course_uid,)).fetchall()
+        except Exception:
+            return []
+        return [{"concept_uid": r[0], "asset_id": r[1], "role": r[2]} for r in rows]
+
+    def repoint_asset(self, course_uid, from_id, to_id):
+        """Move every attachment from one asset to another, then drop the orphan.
+
+        Used to collapse perceptual duplicates: two institutions supplying the
+        same diagram produce two rows with different sha256 and one picture.
+        The winner keeps its provenance; the loser's attachments follow it, so
+        no concept silently loses its illustration.
+        """
+        try:
+            db = self._get_db()
+            for r in db.execute("SELECT concept_uid, role FROM concept_assets "
+                                "WHERE course_uid=? AND asset_id=?",
+                                (course_uid, from_id)).fetchall():
+                db.execute("INSERT OR REPLACE INTO concept_assets (course_uid, "
+                           "concept_uid, asset_id, role) VALUES (?,?,?,?)",
+                           (course_uid, r[0], to_id, r[1]))
+            db.execute("DELETE FROM concept_assets WHERE course_uid=? AND asset_id=?",
+                       (course_uid, from_id))
+            db.commit()
+            return True
+        except Exception as e:
+            logger.debug(f"repoint failed: {e}")
+            return False
+
+    def detach_asset(self, course_uid, concept_uid, asset_id):
+        try:
+            db = self._get_db()
+            db.execute("DELETE FROM concept_assets WHERE course_uid=? AND "
+                       "concept_uid=? AND asset_id=?",
+                       (course_uid, concept_uid, asset_id))
+            db.commit()
+            return True
+        except Exception:
+            return False
+
+    def sweep_course_assets(self, course_uid, dry_run=False):
+        """Whole-course asset pass: collapse duplicates, thin out wallpaper.
+
+        The reason Phase 3 is a whole-course pass at all. Per-concept work
+        structurally cannot see that eight concepts each attached their own
+        water-cycle diagram, or that two institutions supplied the same figure.
+
+        Returns what it did — never silent, because an asset disappearing from a
+        concept with no record is exactly the kind of change that is impossible
+        to debug later.
+        """
+        try:
+            from services.core.asset_arbiter import (
+                near_duplicate_groups, course_duplicates, MAX_CONCEPTS_PER_ASSET)
+        except ImportError:
+            return {"ran": False, "reason": "arbiter unavailable"}
+
+        assets = self.all_course_assets(course_uid)
+        report = {"ran": True, "assets": len(assets), "collapsed": [],
+                  "over_used": {}, "detached": 0, "dry_run": dry_run}
+        if not assets:
+            return report
+
+        for g in near_duplicate_groups(assets):
+            report["collapsed"].append(g)
+            if not dry_run:
+                for loser in g["collapse"]:
+                    self.repoint_asset(course_uid, loser, g["keep"])
+
+        over = course_duplicates(self.course_attachments(course_uid))
+        report["over_used"] = over
+        for aid, concepts in over.items():
+            # Keep the earliest concepts — the ones that introduced the idea —
+            # and detach the tail, mirroring the text rule that a concept may
+            # RE-TEACH once and must cite thereafter.
+            for c in concepts[MAX_CONCEPTS_PER_ASSET:]:
+                report["detached"] += 1
+                if not dry_run:
+                    self.detach_asset(course_uid, c, aid)
+        return report
+
     def add_session_note(self, course_uid, concept_uid, role, text,
                          student_id=None, grade=None):
         """Append one turn of a tutoring session. Never fails a session."""
