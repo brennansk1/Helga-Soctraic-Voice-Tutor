@@ -1603,6 +1603,16 @@ class SkeletonBuilder:
             course_dict["supplementary_policy"] = {
                 "grounding_bar": GROUNDING_RELEVANCE,
                 "max_share": SUPPLEMENTARY_MAX_SHARE,
+                # MEASURED IN CLAIMS, NOT SOURCES.
+                #
+                # The research reviewing this policy caught the unit being
+                # wrong: one supplementary book can dominate a course's content
+                # while being a small minority of the source LIST, so a cap
+                # counted per source bounds nothing that matters. The share that
+                # needs bounding is of claims grounded only in supplementary
+                # material — and those claims are also the priority targets for
+                # fact-checking, precisely because their source is weaker.
+                "share_unit": "claims grounded only in supplementary sources",
                 "usable_for": "content hydration only",
                 "excluded_from": ["structure", "scope assessment",
                                   "coverage checklist", "coverage measurement"],
@@ -5119,10 +5129,37 @@ useful, one short real-world context sentence.]
 - **Simple**: [An everyday analogy accessible to anyone]
 - **Technical**: [A domain-specific analogy for advanced learners]{advanced_sections}"""
 
-        user_prompt = f"""Topic: {title} | Course: {course_title} | Depth: {depth}/5 ({depth_desc})
-{h_str}
+        # PROMPT ORDER IS INVARIANT-FIRST, FOR PREFIX CACHING.
+        #
+        # Ollama reuses the KV cache across requests that share a BYTE-IDENTICAL
+        # leading prefix. This prompt used to open with the concept title and
+        # close with the section template — exactly backwards, so the largest
+        # fixed block (the template, several hundred tokens) was re-prefilled
+        # for every one of a course's ~104-135 concepts.
+        #
+        # Inverted, the writing level, length budget and section template are
+        # shared by every concept at the same depth and bloom level, so they are
+        # prefilled once per bucket instead of once per concept. Measured
+        # prefill on this machine is 247 tok/s, so this is real time on a
+        # 3-hour hydration.
+        #
+        # The cache is byte-exact: any variation in this block silently costs
+        # the hit with no error and no log line, so nothing per-concept may be
+        # interpolated above the THIS CONCEPT marker. `bloom_level` does appear
+        # in the template, which fragments the cache into one bucket per level
+        # rather than defeating it — concepts within a module share a level.
+        user_prompt = f"""### WRITING LEVEL: {writing_guide}
 
-### WRITING LEVEL: {writing_guide}
+### OUTPUT FORMAT
+Generate ONLY the sections below, in this order. Do NOT generate Metadata,
+Learning Objectives, or Prerequisites — those are pre-filled.
+{total_budget_note}
+
+{section_template}
+
+### THIS CONCEPT
+Topic: {title} | Course: {course_title} | Depth: {depth}/5 ({depth_desc})
+{h_str}
 
 ### DEDUPLICATION — DO NOT REPEAT content already covered:
 - Lesson concepts: {prev_str}
@@ -5135,10 +5172,7 @@ Focus ONLY on what makes "{title}" DISTINCT.
 {f"### USER NOTE:{chr(10)}{user_note}{chr(10)}" if user_note else ""}{research_input}
 Source Material: {source_material}
 
-Generate ONLY the sections below. Do NOT generate Metadata, Learning Objectives, or Prerequisites — those are pre-filled.
-{total_budget_note}
-
-{section_template}
+Now write the sections for "{title}".
 """
         max_retries = 3
         for attempt in range(max_retries):

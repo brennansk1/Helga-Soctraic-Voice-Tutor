@@ -662,11 +662,37 @@ _V1_UNSUPPORTED = ("minItems", "maxItems", "minLength", "maxLength", "minimum",
 
 def _num_ctx():
     """Context window to request. Ollama's default of 4096 is smaller than this
-    project's real prompts, which carry syllabus evidence and module scope."""
+    project's real prompts, which carry syllabus evidence and module scope.
+
+    32768 IS CHOSEN FROM MEASUREMENT. See docs/MEMORY_ALLOCATION_PLAN.md.
+
+    KV on this model is cheap, predicted from its own config and then verified
+    by loading at each size: `full_attention_interval 4` over 40 blocks means
+    only 10 layers hold a KV cache, at 2 KV heads x (256+256) = 20 KB/token
+    FP16. Predicted deltas from 16k of +0.31/+0.94/+2.19 GB for 32k/64k/128k
+    came back measured at +0.33/+0.99/+1.91.
+
+    So why 32k rather than 64k, when both fit? Because the ceiling is really
+    about what can be CO-RESIDENT. Measured totals against a ~15.0 GB ceiling
+    (past ~16 GB this machine falls off a cliff -- throughput is flat at
+    ~31 tok/s and then generation stops returning usable output at all):
+
+        @32k  13.51 GB  + MiniCheck fp16 14.97  + bge-m3 14.57  -> both fit
+        @64k  14.17 GB  + MiniCheck fp16 15.63  + bge-m3 15.23  -> neither fits
+
+    At 32k the planned verifier and embedder run WITHOUT unloading and reloading
+    a 12.7 GB model between phases, at ~142 s of cold load each way. That is
+    worth more than a window nothing currently needs: a lesson-batched hydration
+    is 5-10 concepts, and the ledger context is deliberately a few hundred
+    tokens.
+
+    Raise via OLLAMA_NUM_CTX for a generation-only pass with nothing else
+    resident; do not raise it globally without re-measuring.
+    """
     try:
-        return max(4096, int(os.getenv("OLLAMA_NUM_CTX", "16384")))
+        return max(4096, int(os.getenv("OLLAMA_NUM_CTX", "32768")))
     except (TypeError, ValueError):
-        return 16384
+        return 32768
 
 
 def _v1_safe_schema(schema):

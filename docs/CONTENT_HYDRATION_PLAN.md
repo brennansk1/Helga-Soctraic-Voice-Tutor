@@ -227,9 +227,19 @@ either.
 
 ### Stage 3 — Quantisation and speed (Q6), measured
 
-9. A/B **IQ3_S vs IQ4_XS** on identical concepts: retries-per-concept,
-   false-claim rate via MiniCheck, wall-clock. Adopt IQ4_XS if it cuts retries
-   enough to be net-faster, or measurably cuts false claims.
+9. ~~A/B **IQ3_S vs IQ4_XS**~~ — **NOT EXECUTABLE ON THIS HARDWARE.**
+   Measured after this plan was written (`docs/MEMORY_ALLOCATION_PLAN.md`):
+   IQ4_XS weights are ~15.7 GB, and the safe ceiling for the model process on
+   this 24 GB machine is ~15.0 GB — so it is over budget *before any KV cache
+   or runtime overhead*. Past ~16 GB resident the machine does not degrade
+   gracefully; throughput is flat at ~31 tok/s and then generation stops
+   returning usable output entirely.
+
+   The precision ceiling for nail-35b-a3b here is **IQ3_M (3.66 bpw)**, barely
+   a step from IQ3_S's 3.44 and still inside the band the literature calls
+   degradation. **The quantisation hypothesis for the false-claim rate cannot
+   be tested on this box**, which makes Stage 1 not merely the first priority
+   but the only available lever. Re-scope to different hardware or drop it.
 10. Restructure prompts for **prefix caching** — invariant material (section
     template, depth-contract instructions, lesson context) first, per-concept
     material last, byte-identical across a lesson.
