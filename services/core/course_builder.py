@@ -530,6 +530,41 @@ def _looks_alphabetical(titles, sample=25, threshold=0.9):
     return in_order / max(1, len(items) - 1) >= threshold
 
 
+# The one-shot subtree prompt runs ~4200 tokens with syllabus evidence attached,
+# and Ollama's default context is 4096. Anything below this silently degrades
+# course structure rather than failing.
+MIN_CONTEXT_TOKENS = 8192
+
+
+def _detect_context_window():
+    """The serving context window, or None if it cannot be determined.
+
+    None means "unknown", never "too small" — refusing to build because a probe
+    did not answer would be the absent-vs-zero error in the place that blocks
+    every course.
+    """
+    try:
+        import requests as _rq
+        base = os.getenv("OLLAMA_URL", "http://host.docker.internal:11434")
+        model = os.getenv("OLLAMA_MODEL", "")
+        if not model:
+            return None
+        r = _rq.post(f"{base}/api/show", json={"model": model}, timeout=8)
+        if r.status_code != 200:
+            return None
+        info = r.json() or {}
+        # An explicit num_ctx parameter wins; otherwise Ollama's default applies,
+        # regardless of what the architecture could support.
+        params = (info.get("parameters") or "")
+        for line in params.splitlines():
+            if line.strip().startswith("num_ctx"):
+                return int(line.split()[-1])
+        return 4096
+    except Exception as e:
+        logger.debug(f"context window probe failed: {e}")
+        return None
+
+
 class SkeletonBuilder:
     def __init__(
         self,
@@ -936,6 +971,30 @@ class SkeletonBuilder:
             all_passed = False
         else:
             log_and_emit("✓", "Topic valid")
+
+        # 1b. CONTEXT WINDOW.
+        #
+        # Ollama serves a model at 4096 tokens unless its Modelfile says
+        # otherwise. The one-shot subtree prompt is ~4200, so on a default-context
+        # model it 400s for most modules, falls back to the chunked path, and
+        # produces a course a third shorter than its calendar — while reporting
+        # success. That cost four wrong hypotheses and several full rebuilds to
+        # find, because the failure is silent by construction: a fallback path is
+        # supposed to be quiet.
+        #
+        # It is checked here, once, loudly, so it can never be diagnosed twice.
+        ctx = _detect_context_window()
+        if ctx is None:
+            log_and_emit("✓", "Context window not reported — proceeding")
+        elif ctx < MIN_CONTEXT_TOKENS:
+            log_and_emit("✗", f"Model context is {ctx} tokens; this pipeline "
+                              f"needs at least {MIN_CONTEXT_TOKENS}. Add "
+                              f"'PARAMETER num_ctx {MIN_CONTEXT_TOKENS}' to the "
+                              f"Modelfile — course structure will silently "
+                              f"degrade otherwise")
+            all_passed = False
+        else:
+            log_and_emit("✓", f"Context window {ctx} tokens")
 
         # 2. Depth Validation
         if max_depth not in DEPTH_PROFILES:
