@@ -2899,7 +2899,18 @@ class SkeletonBuilder:
         base_concepts = max(1, self.course_params.get("concepts_per_lesson", 3))
         # 2-4 units per module is the range real syllabi occupy; within it the
         # model groups by topic rather than by arithmetic.
-        base_units = max(1, min(4, round(lessons_per_module / 3)))
+        # THE TARGET MUST RESPECT THE FLOOR, OR TRUNCATION UNDOES IT.
+        #
+        # The schema asked for >= 2 units and the model supplied them, but
+        # `units_data[:base_units]` then cut them back — because base_units is
+        # computed from the lesson budget and can round to 1. Measured:
+        # units-per-module [3, 2, 1, 2, 2, 1] with zero one-shot fallbacks, so
+        # the modules that collapsed were TRUNCATED, not under-generated.
+        #
+        # A floor enforced at generation and discarded at assembly is not a
+        # floor.
+        _u_lo, _u_hi = _shape_range("units_per_module", 2, 4)
+        base_units = max(_u_lo, min(_u_hi, round(lessons_per_module / 3)))
         base_lessons = max(1, round(lessons_per_module / base_units))
         logger.info(
             f"Substructure shape: units={base_units}, lessons_per_unit={base_lessons}, "
