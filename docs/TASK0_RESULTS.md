@@ -718,3 +718,40 @@ shape is intact — the course is simply shorter than a semester.
 Not diagnosed here, and recorded rather than glossed: it is a regression against
 condition 1's volume target introduced by a change that improved condition 2's
 coverage stability.
+
+## Volume shortfall — diagnosed, not fixed
+
+The builder asks each module for `units=3, lessons_per_unit=3` — 9 lessons per
+module, 54 for the course against a 45-lesson calendar. It gets **~1.7 units per
+module and 29–30 lessons total**, and firming the prompt from "about N units" to
+an explicit "this is NOT approximate" did not change it:
+
+| | lessons | units | concepts | concepts/lesson |
+|---|---|---|---|---|
+| before section detail | 42–47 | 14–16 | 124–135 | 2.87–2.95 |
+| after section detail | 30 | 10 | 88 | 2.93 |
+| after firming the prompt | **29** | 10 | 87 | **3.00** |
+
+**What is known:**
+
+* The one-shot subtree path runs for every module (6 of 6), so this is not a
+  fallback to the chunked path.
+* The requested shape is correct — `Substructure shape: units=3,
+  lessons_per_unit=3, concepts_per_lesson=3`.
+* Concepts-per-lesson is **exactly on target at 3.00**, so the ladder's
+  proportions are intact. The course is not malformed, it is *short*.
+* Prompt firmness is not the lever. The model consolidates units regardless.
+
+**What is not known:** whether the long section-detail scope is crowding the
+instruction, whether the model treats a richly-specified module as already
+complete, or whether the token budget for the one-shot call is now binding.
+
+**The shortfall detector added here did not fire**, which is its own defect: it
+counts lessons nested in the returned units and skips when that count is zero,
+so the case that matters most can slip through. Recorded as unreliable rather
+than trusted.
+
+This is a regression against condition 1's volume target introduced by the change
+that stabilised condition 2's coverage. It is the clearest next piece of work,
+and it is a real trade the two conditions are currently making against each
+other — which is worth knowing even unresolved.

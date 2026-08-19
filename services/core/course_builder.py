@@ -2207,11 +2207,13 @@ class SkeletonBuilder:
             f"{prev_context_str}\n\n"
             f"{_evidence}"
             f"Design this module's COMPLETE structure in one pass:\n"
-            f"  - about {base_units} unit(s), grouped by TOPIC — units may "
-            f"differ in size where the material warrants it\n"
-            f"  - about {base_lessons} lesson(s) per unit, and about "
-            f"{base_units * base_lessons} lessons in this module overall; each "
-            f"lesson is one ~50-minute class session\n"
+            f"  - {base_units * base_lessons} lessons in this module. This is "
+            f"NOT approximate: a lesson is one ~50-minute class session and the "
+            f"course has a fixed number of them, so a module with fewer is a "
+            f"module that will not fill its weeks.\n"
+            f"  - group those lessons into about {base_units} unit(s) BY TOPIC. "
+            f"The unit count is flexible and units may differ in size where the "
+            f"material warrants it — the lesson total is what is fixed.\n"
             f"  - exactly {base_concepts} concept(s) per lesson\n"
             f"  - exactly 2 learning objectives per concept, written for Bloom "
             f"{module_bloom_level} ({_bloom_label})\n\n"
@@ -2271,6 +2273,29 @@ class SkeletonBuilder:
             return None   # caller falls back to the nested path
 
         m_summary_lines = [f"Module: {m_title} (Scope: {positive_scope_str})"]
+
+        # A surplus was truncated and a SHORTFALL was silently accepted, so a
+        # module that came back consolidated simply made the course shorter.
+        # Measured: adding section detail to the module scope dropped a build
+        # from 42 lessons to 30 against a 45-lesson calendar, entirely through
+        # modules returning fewer units than asked.
+        #
+        # Units may differ in size — that is deliberate — but the LESSON total is
+        # the calendar and does not bend, so a shortfall is recorded rather than
+        # absorbed.
+        _wanted = max(1, base_units * base_lessons)
+        _got = sum(len(u.get("lessons") or []) for u in units_data
+                   if isinstance(u, dict))
+        if _got and _got < _wanted * 0.7:
+            self.lesson_shortfall = getattr(self, "lesson_shortfall", 0) + (
+                _wanted - _got)
+            logger.warning(
+                f"  [VOLUME] module {m_title!r} returned {_got} lesson(s) "
+                f"against {_wanted} — the course will be shorter than its "
+                f"calendar unless this is made up elsewhere")
+            if self.status_callback:
+                self.status_callback(f"STRUCT:VOLUME_SHORT:{m_title}:{_got}/{_wanted}")
+
         units_data = units_data[:base_units]
 
         for u_idx, unit_data in enumerate(units_data, 1):
