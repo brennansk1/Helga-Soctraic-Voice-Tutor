@@ -830,6 +830,86 @@ class StorageManager:
                 cursor.execute("UPDATE schema_version SET version = 15")
                 logger.info("Schema migrated to v15: concept bodies in SQLite + FTS5")
 
+            if current_version < 16:
+                # SPOKEN MATHEMATICS, generated once at hydration.
+                #
+                # KaTeX renders a formula and cannot say it. The TTS and
+                # text-only paths both receive raw LaTeX today, and a speech
+                # engine handed \frac{a}{b} reads backslashes or drops them.
+                # The speech string is computed offline and stored beside the
+                # LaTeX so a tutoring turn reads a field rather than parsing
+                # markup on the critical path of a ~30 s reply.
+                #
+                # `mathml` is unused today and present because MathML Core is
+                # natively supported in every current browser, and because the
+                # MathJax Speech Rule Engine — the mature upgrade path from our
+                # own converter — consumes it.
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS concept_math (
+                        course_uid   TEXT NOT NULL,
+                        concept_uid  TEXT NOT NULL,
+                        latex        TEXT NOT NULL,
+                        mathml       TEXT,
+                        speech       TEXT,
+                        unspoken     TEXT,
+                        ordinal      INTEGER
+                    )
+                """)
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_math_concept "
+                               "ON concept_math(course_uid, concept_uid)")
+
+                # ASSETS AS BLOBS, for integrity rather than speed.
+                #
+                # Images sit above the ~100 KB point where the filesystem wins
+                # on raw benchmark, so this is not a performance decision. A
+                # single-file database cannot develop dangling references to
+                # missing image files, WAL gives atomic rebuilds, and the course
+                # stays one portable artefact. Anything genuinely large spills
+                # to disk with `path` set and `bytes` NULL.
+                #
+                # `license_verified_at` is what makes fail-closed licensing
+                # auditable rather than asserted: an unknown licence is refused
+                # at fetch time, and this records WHEN that was established.
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS assets (
+                        asset_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+                        sha256       TEXT UNIQUE,
+                        bytes        BLOB,
+                        path         TEXT,
+                        mime         TEXT,
+                        width        INTEGER,
+                        height       INTEGER,
+                        source       TEXT,
+                        license      TEXT,
+                        license_verified_at TEXT,
+                        provenance_url TEXT,
+                        alt_text     TEXT,
+                        caption      TEXT,
+                        caption_verified INTEGER DEFAULT 0
+                    )
+                """)
+                # ROLE IS NOT NULL, DELIBERATELY.
+                #
+                # The seductive-details evidence is about DECORATIVE images, and
+                # the research used "photograph" as a proxy for that. Since we
+                # allow photographs from curated educational collections, the
+                # medium proxy is gone and something has to replace it: an asset
+                # must say what job it does for the concept, and an asset that
+                # is merely *related* has no role and cannot be attached.
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS concept_assets (
+                        course_uid   TEXT NOT NULL,
+                        concept_uid  TEXT NOT NULL,
+                        asset_id     INTEGER NOT NULL,
+                        role         TEXT NOT NULL,
+                        PRIMARY KEY (course_uid, concept_uid, asset_id)
+                    )
+                """)
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_concept_assets "
+                               "ON concept_assets(course_uid, concept_uid)")
+                cursor.execute("UPDATE schema_version SET version = 16")
+                logger.info("Schema migrated to v16: spoken math + assets")
+
             conn.commit()
         finally:
             conn.close()
@@ -1328,6 +1408,130 @@ class CourseStore:
                 with open(path, "r") as f:
                     return f.read()
         return ""
+
+    # --- spoken maths ------------------------------------------------------
+
+    def save_concept_math(self, course_uid, concept_uid, spans):
+        """Store [(latex, speech, unspoken)] for a concept. Replaces prior rows."""
+        try:
+            db = self._get_db()
+            db.execute("DELETE FROM concept_math WHERE course_uid=? AND concept_uid=?",
+                       (course_uid, concept_uid))
+            for i, (latex, speech, left) in enumerate(spans or []):
+                db.execute(
+                    "INSERT INTO concept_math (course_uid, concept_uid, latex, "
+                    "mathml, speech, unspoken, ordinal) VALUES (?,?,?,?,?,?,?)",
+                    (course_uid, concept_uid, latex, None, speech,
+                     " ".join(left) if left else None, i))
+            db.commit()
+            return len(spans or [])
+        except sqlite3.OperationalError:
+            return 0
+        except Exception as e:
+            logger.debug(f"concept math write skipped for {concept_uid}: {e}")
+            return 0
+
+    def get_concept_math(self, course_uid, concept_uid):
+        """[{latex, speech, unspoken}] in document order."""
+        try:
+            rows = self._get_db().execute(
+                "SELECT latex, speech, unspoken FROM concept_math "
+                "WHERE course_uid=? AND concept_uid=? ORDER BY ordinal",
+                (course_uid, concept_uid)).fetchall()
+        except Exception:
+            return []
+        return [{"latex": r[0], "speech": r[1],
+                 "unspoken": (r[2] or "").split() if r[2] else []} for r in rows]
+
+    def speakable(self, course_uid, concept_uid, markdown):
+        """`markdown` with every formula replaced by its spoken form.
+
+        For the TTS and text-only paths. A formula with no stored speech is
+        left as-is rather than deleted: silence would be a worse failure than
+        an awkward reading, and it stays visible to whoever debugs it.
+        """
+        out = markdown or ""
+        for m in self.get_concept_math(course_uid, concept_uid):
+            if not m["speech"]:
+                continue
+            for wrapper in (f"$${m['latex']}$$", f"${m['latex']}$"):
+                out = out.replace(wrapper, m["speech"])
+        return out
+
+    # --- assets ------------------------------------------------------------
+
+    def save_asset(self, sha256, data=None, path=None, mime=None, width=None,
+                   height=None, source=None, license=None, provenance_url=None,
+                   alt_text=None, caption=None, caption_verified=False):
+        """Store an asset, returning its id. Refuses an unlicensed asset.
+
+        Fail-closed on licence, matching the image-source policy: an unknown
+        licence is a rejected licence. This is the one part of the current
+        safety story that demonstrably works, so it is enforced at the storage
+        boundary too rather than trusted to every caller.
+        """
+        if not license:
+            logger.warning(f"[ASSET] refused {sha256[:12] if sha256 else '?'}: no licence")
+            return None
+        try:
+            db = self._get_db()
+            row = db.execute("SELECT asset_id FROM assets WHERE sha256=?",
+                             (sha256,)).fetchone()
+            if row:
+                return row[0]
+            cur = db.execute(
+                "INSERT INTO assets (sha256, bytes, path, mime, width, height, "
+                "source, license, license_verified_at, provenance_url, alt_text, "
+                "caption, caption_verified) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (sha256, data, path, mime, width, height, source, license,
+                 datetime.now().isoformat(), provenance_url, alt_text, caption,
+                 1 if caption_verified else 0))
+            db.commit()
+            return cur.lastrowid
+        except Exception as e:
+            logger.debug(f"asset write skipped: {e}")
+            return None
+
+    ALLOWED_ASSET_ROLES = ("illustrates", "worked_example", "data", "schematic",
+                           "diagram", "map", "timeline")
+
+    def attach_asset(self, course_uid, concept_uid, asset_id, role):
+        """Link an asset to a concept. A role is REQUIRED and must be known.
+
+        The seductive-details evidence is about DECORATIVE images, and the
+        research used "photograph" as a proxy for decorative. Since photographs
+        from curated educational collections are permitted, that proxy is gone
+        and the role replaces it: an asset that is merely *related* to a concept
+        has no role and cannot be attached.
+        """
+        if role not in self.ALLOWED_ASSET_ROLES:
+            logger.warning(f"[ASSET] refused attachment with role {role!r}: "
+                           f"an asset must say what job it does")
+            return False
+        try:
+            db = self._get_db()
+            db.execute("INSERT OR REPLACE INTO concept_assets (course_uid, "
+                       "concept_uid, asset_id, role) VALUES (?,?,?,?)",
+                       (course_uid, concept_uid, asset_id, role))
+            db.commit()
+            return True
+        except Exception as e:
+            logger.debug(f"asset attach skipped: {e}")
+            return False
+
+    def concept_asset_list(self, course_uid, concept_uid):
+        try:
+            rows = self._get_db().execute(
+                "SELECT a.asset_id, a.source, a.license, a.alt_text, a.caption, "
+                "a.caption_verified, ca.role FROM concept_assets ca "
+                "JOIN assets a ON a.asset_id = ca.asset_id "
+                "WHERE ca.course_uid=? AND ca.concept_uid=?",
+                (course_uid, concept_uid)).fetchall()
+        except Exception:
+            return []
+        return [{"asset_id": r[0], "source": r[1], "license": r[2],
+                 "alt_text": r[3], "caption": r[4],
+                 "caption_verified": bool(r[5]), "role": r[6]} for r in rows]
 
     def add_session_note(self, course_uid, concept_uid, role, text,
                          student_id=None, grade=None):

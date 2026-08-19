@@ -27,6 +27,7 @@ Nothing here is called during a dialogue turn.
 """
 
 import logging
+import os
 import re
 
 logger = logging.getLogger(__name__)
@@ -216,12 +217,114 @@ def art_institute_images(query, limit=2):
 # Routed, not global — same principle as domain_sources: an irrelevant hit costs
 # latency and teaches nothing. Commons is the only "*" because it genuinely
 # spans every subject.
+# --- vetted educational collections (2026-08-19) -----------------------------
+#
+# PHOTOGRAPHS ARE PERMITTED FROM THESE, and only these.
+#
+# The research on this phase recommended no photographs at all, on two grounds.
+# Only one of them is answered by a medium restriction:
+#
+#   SAFETY — the argument is about INSPECTING AN UNKNOWN IMAGE, and it holds: a
+#   general 9B VLM at 4-bit is not a safety classifier, and 4-bit erodes exactly
+#   the tail-case calibration a gate exists for. But it says nothing about an
+#   image whose provenance is a curated collection that has already done
+#   editorial selection. Provenance is a stronger gate than pixel inspection,
+#   which is why every source below is an institution that publishes for
+#   education, not an open-web search.
+#
+#   PEDAGOGY — the seductive-details effect (g = -0.16 over 177 effect sizes) is
+#   about DECORATIVE images, and the research used "photograph" as a proxy for
+#   decorative. Levin's taxonomy classifies by FUNCTION: a photograph of an
+#   actual mitochondrion is representational, doing the same job as a diagram.
+#   The medium proxy is replaced by the REQUIRED ROLE on concept_assets — an
+#   asset that is merely related to a concept has no role and cannot attach.
+#
+# Licensing stays fail-closed. "No Known Copyright Restrictions" is NOT CC0, and
+# an institution's terms of use can differ from its per-item licence, so an
+# unrecognised string is refused rather than assumed.
+
+
+def smithsonian_images(query, limit=3):
+    """Smithsonian Open Access — CC0.
+
+    Their own FAQ warns CC0 covers copyright only: publicity, privacy and
+    third-party rights may still attach, and culturally sensitive objects are
+    excluded from the CC0 set. So this takes only items explicitly flagged CC0
+    and carries the provenance through for attribution regardless.
+    """
+    # Needs a free api.data.gov key. Absent one this returns nothing and SAYS
+    # SO — a source that is silently empty because it was never authenticated
+    # looks identical to a subject with no images, which is the absent-vs-zero
+    # confusion this project keeps paying for.
+    key = os.getenv("SMITHSONIAN_API_KEY")
+    if not key:
+        logger.info("smithsonian: no SMITHSONIAN_API_KEY set — source SKIPPED, "
+                    "not empty")
+        return []
+    data = _get_json("https://api.si.edu/openaccess/api/v1.0/search",
+                     {"q": f"{query} AND online_media_type:Images",
+                      "rows": limit, "api_key": key}, timeout=20)
+    rows = ((data or {}).get("response") or {}).get("rows") or []
+    out = []
+    for r in rows[:limit]:
+        content = (r.get("content") or {})
+        descr = (content.get("descriptiveNonRepeating") or {})
+        usage = ((descr.get("online_media") or {}).get("media") or [{}])[0]
+        rights = (usage.get("usage") or {}).get("access", "")
+        if "CC0" not in str(rights).upper():
+            continue
+        out.append(_hit("Smithsonian", r.get("title") or query,
+                        usage.get("content") or "",
+                        descr.get("record_link") or "", "CC0"))
+    return [o for o in out if o.get("image_url")]
+
+
+def openverse_images(query, limit=3):
+    """Openverse — an aggregator, so the per-item licence is the only truth.
+
+    Deliberately restricted to the unambiguous licences. Openverse indexes
+    CC-BY-NC and CC-BY-ND alongside open material, and a generated course is a
+    derivative work, so those are refused rather than filtered downstream.
+    """
+    data = _get_json("https://api.openverse.org/v1/images/",
+                     {"q": query, "page_size": limit,
+                      "license": "cc0,pdm,by,by-sa"}, timeout=20)
+    out = []
+    for r in ((data or {}).get("results") or [])[:limit]:
+        lic = (r.get("license") or "").lower()
+        if lic in ("by-nc", "by-nd", "by-nc-sa", "by-nc-nd"):
+            continue
+        if not licence_ok(lic) and lic not in ("cc0", "pdm", "by", "by-sa"):
+            continue
+        out.append(_hit("Openverse", r.get("title") or query, r.get("url") or "",
+                        r.get("foreign_landing_url") or "", lic,
+                        author=r.get("creator") or ""))
+    return out
+
+
+# PROBED AND NOT WIRED, recorded so nobody re-adds them from a list:
+#
+#   * CDC PHIL   — public domain and ideal for a health course, but the site is
+#                  a JavaScript catalogue with no JSON endpoint.
+#   * Wellcome   — has an API and a genuinely mixed licence pool per item; worth
+#                  adding, but every item needs an individual rights check that
+#                  is more than a filter expression.
+#   * USGS       — public domain imagery lives behind several separate systems
+#                  rather than one searchable API.
+#
+# All three are wanted. None is a one-function addition.
+
+
 IMAGE_SOURCES = (
     (wikimedia_commons, ("*",)),
     (met_images, ("art",)),
     (art_institute_images, ("art",)),
     (loc_images, ("history",)),
     (nasa_images, ("science", "geography")),
+    # Vetted educational collections — see the note above for why photographs
+    # are permitted from these and not from an open-web search.
+    (smithsonian_images, ("*",)),
+    (openverse_images, ("*",)),
 )
 
 

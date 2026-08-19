@@ -4950,6 +4950,36 @@ class ContentHydrator:
         except Exception as e:
             logger.debug(f"[TEACHING_OBJECT] store failed for {title!r}: {e}")
 
+    def _store_math_speech(self, course_uid, concept_uid, title, markdown):
+        """Pre-generate spoken forms for every formula. Deterministic, no model.
+
+        Done at hydration so a tutoring turn reads a stored string instead of
+        parsing LaTeX on the critical path of a reply that already costs ~30 s.
+        """
+        try:
+            from services.core.math_speech import speech_for
+        except ImportError:
+            try:
+                from math_speech import speech_for
+            except ImportError:
+                return
+        try:
+            spans = speech_for(markdown)
+            if not spans:
+                return
+            n = self.storage.courses.save_concept_math(course_uid, concept_uid, spans)
+            leftover = [s for _, _, u in spans for s in u]
+            if leftover:
+                # Surfaced rather than swallowed: a speech string still carrying
+                # control sequences is non-empty, passes every "did it produce
+                # output" check, and is useless to a listener.
+                logger.warning(f"  [MATH] {title!r}: {len(leftover)} LaTeX "
+                               f"sequence(s) unspoken, e.g. {sorted(set(leftover))[:3]}")
+            elif n:
+                logger.debug(f"  [MATH] {title!r}: {n} formula(s) spoken")
+        except Exception as e:
+            logger.debug(f"[MATH] speech generation skipped for {title!r}: {e}")
+
     def _correct_redundancy(self, markdown, course_uid, concept_uid, title,
                             ordinal, course_title, complexity_role, source_type,
                             h_ctx, research_sources, research_confidence,
@@ -5139,6 +5169,7 @@ class ContentHydrator:
                            ordinal, module=module, lesson=lesson)
             self._store_teaching_object(conn, course_uid, concept_uid, title,
                                         markdown, ordinal=ordinal)
+            self._store_math_speech(course_uid, concept_uid, title, markdown)
             return red
         except Exception as e:
             logger.debug(f"[LEDGER] record failed for {title!r}: {e}")
