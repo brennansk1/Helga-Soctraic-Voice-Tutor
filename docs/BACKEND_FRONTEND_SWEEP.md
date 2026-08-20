@@ -59,3 +59,42 @@ rather than a bug, so none was wired on assumption:
 `tools/css_theme_guard.py` catches the CSS equivalents of this class of bug.
 The route diff above is worth re-running whenever routes are added; the
 one-liner is in this file's header.
+
+
+---
+
+# The other direction — 2026-08-20
+
+The sweep above asks "which backend routes have no caller". That misses the
+three failures a USER actually meets, so `tools/frontend_wiring_sweep.py` now
+asks the reverse. Run it after touching routes or scripts.
+
+**A. Calls to a route that does not exist — 0.** The first run said 10. All ten
+were the tool's fault: it read three Python files and the routes live on five
+blueprints, two of which carry a `url_prefix`. A checker that misses a route
+source does not under-report, it *invents* dead endpoints.
+
+**B. Controls nothing references — 0.** The first run said 5, all
+`id="${...}"` built at runtime.
+
+**C. JS reaching for an element no template defines — 33.** Real, and mostly
+harmless: a missing element yields `null` and the next line guards it. Two
+clusters, both leads rather than bugs:
+
+- `session-rails.js` — 15 of 17 ids missing, so the file is inert, but
+  `session.js` calls `toggleRails`, `updateContextRail`, `updateFlashcard` and
+  `updatePalace`. **Deleting it would trade a dead feature for a
+  ReferenceError.** Cleaning it up means removing the call sites too, inside
+  the 1944-line main teaching surface.
+- `session.js` — 16 of 37, leftovers of the old thinking-bubble, voice
+  selector and in-session creation modal.
+
+**D. A call to a function the page never loads — was 7, now 0.** The one that
+was actually breaking things. `session.js` called six functions defined only in
+`session-course-creation.js`, which no template loads, so every `STRUCT:`,
+`LOG:`, `CHECK:` and `ERROR:` status message threw inside the live socket
+handler and abandoned the rest of it. Fixed in `bd81387`.
+
+A missing element is a null; a missing **function** throws, and everything
+after it in that handler never runs. That is why D exists and why it is worth
+keeping precise.
