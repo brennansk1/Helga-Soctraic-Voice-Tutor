@@ -128,6 +128,13 @@
                 "Terms run left to right; arrows are prerequisites.";
         }
 
+        // Where this programme's shape came from. The planner already records
+        // whether it transcribed a published curriculum or proposed the course
+        // list itself, and writes a plain-English note when it did the latter;
+        // showing a Bachelor's map without it lets a proposed programme pass
+        // for an accredited one.
+        renderProvenance(plan);
+
         var byTerm = {};
         plan.courses.forEach(function (c) {
             (byTerm[c.term] = byTerm[c.term] || []).push(c);
@@ -232,6 +239,30 @@
 
         renderChoice(plan);
         fit();
+    }
+
+    function renderProvenance(plan) {
+        var host = document.getElementById("deg-provenance");
+        if (!host) return;
+        host.textContent = "";
+        if (plan.demo || !plan.curriculum_source) { host.hidden = true; return; }
+        host.hidden = false;
+        host.classList.toggle("is-proposed", plan.authoritative === false);
+
+        var tag = document.createElement("span");
+        tag.className = "deg-prov-tag";
+        tag.textContent = plan.authoritative
+            ? "Published curriculum" : "Model-proposed";
+        host.appendChild(tag);
+
+        var text = document.createElement("span");
+        text.className = "deg-prov-text";
+        // The planner's own note when it has one -- it says the useful thing
+        // (that each course is still evidence-gated) better than a generic
+        // disclaimer would.
+        text.textContent = plan.note ? plan.note
+            : (plan.reference || plan.curriculum_source);
+        host.appendChild(text);
     }
 
     /* The registration moment. */
