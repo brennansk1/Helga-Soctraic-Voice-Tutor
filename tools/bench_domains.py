@@ -666,6 +666,14 @@ def rubric_fingerprint():
     import hashlib
     payload = json.dumps(
         {"version": BENCH_VERSION, "weights": WEIGHTS,
+         # The HARNESS is part of the instrument, not just the rubric. Turning
+         # the dialogue contract or the real aid policy on changes what the
+         # tutor does, so a score from before that change is not comparable
+         # with one from after -- and without this the fingerprint stayed
+         # identical across exactly that change, which is the trap it exists
+         # to prevent. Measured: 3.719 -> 3.361 across those two harness
+         # changes alone, with no product regression behind it.
+         "harness": {"enforce_contract": True, "real_aid_policy": True},
          "domains": {k: {"dimension": v["dimension"],
                          "rubric": v["dimension_rubric"],
                          "topics": [(t["concept"], t["derivable"],
