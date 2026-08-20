@@ -4187,6 +4187,35 @@ class MnemosyneFSM:
                 except Exception as e:
                     logging.warning(f"[PIPELINE] Failed to set course status: {e}")
 
+                # ATTACH THE FINISHED COURSE BACK TO ITS PROGRAMME SLOT.
+                # A degree course is built by the same pipeline as any other,
+                # so without this the course exists, the programme still shows
+                # the slot as unbuilt, and choosing it again would rebuild it
+                # from scratch. `built`/`course_uid` are exactly what the
+                # degree page reads to tell "Ready to start now" from "Built
+                # when you choose it".
+                _prog = getattr(self, "_pending_program", None)
+                if _prog:
+                    try:
+                        ok = self.storage.programs.mark_built(
+                            _prog["program_uid"], _prog["course_title"], course_uid)
+                        if ok:
+                            logging.info("[PIPELINE] attached %s to programme "
+                                         "%s slot %r", course_uid,
+                                         _prog["program_uid"], _prog["course_title"])
+                        else:
+                            # Named rather than swallowed: a course that built
+                            # fine but never joined its programme is invisible
+                            # to the learner who asked for it.
+                            logging.error("[PIPELINE] built %s but could not "
+                                          "attach it to programme %s slot %r",
+                                          course_uid, _prog["program_uid"],
+                                          _prog["course_title"])
+                    except Exception as e:
+                        logging.error("[PIPELINE] programme attach failed: %s", e)
+                    finally:
+                        self._pending_program = None
+
                 elapsed = time.time() - pipeline_start
                 self.creation_status.update({"phase": "complete", "progress_pct": 100, "last_update": time.strftime("%Y-%m-%dT%H:%M:%S")})
                 self.send_status_update(f"Course built successfully! ({elapsed:.0f}s)")
@@ -4780,11 +4809,54 @@ def choose_program_elective(uid):
     if not title:
         return {"error": "title is required"}, 400
     try:
-        if not _shared_storage.programs.choose(uid, title):
+        plan = _shared_storage.programs.get(uid)
+        if not plan:
+            return {"error": "no such programme"}, 404
+        course = next((c for c in plan.get("courses", [])
+                       if c.get("title") == title), None)
+        if not course:
             return {"error": "no such course in this programme"}, 404
-        return {"status": "ok", "chosen": title}
+
+        # Already built: nothing to start, just hand back where it lives.
+        if course.get("built") and course.get("course_uid"):
+            _shared_storage.programs.choose(uid, title)
+            return {"status": "ok", "chosen": title, "building": False,
+                    "course_uid": course["course_uid"]}
+
+        # A course whose prerequisites are unmet must not be startable. The
+        # UI greys those out, but a UI is not a gate — this is.
+        from services.core.program import available_courses
+        if title not in {c["title"] for c in available_courses(plan)}:
+            unmet = [r for r in (course.get("requires") or [])
+                     if not any(c.get("completed") and c["title"] == r
+                                for c in plan.get("courses", []))]
+            return {"error": f"{title} is not available yet",
+                    "reason": "prerequisites_unmet", "requires": unmet}, 409
+
+        fsm = registry.get(_student_id_from_request())
+        if fsm.creation_in_progress:
+            return {"error": "A course is already being built. One at a time —"
+                             " that is the whole model.",
+                    "reason": "build_in_progress"}, 409
+
+        _shared_storage.programs.choose(uid, title)
+
+        # CHOOSING IS WHAT STARTS THE BUILD. Until now /choose recorded the
+        # decision and started nothing, so a learner picked a course, the page
+        # reloaded, and the course they picked stayed unbuilt forever. The
+        # programme's whole promise — "pick one and Helga builds it before you
+        # arrive" — depended on a build nobody was launching.
+        fsm._pending_course_params = {
+            "scope": 3, "mastery": 3, "starting_from": 1,
+        }
+        # Remembered so the pipeline can attach the finished course back to
+        # the programme slot it was built for.
+        fsm._pending_program = {"program_uid": uid, "course_title": title}
+        fsm.start_creation(f"create course {title}")
+        return {"status": "ok", "chosen": title, "building": True,
+                "program_uid": uid}
     except Exception as e:
-        logging.error("choose elective failed: %s", e)
+        logging.error("choosing %r in programme %s failed: %s", title, uid, e)
         return {"error": str(e)}, 500
 
 

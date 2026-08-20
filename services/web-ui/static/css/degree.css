@@ -639,3 +639,26 @@
        a filled bar rather than disappearing. */
     .degree-build-bar::after { animation: none; width: 100%; opacity: .55; }
 }
+
+
+/* --- built vs not-yet-built -----------------------------------------------
+ * "Available" says the learner MAY start a course. "Built" says it already
+ * exists and opens immediately instead of after a forty-minute build. Two
+ * different facts, and the second was carried only in prose.
+ */
+.degree-built-chip {
+    margin-left: auto;
+    padding: .1em .5em;
+    border-radius: 999px;
+    font-size: .68rem; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--color-success);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+}
+/* A built course gets a solid leading edge; one that must be built first gets
+   a dashed one — the same vocabulary the create carousel uses for "this does
+   not exist yet". Colour is never the only signal. */
+.degree-course.is-prominent.is-built { border-left: 3px solid var(--color-success); }
+.degree-course.is-prominent.is-unbuilt { border-left: 3px dashed var(--border-color); }
+

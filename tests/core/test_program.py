@@ -673,3 +673,54 @@ class TestOnlyTeachableCourses(unittest.TestCase):
             on_drop=seen.append)
         self.assertEqual(kept, ["Organic Chemistry", "Labor Economics"])
         self.assertEqual(seen, [["Organic Chemistry Laboratory"]])
+
+
+class TestDegreeCreationPipeline(unittest.TestCase):
+    """Creating a degree plans the SKELETON only; choosing a course builds it.
+
+    Before this, /choose recorded the decision and started nothing: a learner
+    picked a course, the page reloaded, and the course stayed unbuilt forever.
+    The programme's whole promise — "pick one and Helga builds it before you
+    arrive" — rested on a build nobody launched.
+    """
+
+    def _store(self):
+        import tempfile
+        from services.common.storage import StorageManager
+        return StorageManager(data_dir=tempfile.mkdtemp())
+
+    def test_a_new_programme_is_all_skeleton(self):
+        sm = self._store()
+        sm.programs.create("prog_a", plan_from_template("Economics", "associate"))
+        got = sm.programs.get("prog_a")
+        self.assertTrue(got["courses"], "a programme needs courses")
+        self.assertFalse(any(c["built"] for c in got["courses"]),
+                         "nothing is built until the learner chooses it")
+        self.assertFalse(any(c["completed"] for c in got["courses"]))
+
+    def test_a_finished_build_attaches_to_its_programme_slot(self):
+        """Without the attach the course exists, the slot still reads unbuilt,
+        and choosing it again would rebuild it from scratch."""
+        sm = self._store()
+        plan = plan_from_template("Economics", "associate")
+        sm.programs.create("prog_b", plan)
+        title = plan["courses"][0]["title"]
+
+        self.assertTrue(sm.programs.mark_built("prog_b", title, "course_abc123"))
+        row = next(c for c in sm.programs.get("prog_b")["courses"]
+                   if c["title"] == title)
+        self.assertTrue(row["built"])
+        self.assertEqual(row["course_uid"], "course_abc123",
+                         "the slot must point at the course that was built")
+
+    def test_built_and_unbuilt_are_distinguishable(self):
+        """The degree page shows 'Ready' versus 'Built when you choose it'
+        off exactly this field."""
+        sm = self._store()
+        plan = plan_from_template("Economics", "associate")
+        sm.programs.create("prog_c", plan)
+        sm.programs.mark_built("prog_c", plan["courses"][0]["title"], "course_x")
+        courses = sm.programs.get("prog_c")["courses"]
+        self.assertEqual(sum(1 for c in courses if c["built"]), 1)
+        self.assertEqual(sum(1 for c in courses if not c["built"]),
+                         len(courses) - 1)

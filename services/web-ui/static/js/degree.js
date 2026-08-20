@@ -589,8 +589,15 @@
        is a control; in the plan below it the same course is a record. */
     function courseCard(plan, c, prominent) {
         var actionable = prominent && c._state === "available";
+        // Whether a course EXISTS YET is a different fact from its state, and
+        // the learner needs both: "available" says you may start it, "built"
+        // says it is already written and opens immediately rather than after
+        // a build. Prose alone carried this, which meant it read only if you
+        // read — a class makes it visible at a glance.
         var card = elem(actionable ? "button" : "div",
-                        "degree-course is-" + c._state + (prominent ? " is-prominent" : ""));
+                        "degree-course is-" + c._state
+                        + (c.built ? " is-built" : " is-unbuilt")
+                        + (prominent ? " is-prominent" : ""));
         if (actionable) card.type = "button";
 
         if (prominent) {
@@ -599,6 +606,12 @@
             // "go" lives rather than in front of the label.
             var head = elem("div", "degree-course-head");
             head.appendChild(elem("span", "degree-course-area", areaLabel(c.slot)));
+            // A built course opens instantly; an unbuilt one costs a build
+            // first. That is the difference between "start now" and "start in
+            // forty minutes", so it earns a mark of its own.
+            if (c.built && c._state === "available") {
+                head.appendChild(elem("span", "degree-built-chip", "Ready"));
+            }
             head.appendChild(icon(actionable ? ACTION_ICON : (STATE_ICON[c._state] || "dot")));
             card.appendChild(head);
             // h3 here, h4 in the plan: the decision cards sit directly under
@@ -660,19 +673,47 @@
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ title: c.title }) })
             .then(function (r) {
-                if (!r.ok) throw new Error("HTTP " + r.status);
-                return r.json();
+                return r.json().then(function (b) {
+                    return { ok: r.ok, status: r.status, body: b };
+                });
             })
-            .then(function (d) {
-                // A 200 carrying {status:"missing"} is still a failure;
-                // reloading on it would silently discard the choice.
-                if (d && d.status && d.status !== "ok") throw new Error(d.status);
+            .then(function (res) {
+                var d = res.body || {};
+                if (!res.ok) {
+                    // These two are answers, not faults, and deserve their own
+                    // words: one course at a time is the model, and a locked
+                    // course is locked for a reason the learner can act on.
+                    if (d.reason === "build_in_progress") {
+                        throw new Error("a course is already being built — " +
+                                        "one at a time");
+                    }
+                    if (d.reason === "prerequisites_unmet") {
+                        throw new Error("finish " +
+                                        (d.requires || []).join(" and ") + " first");
+                    }
+                    throw new Error(d.error || "HTTP " + res.status);
+                }
+                if (d.status && d.status !== "ok") throw new Error(d.status);
+
+                // Choosing a course STARTS it. Go watch it being built — the
+                // page that exists for exactly that — rather than reloading
+                // the plan and leaving the learner to guess what happened.
+                if (d.building) {
+                    if (window.HelgaBuildGuard) window.HelgaBuildGuard.set(c.title);
+                    location.href = "/build";
+                    return;
+                }
+                // Already built: open it.
+                if (d.course_uid) {
+                    location.href = "/learn?course_uid=" +
+                        encodeURIComponent(d.course_uid);
+                    return;
+                }
                 location.reload();
             })
             .catch(function (err) {
                 card.disabled = false;
-                note.textContent = "That did not save (" + err.message +
-                    "). Nothing has changed — try again.";
+                note.textContent = "Could not start it — " + err.message + ".";
             });
     }
 
