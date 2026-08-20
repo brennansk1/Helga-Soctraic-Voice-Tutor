@@ -4392,8 +4392,21 @@ class ContentHydrator:
 
             # Update counters atomically
             with _counter_lock:
+                # A STUB IS A FAILED CONCEPT, NOT A HYDRATED ONE.
+                #
+                # This used to count a fallback in hydration_fallback_count and
+                # then increment hydrated_count anyway, so failed_count stayed 0
+                # no matter how many bodies came back reading "[Hydration
+                # failed]". With the LLM unreachable for a whole build that made
+                # every counter say success, the >50% abort gate below never
+                # fired, and the course was published "ready" with not one real
+                # sentence in it. A body the learner cannot read did not succeed;
+                # it is counted where the gate can see it.
                 if is_fallback:
                     hydration_fallback_count += 1
+                    failed_count += 1
+                    return
+
                 hydrated_count += 1
 
                 # A course is NOT enterable until the whole build has run.
@@ -4460,18 +4473,42 @@ class ContentHydrator:
 
         total_concepts = len(concept_list)
 
-        # AUTO-9: Abort if >50% of concepts failed hydration
+        # AUTO-9: Abort if >50% of concepts failed hydration.
+        #
+        # failed_count now includes fallback stubs (see the counter block in
+        # _hydrate_one), which is what this gate was always meant to catch: more
+        # than half the course has no teachable body. Stubs used to be invisible
+        # here, so an entire build against a dead LLM sailed through with
+        # failed_count == 0.
         if total_concepts > 0 and failed_count > total_concepts * 0.5:
             course["status"] = "failed"
             self.storage.courses.update_course(course_uid, course)
-            msg = f"Hydration failed for {failed_count}/{total_concepts} concepts (>50% failure rate). Course marked as failed."
+            msg = (
+                f"Hydration failed for {failed_count}/{total_concepts} concepts "
+                f"({hydration_fallback_count} of them fallback stubs) — >50% "
+                "failure rate. Course marked as failed."
+            )
             logger.error(msg)
             if self.status_callback:
                 self.status_callback(f"ERROR: {msg}")
             raise CourseCreationError(msg)
 
-        # Post-hydration: mark course as ready
-        course["status"] = "ready"
+        # Post-hydration status.
+        #
+        # "ready" is a promise that a learner can open any concept and find
+        # content. Below the abort threshold the course is still worth keeping —
+        # most of it hydrated — but it is not that promise, so it gets the
+        # "partial" status the wizard path already uses for retryable hydration
+        # damage. Only a clean run earns "ready".
+        if failed_count > 0:
+            course["status"] = "partial"
+            logger.warning(
+                f"Course '{course_title}' marked 'partial': {failed_count}/"
+                f"{total_concepts} concepts have no usable body "
+                f"({hydration_fallback_count} fallback stubs)"
+            )
+        else:
+            course["status"] = "ready"
         # WIZ-3: Record hydration fallback count in course metadata
         if hydration_fallback_count > 0:
             existing_fallbacks = course.get("fallback_count", 0)
@@ -5615,18 +5652,72 @@ class SyllabusAuditor:
         words = re.findall(r'[a-z]+', title.lower())
         return {self._stem(w) for w in words if w not in self.DEDUP_STOPWORDS and len(w) > 1}
 
+    # Tokens that name no concept of their own — packaging around a topic, not
+    # a topic. If the ONLY difference between two titles is one of these, the
+    # two titles are the same concept ("Photosynthesis" / "Introduction to
+    # Photosynthesis"). Stored ALREADY STEMMED, because that is what
+    # _tokenize_title produces ("introduction" -> "introduc").
+    DEDUP_FILLER_TOKENS = frozenset({
+        "introduc", "intro", "overview", "basic", "fundamental", "essential",
+        "concept", "principle", "understand", "explained", "explana", "defini",
+        "definition", "primer", "review", "summary", "topic", "study", "part",
+        "section", "further", "detail", "more",
+    })
+
+    # A pair must be this alike (Jaccard) before dedup will touch it. Two
+    # three-token titles that differ in a single token score 0.5; the real
+    # near-identical pairs this pass exists for score 1.0.
+    DEDUP_SIMILARITY_THRESHOLD = 0.75
+
+    # Hard ceiling on what this heuristic may remove from one module. Dedup
+    # deleting a third of a module is not a module full of duplicates, it is the
+    # heuristic misfiring — and it misfires silently, before hydration, where
+    # nothing downstream can tell the syllabus was quietly cut.
+    DEDUP_MAX_MODULE_REMOVAL_RATIO = 0.25
+
     def _word_overlap_ratio(self, tokens_a: set, tokens_b: set) -> float:
-        """Compute symmetric word overlap ratio between two token sets.
-        Returns 0.0 if either set is empty, else |intersection| / |smaller set|."""
+        """Jaccard similarity between two title token sets: |A ∩ B| / |A ∪ B|.
+
+        Dividing by the UNION, not by the smaller set. The old ratio divided by
+        the smaller set, which made every pair of two-word titles sharing one
+        word score 0.50 — and at the old 0.4 threshold "Linear Regression" and
+        "Logistic Regression" were 'duplicates', as were "Ordinary Differential
+        Equations" and "Partial Differential Equations" (0.67). Distinct
+        technical terms sharing a head noun are what a real syllabus looks like;
+        the shared noun is the subject, and the differing word is the concept.
+        Jaccard scores those pairs 0.33 and 0.50 — below the threshold, kept.
+        """
         if not tokens_a or not tokens_b:
             return 0.0
-        intersection = tokens_a & tokens_b
-        smaller = min(len(tokens_a), len(tokens_b))
-        return len(intersection) / smaller if smaller > 0 else 0.0
+        union = tokens_a | tokens_b
+        return len(tokens_a & tokens_b) / len(union) if union else 0.0
+
+    def _titles_are_duplicates(self, tokens_a: set, tokens_b: set) -> bool:
+        """True only when two titles name the same concept.
+
+        Two ways to qualify, and a title needs just one:
+          * identical token sets, or a symmetric difference made up entirely of
+            filler ("Pythagorean Theorem" vs "The Pythagorean Theorem"), or
+          * Jaccard similarity at or above DEDUP_SIMILARITY_THRESHOLD.
+        Anything else — including a pair whose differing tokens are themselves
+        meaningful words — is two concepts that happen to share vocabulary.
+        """
+        if not tokens_a or not tokens_b:
+            return False
+        if tokens_a == tokens_b:
+            return True
+        difference = tokens_a ^ tokens_b
+        if difference and all(t in self.DEDUP_FILLER_TOKENS for t in difference):
+            return True
+        return self._word_overlap_ratio(tokens_a, tokens_b) >= self.DEDUP_SIMILARITY_THRESHOLD
 
     def _programmatic_dedup(self, course: dict) -> int:
         """Pass 1: Remove semantic duplicates within each module using word overlap.
-        Returns the number of concepts deleted."""
+
+        Conservative by construction: a pair must pass _titles_are_duplicates,
+        and no module may lose more than DEDUP_MAX_MODULE_REMOVAL_RATIO of its
+        concepts to the heuristic. Returns the number of concepts deleted.
+        """
         total_deleted = 0
 
         for module in course.get("modules", []):
@@ -5639,26 +5730,62 @@ class SyllabusAuditor:
                         tokens = self._tokenize_title(concept.get("title", ""))
                         all_concepts.append((concepts_list, idx, concept, tokens))
 
-            # Compare every pair; mark later occurrence as duplicate
-            uids_to_delete = set()
+            # Compare every pair; the later occurrence is the candidate for removal.
+            # Candidates are collected rather than deleted on sight, so the
+            # module-wide budget below can be applied to the set as a whole.
+            candidates = []  # (ratio, dup_uid, dup_title, orig_title)
+            candidate_uids = set()
             for i in range(len(all_concepts)):
-                if all_concepts[i][2]["uid"] in uids_to_delete:
+                if all_concepts[i][2]["uid"] in candidate_uids:
                     continue
                 for j in range(i + 1, len(all_concepts)):
-                    if all_concepts[j][2]["uid"] in uids_to_delete:
+                    if all_concepts[j][2]["uid"] in candidate_uids:
                         continue
-                    ratio = self._word_overlap_ratio(all_concepts[i][3], all_concepts[j][3])
-                    if ratio > 0.4:
+                    tokens_i, tokens_j = all_concepts[i][3], all_concepts[j][3]
+                    if self._titles_are_duplicates(tokens_i, tokens_j):
+                        ratio = self._word_overlap_ratio(tokens_i, tokens_j)
                         dup_concept = all_concepts[j][2]
                         orig_concept = all_concepts[i][2]
-                        logger.info(
-                            f"Audit DEDUP: '{dup_concept['title']}' overlaps "
-                            f"'{orig_concept['title']}' ({ratio:.0%}) in module "
-                            f"'{module['title']}' — removing duplicate"
-                        )
-                        uids_to_delete.add(dup_concept["uid"])
+                        candidates.append((
+                            ratio, dup_concept["uid"],
+                            dup_concept.get("title", "?"),
+                            orig_concept.get("title", "?"),
+                        ))
+                        candidate_uids.add(dup_concept["uid"])
 
-            # Also check for exact normalized title matches across the module
+            # BUDGET: dedup may not gut a module.
+            #
+            # Every removal here is a syllabus item deleted before hydration on
+            # the strength of a token overlap, with nothing downstream able to
+            # notice the gap. One misfire costs a concept; a systematic misfire
+            # (a module whose titles all share a subject noun) used to cost half
+            # the module. Past the budget we keep only the most-similar
+            # candidates and say out loud which ones we let stand.
+            uids_to_delete = set()
+            removed_titles = []
+            if candidates:
+                budget = max(1, int(len(all_concepts) * self.DEDUP_MAX_MODULE_REMOVAL_RATIO))
+                candidates.sort(key=lambda c: c[0], reverse=True)
+                if len(candidates) > budget:
+                    skipped = [c[2] for c in candidates[budget:]]
+                    logger.warning(
+                        f"Audit DEDUP: {len(candidates)} duplicate candidates in "
+                        f"module '{module.get('title', '?')}' exceeds the "
+                        f"{budget}-concept budget ({len(all_concepts)} concepts). "
+                        f"Keeping: {skipped}"
+                    )
+                for ratio, uid, dup_title, orig_title in candidates[:budget]:
+                    logger.info(
+                        f"Audit DEDUP: removing '{dup_title}' — duplicates "
+                        f"'{orig_title}' ({ratio:.0%} similar) in module "
+                        f"'{module.get('title', '?')}'"
+                    )
+                    uids_to_delete.add(uid)
+                    removed_titles.append(dup_title)
+
+            # Also check for exact normalized title matches across the module.
+            # These are certain, not heuristic, so the budget above does not
+            # apply to them.
             seen_normalized = {}
             for _, _, concept, _ in all_concepts:
                 if concept["uid"] in uids_to_delete:
@@ -5667,9 +5794,10 @@ class SyllabusAuditor:
                 if norm in seen_normalized:
                     logger.info(
                         f"Audit DEDUP: Exact duplicate title '{concept['title']}' "
-                        f"in module '{module['title']}' — removing"
+                        f"in module '{module.get('title', '?')}' — removing"
                     )
                     uids_to_delete.add(concept["uid"])
+                    removed_titles.append(concept.get("title", "?"))
                 else:
                     seen_normalized[norm] = concept["uid"]
 
@@ -5688,6 +5816,10 @@ class SyllabusAuditor:
                                 f"  Removed {removed} duplicate(s) from lesson "
                                 f"'{lesson.get('title', '?')}'"
                             )
+                logger.info(
+                    f"Audit DEDUP: module '{module.get('title', '?')}' lost "
+                    f"{len(uids_to_delete)}/{len(all_concepts)} concepts: {removed_titles}"
+                )
                 total_deleted += len(uids_to_delete)
 
         # Also do a cross-module exact-title dedup pass

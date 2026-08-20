@@ -135,14 +135,31 @@ If plants make their own food, why do they need water?
         self.mock_storage.courses.get_course.return_value = course_data
         self.mock_storage.courses.get_concept_content.return_value = None  # Not yet hydrated
 
-        # LLM returns content for both generation and structuring
+        # LLM returns content for both generation and structuring.
+        #
+        # The structured body must clear the 40-word floor in
+        # _condense_and_structure_content. Below it every attempt is discarded
+        # and the concept ends as a "[Hydration failed]" stub — which, now that
+        # a stub counts as a failed concept, aborts a one-concept build before
+        # this test's assertions can run. The short body was masking the fact
+        # that this test never actually reached the success path it names.
         llm_calls = []
         def mock_llm_side_effect(prompt, **kwargs):
             llm_calls.append(prompt)
             if "Explain the concept" in prompt:
                 return "This is generated LLM content about the test concept."
             else:
-                return "# Test Concept\n## Metadata\n## Core Definition\nA test concept.\n## Contextual Explanation\nDetailed explanation.\n## Socratic Hook\nWhy?"
+                return (
+                    "# Test Concept\n## Metadata\n## Core Definition\n"
+                    "A test concept is a deliberately simple example used to "
+                    "exercise the hydration pipeline end to end.\n"
+                    "## Contextual Explanation\nThe concept exists so that the "
+                    "structuring step has a realistic body of prose to validate, "
+                    "repair, and store, rather than a two-line fragment that the "
+                    "usability floor would reject outright.\n"
+                    "## Socratic Hook\nWhy would a body this short ever be "
+                    "treated as a finished explanation?"
+                )
 
         mock_llm.side_effect = mock_llm_side_effect
 
