@@ -576,17 +576,47 @@ Score 1-5 and return STRICT JSON only:
 {{"score": n, "why": "<one sentence quoting the decisive turn>"}}"""
 
 
+def _loads_tolerant(raw):
+    """Parse a judge reply, surviving the LaTeX it is asked to quote.
+
+    The judge returns well-formed-LOOKING JSON containing raw backslashes:
+
+        {"score": 1, "why": "the tutor wrote '$Av=\\lambda v$' unspeakably"}
+
+    `\\l` is not a valid JSON escape, so a bare json.loads rejects the whole
+    reply and the sample is dropped. On MATHEMATICS that happens on nearly
+    every call -- the dimension measuring LaTeX handling was being voided by
+    LaTeX, silently, and scored None. repair_json() already exists for exactly
+    this class of model output.
+    """
+    if not raw:
+        return None
+    chunk = raw[raw.find("{"):raw.rfind("}") + 1]
+    if not chunk:
+        return None
+    try:
+        return json.loads(chunk)
+    except Exception:
+        pass
+    try:
+        from services.common.llm_utils import repair_json
+        return json.loads(repair_json(chunk))
+    except Exception:
+        return None
+
+
 def _median_judged(client, system, convo, samples=3, hb=None):
     """Median of N judge calls. One call swings +/-2 on identical input."""
     vals, why = [], ""
     for _ in range(max(1, samples)):
         raw = hb._chat(client, system, convo, max_tokens=250, temperature=0.2)
+        d = _loads_tolerant(raw)
+        if not isinstance(d, dict):
+            continue
         try:
-            d = json.loads(raw[raw.find("{"):raw.rfind("}") + 1])
-            v = int(d.get("score"))
-            vals.append(max(1, min(5, v)))
+            vals.append(max(1, min(5, int(float(d.get("score"))))))
             why = why or str(d.get("why") or "")[:200]
-        except Exception:
+        except (TypeError, ValueError):
             continue
     return (statistics.median(vals) if vals else None), why
 

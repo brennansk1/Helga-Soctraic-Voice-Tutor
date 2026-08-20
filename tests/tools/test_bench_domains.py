@@ -412,3 +412,44 @@ def test_a_transcript_with_no_decisions_still_scores():
     """Older saved runs predate the decision being recorded."""
     r = bd.score_visuals(_tutor("What is an eigenvalue?"), MATH)
     assert r["policy_asked"] == 0 and r["aids_reused"] == 0
+
+
+# ------------------------------------- the judge must survive quoting LaTeX
+#
+# The judge is asked to quote the decisive tutor turn. On a maths transcript
+# that quote contains raw backslashes -- "$Av=\lambda v$" -- which are not
+# valid JSON escapes. A bare json.loads rejected the entire reply and the
+# sample was dropped, so `notation_rigour` scored None on every maths run:
+# the dimension that measures LaTeX handling, voided by LaTeX, in silence.
+
+LATEX_REPLY = r'{"score": 1, "why": "the tutor wrote \'$Av=\lambda v$\' unspeakably"}'
+
+
+def test_a_judge_reply_quoting_latex_is_parsed_not_dropped():
+    got = bd._loads_tolerant(LATEX_REPLY)
+    assert got is not None, "a maths judge reply must not be silently discarded"
+    assert got["score"] == 1
+
+
+def test_the_core_judge_uses_the_same_tolerance():
+    import helgabench as hb
+    assert hb._loads_tolerant(LATEX_REPLY) is not None
+
+
+def test_ordinary_json_is_unaffected():
+    assert bd._loads_tolerant('{"score": 4, "why": "fine"}')["score"] == 4
+
+
+def test_prose_around_the_object_is_tolerated():
+    assert bd._loads_tolerant('Sure!\n{"score": 3}\nHope that helps')["score"] == 3
+
+
+def test_genuine_garbage_still_returns_none():
+    """Tolerance must not become credulity."""
+    assert bd._loads_tolerant("no object at all") is None
+    assert bd._loads_tolerant("") is None
+
+
+def test_a_float_score_is_accepted():
+    """Judges return 4.5; int('4.5') raises and used to drop the sample."""
+    assert bd._loads_tolerant('{"score": 4.5}')["score"] == 4.5

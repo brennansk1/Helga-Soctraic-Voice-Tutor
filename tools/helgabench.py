@@ -391,6 +391,34 @@ def run_dialogue(client, profile_key, topic, turns, verbose=False,
     return {"transcript": transcript}
 
 
+def _loads_tolerant(raw):
+    """Parse a judge reply, surviving the LaTeX it was asked to quote.
+
+    The judge returns well-formed-LOOKING JSON containing raw backslashes:
+
+        {"score": 1, "why": "the tutor wrote '$Av=\\lambda v$' unspeakably"}
+
+    That is not valid JSON, so a bare json.loads rejects the whole reply and
+    the sample is dropped. On mathematics it happened on nearly every call:
+    the dimension measuring LaTeX handling was voided by LaTeX, and scored
+    None. repair_json() already exists for this class of model output.
+    """
+    if not raw:
+        return None
+    chunk = raw[raw.find("{"):raw.rfind("}") + 1]
+    if not chunk:
+        return None
+    try:
+        return json.loads(chunk)
+    except Exception:
+        pass
+    try:
+        from services.common.llm_utils import repair_json
+        return json.loads(repair_json(chunk))
+    except Exception:
+        return None
+
+
 def judge(client, profile_key, topic, transcript, samples_n=3):
     """Independent rubric scoring of the tutor's conduct."""
     convo = "\n".join(
@@ -402,10 +430,11 @@ def judge(client, profile_key, topic, transcript, samples_n=3):
     samples, worst = [], ""
     for _ in range(max(1, samples_n)):
         raw = _chat(client, JUDGE_RUBRIC, user, max_tokens=500, temperature=0.2)
-        try:
-            data = json.loads(raw[raw.find("{"):raw.rfind("}") + 1])
-        except Exception:
-            continue
+        # Tolerant: the judge quotes the tutor, and on a maths transcript that
+        # quote carries raw LaTeX backslashes, which are not valid JSON
+        # escapes. A bare json.loads drops the entire sample -- silently, and
+        # most often on precisely the topics where notation matters.
+        data = _loads_tolerant(raw)
         if not isinstance(data, dict):
             continue
         samples.append(data)
