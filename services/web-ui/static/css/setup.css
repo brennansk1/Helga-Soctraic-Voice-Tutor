@@ -1,0 +1,372 @@
+/* First-run setup.
+ *
+ * A standalone page — it does not inherit base.html's chrome — so it defines
+ * its own shell. Everything else comes from the shared token layers loaded
+ * before it, and every colour here is a token that exists in BOTH themes.
+ * A hex fallback inside a custom-property reference is not a safety net — when
+ * the token does not exist it is simply a light-mode constant, rendering the
+ * same white in dark mode. design-system.css says so in its own header, and
+ * tools/css_theme_guard.py fails the build over it.
+ *
+ * The state vocabulary matches resources.css exactly — ok / degraded /
+ * blocked / unknown — because both surfaces describe the same machine and a
+ * user who sees them use different words for the same fact stops trusting
+ * either one.
+ */
+
+.page-setup {
+    margin: 0;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+}
+
+.setup-shell {
+    box-sizing: border-box;
+    width: min(760px, 100%);
+    margin: 0 auto;
+    padding: var(--space-5) var(--space-4) var(--space-5);
+}
+
+/* ------------------------------------------------------------------ head */
+
+.setup-kicker {
+    margin: 0 0 .35em;
+    font-size: .74rem; font-weight: 600; letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+.setup-title {
+    margin: 0 0 var(--space-3);
+    font-size: 1.75rem; line-height: 1.15;
+    color: var(--text-primary);
+}
+.setup-lead {
+    margin: 0 0 var(--space-4);
+    max-width: 60ch;
+    font-size: .95rem; line-height: 1.6;
+    color: var(--text-secondary);
+}
+
+/* The counter is the progress model made visible. It counts only steps that
+   are actually green, so it deliberately does NOT reach the end on a machine
+   that merely works — readiness is stated in words beside it instead. */
+.setup-progress { margin: 0 0 var(--space-3); }
+.setup-progress-track {
+    display: block; height: 8px; overflow: hidden;
+    border-radius: 999px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+}
+.setup-progress-fill {
+    display: block; height: 100%; width: 0;
+    background: var(--accent-primary);
+    transition: width 240ms ease-out;
+}
+.setup-progress-fill.is-ok { background: var(--color-success); }
+.setup-progress-fill.is-degraded { background: var(--color-warning); }
+.setup-progress-fill.is-blocked { background: var(--color-danger); }
+.setup-progress-fill.is-unknown { background: var(--text-secondary); }
+.setup-progress-text {
+    margin: .5em 0 0;
+    font-size: .84rem; font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+}
+
+.setup-summary {
+    margin: 0 0 var(--space-4);
+    padding: var(--space-3);
+    font-size: .88rem; line-height: 1.55;
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-left-width: 3px;
+    border-radius: var(--border-radius);
+}
+.setup-summary:empty { display: none; }
+.setup-summary.is-ok { border-left-color: var(--color-success); }
+.setup-summary.is-degraded { border-left-color: var(--color-warning); }
+.setup-summary.is-blocked { border-left-color: var(--color-danger); }
+.setup-summary.is-unknown { border-left-color: var(--color-info); }
+
+/* ----------------------------------------------------------------- ready */
+
+.setup-ready {
+    margin: 0 0 var(--space-4);
+    padding: var(--space-4);
+    background: var(--bg-success);
+    color: var(--text-primary);
+    border: 1px solid var(--color-success);
+    border-radius: var(--border-radius-lg);
+}
+.setup-ready[hidden] { display: none; }
+.setup-ready-title { margin: 0 0 .35em; font-size: 1.1rem; color: var(--text-primary); }
+.setup-ready-text {
+    margin: 0 0 var(--space-3);
+    font-size: .88rem; line-height: 1.55; color: var(--text-primary);
+}
+.setup-ready-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+/* ----------------------------------------------------------------- steps */
+
+.setup-steps { list-style: none; margin: 0; padding: 0; }
+
+.setup-step {
+    box-sizing: border-box;
+    margin: 0 0 var(--space-3);
+    padding: var(--space-4);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-left-width: 4px;
+    border-radius: var(--border-radius);
+}
+/* The left edge carries the state at a glance; the pill carries it in words.
+   Colour alone is never the only signal — the pill's text is the accessible
+   one and the border is the scanning aid. */
+.setup-step.is-ok { border-left-color: var(--color-success); }
+.setup-step.is-degraded { border-left-color: var(--color-warning); }
+.setup-step.is-blocked { border-left-color: var(--color-danger); }
+.setup-step.is-unknown { border-left-color: var(--color-info); }
+.setup-step.is-loading { border-left-color: var(--border-color); }
+
+.setup-step-head {
+    display: flex; align-items: center; gap: .6em;
+    margin-bottom: var(--space-2);
+}
+.setup-step-num {
+    flex: 0 0 auto;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 1.6em; height: 1.6em;
+    font-size: .78rem; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+}
+.setup-step-title {
+    margin: 0; flex: 1 1 auto; min-width: 0;
+    font-size: 1rem; font-weight: 600; color: var(--text-primary);
+}
+
+.setup-step-headline {
+    margin: 0 0 .35em;
+    font-size: .9rem; line-height: 1.5; color: var(--text-primary);
+}
+.setup-step-detail {
+    margin: 0 0 .5em;
+    font-size: .85rem; line-height: 1.55; color: var(--text-secondary);
+}
+/* "Waiting on step: Ollama is running" — the sentence that keeps "we could not
+   measure this" from reading as either a pass or a failure. */
+.setup-step-waiting {
+    margin: 0 0 .5em;
+    font-size: .8rem; font-weight: 600; color: var(--text-secondary);
+}
+
+.setup-sub { list-style: none; margin: var(--space-2) 0 var(--space-2); padding: 0; }
+.setup-sub-item {
+    display: flex; align-items: flex-start; gap: .55em;
+    padding: .35em 0;
+    border-top: 1px solid var(--border-color);
+}
+.setup-sub-item:first-child { border-top: 0; }
+.setup-sub-dot {
+    flex: 0 0 auto; width: 8px; height: 8px; margin-top: .45em;
+    border-radius: 999px; background: var(--text-secondary);
+}
+.setup-sub-item.is-ok .setup-sub-dot { background: var(--color-success); }
+.setup-sub-item.is-degraded .setup-sub-dot { background: var(--color-warning); }
+.setup-sub-item.is-blocked .setup-sub-dot { background: var(--color-danger); }
+.setup-sub-item.is-unknown .setup-sub-dot { background: var(--color-info); }
+.setup-sub-body { min-width: 0; }
+.setup-sub-label {
+    display: block; font-size: .82rem; font-weight: 600; color: var(--text-primary);
+}
+.setup-sub-reason, .setup-sub-remedy {
+    display: block; font-size: .8rem; line-height: 1.5;
+    color: var(--text-secondary); overflow-wrap: anywhere;
+}
+
+/* --- commands ------------------------------------------------------------
+   For every step this page cannot fix by itself, the command IS the remedy,
+   so it gets the weight of a code block rather than being folded into prose. */
+.setup-cmds { position: relative; margin: var(--space-2) 0 0; }
+.setup-cmd {
+    margin: 0;
+    padding: .7em .8em;
+    padding-right: 5em;                 /* room for the copy button */
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: .8rem; line-height: 1.6;
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    white-space: pre;
+}
+.setup-copy {
+    position: absolute; top: .45em; right: .45em;
+    font: inherit; font-size: .74rem;
+    padding: .25em .7em;
+    cursor: pointer;
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+}
+.setup-copy:hover { border-color: var(--accent-primary); }
+
+.setup-step-action {
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2);
+    margin: var(--space-3) 0 0;
+}
+.setup-step-action-note {
+    flex: 1 1 16ch; min-width: 0;
+    font-size: .78rem; line-height: 1.45; color: var(--text-secondary);
+}
+
+/* --- the download --------------------------------------------------------
+   Bytes, a rate and an estimate. Never a bare spinner: this is the single
+   longest wait in the product and an animation would say nothing about it. */
+.setup-pull {
+    margin: var(--space-3) 0 0;
+    padding: var(--space-3);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+}
+.setup-pull.is-error { border-color: var(--color-danger); background: var(--bg-danger); }
+.setup-pull.is-done { border-color: var(--color-success); background: var(--bg-success); }
+.setup-pull-track {
+    display: block; height: 10px; overflow: hidden;
+    border-radius: 999px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+}
+.setup-pull-fill {
+    display: block; height: 100%; width: 0;
+    background: var(--accent-primary);
+    transition: width 400ms linear;
+}
+.setup-pull-figures {
+    margin: .6em 0 .2em;
+    font-size: .84rem; font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
+.setup-pull-status, .setup-pull-note {
+    margin: 0; font-size: .78rem; line-height: 1.5; color: var(--text-secondary);
+}
+.setup-pull-note { margin-top: .3em; }
+.setup-pull-error, .setup-pull-done {
+    margin: 0 0 var(--space-2);
+    font-size: .85rem; line-height: 1.55; color: var(--text-primary);
+}
+
+.setup-why { margin: var(--space-3) 0 0; }
+.setup-why summary {
+    cursor: pointer; font-size: .78rem; color: var(--text-secondary);
+}
+.setup-why p {
+    margin: .5em 0 0; font-size: .8rem; line-height: 1.55;
+    color: var(--text-secondary);
+}
+
+.setup-note {
+    margin: 0 0 var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    font-size: .8rem; line-height: 1.5;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+}
+
+/* ------------------------------------------------------------------ foot */
+
+.setup-foot {
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3);
+    margin-top: var(--space-4);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border-color);
+}
+.setup-btn {
+    display: inline-block;
+    font: inherit; font-size: .85rem; font-weight: 600;
+    padding: .5em 1.1em;
+    cursor: pointer; text-decoration: none;
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+}
+.setup-btn:hover { border-color: var(--accent-primary); }
+.setup-btn:disabled { opacity: .6; cursor: default; }
+.setup-btn-primary {
+    color: var(--bg-primary);
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+}
+.setup-btn-primary:hover { color: var(--bg-primary); }
+
+/* A counter, matching .preflight-countdown. Same reasoning: the wait is on a
+   person, and the elapsed seconds are the only honest thing to show. */
+.setup-countdown {
+    font-size: .78rem; color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+.setup-skip {
+    margin-left: auto;
+    font-size: .8rem; color: var(--text-secondary);
+}
+
+.setup-noscript {
+    margin-top: var(--space-4);
+    font-size: .85rem; line-height: 1.55; color: var(--text-secondary);
+}
+.setup-noscript code {
+    font-family: var(--font-mono); font-size: .8rem;
+    color: var(--text-primary); background: var(--bg-tertiary);
+    padding: .1em .35em; border-radius: var(--border-radius-sm);
+}
+
+/* ----------------------------------------------------------------- pills */
+
+.setup-pill {
+    flex: 0 0 auto;
+    display: inline-block;
+    padding: .12em .65em;
+    font-size: .7rem; font-weight: 700; letter-spacing: .03em;
+    border-radius: 999px;
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+}
+.setup-pill.is-ok { background: var(--bg-success); border-color: var(--color-success); }
+.setup-pill.is-degraded { background: var(--bg-warning); border-color: var(--color-warning); }
+.setup-pill.is-blocked { background: var(--bg-danger); border-color: var(--color-danger); }
+.setup-pill.is-unknown { background: var(--bg-info); border-color: var(--color-info); }
+
+/* ------------------------------------------------------------ responsive */
+
+/* 375px: the head shrinks, the step number moves out of the way of a title
+   that now needs two lines, and the command block keeps its own scrollbar so
+   a long `pip install -r …` never widens the page. */
+@media (max-width: 560px) {
+    .setup-shell { padding: var(--space-4) var(--space-3); }
+    .setup-title { font-size: 1.4rem; }
+    .setup-lead { font-size: .88rem; }
+    .setup-step { padding: var(--space-3); }
+    .setup-step-head { flex-wrap: wrap; }
+    .setup-step-title { flex: 1 1 100%; order: 3; }
+    .setup-cmd { padding-right: .8em; }
+    .setup-copy { position: static; margin-top: .4em; }
+    .setup-foot { gap: var(--space-2); }
+    .setup-skip { margin-left: 0; flex: 1 1 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .setup-progress-fill, .setup-pull-fill { transition: none; }
+}

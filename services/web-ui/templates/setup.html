@@ -1,0 +1,110 @@
+{# First-run setup.
+
+   Standalone rather than {% extends "base.html" %}, deliberately:
+
+     * base.html's navigation links to Learn, Practice and Review. On the
+       machine this page exists to fix, none of them work — offering them here
+       is an invitation to exactly the confusing failure we are trying to
+       prevent.
+     * base.html loads resources.js, whose blocking startup gate covers the
+       whole viewport with an opaque panel when the preflight comes back
+       `blocked`. That is right everywhere else and wrong here: this is the one
+       page that must stay readable while the machine is blocked.
+
+   The stylesheets below are the shared token layers, so this page is the same
+   product as the rest of the app even though it does not inherit its chrome. #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script>
+        // Same FOUC guard as base.html. Copied rather than shared because this
+        // page has no base template to inherit it from, and a setup screen
+        // that flashes white before going dark is a poor first impression of
+        // an appliance that is supposed to feel finished.
+        (function () {
+            var theme = localStorage.getItem('helga-theme');
+            if (theme === 'light' || theme === 'dark') {
+                document.documentElement.setAttribute('data-theme', theme);
+            }
+        })();
+    </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Set up Helga on this machine">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>Set up Helga</title>
+    <link rel="preload" as="font" type="font/woff2" crossorigin
+          href="{{ url_for('static', filename='fonts/plexsans-400.woff2') }}">
+    <link rel="preload" as="font" type="font/woff2" crossorigin
+          href="{{ url_for('static', filename='fonts/plexsans-600.woff2') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=2">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=5">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/icons.css') }}?v=1">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/design-system.css') }}?v=1">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/setup.css') }}?v=1">
+</head>
+<body class="page-setup">
+<main class="setup-shell" id="setup-shell">
+
+    <header class="setup-head">
+        <p class="setup-kicker">First run</p>
+        <h1 class="setup-title">Set up Helga</h1>
+        <p class="setup-lead">
+            Helga runs entirely on this machine — no account, no cloud, nothing
+            leaves the building. That also means the parts have to be here
+            before it can teach. This page checks each one, tells you what is
+            missing, and gives you the exact command to fix it.
+        </p>
+
+        {# The counter is the honest half of the progress model: it counts only
+           steps that are actually green, so a step nobody could measure never
+           reads as done. Readiness is the other half and is reported
+           separately, because "you can start" and "everything is perfect" are
+           different facts. #}
+        <div class="setup-progress" role="group" aria-labelledby="setup-progress-text">
+            <div class="setup-progress-track">
+                <span class="setup-progress-fill" id="setup-progress-fill"></span>
+            </div>
+            <p class="setup-progress-text" id="setup-progress-text"
+               role="status" aria-live="polite">Checking this machine…</p>
+        </div>
+
+        <p class="setup-summary" id="setup-summary"></p>
+    </header>
+
+    {# Built by setup.js and shown only when nothing is blocking. #}
+    <section class="setup-ready" id="setup-ready" hidden
+             aria-labelledby="setup-ready-title"></section>
+
+    <ol class="setup-steps" id="setup-steps">
+        <li class="setup-step is-loading" id="setup-first-paint">
+            <p class="setup-step-headline">Checking this machine…</p>
+            <p class="setup-step-detail">
+                Reading memory and disk, then asking Ollama, the voice services
+                and each container whether they are answering.
+            </p>
+        </li>
+    </ol>
+
+    <footer class="setup-foot">
+        <button type="button" class="setup-btn" id="setup-recheck">Check again</button>
+        {# A counter, never a bare spinner: every wait on this page is a wait on
+           a person doing something in a terminal, and how long it has been is
+           the only honest thing to show them. #}
+        <span class="setup-countdown" id="setup-countdown"
+              role="status" aria-live="polite"></span>
+        <a class="setup-skip" href="/">Skip for now</a>
+    </footer>
+
+    <noscript>
+        <p class="setup-noscript">
+            This page checks the installation with JavaScript. Without it, run
+            <code>python3 -m services.common.startup_preflight</code> in the
+            repository for the same hardware verdict on the command line.
+        </p>
+    </noscript>
+</main>
+
+<script src="{{ url_for('static', filename='js/setup.js') }}?v=1"></script>
+</body>
+</html>
