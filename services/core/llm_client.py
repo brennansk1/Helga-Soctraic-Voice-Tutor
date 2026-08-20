@@ -73,6 +73,39 @@ class LLMClient:
             parts.append({"type": "image_url", "image_url": {"url": url}})
         return parts
 
+    def warm_up(self, timeout=300):
+        """Pay the cold load ONCE, deliberately, with a timeout sized for it.
+
+        A6 traded pinned weights for a 30m idle window, which means the first
+        call after a gap pays a ~142s model load. Any caller whose per-call
+        timeout is smaller than that (the judge's is 60s) times out, and with
+        the A7 breaker two such timeouts open the circuit and fast-fail the
+        whole run — a cascade the overnight run hit twice. This is the
+        antidote: tools call it first, so the load happens under a timeout
+        that expects it, and every later call runs against a warm model.
+
+        Returns True when the model answered. Never raises.
+        """
+        try:
+            resp = requests.get(f"{self.base_url}/api/ps", timeout=5)
+            if resp.status_code == 200:
+                for entry in resp.json().get("models", []):
+                    if self.model.split(":")[0] in entry.get("name", ""):
+                        return True     # already resident; nothing to pay
+        except Exception:
+            pass                        # fall through to the load attempt
+        try:
+            r = requests.post(
+                self.api_url,
+                json={"model": self.model,
+                      "messages": [{"role": "user", "content": "ok"}],
+                      "max_tokens": 1, "keep_alive": KEEP_ALIVE},
+                timeout=timeout)
+            return r.status_code == 200
+        except Exception as e:
+            logger.warning(f"warm_up failed: {e}")
+            return False
+
     def chat(self, system_prompt, user_message, max_tokens=512,
              temperature=0.6, json_mode=False, json_schema=None, images=None,
              timeout=60, retries=3, ctx=None, think=False, strict=None):

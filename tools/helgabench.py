@@ -246,7 +246,14 @@ def judge_self_test(model=None, url=None):
 
 def _client(model, url):
     from services.core.llm_client import LLMClient
-    return LLMClient(base_url=url, model=model)
+    c = LLMClient(base_url=url, model=model)
+    # Pay the cold load here, under a timeout sized for it. With the 30m idle
+    # window, the first call after a gap loads ~13GB (~142s); this tool's own
+    # per-call timeout is 60s, and two such timeouts open the circuit breaker
+    # and fast-fail the whole run — which is exactly how the overnight
+    # self-test "failed" twice with a perfectly healthy judge.
+    c.warm_up()
+    return c
 
 
 def _chat(client, system, user, max_tokens=700, temperature=0.7):
