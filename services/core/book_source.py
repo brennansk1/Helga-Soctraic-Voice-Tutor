@@ -206,7 +206,7 @@ def digest_chapter(book, chapter_order, llm_json_fn=None):
         return ch.text[:READ_WHOLE_CHARS], "truncated"
 
     chunks = ch.chunks(size=DIGEST_CHUNK_CHARS, overlap=600)
-    points = []
+    points, failed = [], 0
     for i, chunk in enumerate(chunks, 1):
         try:
             raw = llm_json_fn(
@@ -222,14 +222,33 @@ def digest_chapter(book, chapter_order, llm_json_fn=None):
                 if isinstance(pt, str) and len(pt.strip()) > 20:
                     points.append(pt.strip())
         except Exception as e:
+            failed += 1
             logger.debug(f"[BOOK] digest chunk {i} failed: {e}")
     if not points:
+        logger.warning(f"[BOOK] chapter {chapter_order} yielded no teaching "
+                       f"points ({failed} of {len(chunks)} chunk(s) failed) — "
+                       f"falling back to its opening {READ_WHOLE_CHARS} chars")
         out = (ch.text[:READ_WHOLE_CHARS], "truncated")
     else:
+        if failed:
+            logger.warning(f"[BOOK] chapter {chapter_order}: {failed} of "
+                           f"{len(chunks)} chunk(s) failed to digest — the "
+                           f"points below are missing that material")
         logger.info(f"[BOOK] chapter {chapter_order} digested: {len(ch.text)} "
                     f"chars -> {len(points)} point(s) across {len(chunks)} chunk(s)")
         out = ("\n".join(f"- {p}" for p in points), "digested")
-    _DIGEST_CACHE[key] = out
+    # ONLY A COMPLETE DIGEST IS CACHED.
+    #
+    # A digester outage is transient; the cache is not. Storing the truncated
+    # opening — or a digest missing the chunks that errored — made one bad
+    # minute permanent for the whole process: every later lesson drawn from this
+    # chapter, and every retry within the same run, read back the same degraded
+    # text without ever calling the model again. The no-digester path above
+    # deliberately does not cache for the same reason; caching the FAILURE path
+    # was the inconsistency. Re-digesting costs a call the next time round,
+    # which is the cheaper mistake.
+    if not failed and out[1] == "digested":
+        _DIGEST_CACHE[key] = out
     return out
 
 
@@ -403,6 +422,27 @@ def attach_concepts(course, book, llm_json_fn, per_lesson=3,
                     skipped += len(slots)
                     continue
                 got = parse_concepts(raw, len(slots))
+                if not got:
+                    # A WELL-FORMED RESPONSE WITH NOTHING USABLE IN IT IS A
+                    # FAILURE, NOT A QUIET SUCCESS.
+                    #
+                    # `parse_concepts` returns [] when the dict came back with
+                    # every `title` missing. Falling through from here renamed
+                    # the lesson from the chapter and then emptied its concept
+                    # list, and the lesson was counted in neither `named` nor
+                    # `skipped` — so the log and the returned tally both read as
+                    # a clean run while the course had lost a whole lesson.
+                    logger.warning(f"[BOOK] chapter {ch_order} returned no "
+                                   f"usable concepts (well-formed but empty) "
+                                   f"for lesson {lesson.get('title','')!r}")
+                    if status_callback:
+                        try:
+                            status_callback(f"BOOK:WARN:CHAPTER_SKIPPED:"
+                                            f"{lesson.get('title','')[:50]}")
+                        except Exception:
+                            pass
+                    skipped += len(slots)
+                    continue
                 # Name the chapter too, when the book only numbered it.
                 #
                 # The model omits `chapter_title` often enough that half of a
@@ -424,6 +464,10 @@ def attach_concepts(course, book, llm_json_fn, per_lesson=3,
                     named += 1
                 # A lesson whose chapter yielded fewer concepts keeps fewer,
                 # rather than shipping empty slots that hydrate into filler.
+                # The slots the model did not reach are dropped, so they are
+                # counted here: `named + skipped` has to add up to the slots the
+                # book was asked to fill or the tally is not a tally.
+                skipped += max(0, len(slots) - len(got))
                 lesson["concepts"] = [s for s in slots if s.get("title")]
     logger.info(f"[BOOK] named {named} concept(s) from the book, {skipped} skipped")
     return {"named": named, "skipped": skipped}

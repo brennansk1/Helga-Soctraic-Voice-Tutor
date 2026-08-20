@@ -320,3 +320,94 @@ class TestSourceRetention(unittest.TestCase):
         n = h._ledger_conn().execute(
             "SELECT COUNT(*) FROM sources WHERE concept_uid='con_a'").fetchone()[0]
         self.assertEqual(n, 1, "a re-hydration must not accumulate rows")
+
+
+class TestEmbedderProvenance(unittest.TestCase):
+    """`embedder` names what produced the blob in the column beside it.
+
+    It answered from the `failed` flag alone, which neither HELGA_EMBEDDINGS=0
+    nor a non-200 reply ever sets — so rows landed with embedder='bge-m3' next
+    to embedding=NULL, and a lexical-only build read back as a dense one.
+    """
+
+    MD = ("## Key Facts\n"
+          "- A twenty-sided die is uniform across all twenty of its faces.\n")
+
+    def setUp(self):
+        from services.core import taught_ledger as tl
+        self.tl = tl
+        self._saved = dict(tl._EMBED_STATE)
+        self._env = os.environ.get("HELGA_EMBEDDINGS")
+        tl._EMBED_STATE.update({"failed": False, "served": False})
+        self.conn = sqlite3.connect(":memory:")
+        ensure_schema(self.conn)
+
+    def tearDown(self):
+        self.tl._EMBED_STATE.clear()
+        self.tl._EMBED_STATE.update(self._saved)
+        if self._env is None:
+            os.environ.pop("HELGA_EMBEDDINGS", None)
+        else:
+            os.environ["HELGA_EMBEDDINGS"] = self._env
+        self.conn.close()
+
+    def _row(self):
+        return self.conn.execute(
+            "SELECT embedding, embedder FROM taught_concepts").fetchone()
+
+    def _serve(self, status=200, payload=None):
+        """Stand in for the Ollama embed endpoint."""
+        import requests
+
+        class _Resp:
+            status_code = status
+
+            def json(self):
+                return payload if payload is not None else {}
+
+        saved = requests.post
+        requests.post = lambda *a, **kw: _Resp()
+        self.addCleanup(lambda: setattr(requests, "post", saved))
+
+    def test_embeddings_switched_off_records_no_embedder(self):
+        os.environ["HELGA_EMBEDDINGS"] = "0"
+        record_concept(self.conn, "c", "con_1", "Dice", self.MD, 0)
+        embedding, embedder = self._row()
+        self.assertIsNone(embedding)
+        self.assertIsNone(embedder, "an embedder that never ran must not be named")
+
+    def test_a_non_200_reply_records_no_embedder(self):
+        os.environ["HELGA_EMBEDDINGS"] = "1"
+        self._serve(status=404)
+        record_concept(self.conn, "c", "con_1", "Dice", self.MD, 0)
+        self.assertEqual(self._row(), (None, None))
+
+    def test_an_empty_vector_list_records_no_embedder(self):
+        os.environ["HELGA_EMBEDDINGS"] = "1"
+        self._serve(status=200, payload={"embeddings": []})
+        record_concept(self.conn, "c", "con_1", "Dice", self.MD, 0)
+        self.assertEqual(self._row(), (None, None))
+
+    def test_a_vector_that_arrives_is_named(self):
+        """The other half of the contract: a real embedding must still say
+        which model made it, or the fix has only moved the lie."""
+        os.environ["HELGA_EMBEDDINGS"] = "1"
+        self._serve(status=200, payload={"embeddings": [[0.1, 0.2, 0.3]]})
+        record_concept(self.conn, "c", "con_1", "Dice", self.MD, 0)
+        embedding, embedder = self._row()
+        self.assertIsNotNone(embedding)
+        self.assertEqual(embedder, self.tl.EMBED_MODEL)
+
+    def test_a_transport_failure_still_reports_none(self):
+        os.environ["HELGA_EMBEDDINGS"] = "1"
+        import requests
+        saved = requests.post
+
+        def boom(*a, **kw):
+            raise OSError("connection refused")
+
+        requests.post = boom
+        self.addCleanup(lambda: setattr(requests, "post", saved))
+        record_concept(self.conn, "c", "con_1", "Dice", self.MD, 0)
+        self.assertEqual(self._row(), (None, None))
+        self.assertIsNone(self.tl.embedder_name())

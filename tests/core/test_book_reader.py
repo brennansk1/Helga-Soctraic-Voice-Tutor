@@ -390,3 +390,234 @@ class TestFormats(unittest.TestCase):
 
     def test_a_missing_file_returns_none(self):
         self.assertIsNone(open_book("/nonexistent/book.epub"))
+
+
+def _pdf_with_toc(entries, n_pages):
+    """A PDF whose pages carry identifiable text and whose ToC is `entries`.
+
+    Every page holds ~2,300 chars, comfortably over MIN_CHAPTER_CHARS, so a
+    section that comes back short did so because its PAGE RANGE was wrong and
+    not because the fixture was thin.
+    """
+    import fitz
+    doc = fitz.open()
+    for i in range(1, n_pages + 1):
+        page = doc.new_page()
+        page.insert_textbox(fitz.Rect(36, 36, 576, 756),
+                            " ".join(f"page{i:03d}word{j:03d}" for j in range(260)),
+                            fontsize=8)
+    doc.set_toc([list(e) for e in entries])
+    path = os.path.join(tempfile.mkdtemp(), "book.pdf")
+    doc.save(path)
+    doc.close()
+    return path
+
+
+class TestTocSpans(unittest.TestCase):
+    """A table of contents is not guaranteed to move forwards.
+
+    `end = entries[i + 1].page - 1` assumed it did. A reflowed textbook puts two
+    sections on one page and the first of them got a page range that ran
+    backwards — empty text, dropped by the length filter, and renumbered over by
+    the survivors so the course looked complete.
+    """
+
+    def test_distinct_start_pages_are_unchanged(self):
+        """The arithmetic was only ever wrong for ties and jumps backwards; the
+        ordinary case must not move."""
+        from services.research.book_reader import _toc_spans
+        entries = [(1, "A", 1), (1, "B", 5), (1, "C", 9)]
+        self.assertEqual(_toc_spans(entries, 12), [(1, 4), (5, 8), (9, 12)])
+
+    def test_two_sections_on_one_page_both_get_that_page(self):
+        from services.research.book_reader import _toc_spans
+        entries = [(2, "4.3", 112), (2, "4.4", 112), (2, "4.5", 118)]
+        spans = _toc_spans(entries, 200)
+        self.assertEqual(spans[0], (112, 117))
+        self.assertEqual(spans[1], (112, 117))
+
+    def test_no_span_is_ever_empty(self):
+        from services.research.book_reader import _toc_spans
+        entries = [(1, "A", 7), (1, "B", 7), (1, "C", 7)]
+        for first, last in _toc_spans(entries, 20):
+            self.assertGreaterEqual(last, first)
+
+    def test_a_backwards_entry_does_not_swallow_the_book(self):
+        """An appendix bookmark pointing at an earlier page used to hand the
+        entry before it a range covering everything after."""
+        from services.research.book_reader import _toc_spans
+        entries = [(1, "Ten", 10), (1, "Appendix", 5), (1, "Twenty", 20)]
+        spans = _toc_spans(entries, 30)
+        self.assertEqual(spans[0], (10, 19))
+        self.assertEqual(spans[1], (5, 9))
+        self.assertEqual(spans[2], (20, 30))
+
+    def test_a_page_beyond_the_document_is_clamped(self):
+        from services.research.book_reader import _toc_spans
+        self.assertEqual(_toc_spans([(1, "A", 99)], 10), [(10, 10)])
+
+
+class TestPdfTocSections(unittest.TestCase):
+    def test_a_section_sharing_a_start_page_still_reaches_the_course(self):
+        """The reproduction: §4.3 and §4.4 both begin on page 112."""
+        toc = [[1, "Chapter 4: Membranes", 1],
+               [2, "4.1 Structure", 1],
+               [2, "4.2 Fluidity", 3],
+               [2, "4.3 Osmosis", 5],
+               [2, "4.4 Tonicity", 5],
+               [2, "4.5 Transport", 7],
+               [2, "4.6 Endocytosis", 9]]
+        b = open_book(_pdf_with_toc(toc, 10))
+        titles = [c.title for c in b.chapters]
+        self.assertIn("4.3 Osmosis", titles)
+        self.assertIn("4.4 Tonicity", titles)
+        self.assertEqual(len(titles), 6)
+
+    def test_the_shared_page_is_read_by_both_sections(self):
+        toc = [[1, "Chapter 4", 1], [2, "4.1", 1], [2, "4.2", 3],
+               [2, "4.3", 5], [2, "4.4", 5], [2, "4.5", 7], [2, "4.6", 9]]
+        b = open_book(_pdf_with_toc(toc, 10))
+        by_title = {c.title: c.text for c in b.chapters}
+        self.assertIn("page005word001", by_title["4.3"])
+        self.assertIn("page005word001", by_title["4.4"])
+
+    def test_a_dropped_section_is_logged_not_silent(self):
+        """`len(chapters) + 1` renumbers the survivors over the gap, so an
+        unlogged drop cannot be noticed after the fact."""
+        import logging as _logging
+        toc = [[1, "Chapter 1", 1], [2, "1.1", 1], [2, "1.2", 2],
+               [2, "1.3", 3], [2, "1.4", 4], [2, "1.5 Blank", 5],
+               [2, "1.6", 6]]
+        path = _pdf_with_toc(toc, 6)
+        # Page 5 is emptied after the fixture is built, so exactly one section
+        # falls under the length floor.
+        import fitz
+        doc = fitz.open(path)
+        doc[4].clean_contents()
+        doc[4].add_redact_annot(doc[4].rect)
+        doc[4].apply_redactions()
+        doc.saveIncr()
+        doc.close()
+        with self.assertLogs("services.research.book_reader", level="WARNING") as cm:
+            b = open_book(path)
+        self.assertTrue(any("1.5 Blank" in m for m in cm.output),
+                        f"the dropped section must be named: {cm.output}")
+        self.assertNotIn("1.5 Blank", [c.title for c in b.chapters])
+
+
+class TestDegradedDigestsAreNotCached(unittest.TestCase):
+    """A digester outage is transient; the cache is not.
+
+    Writing the truncated fallback into `_DIGEST_CACHE` made one bad minute
+    permanent for the process — every later lesson from that chapter, and every
+    retry in the same run, read the same partial text without calling again.
+    """
+
+    def _book(self):
+        return Book("B", [Chapter("One", "word " * 20000, 1)])
+
+    def test_a_failed_digest_is_retried_not_remembered(self):
+        from services.core.book_source import clear_digest_cache, digest_chapter
+        clear_digest_cache()
+        state = {"up": False}
+
+        def flaky(prompt, **kw):
+            if not state["up"]:
+                raise RuntimeError("model down")
+            return {"points": ["a teaching point long enough to keep here"]}
+
+        b = self._book()
+        self.assertEqual(digest_chapter(b, 1, flaky)[1], "truncated")
+        state["up"] = True
+        text, how = digest_chapter(b, 1, flaky)
+        self.assertEqual(how, "digested", "the fallback must not be sticky")
+        self.assertIn("teaching point", text)
+
+    def test_a_partial_digest_is_not_cached_either(self):
+        """Points from three chunks out of ten is still a degraded read."""
+        from services.core.book_source import clear_digest_cache, digest_chapter
+        clear_digest_cache()
+        calls = {"n": 0, "fail_after": 2}
+
+        def half(prompt, **kw):
+            calls["n"] += 1
+            if calls["n"] > calls["fail_after"]:
+                raise RuntimeError("model down")
+            return {"points": ["a teaching point long enough to keep here"]}
+
+        b = self._book()
+        self.assertEqual(digest_chapter(b, 1, half)[1], "digested")
+        before = calls["n"]
+        calls["fail_after"] = 10_000
+        digest_chapter(b, 1, half)
+        self.assertGreater(calls["n"], before,
+                           "a digest missing chunks must be re-taken")
+
+    def test_a_clean_digest_is_still_cached(self):
+        from services.core.book_source import clear_digest_cache, digest_chapter
+        clear_digest_cache()
+        calls = []
+
+        def fake(prompt, **kw):
+            calls.append(1)
+            return {"points": ["a teaching point long enough to keep here"]}
+
+        b = self._book()
+        digest_chapter(b, 1, fake)
+        first = len(calls)
+        digest_chapter(b, 1, fake)
+        self.assertEqual(len(calls), first)
+
+
+class TestConceptNamingTally(unittest.TestCase):
+    """`named + skipped` is the only report a book build gives. A lesson that
+    lost every concept was counted in neither, so the log read as a clean run
+    while the course had a lesson with nothing in it."""
+
+    def _course(self, slots=3):
+        return {"title": "T", "modules": [{"units": [{"lessons": [
+            {"title": "Chapter 1", "book_chapter": 1,
+             "concepts": [{} for _ in range(slots)]}]}]}]}
+
+    def _book(self):
+        return Book("B", [Chapter("One", "word " * 400, 1)])
+
+    def test_a_well_formed_but_unusable_response_counts_as_skipped(self):
+        from services.core.book_source import attach_concepts
+        course = self._course()
+        # The shape the schema asks for, with the one key that makes an entry
+        # usable missing from every item.
+        res = attach_concepts(course, self._book(),
+                              lambda **kw: {"concepts": [{"objectives": ["o"]},
+                                                         {"objectives": ["o"]}]})
+        self.assertEqual(res["named"], 0)
+        self.assertEqual(res["skipped"], 3)
+
+    def test_a_lesson_that_named_nothing_keeps_its_original_title(self):
+        """Renaming the lesson after emptying it made the failure look like a
+        successfully-read chapter."""
+        from services.core.book_source import attach_concepts
+        course = self._course()
+        attach_concepts(course, self._book(),
+                        lambda **kw: {"chapter_title": "Membranes",
+                                      "concepts": [{"objectives": []}]})
+        lesson = course["modules"][0]["units"][0]["lessons"][0]
+        self.assertEqual(lesson["title"], "Chapter 1")
+
+    def test_a_partial_response_counts_the_slots_it_left_empty(self):
+        from services.core.book_source import attach_concepts
+        course = self._course(slots=3)
+        res = attach_concepts(course, self._book(),
+                              lambda **kw: {"concepts": [{"title": "Osmosis"}]})
+        self.assertEqual(res["named"], 1)
+        self.assertEqual(res["skipped"], 2, "named + skipped must equal the slots")
+        self.assertEqual(
+            len(course["modules"][0]["units"][0]["lessons"][0]["concepts"]), 1)
+
+    def test_a_clean_run_still_reports_clean(self):
+        from services.core.book_source import attach_concepts
+        course = self._course(slots=2)
+        res = attach_concepts(course, self._book(),
+                              lambda **kw: {"concepts": [{"title": "A"},
+                                                         {"title": "B"}]})
+        self.assertEqual((res["named"], res["skipped"]), (2, 0))

@@ -345,6 +345,44 @@ def _epub_chapters(path):
     return chapters
 
 
+def _toc_spans(entries, n_pages):
+    """Inclusive 1-based (first_page, last_page) for each table-of-contents entry.
+
+    WHY NOT `entries[i + 1].page - 1`, WHICH IS WHAT THIS USED TO BE.
+    ---------------------------------------------------------------
+    That arithmetic assumes every entry starts on a later page than the one
+    before it, and a real book breaks the assumption two ways:
+
+      * A REFLOWED PDF puts §4.3 and §4.4 on the same page. `next - 1` then
+        makes §4.3 end on the page BEFORE it starts, its body comes back empty,
+        the length filter drops it, and the course loses a section without a
+        trace — the surviving sections renumber over the gap so nothing even
+        looks missing.
+      * A BACKWARDS ENTRY — an appendix or an index whose bookmark points at an
+        earlier page — makes the entry before it swallow, or lose, the rest of
+        the book depending on which way the jump goes.
+
+    So the boundary is taken from the set of distinct start pages rather than
+    from the neighbouring entry: a section runs to the page before the next page
+    any entry starts on. That is order-independent, so a non-monotonic ToC gets
+    a sane span, and it never yields an empty range.
+
+    Entries sharing a start page therefore share their text. That is what the
+    book itself says — the two sections really are on that page — and giving
+    both the shared page is honest where dropping one was not.
+    """
+    n_pages = max(1, int(n_pages or 1))
+    starts = sorted({pg for _, _, pg in entries})
+    next_start = {a: b for a, b in zip(starts, starts[1:])}
+    spans = []
+    for _, _, pg in entries:
+        first = min(max(1, pg), n_pages)
+        nxt = next_start.get(pg)
+        last = (nxt - 1) if nxt else n_pages
+        spans.append((first, min(max(first, last), n_pages)))
+    return spans
+
+
 def _pdf_chapters(path, max_pages=None):
     """PDF chapters from the table of contents, falling back to page blocks."""
     import fitz
@@ -378,8 +416,10 @@ def _pdf_chapters(path, max_pages=None):
             current[lvl] = title
             parent_of[i] = current.get(leaf - 1) if leaf > 1 else None
 
+        spans = _toc_spans(entries, len(doc))
+        dropped = []
         for i, (lvl, title, pg) in enumerate(entries):
-            end = entries[i + 1][2] - 1 if i + 1 < len(entries) else len(doc)
+            first, last = spans[i]
             kind, label = _classify_heading(title)
             if kind == "part" or (lvl == 1 and _PART_RE.match(title or "")):
                 part = label or title
@@ -391,17 +431,29 @@ def _pdf_chapters(path, max_pages=None):
             if _SKIP_TITLES.match((title or "").strip()):
                 continue
             text = []
-            for p in range(max(0, pg - 1), min(len(doc), end)):
+            for p in range(first - 1, last):
                 try:
                     text.append(doc[p].get_text())
                 except Exception:
                     pass
             body = _clean("\n".join(text))
             if len(body) < MIN_CHAPTER_CHARS:
+                # Say which section went and why. `len(chapters) + 1` renumbers
+                # the survivors over the gap, so a silent drop here is invisible
+                # both in the course and in the logs — the one failure mode that
+                # cannot be noticed after the fact.
+                dropped.append((title, first, last, len(body)))
                 continue
             group = parent_of.get(i) or part
             chapters.append(Chapter(title, body, len(chapters) + 1, part=group,
                                     level=lvl))
+        if dropped:
+            logger.warning(
+                f"[BOOK] {len(dropped)} table-of-contents section(s) had less "
+                f"than {MIN_CHAPTER_CHARS} chars of text and are NOT in the "
+                f"course: " + "; ".join(f"{t!r} (pp. {a}-{b}, {n} chars)"
+                                        for t, a, b, n in dropped[:8])
+                + (" ..." if len(dropped) > 8 else ""))
 
     if not chapters:
         # No usable ToC: fall back to whole-document text split on headings that

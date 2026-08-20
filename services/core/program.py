@@ -397,19 +397,33 @@ def propose_slot_subjects(subject, template, llm_json_fn, brief_fn=None):
         return {}
 
     out = {}
+    # ACROSS SLOTS, NOT ONLY WITHIN ONE.
+    #
+    # "the same subject filling two slots under one name" is a CROSS-slot
+    # duplicate by definition, and only the within-slot half was ever
+    # implemented: a model that answered "Statistics" under both gen_ed and
+    # core — a natural composition, not a malformed one — sailed through here
+    # and blew up in `validate()`, aborting the whole degree build with a
+    # ProgramError. This set is what makes the docstring's claim true.
+    taken = set()
     for slot, n in wanted.items():
         titles = [strip_catalogue_code(t) for t in (data.get(slot) or [])
                   if isinstance(t, str) and t.strip()]
         titles = [t for t in titles if t]
         # Deduplicate: the same subject filling two slots under one name is the
         # padding `validate()` rejects, and it is better caught here where a
-        # retry is cheap.
-        seen, uniq = set(), []
+        # retry is cheap. The first slot to claim a title keeps it; the later
+        # one comes up short and `plan_from_template` fills the gap with a
+        # placeholder, which is a visible hole rather than a failed build.
+        seen, uniq = set(taken), []
         for t in titles:
             k = t.lower()
             if k not in seen:
                 seen.add(k)
                 uniq.append(t)
+        if len(uniq) < len(titles):
+            logger.info(f"[PROGRAM] {len(titles) - len(uniq)} duplicate "
+                        f"title(s) dropped from slot {slot!r}")
         # OVER-LONG SEQUENCES ARE RE-SPLIT BY TOPIC, NOT TRUNCATED.
         #
         # A fourth part means the subject was never one indivisible thing, so
@@ -422,8 +436,16 @@ def propose_slot_subjects(subject, template, llm_json_fn, brief_fn=None):
         if overflow and llm_json_fn:
             uniq.extend(_resplit_by_topic(subject, slot, overflow, uniq,
                                           llm_json_fn))
+            # The re-split checks its replacements against this slot only, and
+            # returns the overflow unchanged when the call fails, so the
+            # cross-slot check runs once more over what it handed back.
+            uniq = [t for t in uniq if t.lower() not in taken]
         if uniq:
             out[slot] = uniq[:n]
+            # Only the titles that actually made the cut reserve their name —
+            # a title trimmed by `[:n]` never reaches the programme and must not
+            # block a later slot from using it.
+            taken.update(t.lower() for t in out[slot])
     return out
 
 

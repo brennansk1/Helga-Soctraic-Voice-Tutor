@@ -103,7 +103,11 @@ _STOP = {
 
 EMBED_MODEL = os.getenv("HELGA_EMBED_MODEL", "bge-m3")
 _EMBED_URL = os.getenv("OLLAMA_URL", "http://localhost:11434") + "/api/embed"
-_EMBED_STATE = {"failed": False}
+# `served` flips the first time a vector actually comes back. It is what
+# `embedder_name` answers from: `failed` alone cannot, because the two commonest
+# ways to get no embeddings — the feature switched off, and a daemon that
+# answers but not with 200 — never set it.
+_EMBED_STATE = {"failed": False, "served": False}
 
 
 def embed(text):
@@ -117,9 +121,18 @@ def embed(text):
                           json={"model": EMBED_MODEL, "input": text[:2000]},
                           timeout=30)
         if r.status_code != 200:
+            # Silence here read as success to every caller downstream. A 404 is
+            # the model not being pulled, which is worth one line in the log.
+            logger.info(f"[LEDGER] embedder returned HTTP {r.status_code}, "
+                        f"retrieval stays lexical for this call")
             return None
         vecs = (r.json() or {}).get("embeddings") or []
-        return vecs[0] if vecs else None
+        if not vecs:
+            logger.info("[LEDGER] embedder returned no vector, "
+                        "retrieval stays lexical for this call")
+            return None
+        _EMBED_STATE["served"] = True
+        return vecs[0]
     except Exception as e:
         # One failure disables it for the run. Retrying per concept would add a
         # 30 s timeout to every hydration when the daemon is simply not serving
@@ -131,8 +144,18 @@ def embed(text):
 
 
 def embedder_name():
-    """Which embedder actually ran, or None. Absent-vs-zero, again."""
-    return None if _EMBED_STATE["failed"] else EMBED_MODEL
+    """Which embedder actually ran, or None. Absent-vs-zero, again.
+
+    Answering from `failed` alone was a lie in the two cases that matter: with
+    HELGA_EMBEDDINGS=0, and with a daemon replying non-200, `embed` returns None
+    without ever setting that flag — so every row was stamped `embedder='bge-m3'`
+    beside `embedding=NULL`, and a lexical-only run was indistinguishable from a
+    dense one when reading the ledger back. Provenance that names an embedder
+    which never ran is worse than no provenance at all.
+    """
+    if _EMBED_STATE["failed"] or not _EMBED_STATE["served"]:
+        return None
+    return EMBED_MODEL
 
 
 def ensure_schema(conn):
@@ -278,7 +301,10 @@ def record_concept(conn, course_uid, concept_uid, title, markdown,
         # "what is this concept about", and a 600-word explanation dilutes that
         # into the vocabulary of its examples.
         embedding = embed(f"{title}. " + " ".join(claims[:6]))
-        embedder = embedder or embedder_name()
+        # No vector, no embedder: the column records what produced the blob
+        # next to it, and naming a model for a NULL embedding claims a retrieval
+        # quality this row does not have.
+        embedder = (embedder or embedder_name()) if embedding else None
     cur = conn.cursor()
     cur.execute("DELETE FROM taught_concepts WHERE course_uid=? AND concept_uid=?",
                 (course_uid, concept_uid))

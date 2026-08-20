@@ -180,6 +180,46 @@ class TestSlotSubjectsAreProposed(unittest.TestCase):
                                       self._fake_llm(payload))
         assert slots["gen_ed"] == ["ENG 101", "BIO 101"]
 
+    def test_the_same_title_in_two_slots_does_not_abort_the_build(self):
+        """The reproduction: "Statistics" is a natural answer under BOTH gen_ed
+        and core, and the cross-slot duplicate reached `validate()`, which
+        raises — a whole degree lost to a reasonable composition."""
+        from services.core.program import propose_slot_subjects
+        payload = {"gen_ed": ["Statistics", "Composition", "World History"],
+                   "core": ["Statistics", "Pharmacology"],
+                   "elective": ["Gerontology"], "capstone": ["Practicum"]}
+        slots = propose_slot_subjects("Nursing", "associate",
+                                      self._fake_llm(payload))
+        seen = [t.lower() for titles in slots.values() for t in titles]
+        assert len(seen) == len(set(seen)), f"duplicate across slots: {slots}"
+        assert "Statistics" in slots["gen_ed"]
+        assert "Statistics" not in slots["core"]
+        # The point of catching it here: the plan builds instead of raising.
+        p = plan_from_template("Nursing", "associate", slot_subjects=slots)
+        assert len(p["courses"]) == 20
+
+    def test_a_dropped_duplicate_leaves_a_placeholder_not_a_gap(self):
+        """A slot short of titles is filled the way an unproposed slot is."""
+        from services.core.program import propose_slot_subjects
+        payload = {"gen_ed": ["Statistics"], "core": ["Statistics"],
+                   "elective": ["E"], "capstone": ["C"]}
+        slots = propose_slot_subjects("Nursing", "associate",
+                                      self._fake_llm(payload))
+        assert slots.get("core") is None or "Statistics" not in slots["core"]
+        titles = [c["title"] for c in
+                  plan_from_template("Nursing", "associate",
+                                     slot_subjects=slots)["courses"]]
+        assert "Statistics" in titles
+        assert any(t.startswith("Nursing: core") for t in titles)
+
+    def test_case_and_spacing_do_not_smuggle_a_duplicate_through(self):
+        from services.core.program import propose_slot_subjects
+        payload = {"gen_ed": ["Statistics"], "core": ["  statistics  ", "Anatomy"],
+                   "elective": ["E"], "capstone": ["C"]}
+        slots = propose_slot_subjects("Nursing", "associate",
+                                      self._fake_llm(payload))
+        assert [t.strip().lower() for t in slots["core"]] == ["anatomy"]
+
     def test_a_failed_proposal_degrades_to_placeholders(self):
         """A degree with placeholder names is poor; a crash is worse."""
         from services.core.program import propose_slot_subjects
