@@ -129,6 +129,18 @@ function updateUI(state) {
             masteryWrap.classList.remove('hidden');
             // Tooltip describes the gate for curious users
             masteryWrap.title = streak + ' correct in a row · ' + questions + ' question' + (questions === 1 ? '' : 's') + ' answered';
+            // The bar was `aria-hidden` AND unstyled — 0px tall and transparent,
+            // so it existed for nobody. Now that it renders, it is a real
+            // progressbar and announces what it measures.
+            masteryWrap.setAttribute('role', 'progressbar');
+            masteryWrap.setAttribute('aria-valuemin', '0');
+            masteryWrap.setAttribute('aria-valuemax', '100');
+            masteryWrap.setAttribute('aria-valuenow', String(Math.round(pct)));
+            masteryWrap.setAttribute('aria-label', 'Progress towards completing this concept');
+            masteryWrap.removeAttribute('aria-hidden');
+            // A concept that is one gate away from done is worth marking, so the
+            // learner can feel the finish line rather than only be told at it.
+            masteryWrap.classList.toggle('is-complete', pct >= 100);
         } else {
             masteryWrap.classList.add('hidden');
         }
@@ -201,9 +213,12 @@ function renderMarkdown(text) {
         return '<img class="chat-md-img" loading="lazy" alt="' + safeAlt + '" src="' + url + '">';
     });
 
-    // 3. Headers — render as bold paragraphs (no h1/h2 visual weight
-    //    inside chat bubbles — keeps spacing tight).
-    s = s.replace(/^#{1,6}\s+(.+)$/gm, '<strong>$1</strong>');
+    // 3. Headers — still bold rather than h1/h2 (display heading sizes inside a
+    //    turn would out-shout the tutor's own question), but tagged so the
+    //    stylesheet can give them the air a subhead needs. Untagged they were
+    //    identical to an inline **bold phrase**, so a long explanation with
+    //    three sections read as one undifferentiated wall.
+    s = s.replace(/^#{1,6}\s+(.+)$/gm, '<strong class="chat-md-head">$1</strong>');
 
     // 4. Bold **text** and italic *text* / _text_
     s = s.replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>');
@@ -365,7 +380,82 @@ function _scrollChatToBottom(chatStream, force) {
     if (force || _userPinnedToBottom) {
         chatStream.scrollTop = chatStream.scrollHeight;
     }
+    // A message that lands below the fold while the learner is reading history
+    // is the exact case the jump button exists for, so the button's visibility
+    // is recomputed here too — the scroll listener alone never fires when the
+    // content grows underneath a stationary scrollTop.
+    _syncJumpButton(chatStream);
 }
+
+function _syncJumpButton(chatStream) {
+    const btn = document.getElementById('chat-scroll-bottom-btn');
+    if (!btn || !chatStream) return;
+    const distance = chatStream.scrollHeight - (chatStream.scrollTop + chatStream.clientHeight);
+    btn.classList.toggle('visible', distance > 80);
+}
+
+/* ---- Grades -------------------------------------------------------------
+   The FSM grades on the FSRS 1–4 scale (Again / Hard / Good / Easy), but
+   fsm_logic clamps to `min(5, ...)`, so a 5 can and does reach the browser.
+   The old map stopped at 4, which meant the single best answer a learner can
+   give was the one answer that got NO feedback at all. Five entries now.
+   -------------------------------------------------------------------------- */
+const GRADE_LABELS = {
+    1: 'Not yet',
+    2: 'Getting there',
+    3: 'Good',
+    4: 'Excellent',
+    5: 'Exceptional'
+};
+
+function normalizeGrade(raw) {
+    const n = parseInt(raw, 10);
+    return (n >= 1 && n <= 5) ? n : 0;
+}
+
+/**
+ * Draw the verdict chip on an already-rendered outgoing message that carries
+ * `data-grade`. Idempotent, so re-rendering a message never doubles the chip.
+ *
+ * Three carriers, deliberately: a WORD (the only one a screen reader gets),
+ * a MARK whose filled fraction encodes the level (so grade 1 and grade 5 differ
+ * in shape, not only in hue — WCAG 1.4.1), and a COLOUR. Nothing is filled or
+ * animated: an adult studying seriously wants to be told, not congratulated.
+ */
+function buildGradeChip(messageDiv) {
+    if (!messageDiv) return;
+    const g = normalizeGrade(messageDiv.dataset.grade);
+    const body = messageDiv.querySelector('.chat-msg-body');
+    if (!g || !body) return;
+
+    const existing = messageDiv.querySelector('.chat-msg-grade');
+    if (existing) existing.remove();
+
+    const chip = document.createElement('div');
+    chip.className = 'chat-msg-grade g' + g;
+
+    const mark = document.createElement('span');
+    mark.className = 'chat-msg-grade-mark';
+    mark.setAttribute('aria-hidden', 'true');
+    // Fraction of the ring that is filled. Grade 5 is rare and semantically
+    // "4 or better", so it shares the full ring rather than inventing a
+    // sixth visual step nobody could name.
+    mark.style.setProperty('--grade-arc', Math.min(g, 4) * 25 + '%');
+    chip.appendChild(mark);
+
+    const word = document.createElement('span');
+    word.className = 'chat-msg-grade-word';
+    word.textContent = GRADE_LABELS[g];
+    chip.appendChild(word);
+
+    // Read as one phrase, not as a loose adjective floating near an answer.
+    chip.setAttribute('role', 'status');
+    chip.setAttribute('aria-label', 'Helga graded this answer: ' + GRADE_LABELS[g]);
+
+    body.parentNode.insertBefore(chip, body);
+}
+window.HelgaChat = window.HelgaChat || {};
+window.HelgaChat.decorateGrade = buildGradeChip;
 
 function updateChatStream(transcript) {
     if (!transcript) {
@@ -379,6 +469,10 @@ function updateChatStream(transcript) {
         return;
     }
     _attachChatScrollTracker(chatStream);
+    // The state poller runs every 2s, which makes this the cheapest place to
+    // notice a thinking bubble that some other module put on screen and get
+    // its counter running.
+    if (chatStream.querySelector('.thinking-message')) startThinkingTimer();
     console.log("[updateChatStream] Current transcript length:", transcript.length, "displayedCount:", displayedMessagesCount);
 
     // Helper: wipe the chat stream while preserving transient elements
@@ -487,9 +581,17 @@ function updateChatStream(transcript) {
         staleThinking.forEach(b => { try { b.remove(); } catch (e) {} });
 
         // Also remove any optimistic user bubbles — the canonical transcript
-        // version (with grade badge, etc.) takes over.
+        // version (with grade chip, etc.) takes over.
         const optimistic = chatStream.querySelectorAll('.chat-msg[data-optimistic="true"]');
         optimistic.forEach(b => { try { b.remove(); } catch (e) {} });
+
+        // And clear any failure notice. "Could not reach the server — 404" was
+        // outliving the outage: content arrives, the conversation resumes, and
+        // the dead error sits above it implying the session is still broken.
+        // Real content IS the proof the server is reachable, so the notice goes
+        // the moment the next message lands.
+        chatStream.querySelectorAll('.chat-msg.error, .chat-system-notice')
+            .forEach(b => { try { b.remove(); } catch (e) {} });
 
         // Helper: plain HTML escape for user-typed content (no markdown)
         const escapeUserText = (s) => String(s || '')
@@ -538,22 +640,20 @@ function updateChatStream(transcript) {
 
             // Grade — attached to the USER message that was graded, not to the
             // AI's follow-up, so the verdict sits on the thing being evaluated.
+            // The chip itself is built after innerHTML (see buildGradeChip):
+            // here we only record the grade on the element.
             //
-            // Shown as the COLOUR OF THE BUBBLE rather than a text badge: the
-            // verdict becomes a property of the message instead of a label
-            // competing with the learner's own words for the same line.
-            //
-            // The word itself is kept for assistive tech and as a tooltip.
-            // Colour alone must never be the only carrier of meaning (WCAG
-            // 1.4.1), and "your answer was red" is useless to a screen reader.
-            let gradeBadge = '';
+            // A previous pass hid the verdict entirely and expressed it as the
+            // bubble's border colour alone. Measured on the real session that
+            // meant five graded answers and ZERO readable verdicts: colour with
+            // no word is not feedback, it is decoration. In a Socratic tutor the
+            // moment the learner finds out how they did IS the product, so it
+            // now says the word out loud. Colour is kept, but as reinforcement.
             if (isUser && message.grade) {
-                const gradeMap = {1: ['Needs work', 'g1'], 2: ['Getting there', 'g2'], 3: ['Good', 'g3'], 4: ['Excellent', 'g4']};
-                const [label, cls] = gradeMap[message.grade] || ['', ''];
-                if (label) {
-                    gradeBadge = `<span class="chat-msg-grade-badge sr-only ${cls}">Graded: ${label}</span>`;
-                    messageDiv.dataset.grade = String(message.grade);
-                    messageDiv.dataset.gradeLabel = label;
+                const g = normalizeGrade(message.grade);
+                if (g) {
+                    messageDiv.dataset.grade = String(g);
+                    messageDiv.dataset.gradeLabel = GRADE_LABELS[g];
                 }
             }
 
@@ -585,12 +685,16 @@ function updateChatStream(transcript) {
                 <div class="chat-msg-content">
                     <img class="chat-msg-avatar" src="${avatarSrc}" alt="${avatarAlt}">
                     <div class="chat-msg-body">
-                        ${gradeBadge}
                         <div class="chat-msg-text">${renderedText}</div>
                     </div>
                     ${actions}
                 </div>
             `;
+
+            // The verdict chip goes ABOVE the bubble, on the learner's side of
+            // the column, so the eye meets "how did I do" before re-reading the
+            // answer — and so it never competes with the answer for a line.
+            buildGradeChip(messageDiv);
 
             // The avatar fallback was an onerror="" attribute with the filename
             // interpolated into a JS string literal. Nothing hostile could reach
@@ -614,12 +718,6 @@ function updateChatStream(transcript) {
                 } catch (e) {
                     console.warn('[aids] attach failed:', e);   // never blocks the message
                 }
-            }
-
-            // The grade word, reachable on hover as well as by screen reader.
-            if (isUser && messageDiv.dataset.gradeLabel) {
-                const bodyEl = messageDiv.querySelector('.chat-msg-body');
-                if (bodyEl) bodyEl.title = 'Graded: ' + messageDiv.dataset.gradeLabel;
             }
 
             // Wire TTS button
@@ -660,6 +758,93 @@ function updateChatStream(transcript) {
     }
 }
 
+
+/* ---- Waiting is a counter, never a bare spinner -------------------------
+   Three bouncing dots say "something is happening" and then say exactly that
+   forever. On a Mac Mini running a 9B model locally, a Socratic turn can take
+   twenty seconds, and the only question the learner actually has is "is this
+   stuck, or is it just slow?" — which a spinner cannot answer and an elapsed
+   count answers immediately.
+
+   The ticker is global and self-healing rather than wired into each creation
+   site: `enterNode()` in learn.html clones the same template from code this
+   file does not own, and a counter that only worked on half the thinking
+   bubbles would be worse than none.
+   -------------------------------------------------------------------------- */
+let _thinkingTicker = null;
+
+function _tickThinkingBubbles() {
+    // Runs before the early return so the last tick also puts the empty state
+    // away once the first real turn has landed.
+    _syncChatHero();
+    const bubbles = document.querySelectorAll('.thinking-message');
+    if (!bubbles.length) {
+        if (_thinkingTicker) { clearInterval(_thinkingTicker); _thinkingTicker = null; }
+        return;
+    }
+    const now = Date.now();
+    bubbles.forEach(function (bubble) {
+        if (!bubble.dataset.startedAt) bubble.dataset.startedAt = String(now);
+        let counter = bubble.querySelector('.thinking-elapsed');
+        if (!counter) {
+            const label = bubble.querySelector('.thinking-label');
+            if (!label) return;
+            counter = document.createElement('span');
+            counter.className = 'thinking-elapsed';
+            label.appendChild(counter);
+        }
+        const secs = Math.floor((now - parseInt(bubble.dataset.startedAt, 10)) / 1000);
+        // Below two seconds the number is noise — most turns that fast never
+        // needed reassurance in the first place.
+        counter.textContent = secs >= 2 ? secs + 's' : '';
+        // Past twenty seconds the honest thing is to say so, so the learner
+        // knows the wait is unusual rather than wondering if they broke it.
+        bubble.classList.toggle('is-slow', secs >= 20);
+    });
+}
+
+function startThinkingTimer() {
+    _tickThinkingBubbles();
+    if (!_thinkingTicker) _thinkingTicker = setInterval(_tickThinkingBubbles, 1000);
+}
+
+/**
+ * The empty state — the seconds between clicking a concept and its first
+ * question arriving.
+ *
+ * The hero element has been in the markup all along and FOUR call sites hide
+ * it; not one has ever shown it or written a word into it. So the opening of
+ * every concept was a blank field with three dots in the corner of it, and the
+ * learner could not see what they had just opened. It now carries the concept's
+ * own name, taken from the topbar (already populated by `enterNode`), so the
+ * wait reads as the title page of the thing about to be taught.
+ */
+function _syncChatHero() {
+    const hero = document.getElementById('chat-hero');
+    const chatStream = document.getElementById('chat-stream');
+    if (!hero || !chatStream) return;
+
+    // "Empty" means no real turn yet — a thinking bubble does not count, and
+    // neither does a system notice about the connection.
+    const hasRealMessage = chatStream.querySelector(
+        '.chat-msg:not(.thinking-message):not(.error), .chat-concept-congrats'
+    );
+    if (hasRealMessage) { hero.classList.add('hidden'); return; }
+
+    const titleEl = document.getElementById('concept-title-display');
+    // textContent, not innerHTML: the topbar title carries a mastery badge span
+    // and, upstream of that, a model-authored concept name.
+    const title = titleEl ? (titleEl.textContent || '').trim() : '';
+    if (!title) { hero.classList.add('hidden'); return; }
+
+    const titleTarget = document.getElementById('chat-hero-title');
+    const subTarget = document.getElementById('chat-hero-subtitle');
+    if (titleTarget) titleTarget.textContent = title;
+    if (subTarget) subTarget.textContent = 'Helga is preparing your first question on this concept.';
+    hero.classList.remove('hidden');
+}
+window.HelgaChat = window.HelgaChat || {};
+window.HelgaChat.startThinkingTimer = startThinkingTimer;
 
 function handleThinkingUpdate(data) {
     const message = data.message;
@@ -721,6 +906,7 @@ function handleThinkingUpdate(data) {
                     // Hide the hero the moment we start thinking
                     const hero = document.getElementById('chat-hero');
                     if (hero) hero.classList.add('hidden');
+                    startThinkingTimer();
                     _scrollChatToBottom(chatStream, false);
                 }
             }
@@ -874,26 +1060,41 @@ function sendEvent(eventType, payload) {
         })
         .catch(error => {
             console.error('[sendEvent] Error sending event:', error);
-            // Visual feedback for the user — use the same bubble structure as
-            // real messages so the error is styled correctly in the Gemini
-            // chat layout (the old .message.ai class had no CSS on /learn).
+            // Visual feedback for the user. This used to be built as an
+            // `incoming` message complete with Helga's avatar, which said the
+            // tutor had spoken the words "Server returned 404" — the one thing
+            // she must never appear to say. A transport failure is the app
+            // talking about itself, so it is a system notice: no avatar, not in
+            // the reading column's voice, and visibly not part of the lesson.
             const chatStream = document.getElementById('chat-stream');
             if (chatStream) {
                 // Remove any stale thinking bubble so the error replaces it
                 const stale = chatStream.querySelectorAll('.thinking-message');
                 stale.forEach(b => { try { b.remove(); } catch (e) {} });
+                // One notice at a time; a flapping connection should not build a wall.
+                chatStream.querySelectorAll('.chat-system-notice')
+                    .forEach(b => { try { b.remove(); } catch (e) {} });
 
                 const errorDiv = document.createElement('div');
-                errorDiv.className = 'chat-msg incoming error';
-                errorDiv.innerHTML =
-                    '<div class="chat-msg-content">' +
-                    '  <img class="chat-msg-avatar" src="/static/img/helga-avatar.svg" alt="Helga">' +
-                    '  <div class="chat-msg-body">' +
-                    '    <div class="chat-msg-text"></div>' +
-                    '  </div>' +
-                    '</div>';
-                errorDiv.querySelector('.chat-msg-text').textContent =
-                    'Could not reach the server — ' + (error.message || 'unknown error') + '. Check that the core service is running, then try again.';
+                errorDiv.className = 'chat-system-notice is-error';
+                errorDiv.setAttribute('role', 'status');
+                const icon = document.createElement('span');
+                icon.className = 'chat-system-notice-icon';
+                icon.setAttribute('aria-hidden', 'true');
+                icon.textContent = '!';
+                const body = document.createElement('div');
+                body.className = 'chat-system-notice-text';
+                // Two sentences: what happened in the learner's terms, then the
+                // technical detail small and last, for whoever is debugging.
+                const lead = document.createElement('strong');
+                lead.textContent = 'Helga could not reach the tutor service.';
+                const detail = document.createElement('span');
+                detail.className = 'chat-system-notice-detail';
+                detail.textContent = 'Your progress is saved. ' + (error.message || 'unknown error') + '.';
+                body.appendChild(lead);
+                body.appendChild(detail);
+                errorDiv.appendChild(icon);
+                errorDiv.appendChild(body);
                 chatStream.appendChild(errorDiv);
                 chatStream.scrollTop = chatStream.scrollHeight;
 

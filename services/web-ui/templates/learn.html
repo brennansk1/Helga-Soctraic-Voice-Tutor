@@ -97,7 +97,11 @@
              aria-label="Sources for this concept"></div>
         <!-- Mastery progress bar: thin fill under the topbar that ticks up
              as the user demonstrates understanding of the current concept.
-             Driven by concept_correct_streak + concept_question_count. -->
+             Driven by concept_correct_streak + concept_question_count.
+             It shipped 0px tall, transparent and aria-hidden — updated on every
+             poll and visible to nobody. session.js now promotes it to a real
+             progressbar when it has a value; the role attributes are set there
+             rather than here so the element stays silent while it is empty. -->
         <div id="mastery-progress-wrap" class="mastery-progress hidden" aria-hidden="true">
             <div id="mastery-progress-fill" class="mastery-progress-fill"></div>
         </div>
@@ -111,9 +115,14 @@
         <!-- Chat list (message history) -->
         <div id="chat-stream" class="learn-chat-list" role="log" aria-live="polite" aria-atomic="false"></div>
 
-        <!-- Floating "jump to latest" button — revealed when user scrolls up -->
+        <!-- Floating "jump to latest" button — revealed when user scrolls up.
+             It carries its word: a bare chevron in a circle floating over a
+             transcript could equally mean scroll, collapse, or next, and the
+             learner who scrolled up to re-read an explanation is exactly the
+             one who should not have to work it out. -->
         <button type="button" id="chat-scroll-bottom-btn" class="chat-scroll-bottom-btn" aria-label="Jump to latest message">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16l-6-6h12z"/></svg>
+            <span>Latest</span>
         </button>
 
         <!-- Input area (typing form) -->
@@ -757,9 +766,12 @@
 
     .hidden { display: none !important; }
 
-    /* Path ↔ Session view fade-in animation */
+    /* Path ↔ Session view fade-in animation.
+       200ms, not 280: the house cap on motion is 250ms, and the entrance to the
+       surface where all the reading happens should be under the threshold where
+       the learner notices they waited for it. */
     .view-fade-in {
-        animation: view-fade-in 0.28s ease-out;
+        animation: view-fade-in 0.2s ease-out;
     }
     @keyframes view-fade-in {
         from { opacity: 0; transform: translateY(6px); }
@@ -1953,7 +1965,15 @@
                     <span class="thinking-dot"></span>
                     <span class="thinking-dot"></span>
                 </div>
-                <div class="thinking-label"><span class="thinking-label-text">Thinking</span></div>
+                <!-- The elapsed counter is the informative half of this
+                     indicator. Dots say "busy"; the count says "busy for
+                     eleven seconds", which is the only thing that tells a
+                     learner whether a locally-hosted model is slow or stuck.
+                     session.js fills it and clears it. -->
+                <div class="thinking-label">
+                    <span class="thinking-label-text">Thinking</span>
+                    <span class="thinking-elapsed" aria-hidden="true"></span>
+                </div>
             </div>
         </div>
     </div>
