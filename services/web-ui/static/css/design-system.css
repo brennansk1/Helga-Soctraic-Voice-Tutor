@@ -451,12 +451,14 @@
 .logo a::before {
     content: "";
     display: block;
-    width: 1.05em;
-    height: 1.05em;
+    width: 1.5em;
+    height: 1.5em;
     flex: 0 0 auto;
-    background-color: currentColor;
-    -webkit-mask: url('/static/img/logo-helga.svg') center / contain no-repeat;
-    mask: url('/static/img/logo-helga.svg') center / contain no-repeat;
+    /* An IMAGE, not a mask. A mask keeps only the alpha channel and paints it
+       in one flat colour, which is why the mark had to be monochrome; the real
+       mark carries the brand palette, so it has to be drawn as itself. Its
+       three colours are the same mid-tones in both themes, so no variant. */
+    background: url('/static/img/logo-helga.svg') center / contain no-repeat;
 }
 
 /* Service-status dot. The colour is the message; the icon only gives it a
@@ -1143,3 +1145,47 @@ body:not(.page-home) .matterhorn-bg { display: none; }
 @media (max-width: 1100px) {
     .header-utils .gamification-bar { display: none; }
 }
+
+
+/* ---------------------------------------------------------------------------
+ * Chrome colour
+ *
+ * The bar was correct and grey: one accent underline on the active tab and
+ * nothing else, on a product whose whole palette is alpine blue, pine and
+ * amber. A little colour in the frame is what makes an app look designed
+ * rather than defaulted — as long as it stays in the chrome and never competes
+ * with the content, which is why all of it lives on the header itself.
+ * ------------------------------------------------------------------------ */
+
+/* A hairline of brand across the top of the bar. 2px, full width, and the
+   three accents in the order the mark uses them. */
+.app-header::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg,
+        var(--accent-primary) 0%,
+        var(--accent-tertiary) 42%,
+        var(--accent-secondary) 78%,
+        var(--accent-primary) 100%);
+    opacity: .85;
+}
+
+/* The wordmark takes the brand blue rather than body text, so the brand zone
+   reads as one object with the mark instead of as an icon beside a heading. */
+.logo a { color: var(--accent-primary); }
+.logo a:hover { color: var(--accent-primary-dark); }
+
+/* The active tab's underline picks up the accent it already used, with a soft
+   wash behind the label so the current page is legible at a glance and not
+   only from a 2px line. */
+.app-nav .nav-link.active {
+    color: var(--accent-primary);
+    font-weight: var(--font-weight-semibold, 600);
+}
+.app-nav .nav-link.active::after {
+    background: var(--accent-primary);
+}
+.app-nav .nav-link:hover { color: var(--accent-primary); }
+

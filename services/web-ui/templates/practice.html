@@ -57,6 +57,17 @@
             <div class="u-skeleton practice-skeleton-row"></div>
         </div>
         <div id="due-list" class="practice-list u-stagger" hidden></div>
+                <!-- Distinct from the empty state on purpose. "Nothing due" is a
+             claim about the learner's schedule; if the request failed we do
+             not know the schedule, and saying they are caught up when they may
+             not be is the one direction a review tool must never fail in. -->
+        <div id="due-error" class="practice-empty practice-error" hidden>
+            <div class="practice-empty-mark" aria-hidden="true"><span class="i i-warning" aria-hidden="true"></span></div>
+            <h2>Could not load your reviews</h2>
+            <p id="due-error-detail">Helga could not reach the review service, so
+               this is not a statement that you have nothing due.</p>
+            <button type="button" class="btn btn-secondary" data-practice-retry="due">Try again</button>
+        </div>
         <div id="due-empty" class="practice-empty" hidden>
             <div class="practice-empty-mark" aria-hidden="true"><span class="i i-check" aria-hidden="true"></span></div>
             <h2>Nothing due right now</h2>
@@ -84,6 +95,17 @@
     <section class="practice-panel" role="tabpanel" id="panel-upcoming"
              aria-labelledby="tab-upcoming" tabindex="0" hidden>
         <div id="upcoming-list" class="practice-upcoming"></div>
+                <!-- Distinct from the empty state on purpose. "Nothing due" is a
+             claim about the learner's schedule; if the request failed we do
+             not know the schedule, and saying they are caught up when they may
+             not be is the one direction a review tool must never fail in. -->
+        <div id="upcoming-error" class="practice-empty practice-error" hidden>
+            <div class="practice-empty-mark" aria-hidden="true"><span class="i i-warning" aria-hidden="true"></span></div>
+            <h2>Could not load your reviews</h2>
+            <p id="upcoming-error-detail">Helga could not reach the review service, so
+               this is not a statement that you have nothing due.</p>
+            <button type="button" class="btn btn-secondary" data-practice-retry="upcoming">Try again</button>
+        </div>
         <div id="upcoming-empty" class="practice-empty" hidden>
             <h2>No reviews scheduled yet</h2>
             <p>Study a concept and Helga will schedule its first review

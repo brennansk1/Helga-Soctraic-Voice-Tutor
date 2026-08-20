@@ -80,11 +80,43 @@
 
     // --- due ----------------------------------------------------------------
 
+    /* A failed request is not an empty schedule.
+     *
+     * Both of these used to funnel a network error into render*([]), which
+     * drew the "Nothing due right now — that is the system working" card. For
+     * a spaced-repetition tool that is the worst available lie: the learner is
+     * told they are caught up, skips the session, and the reviews that were
+     * actually due slip past their interval. Failing loudly costs a moment of
+     * friction; failing quietly costs retention.
+     */
+    function showLoadError(tab, detail) {
+        var loading = $(tab + '-loading');
+        if (loading) loading.hidden = true;
+        var empty = $(tab + '-empty');
+        if (empty) empty.hidden = true;
+        var err = $(tab + '-error');
+        if (err) err.hidden = false;
+        var d = $(tab + '-error-detail');
+        if (d && detail) {
+            // textContent: this string carries a server-supplied status.
+            d.textContent = 'Helga could not reach the review service (' +
+                detail + '), so this is not a statement that you have ' +
+                'nothing due.';
+        }
+    }
+
+    function okJson(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+    }
+
     function loadDue() {
+        var err = $('due-error');
+        if (err) err.hidden = true;
         fetch('/api/due_concepts')
-            .then(function (r) { return r.json(); })
+            .then(okJson)
             .then(function (data) { renderDue((data && data.concepts) || []); })
-            .catch(function () { renderDue([]); });
+            .catch(function (e) { showLoadError('due', e.message); });
     }
 
     function renderDue(items) {
@@ -189,10 +221,12 @@
     // --- upcoming -----------------------------------------------------------
 
     function loadUpcoming() {
+        var err = $('upcoming-error');
+        if (err) err.hidden = true;
         fetch('/api/schedule')
-            .then(function (r) { return r.json(); })
+            .then(okJson)
             .then(function (data) { renderUpcoming((data && data.reviews) || []); })
-            .catch(function () { renderUpcoming([]); });
+            .catch(function (e) { showLoadError('upcoming', e.message); });
     }
 
     function renderUpcoming(reviews) {
@@ -267,5 +301,13 @@
         wireTabs();
         wireQuiz();
         show(window.PRACTICE_ACTIVE_TAB || 'due', false);
+    });
+    // Retry buttons on the two error cards.
+    document.addEventListener('click', function (e) {
+        var b = e.target.closest && e.target.closest('[data-practice-retry]');
+        if (!b) return;
+        var tab = b.getAttribute('data-practice-retry');
+        if (tab === 'due') loadDue();
+        else if (tab === 'upcoming') loadUpcoming();
     });
 })();

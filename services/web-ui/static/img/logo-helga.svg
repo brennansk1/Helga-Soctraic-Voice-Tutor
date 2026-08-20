@@ -1,27 +1,55 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Helga logo — PLACEHOLDER.
+  Helga brand mark.
 
-  This is a deliberate stand-in, not a finished identity. It is a single
-  self-contained file referenced from exactly one place (the .brand-mark rule
-  in design-system.css), so swapping in the real logo means replacing this file
-  and nothing else.
+  Replaces the stand-in outline that stood in for an emoji (the emoji rendered
+  as a different illustration on every OS, so the mark was not the same shape
+  for two users).
 
-  It replaces an emoji (🏔️), which rendered as a different illustration on
-  every operating system — the brand mark was literally not the same shape for
-  two users.
+  What it says: an alpine massif, because the whole product is framed as an
+  ascent — and a route line switching back up the face, because Helga's claim
+  is not "here is a mountain" but "here is the way up it, built for you". The
+  summit dot is the amber accent already used for the thing you are heading
+  toward.
 
-  Constraints the real mark should keep:
-    - square viewBox, safe at 28px
-    - currentColor only, so it inherits the theme and never needs a dark variant
+  Colour is deliberate. The old mark was mounted as a CSS mask tinted with
+  currentColor, which discards everything but the silhouette; it now mounts as
+  an image so it can carry the palette. The three brand colours are the same
+  mid-tones in both themes, so one file works on the light parchment and the
+  dark slate without a variant.
+
+  Constraints kept:
+    - square viewBox, legible at 28px (three shapes, strong silhouette)
+    - self-contained, no external refs (offline appliance)
     - no text: the wordmark is set in DM Sans beside it
 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none"
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"
      role="img" aria-label="Helga">
-  <rect x="1.25" y="1.25" width="29.5" height="29.5" rx="8.5"
-        stroke="currentColor" stroke-width="2.5" opacity="0.28"/>
-  <path d="M7 22.5 13 11l4.2 8 2.4-4.2L25 22.5z"
-        stroke="currentColor" stroke-width="2.5"
-        stroke-linejoin="round" stroke-linecap="round"/>
-  <circle cx="21.6" cy="9.4" r="2.1" fill="currentColor" opacity="0.55"/>
+  <defs>
+    <linearGradient id="peak" x1="0" y1="1" x2="0.35" y2="0">
+      <stop offset="0" stop-color="#4a8c6f"/>
+      <stop offset="1" stop-color="#2e6b8a"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Secondary shoulder, set back and cooler so the main peak reads first. -->
+  <path d="M14.8 25.5 21.4 13.2 28.6 25.5z" fill="#2e6b8a" opacity="0.42"/>
+
+  <!-- Main massif. -->
+  <path d="M3.4 25.5 11.9 9.6 20.4 25.5z" fill="url(#peak)"/>
+
+  <!-- Snowfield: the lit face of the summit, cut as a wedge rather than
+       painted white, so it works on any background. -->
+  <path d="M11.9 9.6 15.6 16.5 13.6 15.4 11.6 17 9.6 15.6 7.7 17.2z"
+        fill="#ffffff" opacity="0.9"/>
+
+  <!-- The route. A single switchback: two turns survive 28px, three do not. -->
+  <path d="M8.1 24.2 12.4 20.4 10.3 18.4 11.9 15.4"
+        fill="none" stroke="#ffffff" stroke-opacity="0.85"
+        stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Summit. -->
+  <circle cx="11.9" cy="9.6" r="2.15" fill="#c17f4a"/>
+  <circle cx="11.9" cy="9.6" r="2.15" fill="none"
+          stroke="#ffffff" stroke-opacity="0.55" stroke-width="0.9"/>
 </svg>

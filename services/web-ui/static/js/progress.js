@@ -163,19 +163,33 @@
         renderCourses(data.courses || [], concepts);
     }
 
-    document.addEventListener('DOMContentLoaded', function () {
+    function load() {
+        var err = $('progress-error');
+        if (err) err.hidden = true;
         fetch('/api/progress/overview')
             .then(function (r) { return r.json().then(function (b) {
                 return { ok: r.ok, body: b }; }); })
             .then(function (res) {
-                if (!res.ok) throw new Error(res.body && res.body.error);
+                if (!res.ok) throw new Error((res.body && res.body.error) ||
+                                             'HTTP ' + res.status);
                 render(res.body);
             })
-            .catch(function () {
+            .catch(function (e) {
                 var host = $('progress-totals');
                 if (host) host.innerHTML = '';
-                var err = $('progress-error');
                 if (err) err.hidden = false;
+                var d = $('progress-error-detail');
+                // textContent: the reason can carry a server-supplied string.
+                if (d && e && e.message) {
+                    d.textContent = e.message +
+                        ' — this page shows nothing rather than guessing.';
+                }
             });
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        var retry = $('progress-retry');
+        if (retry) retry.addEventListener('click', load);
+        load();
     });
 })();

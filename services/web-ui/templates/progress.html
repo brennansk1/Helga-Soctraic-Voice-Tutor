@@ -49,9 +49,15 @@
         <a class="btn btn-primary" href="/courses">Go to courses</a>
     </section>
 
-    <p class="progress-error" id="progress-error" hidden>
-        Could not load progress. This page shows nothing rather than guessing.
-    </p>
+    <!-- Same shape as the Courses and Practice failures: a mark, the reason,
+         and a way out. The message was already honest; without a retry the
+         only route back was a manual reload. -->
+    <div class="progress-empty progress-error" id="progress-error" hidden>
+        <div class="practice-empty-mark" aria-hidden="true"><span class="i i-warning" aria-hidden="true"></span></div>
+        <h2>Could not load progress</h2>
+        <p id="progress-error-detail">This page shows nothing rather than guessing.</p>
+        <button type="button" class="btn btn-secondary" id="progress-retry">Try again</button>
+    </div>
 </div>
 {% endblock %}
 
