@@ -40,6 +40,7 @@ Imports and --help work with no Ollama running; the connection is lazy.
 import argparse
 import json
 import os
+import re
 import statistics
 import sys
 import time
@@ -301,8 +302,49 @@ def _chat_messages(url, model, messages, max_tokens=700, temperature=0.7):
         return ""
 
 
+def _apply_contract(url, model, messages, turn, learner_said, transcript, topic):
+    """A4.1a as the FSM applies it: check, then regenerate once if a rule trips.
+
+    Kept faithful to fsm_logic._enforce_dialogue_contract -- same rules, same
+    single retry, same "a retry that fixes nothing is not shipped". If the
+    benchmark enforced the contract differently from the product it would be
+    measuring a third thing that neither of them is.
+    """
+    try:
+        from services.common import dialogue_contract as dc
+    except Exception:
+        return turn
+
+    seen = set()
+    for t in transcript:
+        for w in re.findall(r"[A-Za-z][A-Za-z'\-]+", str(t.get("text") or "")):
+            seen.add(w.lower())
+    terms = {w.lower() for w in
+             re.findall(r"[A-Za-z][A-Za-z'\-]+",
+                        f"{topic.get('concept','')} {topic.get('context','')}")
+             if len(w) > 3}
+    kw = {"learner_said": learner_said or "", "concept_terms": terms,
+          "already_seen": seen, "is_opening": not transcript}
+
+    try:
+        violations = dc.check(turn, **kw)
+    except Exception:
+        return turn
+    if not violations:
+        return turn
+    retry = list(messages) + [
+        {"role": "assistant", "content": turn},
+        {"role": "user", "content": dc.correction_note(violations)},
+    ]
+    candidate = _chat_messages(url, model, retry)
+    if candidate.strip() and dc.is_better(candidate, turn, **kw):
+        return candidate
+    return turn
+
+
 def run_dialogue(client, profile_key, topic, turns, verbose=False,
-                 url=DEFAULT_OLLAMA_URL, model=DEFAULT_MODEL, aid_decider=None):
+                 url=DEFAULT_OLLAMA_URL, model=DEFAULT_MODEL, aid_decider=None,
+                 enforce_contract=False):
     """Run one tutor<->simulated-student dialogue. Returns the transcript.
 
     `aid_decider(turn_index, transcript) -> AidDecision | None` reproduces the
@@ -318,6 +360,14 @@ def run_dialogue(client, profile_key, topic, turns, verbose=False,
 
     Defaults to None so the core benchmark's numbers stay comparable with the
     baselines already recorded against it.
+
+    `enforce_contract` applies A4.1a, the dialogue contract, exactly as
+    fsm_logic does: check the turn, and regenerate ONCE against the named
+    violations if any trip. Without it this harness measures the bare model,
+    not the product -- the contract lives in the FSM and the FSM is not in
+    this path, so a 90-word lecture reaches the judge unmodified and the
+    socratic score reflects a tutor that does not exist. Also defaults off to
+    protect the recorded baselines.
     """
     from services.common.prompts import get_socratic_tutor_prompt
 
@@ -352,6 +402,9 @@ def run_dialogue(client, profile_key, topic, turns, verbose=False,
                  "content": f"Begin tutoring me on {topic['concept']}."}]
 
         tutor_msg = _chat_messages(url, model, messages)
+        if enforce_contract and tutor_msg.strip():
+            tutor_msg = _apply_contract(url, model, messages, tutor_msg,
+                                        pending_student, transcript, topic)
         if not tutor_msg.strip():
             transcript.append({"role": "tutor", "text": "", "empty": True})
             break

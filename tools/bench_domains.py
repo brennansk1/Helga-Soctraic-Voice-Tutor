@@ -859,7 +859,11 @@ def run_domain(domain_key, profiles=None, turns=4, samples=3,
         for pk in profiles:
             d = hb.run_dialogue(client, pk, topic, turns=turns,
                                 url=url, model=model, verbose=verbose,
-                                aid_decider=make_aid_decider(topic))
+                                aid_decider=make_aid_decider(topic),
+                                # A4.1a. Without it this measures the bare
+                                # model: the contract lives in the FSM, and
+                                # the FSM is not in this path.
+                                enforce_contract=True)
             tr = d.get("transcript") if isinstance(d, dict) else d
             if isinstance(d, dict) and d.get("error"):
                 print(f"      {pk}: ERROR {d['error']}", flush=True)

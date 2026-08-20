@@ -467,3 +467,60 @@ def test_genuine_garbage_still_returns_none():
 def test_a_float_score_is_accepted():
     """Judges return 4.5; int('4.5') raises and used to drop the sample."""
     assert bd._loads_tolerant('{"score": 4.5}')["score"] == 4.5
+
+
+# ------------------------------------- the bench must measure THE PRODUCT
+#
+# run_dialogue calls the prompt builder and the model directly -- it never
+# touches the FSM. A4.1a, the dialogue contract, lives in the FSM. So the
+# instrument built to measure `socratic` could not see the fix built to raise
+# it: a 90-word lecture reached the judge unmodified and scored a tutor that
+# does not exist in the product.
+
+def test_the_bench_enforces_the_dialogue_contract(monkeypatch):
+    import helgabench as hb
+    lecture = " ".join(["word"] * 140) + "."
+    fixed = "You said vectors stretch — by how much?"
+    seen = {"retries": 0, "carried": False}
+
+    def fake(url, model, messages, **kw):
+        seen["retries"] += 1
+        joined = " ".join(str(m.get("content", "")) for m in messages).lower()
+        seen["carried"] = "contract" in joined and "140 words" in joined
+        return fixed
+
+    monkeypatch.setattr(hb, "_chat_messages", fake)
+    out = hb._apply_contract("u", "m", [{"role": "system", "content": "s"}],
+                             lecture, "vectors stretch", [],
+                             {"concept": "Eigenvalues", "context": "x"})
+    assert out == fixed
+    assert seen["retries"] == 1
+    assert seen["carried"], "the correction must name the measurement"
+
+
+def test_a_compliant_turn_costs_no_extra_call(monkeypatch):
+    import helgabench as hb
+    calls = {"n": 0}
+
+    def fake(*a, **k):
+        calls["n"] += 1
+        return "x"
+
+    monkeypatch.setattr(hb, "_chat_messages", fake)
+    good = "You said vectors stretch — by how much?"
+    out = hb._apply_contract("u", "m", [{"role": "system", "content": "s"}],
+                             good, "vectors stretch", [],
+                             {"concept": "E", "context": "x"})
+    assert out == good and calls["n"] == 0
+
+
+def test_a_retry_that_fixes_nothing_is_not_shipped(monkeypatch):
+    """Otherwise this is prompt-only enforcement wearing a second call."""
+    import helgabench as hb
+    lecture = " ".join(["word"] * 140) + "."
+    monkeypatch.setattr(hb, "_chat_messages",
+                        lambda *a, **k: " ".join(["word"] * 130) + ".")
+    out = hb._apply_contract("u", "m", [{"role": "system", "content": "s"}],
+                             lecture, "vectors stretch", [],
+                             {"concept": "E", "context": "x"})
+    assert out == lecture
