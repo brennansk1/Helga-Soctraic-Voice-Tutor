@@ -66,7 +66,7 @@ none is done on the agent's word.
 |---|---|---|---|
 | A | *(read-only, done)* core bug hunt | 12 findings → §3/§4 | n/a — findings recorded below |
 | B | *(read-only, done)* web bug hunt | 12 findings → §3/§4 | n/a |
-| C | docker-compose, .env, model files | A6: `OLLAMA_KEEP_ALIVE` idle-eviction via server env; tts container right-size; Kokoro de-dup **(report-only if risky)** | `docker compose config` parses; idle RSS measured before/after; no model file deleted without byte-identical proof |
+| C | docker-compose, .env, model files — **LANDED 19b169d** | A6: 30m idle-eviction default, set in compose for BOTH LLM-calling services (a per-request keep_alive overrides the server env, so host-only would not have worked). Two scoreboard premises corrected by measurement: the tts 2048M cap is right (2.03 GB peak RSS on the max request; 1536M OOM-killed) and the "duplicate" Kokoro copies are two formats, torch + MLX, both load-bearing on an offline appliance — nothing deleted | done: compose parses, 145 targeted tests pass, both Kokoro caches verified intact |
 | D | llm_utils.py, llm_client.py | A7: circuit breaker; "unreachable" ≠ "bad JSON" as named errors | `pytest -q -k "llm or client"`; breaker unit tests pass; no second retry layer stacked on `llm_generate_json` |
 | E | storage.py, tools/reconcile_courses.py — **LANDED f19d8bb** | AUTO-10 closed; reconcile tool | done: 248 targeted tests pass; dry-run is SQLite-enforced read-only |
 | F | courses.js, wizard.js, degree.js, build-view.js, build-guard.js, create.js, practice.js, schedule.html, practice.html | `course_ready` never emitted → client-side completion; onclick-injection XSS; create.js lock-on-502; demo-plan-over-real-data; target_date (client half); Practice quiz dead end | `pytest tests/web -q`; browser: build completes → link appears → lock releases; `Newton's Laws` card delete works; core down → no lock armed |
@@ -112,6 +112,19 @@ Every one of these blocks "no known bugs".
    `/api/upload_epub` (`:1287`) → child B's upload lands on the default FSM.
 6. **Register agent K's `library_api` blueprint** (one line, K's file header
    says which).
+
+### The keep_alive client queue (serialized: start only after agent D lands — D owns these files)
+Agent C set the server default to 30m but four client-side spots still pin
+`-1` and would override it per request:
+- `services/core/llm_client.py:34` default `'-1'` → `'30m'` (+ rewrite the
+  pinning argument in the comment above it)
+- `llm_client.py` `chat()` payload comment (~L92-100), same reasoning
+- `llm_client.py:444` `warn_if_not_pinned()` — the policy is now INVERTED:
+  it should warn on pinned or on a window under ~10 min, not on unpinned.
+  Called from `fsm_logic.py:370`.
+- `services/common/llm_utils.py:461` default `"-1"` → `"30m"`
+`tests/core/test_llm_throughput.py` asserts only presence + env override, so
+none of these break it.
 
 ### fsm_logic.py queue (mine; file is free now)
 7. **Review mode grades against nothing** — spaced-rep grading reads
