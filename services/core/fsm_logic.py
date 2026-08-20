@@ -4172,12 +4172,18 @@ class MnemosyneFSM:
                     hydrator.close()
 
                 # BUG-4: Set course status to "ready" after successful hydration
+                # -- unless the hydrator just recorded "partial": some concepts
+                # are stubs, and overwriting that verdict here was how a course
+                # of [Hydration failed] bodies advertised itself as ready.
                 try:
                     course = self.storage.courses.get_course(course_uid)
-                    if course:
+                    if course and course.get("status") not in ("partial", "failed"):
                         course["status"] = "ready"
                         self.storage.courses.update_course(course_uid, course)
                         logging.info(f"[PIPELINE] Course {course_uid} status set to 'ready'")
+                    elif course:
+                        logging.warning(f"[PIPELINE] Course {course_uid} kept "
+                                        f"status={course.get('status')!r} from hydration")
                 except Exception as e:
                     logging.warning(f"[PIPELINE] Failed to set course status: {e}")
 

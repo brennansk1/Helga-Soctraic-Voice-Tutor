@@ -53,6 +53,11 @@ except Exception as e:
 
 app = Flask(__name__)
 
+# Course bundles: export a course as one portable file, import someone
+# else's. Registered here because the course stores live on this service.
+from services.rag.share_api import create_share_blueprint
+app.register_blueprint(create_share_blueprint(storage))
+
 # B27.1: opt-in structured JSON logs (HELGA_JSON_LOGS=true)
 try:
     from services.common.logging_utils import configure_json_logging
@@ -1555,8 +1560,13 @@ def create_custom_course_wizard():
             )
             hydrator.hydrate(course_uid)
             logger.info(f"Content hydration completed for course {course_uid}")
-            course_dict["status"] = "ready"
-            storage.courses.update_course(course_uid, course_dict)
+            # Respect the verdict hydrate() just recorded. It sets "partial"
+            # when some concepts came back as stubs; stamping "ready" over it
+            # here erased exactly the honesty the stub gate exists to provide.
+            hydrated = storage.courses.get_course(course_uid) or {}
+            if hydrated.get("status") not in ("partial", "failed"):
+                course_dict["status"] = "ready"
+                storage.courses.update_course(course_uid, course_dict)
         except Exception as hydration_err:
             logger.error(f"Content hydration failed: {hydration_err}", exc_info=True)
             # WIZ-4: Mark as "partial" not "failed" — allows user to retry hydration

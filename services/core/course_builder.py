@@ -3351,7 +3351,14 @@ class SkeletonBuilder:
                 module_bloom_level = self.course_params.get("bloom_ceiling", 2)
 
             constraints = self._get_domain_constraints(topic)
-            positive_scope_str = ", ".join(m_scope)
+            # scope is a LIST from the LLM path but PROSE from the syllabus
+            # spine ("Covers, as sequenced in <book>: ..."), and joining a str
+            # joins its CHARACTERS — a 1200-char spine scope became ~3.6KB of
+            # comma-spaced letters injected into the structure prompt, on
+            # exactly the path with the best source material.
+            positive_scope_str = (", ".join(m_scope)
+                                  if isinstance(m_scope, (list, tuple))
+                                  else str(m_scope))
 
             # Build previous coverage string for prompt grounding
             prev_context_str = (
@@ -3984,6 +3991,7 @@ class ContentHydrator:
 
         # Build hierarchy context, concept list, and prerequisite map from JSON
         concept_list = []
+        skipped_already_hydrated = 0
         hierarchy_map = {}
         module_source_map = {}
         concept_ref_map = {}
@@ -4012,6 +4020,13 @@ class ContentHydrator:
                             course_uid, uid
                         )
                         if existing_content and len(existing_content) > 100:
+                            # Resume: this concept was hydrated by an earlier
+                            # run. Counted, because every total derived from
+                            # concept_list otherwise describes only the
+                            # REMAINDER — and the depth contract was stamping
+                            # level_verified over a whole course from however
+                            # few concepts the resume happened to touch.
+                            skipped_already_hydrated += 1
                             continue
 
                         user_note = concept.get("user_note", "") or module.get("user_note", "")
@@ -4521,16 +4536,23 @@ class ContentHydrator:
         # verdict rather than silently shipping, so the UI and the golden-course
         # gate can both see it.
         if self.enforce_depth and total_concepts > 0:
+            # A resumed run verifies only what it hydrated. Asserting
+            # level_verified over the whole course from a 2-of-36 remainder
+            # would be the depth contract lying about its own coverage, so a
+            # partial run records its scope and never newly asserts the flag.
+            _partial_run = skipped_already_hydrated > 0
             missed = len(self._contract_failures)
             met_pct = round(100 * (total_concepts - missed) / total_concepts, 1)
             course["depth_contract"] = {
                 "mastery": self.mastery_level,
                 "domain": self.topic_domain,
                 "concepts_total": total_concepts,
+                "concepts_previously_hydrated": skipped_already_hydrated,
+                "partial_run": _partial_run,
                 "concepts_missing_contract": missed,
                 "met_pct": met_pct,
                 # Below this the course is not credibly at its stated level.
-                "level_verified": met_pct >= 80.0,
+                "level_verified": met_pct >= 80.0 and not _partial_run,
                 "failures": self._contract_failures[:25],
             }
             if missed:
@@ -5957,7 +5979,9 @@ class SyllabusAuditor:
         for module in course.get("modules", []):
             scope = module.get("scope", [])
             if scope:
-                scope_summary += f"  {module['title']}: {', '.join(scope)}\n"
+                scope_str = (", ".join(scope)
+                             if isinstance(scope, (list, tuple)) else str(scope))
+                scope_summary += f"  {module['title']}: {scope_str}\n"
 
         # Build module-level bloom/complexity annotations
         bloom_summary = ""

@@ -754,6 +754,13 @@ helga_auth.init_auth(_get_storage)
 from parent_api import create_parent_blueprint
 app.register_blueprint(create_parent_blueprint(_get_storage))
 
+# Course export/import proxy — the buttons on the courses page.
+try:
+    from share_api import share_api
+    app.register_blueprint(share_api)
+except Exception as _e:
+    logger.error(f"share_api blueprint unavailable: {_e}")
+
 # The multi-source library (IA + Gutenberg + Wikibooks + Wikiversity +
 # OpenStax, with proxied disk-cached covers). Lives in its own /api/library/*
 # namespace on purpose: registering a second rule on an existing URL is not an
