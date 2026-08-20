@@ -176,8 +176,13 @@ skipped concept; PAUSED answers instead of swallowing)
 0b. **Marketable-feature lanes (user-approved, Mode B items excluded):**
    Lane L (course export/import) **LANDED fc1890b, wired 0c71889** — 42 tests,
    round-trip verified, residue-free rejections incl. path traversal and
-   zip-bomb guards. Lane M (session notebook + due-reviews bell + printables)
-   still in flight.
+   zip-bomb guards. Lane M **LANDED 2fc3f3d, wired** — all three: the notebook merges the
+   Markdown session notes (the ones real sessions produce — the v13 table has
+   no production writer, a finding worth keeping) with table rows; the bell
+   synthesizes due-reviews from Practice's endpoint because the notification
+   store's recipients are structurally Mode B (parents); printable syllabus +
+   completion certificate with server-checked completeness. 31 targeted tests,
+   nav stays at 7.
 
 1. **Book → course, wired end to end** = §3 item 1 (DONE 7b4d492) + agent K's
    UI (DONE) + agent I's pipeline fixes (DONE). Run §6.2 to verify.
