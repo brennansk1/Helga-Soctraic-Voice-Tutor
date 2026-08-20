@@ -754,6 +754,17 @@ helga_auth.init_auth(_get_storage)
 from parent_api import create_parent_blueprint
 app.register_blueprint(create_parent_blueprint(_get_storage))
 
+# The multi-source library (IA + Gutenberg + Wikibooks + Wikiversity +
+# OpenStax, with proxied disk-cached covers). Lives in its own /api/library/*
+# namespace on purpose: registering a second rule on an existing URL is not an
+# error in Flask, it is silent shadowing.
+try:
+    from library_api import library_api
+    app.register_blueprint(library_api)
+except Exception as _e:
+    # The library search degrading must not take the whole UI down with it.
+    logger.error(f"library_api blueprint unavailable: {_e}")
+
 @app.route('/api/schedule', methods=['GET'])
 def get_schedule():
     try:

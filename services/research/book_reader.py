@@ -387,88 +387,93 @@ def _pdf_chapters(path, max_pages=None):
     """PDF chapters from the table of contents, falling back to page blocks."""
     import fitz
     doc = fitz.open(path)
-    toc = doc.get_toc() or []
-    chapters, part = [], None
+    # try/finally, because open_book's blanket handler turns any exception
+    # from in here into a tidy `return None` — which converted a crash into
+    # a leaked PyMuPDF handle on every malformed PDF a user ever uploads.
+    try:
+        toc = doc.get_toc() or []
+        chapters, part = [], None
 
-    if toc:
-        entries = [(lvl, title, pg) for lvl, title, pg in toc if pg > 0]
+        if toc:
+            entries = [(lvl, title, pg) for lvl, title, pg in toc if pg > 0]
 
-        # A TEXTBOOK'S TABLE OF CONTENTS IS A LADDER, NOT A LIST.
-        #
-        # Measured on a real OpenStax biology export: 4 level-1 entries, 19
-        # level-2 CHAPTERS ("Chapter 2: Chemistry of Life") and 86 level-3
-        # SECTIONS ("Water", "Passive Transport"). Flattening those into one
-        # list produced 83 "chapters" that were really chapters and sections
-        # mixed together — so a chapter and one of its own sections became
-        # siblings.
-        #
-        # The leaf level is what a learner actually studies in a sitting, so
-        # leaves become the chapters here and their parent is recorded. The
-        # skeleton then decides whether that parent is a module.
-        by_level = {}
-        for lvl, _, _ in entries:
-            by_level[lvl] = by_level.get(lvl, 0) + 1
-        # The deepest level with enough entries to be the real content level.
-        leaf = max((l for l, n in by_level.items() if n >= 5), default=1)
+            # A TEXTBOOK'S TABLE OF CONTENTS IS A LADDER, NOT A LIST.
+            #
+            # Measured on a real OpenStax biology export: 4 level-1 entries, 19
+            # level-2 CHAPTERS ("Chapter 2: Chemistry of Life") and 86 level-3
+            # SECTIONS ("Water", "Passive Transport"). Flattening those into one
+            # list produced 83 "chapters" that were really chapters and sections
+            # mixed together — so a chapter and one of its own sections became
+            # siblings.
+            #
+            # The leaf level is what a learner actually studies in a sitting, so
+            # leaves become the chapters here and their parent is recorded. The
+            # skeleton then decides whether that parent is a module.
+            by_level = {}
+            for lvl, _, _ in entries:
+                by_level[lvl] = by_level.get(lvl, 0) + 1
+            # The deepest level with enough entries to be the real content level.
+            leaf = max((l for l, n in by_level.items() if n >= 5), default=1)
 
-        parent_of, current = {}, {}
-        for i, (lvl, title, pg) in enumerate(entries):
-            current[lvl] = title
-            parent_of[i] = current.get(leaf - 1) if leaf > 1 else None
+            parent_of, current = {}, {}
+            for i, (lvl, title, pg) in enumerate(entries):
+                current[lvl] = title
+                parent_of[i] = current.get(leaf - 1) if leaf > 1 else None
 
-        spans = _toc_spans(entries, len(doc))
-        dropped = []
-        for i, (lvl, title, pg) in enumerate(entries):
-            first, last = spans[i]
-            kind, label = _classify_heading(title)
-            if kind == "part" or (lvl == 1 and _PART_RE.match(title or "")):
-                part = label or title
-                continue
-            # Only the content level becomes a chapter; the levels above it are
-            # groupings and are carried on `part`.
-            if leaf > 1 and lvl != leaf:
-                continue
-            if _SKIP_TITLES.match((title or "").strip()):
-                continue
-            text = []
-            for p in range(first - 1, last):
-                try:
-                    text.append(doc[p].get_text())
-                except Exception:
-                    pass
-            body = _clean("\n".join(text))
-            if len(body) < MIN_CHAPTER_CHARS:
-                # Say which section went and why. `len(chapters) + 1` renumbers
-                # the survivors over the gap, so a silent drop here is invisible
-                # both in the course and in the logs — the one failure mode that
-                # cannot be noticed after the fact.
-                dropped.append((title, first, last, len(body)))
-                continue
-            group = parent_of.get(i) or part
-            chapters.append(Chapter(title, body, len(chapters) + 1, part=group,
-                                    level=lvl))
-        if dropped:
-            logger.warning(
-                f"[BOOK] {len(dropped)} table-of-contents section(s) had less "
-                f"than {MIN_CHAPTER_CHARS} chars of text and are NOT in the "
-                f"course: " + "; ".join(f"{t!r} (pp. {a}-{b}, {n} chars)"
-                                        for t, a, b, n in dropped[:8])
-                + (" ..." if len(dropped) > 8 else ""))
+            spans = _toc_spans(entries, len(doc))
+            dropped = []
+            for i, (lvl, title, pg) in enumerate(entries):
+                first, last = spans[i]
+                kind, label = _classify_heading(title)
+                if kind == "part" or (lvl == 1 and _PART_RE.match(title or "")):
+                    part = label or title
+                    continue
+                # Only the content level becomes a chapter; the levels above it are
+                # groupings and are carried on `part`.
+                if leaf > 1 and lvl != leaf:
+                    continue
+                if _SKIP_TITLES.match((title or "").strip()):
+                    continue
+                text = []
+                for p in range(first - 1, last):
+                    try:
+                        text.append(doc[p].get_text())
+                    except Exception:
+                        pass
+                body = _clean("\n".join(text))
+                if len(body) < MIN_CHAPTER_CHARS:
+                    # Say which section went and why. `len(chapters) + 1` renumbers
+                    # the survivors over the gap, so a silent drop here is invisible
+                    # both in the course and in the logs — the one failure mode that
+                    # cannot be noticed after the fact.
+                    dropped.append((title, first, last, len(body)))
+                    continue
+                group = parent_of.get(i) or part
+                chapters.append(Chapter(title, body, len(chapters) + 1, part=group,
+                                        level=lvl))
+            if dropped:
+                logger.warning(
+                    f"[BOOK] {len(dropped)} table-of-contents section(s) had less "
+                    f"than {MIN_CHAPTER_CHARS} chars of text and are NOT in the "
+                    f"course: " + "; ".join(f"{t!r} (pp. {a}-{b}, {n} chars)"
+                                            for t, a, b, n in dropped[:8])
+                    + (" ..." if len(dropped) > 8 else ""))
 
-    if not chapters:
-        # No usable ToC: fall back to whole-document text split on headings that
-        # look like chapters. Weaker, and honest about being weaker.
-        logger.info("[BOOK] no usable table of contents — falling back to "
-                    "heading detection")
-        full = _clean("\n".join(doc[p].get_text()
-                                for p in range(min(len(doc), max_pages or len(doc)))))
-        parts = re.split(r"\n(?=\s*(?:chapter|CHAPTER)\s+[0-9IVXivx]+)", full)
-        for i, seg in enumerate(parts):
-            if len(seg) < MIN_CHAPTER_CHARS:
-                continue
-            first = seg.strip().split("\n", 1)[0][:120]
-            chapters.append(Chapter(first, seg, len(chapters) + 1))
-    doc.close()
+        if not chapters:
+            # No usable ToC: fall back to whole-document text split on headings that
+            # look like chapters. Weaker, and honest about being weaker.
+            logger.info("[BOOK] no usable table of contents — falling back to "
+                        "heading detection")
+            full = _clean("\n".join(doc[p].get_text()
+                                    for p in range(min(len(doc), max_pages or len(doc)))))
+            parts = re.split(r"\n(?=\s*(?:chapter|CHAPTER)\s+[0-9IVXivx]+)", full)
+            for i, seg in enumerate(parts):
+                if len(seg) < MIN_CHAPTER_CHARS:
+                    continue
+                first = seg.strip().split("\n", 1)[0][:120]
+                chapters.append(Chapter(first, seg, len(chapters) + 1))
+    finally:
+        doc.close()
     return chapters
 
 

@@ -313,7 +313,13 @@ class TestAdaptiveDigestion(unittest.TestCase):
 
     def test_an_oversized_chapter_without_a_digester_says_it_truncated(self):
         """A thin result must be attributable rather than mysterious."""
-        from services.core.book_source import digest_chapter
+        from services.core.book_source import clear_digest_cache, digest_chapter
+        # Every test in this class clears the shared digest cache except this
+        # one did not — and its fixture key (book "B", chapter 1) is generic
+        # enough that another test's cached digest satisfied the lookup, so
+        # the result flipped with test ORDER. It failed under one -k selection
+        # and passed under another, which is the definition of a flake.
+        clear_digest_cache()
         b = Book("B", [Chapter("One", "word " * 20000, 1)])
         text, how = digest_chapter(b, 1)
         self.assertEqual(how, "truncated")
