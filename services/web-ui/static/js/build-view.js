@@ -510,6 +510,63 @@
             });
         }
 
+        /* --- cancel ---------------------------------------------------
+           The endpoint existed from the start with nothing calling it. A
+           build holds the single-build lock for minutes, so "I picked the
+           wrong book" had no answer short of restarting the service. */
+        var cancelBtn = $('build-cancel');
+        var confirmBox = $('build-cancel-confirm');
+        var cancelErr = $('build-cancel-error');
+
+        function showConfirm(on) {
+            if (!confirmBox) return;
+            confirmBox.classList.toggle('hidden', !on);
+            if (on) {
+                if (cancelErr) cancelErr.hidden = true;
+                var no = $('build-cancel-no');
+                if (no) no.focus();
+            } else if (cancelBtn) { cancelBtn.focus(); }
+        }
+
+        if (cancelBtn) cancelBtn.addEventListener('click', function () { showConfirm(true); });
+        var noBtn = $('build-cancel-no');
+        if (noBtn) noBtn.addEventListener('click', function () { showConfirm(false); });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && confirmBox && !confirmBox.classList.contains('hidden')) {
+                showConfirm(false);
+            }
+        });
+
+        var yesBtn = $('build-cancel-yes');
+        if (yesBtn) yesBtn.addEventListener('click', function () {
+            yesBtn.disabled = true;
+            yesBtn.textContent = 'Stopping…';
+            fetch('/api/cancel_creation', { method: 'POST' })
+                .then(function (r) {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json().catch(function () { return {}; });
+                })
+                .then(function () {
+                    // Release the single-build lock through the guard's own
+                    // clear(), not by deleting the key: clear() also repaints
+                    // the nav pill, so reaching past it would leave a
+                    // "Building…" pill pointing at a build that is over.
+                    if (window.HelgaBuildGuard) window.HelgaBuildGuard.clear();
+                    stream('Build cancelled. Nothing was saved.', 'warn');
+                    window.location.href = '/create';
+                })
+                .catch(function (err) {
+                    // Failing to cancel must not look like a cancel.
+                    yesBtn.disabled = false;
+                    yesBtn.textContent = 'Stop the build';
+                    if (cancelErr) {
+                        cancelErr.hidden = false;
+                        cancelErr.textContent = 'Could not stop the build (' +
+                            err.message + '). It is still running.';
+                    }
+                });
+        });
+
         window.HelgaBuildView = { handle: handle, finish: finish };
     });
 })();

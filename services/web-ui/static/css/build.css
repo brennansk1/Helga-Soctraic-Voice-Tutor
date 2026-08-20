@@ -277,3 +277,42 @@
 }
 .build-pill .build-now-pulse { width: 8px; height: 8px; }
 .build-pill:hover { background: color-mix(in srgb, var(--accent-primary) 20%, transparent); }
+
+/* --- cancel --------------------------------------------------------------- */
+.build-header-right { display: flex; align-items: center; gap: var(--space-4); }
+
+.build-cancel {
+    box-sizing: border-box;
+    padding: .4em .9em;
+    font-size: .82rem; font-weight: 600;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: color 160ms ease, border-color 160ms ease;
+}
+.build-cancel:hover { color: var(--color-danger); border-color: var(--color-danger); }
+.build-cancel:disabled { opacity: .5; cursor: default; }
+
+.build-cancel-confirm {
+    position: fixed; inset: 0; z-index: 80;
+    display: grid; place-items: center;
+    background: rgba(0, 0, 0, 0.45);
+}
+.build-cancel-confirm.hidden { display: none; }
+.build-cancel-dialog {
+    box-sizing: border-box;
+    width: min(430px, calc(100vw - 2 * var(--space-4)));
+    padding: var(--space-5);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-lg);
+}
+.build-cancel-dialog h2 { margin: 0 0 .4em; font-size: 1.05rem; }
+.build-cancel-dialog p { margin: 0 0 1em; font-size: .88rem; line-height: 1.5;
+                         color: var(--text-secondary); }
+.build-cancel-actions { display: flex; gap: var(--space-3); justify-content: flex-end; }
+.build-cancel-error { color: var(--color-danger); font-size: .82rem; margin-top: .8em; }

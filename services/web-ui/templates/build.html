@@ -22,11 +22,34 @@
       <h1 class="build-title" id="build-topic">Building your course</h1>
       <p class="build-subtitle" id="build-sub">Researching how this subject is actually taught…</p>
     </div>
-    <div class="build-elapsed" aria-live="off">
-      <span class="build-elapsed-value" id="build-elapsed">0:00</span>
-      <span class="build-elapsed-label">elapsed</span>
+    <div class="build-header-right">
+      <div class="build-elapsed" aria-live="off">
+        <span class="build-elapsed-value" id="build-elapsed">0:00</span>
+        <span class="build-elapsed-label">elapsed</span>
+      </div>
+      <!-- A build takes minutes and holds the single-build lock. There has
+           been a cancel endpoint the whole time and no way to reach it, so
+           the only way out of a build started by mistake was to wait for it
+           or restart the service. -->
+      <button type="button" class="build-cancel" id="build-cancel">Cancel build</button>
     </div>
   </header>
+
+  <!-- Confirmation, because cancelling discards work that has already cost
+       minutes; the button alone would be too easy to hit by accident. -->
+  <div class="build-cancel-confirm hidden" id="build-cancel-confirm" role="dialog"
+       aria-modal="true" aria-labelledby="build-cancel-title">
+    <div class="build-cancel-dialog">
+      <h2 id="build-cancel-title">Stop building this course?</h2>
+      <p>Everything generated so far is discarded. The subject and the book you
+         chose are not — you can start it again from Create.</p>
+      <div class="build-cancel-actions">
+        <button type="button" class="btn btn-secondary" id="build-cancel-no">Keep building</button>
+        <button type="button" class="btn btn-danger" id="build-cancel-yes">Stop the build</button>
+      </div>
+      <p class="build-cancel-error" id="build-cancel-error" hidden></p>
+    </div>
+  </div>
 
   <!-- The two pipelines make opposite decisions (COURSE_PIPELINE.md), so they
        get different rails. The first BOOK:* status swaps the researched rail
