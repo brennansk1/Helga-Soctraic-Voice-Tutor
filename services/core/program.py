@@ -365,6 +365,55 @@ def cap_sequences(titles, max_parts=MAX_SEQUENCE_PARTS):
     return kept, overflow
 
 
+# Courses this tutor cannot honestly deliver.
+#
+# Helga teaches by conversation. It has no bench, no kiln, no ward, no
+# ensemble and nobody to sign a timesheet — so a programme that lists
+# "Natural Science with Laboratory" is promising a course that cannot exist
+# here. A degree made of courses the system cannot teach is the same class of
+# failure as a course of stub concepts marked ready: the structure looks right
+# and the content cannot follow.
+#
+# WORD BOUNDARIES MATTER MORE THAN USUAL HERE. A bare "lab" substring would
+# reject "Labor Economics" and "Labour History", which are ordinary, entirely
+# teachable courses — the same substring trap that graded "energy is lost as
+# heat" as a student saying "lost".
+_UNTEACHABLE = re.compile(
+    r"\b(lab|labs|laboratory|laboratories)\b"
+    r"|\bpracticum\b|\bclinical(s)?\b|\binternship\b|\bexternship\b"
+    r"|\bfieldwork\b|\bfield\s+(experience|study|work)\b"
+    r"|\bstudent\s+teaching\b|\bstudio\b|\bworkshop\b"
+    r"|\bphysical\s+education\b|\bactivity\s+course\b"
+    r"|\bensemble\b|\b(marching\s+)?band\b|\bchoir\b|\borchestra\b"
+    r"|\brecital\b|\bapplied\s+(music|voice|piano)\b"
+    r"|\bdissection\b|\bwelding\b|\bmachine\s+shop\b"
+    r"|\bsupervised\s+practice\b|\bservice\s+learning\b",
+    re.IGNORECASE)
+
+
+def teachable(title):
+    """False for a course that needs a room, equipment or a supervisor.
+
+    Deliberately conservative: it rejects on an explicit marker of hands-on
+    delivery, never on a guess about the subject. "Organic Chemistry" stays —
+    the concepts are teachable and only the lab section is not.
+    """
+    return not _UNTEACHABLE.search(title or "")
+
+
+def drop_unteachable(titles, on_drop=None):
+    """Filter a proposed course list, reporting what went and why."""
+    kept, dropped = [], []
+    for t in titles or []:
+        (kept if teachable(t) else dropped).append(t)
+    if dropped:
+        logger.info("[PROGRAM] dropped %d course(s) this tutor cannot deliver: %s",
+                    len(dropped), ", ".join(dropped[:5]))
+        if on_drop:
+            on_drop(dropped)
+    return kept
+
+
 def propose_slot_subjects(subject, template, llm_json_fn, brief_fn=None):
     """Real course titles for each slot, or {} .
 
@@ -406,7 +455,18 @@ def propose_slot_subjects(subject, template, llm_json_fn, brief_fn=None):
                     f"in {subject}.\n\nSlots to fill:\n{lines}\n\n"
                     f"gen_ed is general education outside the major; core is the "
                     f"major itself in teaching order; elective is optional "
-                    f"depth; capstone is the final project or practicum.\n\n"
+                    f"depth; capstone is the final PROJECT — never a practicum "
+                    f"or placement.\n\n"
+                    f"CONCEPTUAL COURSES ONLY. This programme is taught entirely "
+                    f"by conversation: there is no laboratory, studio, clinic, "
+                    f"ensemble or placement, and nobody to supervise one. Do not "
+                    f"name a course that requires a room, equipment, a patient, "
+                    f"an instrument or a timesheet — no \"...with Laboratory\", "
+                    f"no practicum, clinical, internship, fieldwork, studio art, "
+                    f"physical education or performance ensemble. Where a real "
+                    f"programme would pair a lecture with a lab, name the "
+                    f"lecture alone: \"Organic Chemistry\", not \"Organic "
+                    f"Chemistry with Laboratory\".\n"
                     f"NO CATALOGUE CODES. Write \"Introduction to Sociology\", "
                     f"never \"SOC 101: Introduction to Sociology\". Real "
                     f"institutions do print codes, but theirs refer to a real "
@@ -457,6 +517,9 @@ def propose_slot_subjects(subject, template, llm_json_fn, brief_fn=None):
         # retry is cheap. The first slot to claim a title keeps it; the later
         # one comes up short and `plan_from_template` fills the gap with a
         # placeholder, which is a visible hole rather than a failed build.
+        # Drop what this tutor cannot deliver BEFORE deduplicating, so a lab
+        # course never reserves a name that a teachable course could use.
+        titles = drop_unteachable(titles)
         seen, uniq = set(taken), []
         for t in titles:
             k = t.lower()
@@ -594,8 +657,15 @@ def source_degree_slots(subject, template, llm_json_fn=None, search_fn=None):
     # 1. A transcribed real curriculum.
     curated = curated_degree(subject, template)
     if curated:
-        slots = {k: list(v)[:wanted.get(k, len(v))]
+        # A REAL catalogue is the likeliest source of a lab course — this is
+        # exactly where "Natural Science with Laboratory" comes from, because
+        # a genuine curriculum does require one. Filtering here rather than
+        # trusting the source: transcribing faithfully is right for structure
+        # and wrong for deliverability. The gap logic below then refills the
+        # slot with something teachable.
+        slots = {k: drop_unteachable(list(v))[:wanted.get(k, len(v))]
                  for k, v in (curated.get("slots") or {}).items() if v}
+        slots = {k: v for k, v in slots.items() if v}
         gaps = [k for k, n in wanted.items() if len(slots.get(k) or []) < n]
         logger.info(f"[DEGREE] using the curated curriculum for {subject!r} "
                     f"({curated.get('source')})"
@@ -619,7 +689,7 @@ def source_degree_slots(subject, template, llm_json_fn=None, search_fn=None):
             for slot in gaps:
                 have = list(slots.get(slot) or [])
                 seen = {t.lower() for t in have}
-                for cand in (proposed.get(slot) or []):
+                for cand in drop_unteachable(proposed.get(slot) or []):
                     if len(have) >= wanted[slot]:
                         break
                     if cand.lower() not in seen:

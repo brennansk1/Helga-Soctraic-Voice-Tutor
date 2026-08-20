@@ -617,3 +617,59 @@ class TestProgrammeCompletion(unittest.TestCase):
         sm = self._store()
         sm.programs.create("prog_z", plan_from_template("Economics", "associate"))
         self.assertFalse(sm.programs.mark_completed("prog_z", "Not A Real Course"))
+
+
+class TestOnlyTeachableCourses(unittest.TestCase):
+    """A degree may not contain a course this tutor cannot deliver.
+
+    Found in a real generated programme: "Natural Science with Laboratory"
+    was offered as available-now. Helga teaches by conversation — there is no
+    bench, no kiln, no ward, no ensemble, nobody to sign a timesheet — so that
+    course cannot exist here. A degree built from undeliverable courses is the
+    same failure as a course of stub concepts marked ready: the structure
+    looks right and the content cannot follow.
+    """
+
+    UNTEACHABLE = [
+        "Natural Science with Laboratory", "General Chemistry I with Lab",
+        "Nursing Clinical II", "Studio Art: Ceramics", "Marching Band",
+        "Student Teaching Seminar", "Internship in Public Policy",
+        "Physics Practicum", "Field Experience in Education",
+    ]
+
+    # The reason this filter needs word boundaries. A bare "lab" substring
+    # rejects Labor Economics; a bare "band" rejects Bandwidth. This repo has
+    # already shipped that exact bug twice — "energy is lost as heat" graded as
+    # a student saying "lost", and a concept teaching "insignificant
+    # placeholders" flagged as a stub.
+    TEACHABLE = [
+        "Labor Economics", "Labour History of Britain", "Collaborative Writing",
+        "Bandwidth and Signal Theory", "Elaborate Structures in Poetry",
+        "Organic Chemistry", "Principles of Macroeconomics",
+        "Introduction to Astronomy", "Urban Studies",
+    ]
+
+    def test_hands_on_courses_are_rejected(self):
+        from services.core.program import teachable
+        for t in self.UNTEACHABLE:
+            self.assertFalse(teachable(t), f"{t!r} needs a room or equipment")
+
+    def test_ordinary_courses_survive_the_filter(self):
+        from services.core.program import teachable
+        for t in self.TEACHABLE:
+            self.assertTrue(teachable(t), f"{t!r} is teachable and must survive")
+
+    def test_a_generated_programme_contains_nothing_unteachable(self):
+        from services.core.program import teachable
+        p = plan_from_template("Biology", "associate")
+        bad = [c["title"] for c in p["courses"] if not teachable(c["title"])]
+        self.assertEqual(bad, [], f"programme offers undeliverable courses: {bad}")
+
+    def test_the_filter_reports_what_it_dropped(self):
+        from services.core.program import drop_unteachable
+        seen = []
+        kept = drop_unteachable(
+            ["Organic Chemistry", "Organic Chemistry Laboratory", "Labor Economics"],
+            on_drop=seen.append)
+        self.assertEqual(kept, ["Organic Chemistry", "Labor Economics"])
+        self.assertEqual(seen, [["Organic Chemistry Laboratory"]])
