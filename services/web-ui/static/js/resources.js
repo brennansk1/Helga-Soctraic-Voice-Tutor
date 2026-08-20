@@ -275,6 +275,15 @@
         btn.addEventListener("click", function () { preflightPoll(true); });
         foot.appendChild(btn);
 
+        // /setup is the page built to walk somebody through fixing exactly
+        // this, and NOTHING in the app linked to it -- a crawl of every
+        // internal link found it orphaned. The one screen that tells a person
+        // their machine is blocked was not offering them the one screen that
+        // helps, so the only way there was knowing the URL.
+        var help = el("a", "preflight-gate-help", "Open the setup guide");
+        help.href = "/setup";
+        foot.appendChild(help);
+
         // A counter, not a spinner: this waits on someone closing an
         // application, and a spinner would say nothing about how long that is.
         var cd = el("span", "preflight-countdown", "");
@@ -385,6 +394,16 @@
             list.appendChild(li);
         });
         box.appendChild(list);
+
+        // Same reason as the gate: this panel reports the verdict and the
+        // page that acts on it was unreachable from anywhere.
+        var more = el("p", "res-preflight-more");
+        var a = el("a", null, "Open the setup guide");
+        a.href = "/setup";
+        more.appendChild(a);
+        more.appendChild(document.createTextNode(
+            " — every check with the exact command to fix it."));
+        box.appendChild(more);
 
         ((v && v.notes) || []).forEach(function (t) {
             box.appendChild(el("p", "res-preflight-scope", String(t)));

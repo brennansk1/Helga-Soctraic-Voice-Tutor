@@ -66,6 +66,18 @@
                     </label>
                     <div class="upload-parse hidden" id="upload-parse"
                          role="status" aria-live="polite"></div>
+
+                    {# The Library had NO entry point anywhere in the app --
+                       nothing linked to /library except its own template, so a
+                       whole feature (search across five sources, covers, build
+                       from a result) was reachable only by typing the URL.
+                       This is where somebody who has just chosen "a book" and
+                       does not have a file is standing. #}
+                    <p class="upload-alt">
+                        Do not have the file?
+                        <a href="/library">Search the library</a> — open
+                        textbooks, archives and public-domain collections.
+                    </p>
                 </div>
             </section>
 

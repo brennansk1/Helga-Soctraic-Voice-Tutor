@@ -112,13 +112,19 @@ class TestNoFeatureReachableOnlyByUrl(unittest.TestCase):
     # every advertised feature needs a way in that is not typing a URL — but
     # "the nav" is no longer the only legitimate entry point, because some
     # features are now modes of a parent surface rather than destinations.
-    NAV_PAGES = ['/courses', '/degree', '/progress', '/practice', '/test',
-                 '/settings']
+    NAV_PAGES = ['/courses', '/degree', '/library', '/progress', '/practice',
+                 '/test', '/settings']
 
     # feature -> the page that must link to it
     NESTED_ENTRY_POINTS = {
         '/palace': '/learn',    # a mode of the open course, not a destination
         '/status': '/settings',  # an operator tool, not a learner tool
+        # /setup is not a destination either -- you go there when the machine
+        # will not run Helga. It had no inbound link from ANYWHERE, including
+        # from the blocking gate that tells you the machine is broken, so the
+        # page whose whole job is to fix that was reachable only by URL.
+        # resources.js builds the link, so it is asserted as a script entry
+        # point below rather than here.
     }
 
     # feature -> the script that must build a link to it.
@@ -132,6 +138,7 @@ class TestNoFeatureReachableOnlyByUrl(unittest.TestCase):
     SCRIPT_ENTRY_POINTS = {
         '/learn': ['services/web-ui/static/js/courses.js',
                    'services/web-ui/static/js/build-guard.js'],
+        '/setup': ['services/web-ui/static/js/resources.js'],
     }
 
     ADVERTISED_PAGES = (NAV_PAGES + list(NESTED_ENTRY_POINTS)
@@ -223,7 +230,17 @@ class TestNoFeatureReachableOnlyByUrl(unittest.TestCase):
     # course_uid and bounced without one), Degree and Test arrived. Seven is
     # verified not to wrap at 1280px by the responsive sweep; raising this
     # number again without re-checking that is how the bar breaks twice.
-    MAX_NAV_DESTINATIONS = 7
+    # Raised from 7 to 8 when /library was added, and only because the wrap
+    # was re-measured rather than assumed. The original number came from NINE
+    # links wrapping at 1280px; eight does not wrap. Measured in a browser at
+    # 1440, 1280 and 1024 -- one row at every width, and at 1024 (tighter than
+    # the width the wrap happened at) the links occupy 509px of a 550px nav
+    # and the bar ends 127px clear of the header utilities.
+    #
+    # Raise this again only with the same measurement. The number is a proxy
+    # for "the bar does not wrap"; bumping it to make a change pass is how the
+    # guard stops guarding anything.
+    MAX_NAV_DESTINATIONS = 8
 
     def test_the_nav_does_not_grow_until_it_wraps(self):
         """The A5.1 target shape. Nine links wrapped onto a second row at

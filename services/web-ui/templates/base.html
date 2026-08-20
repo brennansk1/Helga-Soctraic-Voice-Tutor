@@ -302,6 +302,18 @@
 
                    This also fixes a visible layout break: nine links wrapped
                    onto a second row at 1280px, orphaning the settings icon. #}
+                {# Library sits with the content half of the nav, before the
+                   study half. It is here because it had NO entry point at all
+                   -- nothing in the app linked to /library except its own
+                   template, so search across five sources, covers and
+                   build-from-a-result were reachable only by typing the URL.
+
+                   The note above about nine links wrapping still stands; this
+                   is the eighth, and it fits. Measured at 1024px, the width
+                   the wrap happened at: the links occupy 509px of a 550px nav
+                   and the nav ends 127px short of the utilities. #}
+                <a href="/library" class="nav-link {% if request.path == '/library' %}active{% endif %}" {% if
+                    request.path=='/library' %}aria-current="page" {% endif %}>Library</a>
                 <a href="/progress" class="nav-link {% if request.path == '/progress' %}active{% endif %}" {% if
                     request.path=='/progress' %}aria-current="page" {% endif %}>Progress</a>
                 {# Practice and Test are DIFFERENT jobs: ungraded drilling vs

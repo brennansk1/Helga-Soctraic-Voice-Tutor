@@ -518,3 +518,14 @@
     outline: 2px solid var(--accent-primary);
     outline-offset: 2px;
 }
+
+/* The way into the Library from the book step. Quiet: it is the second
+   option for someone who already chose to bring their own book. */
+.upload-alt {
+    margin: var(--space-3) 0 0;
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+    text-align: center;
+    color: var(--text-secondary);
+}
+.upload-alt a { color: var(--accent-primary); }

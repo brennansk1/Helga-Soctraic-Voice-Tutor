@@ -263,3 +263,17 @@ body.preflight-blocked { overflow: hidden; }
     .preflight-gate { align-items: flex-start; padding: var(--space-3); }
     .preflight-gate-foot { flex-wrap: wrap; }
 }
+
+/* The way from "your machine is blocked" to the page that fixes it. */
+.preflight-gate-help {
+    margin-left: var(--space-3);
+    color: var(--accent-primary);
+    font-size: var(--font-size-sm);
+}
+.res-preflight-more {
+    margin: var(--space-3) 0 0;
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+.res-preflight-more a { color: var(--accent-primary); }
