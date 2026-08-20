@@ -22,3 +22,6 @@ _archive/Matterorn*
 *.db
 test_prompt_db
 .venv*/
+
+# Host-services virtualenv (built by scripts/host_services.sh instructions).
+.venv-host/

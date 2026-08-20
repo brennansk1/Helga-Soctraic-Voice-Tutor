@@ -85,10 +85,27 @@ start)
         echo "   ollama to pick up keep-alive and context changes)"
     fi
 
+    # The host services run from .venv-host, never from whatever `python3`
+    # happens to be. This machine's python3 is 3.9, mlx-audio needs >= 3.10,
+    # and pip's answer to that is to silently install a three-year-old version
+    # rather than refuse — which is how the voice path came to be dead while
+    # every version pin in the repo looked correct. The venv also keeps this
+    # appliance's dependencies away from whatever else shares the user's
+    # global site-packages.
+    # Relative: the script cd's to the repo root at line 31.
+    HOST_PY=".venv-host/bin/python"
+    if [ ! -x "$HOST_PY" ]; then
+        echo "  !! .venv-host is missing — voice will not start."
+        echo "     Create it:"
+        echo "       python3.12 -m venv .venv-host"
+        echo "       .venv-host/bin/pip install -r services/tts/requirements-host.txt"
+        HOST_PY=python3
+    fi
+
     start_one tts "$TTS_PORT" env TTS_BACKEND="${TTS_BACKEND:-mlx}" \
-        TTS_PORT="$TTS_PORT" python3 services/tts/tts_server.py
+        TTS_PORT="$TTS_PORT" "$HOST_PY" services/tts/tts_server.py
     start_one stt "$STT_PORT" env STT_BACKEND="${STT_BACKEND:-nemotron-mlx}" \
-        STT_PORT="$STT_PORT" python3 services/stt/stt_server.py
+        STT_PORT="$STT_PORT" "$HOST_PY" services/stt/stt_server.py
 
     echo
     echo "Then: docker compose up -d"

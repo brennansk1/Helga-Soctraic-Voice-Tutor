@@ -53,6 +53,10 @@ VOICES = [
 # without MLX still works. See docs/SPRINT_PLAN.md "Apple-native first".
 TTS_BACKEND = os.environ.get("TTS_BACKEND", "mlx").lower()
 MLX_KOKORO_REPO = os.environ.get("MLX_KOKORO_REPO", "prince-canuma/Kokoro-82M")
+# The torch path loads the upstream weights; 'a' is American English, which is
+# what every voice in VOICES below is trained for.
+TORCH_KOKORO_REPO = os.environ.get("KOKORO_REPO", "hexgrad/Kokoro-82M")
+KOKORO_LANG = os.environ.get("KOKORO_LANG", "a")
 
 _backend_in_use = None
 
@@ -85,7 +89,13 @@ def get_pipeline():
                 pipeline = _MlxKokoro(MLX_KOKORO_REPO)
             else:
                 from kokoro import KPipeline
-                pipeline = KPipeline(lang_code='a')
+                # repo_id explicitly: upstream's documented call passes it, and
+                # leaving it implicit means the weights this service loads are
+                # whatever the installed version happens to default to. On an
+                # offline appliance the model identity should be stated, not
+                # inherited.
+                pipeline = KPipeline(lang_code=KOKORO_LANG,
+                                     repo_id=TORCH_KOKORO_REPO)
             _backend_in_use = backend
             logger.info(f"Kokoro TTS initialized (backend={backend})")
             return pipeline

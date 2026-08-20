@@ -8,7 +8,24 @@
 #     TTS_BACKEND=mlx TTS_PORT=5005 python services/tts/tts_server.py
 #
 # Or use scripts/host_services.sh, which starts this alongside STT.
+# Python >= 3.10 REQUIRED. mlx-audio dropped 3.9 at 0.2.10, so on a machine
+# whose `python3` is 3.9 pip silently resolves to 0.2.9 instead of failing —
+# and 0.2.9 drags in a transformers that collides with huggingface-hub 1.x,
+# which is how BOTH TTS backends came to raise ImportError with no voice
+# output at all. scripts/host_services.sh now uses .venv-host, built on 3.12.
+#
+# 0.5.0, not 0.4.7: the Kokoro decoder was misaligned against the PyTorch
+# reference until 0.4.8 (upstream: "-2.5 dB level error, F0-path
+# misalignment, window mismatch"). MEASURED here on identical input —
+# 0.4.7 RMS -29.02 dBFS vs 0.5.0 -26.59 dBFS, a 2.43 dB recovery that lands
+# on upstream's own figure. Gain-normalising the two and correlating them
+# gives ~0, so the pitch and window paths really did change: this was
+# quieter AND differently synthesised, not merely quieter.
 flask==3.0.0
-mlx-audio==0.4.7
+mlx-audio==0.5.0
 soundfile==0.12.1
 numpy==1.26.4
+# The G2P engine. Kokoro cannot produce phonemes without it and raises
+# ImportError at generate() — never at import, so a service that "started
+# fine" still could not speak a word. It was missing from this file entirely.
+misaki[en]==0.9.4
