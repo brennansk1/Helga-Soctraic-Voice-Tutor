@@ -40,11 +40,16 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Fraction of the current course completed before the next elective is offered.
-ELECTIVE_PROMPT_AT = 0.70
+# How far into the CURRENT course before asking which course comes next.
+#
+# A programme is a fixed list of courses and the learner picks the ORDER, one
+# course at a time. So this prompt is not "choose an elective" — it is "you
+# are nearly through this one; what next?", asked early enough that the answer
+# has time to build before they arrive at it.
+NEXT_COURSE_PROMPT_AT = 0.70
 # ...and the point at which the recommended option is pre-selected so an
 # unanswered prompt cannot stall the learner's own pipeline.
-ELECTIVE_AUTOSELECT_AT = 0.90
+NEXT_COURSE_AUTOSELECT_AT = 0.90
 # Never have more than this many unbuilt-but-committed courses in flight.
 MAX_LOOKAHEAD = 1
 # A session this recent counts as active; builds wait.
@@ -52,16 +57,17 @@ SESSION_IDLE_SECONDS = 300
 
 PRIORITY_INTERACTIVE = "interactive"
 PRIORITY_BACKGROUND = "background"
-# Below background: building an elective the learner has NOT chosen, on the
-# chance they pick it. Real registration offers several options, and a learner
-# who chooses late would otherwise wait ~3.6 h for their pick to build.
+# Below background: building a course the learner has NOT yet picked, on the
+# chance they pick it. Several courses are usually available at once (anything
+# whose prerequisites are met), and a learner who decides late would otherwise
+# wait ~3.6 h for their choice to build.
 PRIORITY_SPECULATIVE = "speculative"
 
-# How many unchosen options may be pre-built. Each is a full course build, so
-# offering 3 options and building all 3 triples the cost of every elective slot —
-# on a 40-course bachelor's with 9 electives that is 18 extra builds, ~65 hours.
-# One is the compromise: the option most likely to be picked gets a head start,
-# the rest wait for the choice.
+# How many un-picked courses may be pre-built. Each is a full course build, so
+# speculatively building everything currently available multiplies the cost of
+# the whole programme — with several courses unlocked at once that is many
+# extra builds and tens of hours. One is the compromise: the likeliest next
+# course gets a head start, the rest wait for the learner to choose.
 MAX_SPECULATIVE = 1
 
 
@@ -78,7 +84,7 @@ def decide(state):
         build_paused        was a build interrupted and left resumable?
 
     Returns {action, priority, reason}. `action` is one of:
-        "wait", "prompt_elective", "autoselect_elective", "resume_build",
+        "wait", "prompt_next_course", "autoselect_next_course", "resume_build",
         "start_build"
     """
     s = state or {}
@@ -102,15 +108,15 @@ def decide(state):
 
     # 3. The choice gates the build, so chase the choice first.
     if not s.get("next_course_chosen"):
-        if progress >= ELECTIVE_AUTOSELECT_AT:
-            return _r("autoselect_elective", PRIORITY_INTERACTIVE,
+        if progress >= NEXT_COURSE_AUTOSELECT_AT:
+            return _r("autoselect_next_course", PRIORITY_INTERACTIVE,
                       f"{int(progress * 100)}% through and still unchosen — "
-                      f"pre-selecting the recommended option so the build has "
+                      f"pre-selecting the recommended next course so the build has "
                       f"room; the learner can still change it")
-        if progress >= ELECTIVE_PROMPT_AT:
-            return _r("prompt_elective", PRIORITY_INTERACTIVE,
-                      f"{int(progress * 100)}% through — ask now so there is "
-                      f"study time left to build inside")
+        if progress >= NEXT_COURSE_PROMPT_AT:
+            return _r("prompt_next_course", PRIORITY_INTERACTIVE,
+                      f"{int(progress * 100)}% through — ask which course comes next "
+                      f"while there is still study time to build it in")
         return _r("wait", PRIORITY_BACKGROUND,
                   f"{int(progress * 100)}% through — too early to ask")
 

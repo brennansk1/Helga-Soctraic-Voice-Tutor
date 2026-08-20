@@ -131,7 +131,13 @@ def plan_from_template(subject, template, slot_subjects=None, preset="college"):
                 "preset": preset,
                 "requires": [],
                 "built": False,
-                "chosen": slot != "elective",
+                # Every course in a programme IS the programme. There is no
+                # pick-one-of-three: what a learner chooses is the ORDER, and
+                # the prerequisite graph is what constrains it — which is how
+                # a real degree actually works. `chosen` stays in the shape
+                # because stored plans carry it and the map still reads it,
+                # but nothing is now conditionally excluded.
+                "chosen": True,
             })
             if slot != "capstone" and len(courses) % per_term == 0:
                 term = min(term + 1, tpl["terms"])
@@ -191,27 +197,63 @@ def validate(courses):
     return True
 
 
+def available_courses(program):
+    """Every course the learner could start RIGHT NOW.
+
+    A programme is a fixed list of courses; what the learner chooses is the
+    ORDER, one course at a time, and the prerequisite graph is the only thing
+    constraining that choice — which is how a real degree works. A course is
+    available when it is not finished and every course it requires IS.
+
+    `term` is not consulted. It survives in the plan as the planner's rough
+    difficulty ordering, but treating it as a schedule would re-impose the
+    fixed order this model exists to reject.
+    """
+    courses = (program or {}).get("courses", [])
+    done = {c["title"] for c in courses if c.get("completed")}
+    return [c for c in courses
+            if not c.get("completed")
+            and all(r in done for r in (c.get("requires") or []))]
+
+
 def next_course(program):
-    """The next course to study: earliest term, not yet built or completed."""
-    pending = [c for c in (program or {}).get("courses", [])
-               if not c.get("completed")]
-    if not pending:
-        return None
-    return sorted(pending, key=lambda c: (c["term"], c["title"]))[0]
+    """The default next course: the planner's own ordering among what is
+    available. This is a SUGGESTION — the learner picks, and the scheduler
+    falls back to this when they have not.
+    """
+    avail = available_courses(program)
+    if not avail:
+        # Nothing unlocked but work remaining means the graph gates itself;
+        # validate() should have caught it, so fall back to any pending course
+        # rather than stalling the programme on an invariant already checked.
+        pending = [c for c in (program or {}).get("courses", [])
+                   if not c.get("completed")]
+        if not pending:
+            return None
+        return sorted(pending, key=lambda c: (c.get("term", 0), c["title"]))[0]
+    return sorted(avail, key=lambda c: (c.get("term", 0), c["title"]))[0]
 
 
 def scheduler_state(program, progress=0.0, seconds_since_turn=None,
-                    builds_in_flight=0, build_paused=False):
+                    builds_in_flight=0, build_paused=False,
+                    selected_next=None):
     """Translate a programme into the state `build_scheduler.decide` consumes.
 
     Kept here rather than in the scheduler so the scheduler stays a pure
     decision function over a plain dict, testable without a programme.
     """
     nxt = next_course(program)
+    avail = available_courses(program)
     return {
+        "available_count": len(avail),
         "progress": progress,
         "seconds_since_turn": seconds_since_turn,
-        "next_course_chosen": bool(nxt and nxt.get("chosen")),
+        # "Chosen" now means the LEARNER has picked what to study next, not
+        # that an elective slot was filled. Every course is part of the
+        # programme, so a plan alone can no longer answer this: it is answered
+        # by `selected_next`, and only when more than one course is available
+        # is there a choice to make at all.
+        "next_course_chosen": bool(selected_next) or len(avail) <= 1,
         "next_course_built": bool(nxt and nxt.get("built")),
         "builds_in_flight": builds_in_flight,
         "build_paused": build_paused,

@@ -63,11 +63,18 @@ class TestTemplates(unittest.TestCase):
         caps = [c for c in p["courses"] if c["slot"] == "capstone"]
         assert caps and all(c["term"] == p["terms"] for c in caps)
 
-    def test_electives_start_unchosen(self):
-        """Unchosen slots are never built, so the registration mechanic is also
-        the budget control."""
+    def test_every_course_is_part_of_the_programme(self):
+        """There is no pick-one-of-three. A programme is the full list of
+        courses you complete; what the learner chooses is the ORDER, one
+        course at a time, and prerequisites are what constrain it.
+
+        The budget control that unchosen electives used to provide now comes
+        from building one course at a time against the learner's actual next
+        pick, not from leaving slots unfilled.
+        """
         p = plan_from_template("Nursing", "associate")
-        assert any(not c["chosen"] for c in p["courses"] if c["slot"] == "elective")
+        assert all(c["chosen"] for c in p["courses"])
+        assert not any(c.get("completed") for c in p["courses"])
 
 
 class TestValidation(unittest.TestCase):
@@ -114,12 +121,35 @@ class TestSchedulerIntegration(unittest.TestCase):
         st = scheduler_state(p, progress=1.0, seconds_since_turn=5)
         assert bs.decide(st)["action"] == "wait"
 
-    def test_an_unchosen_elective_late_in_a_course_prompts(self):
+    def test_late_in_a_course_with_a_real_choice_it_asks_which_is_next(self):
+        """A programme is a fixed list; the learner picks the ORDER, one
+        course at a time. Late in the current course, with more than one
+        course unlocked and none picked, the scheduler asks."""
         p = plan_from_template("Nursing", "associate")
-        for c in p["courses"]:
-            c["completed"] = c["slot"] != "elective"
+        for c in p["courses"][:-3]:
+            c["completed"] = True
         st = scheduler_state(p, progress=0.75, seconds_since_turn=10_000)
-        assert bs.decide(st)["action"] == "prompt_elective"
+        assert st["available_count"] > 1
+        assert bs.decide(st)["action"] == "prompt_next_course"
+
+    def test_with_only_one_course_left_there_is_nothing_to_ask(self):
+        """A choice of one is not a choice — prompting would be noise."""
+        p = plan_from_template("Nursing", "associate")
+        for c in p["courses"][:-1]:
+            c["completed"] = True
+        st = scheduler_state(p, progress=0.75, seconds_since_turn=10_000)
+        assert st["available_count"] == 1
+        assert bs.decide(st)["action"] != "prompt_next_course"
+
+    def test_a_course_is_unavailable_until_its_prerequisites_are_done(self):
+        from services.core.program import available_courses
+        p = plan_from_template("Nursing", "associate")
+        gated = next(c for c in p["courses"] if not c.get("requires"))
+        other = next(c for c in p["courses"] if c is not gated)
+        other["requires"] = [gated["title"]]
+        assert other not in available_courses(p)
+        gated["completed"] = True
+        assert other in available_courses(p)
 
     def test_next_course_is_the_earliest_incomplete(self):
         p = plan_sequence("Calculus", 3)

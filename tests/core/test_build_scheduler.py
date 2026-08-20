@@ -60,17 +60,17 @@ class TestElectiveIsOnTheCriticalPath(unittest.TestCase):
 
     def test_asks_before_the_course_ends(self):
         """Asking at 100% leaves no study time to build inside."""
-        d = bs.decide(_state(progress=bs.ELECTIVE_PROMPT_AT,
+        d = bs.decide(_state(progress=bs.NEXT_COURSE_PROMPT_AT,
                              next_course_chosen=False))
-        assert d["action"] == "prompt_elective"
+        assert d["action"] == "prompt_next_course"
 
     def test_unanswered_prompt_does_not_stall_the_pipeline(self):
         d = bs.decide(_state(progress=0.95, next_course_chosen=False))
-        assert d["action"] == "autoselect_elective"
+        assert d["action"] == "autoselect_next_course"
         assert "can still change it" in d["reason"]
 
     def test_the_prompt_comes_before_the_autoselect(self):
-        assert bs.ELECTIVE_PROMPT_AT < bs.ELECTIVE_AUTOSELECT_AT < 1.0
+        assert bs.NEXT_COURSE_PROMPT_AT < bs.NEXT_COURSE_AUTOSELECT_AT < 1.0
 
 
 class TestLookahead(unittest.TestCase):
