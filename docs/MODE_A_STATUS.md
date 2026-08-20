@@ -86,6 +86,77 @@ Last measured: 2026-08-19 (§0 re-measured; sections below still carry their 202
 
 ---
 
+## 0a. Overnight run — 2026-08-20, measured
+
+**A course passes the full quality gate. n=0 → n=1.** `course_f690297d`
+("the pythagorean theorem", scope 3 / mastery 3), rebuilt on the new grounding
+chain and the first course ever built on schema v17:
+
+```
+6M / 17U / 37L / 106C     118,403 words, median 1,112/concept
+citations 100%            sources-block 106/106, 101 unique URLs
+source_confidence 0.99    (<0.5: none)
+bloom [1,2,2,3,3,4]       monotonic, span 3
+depth mastery=3           93.4% met, level_verified true
+stubs 0                   missing 0
+GATE: PASS
+```
+
+**Coverage answers §4's open question.** Deterministic check of the 12
+reference topics: **12/12 present, against the old pipeline's 42%**. Every
+topic the 42% course lacked — triples, distance formula, converse, special
+right triangles, midpoint, real-world applications — is in the rebuild. Phase-1
+research is not merely fetched but used, which was the one thing the whole
+grounding chain was unproven on.
+
+> The LLM judge in `syllabus_check.py` returned INADEQUATE on the same course,
+> listing all 12 topics as missing while the outline plainly contains them
+> (module 3 is "Stating the Algebraic Formula"; module 5 "Calculating Unknown
+> Hypotenuse Lengths"). Recorded, not resolved: at a documented ±1.4/5 noise
+> floor and a known ~71% undercount on a *complete* outline, this instrument
+> is directional at best. The deterministic count is the trustworthy number
+> here, and the disagreement is itself a finding about the instrument.
+
+| Instrument | Result |
+|---|---|
+| Sycophancy probe | **100%** (20/20, 95% CI 84–100) — PASS, target ≥90 |
+| Persistence probe | **100%** (12/12), drift turn 1→4: **0** |
+| HelgaBench median-of-3 | overall **2.83** vs 3.27 baseline (**−0.44**) |
+| Judge self-test | failed on infrastructure, twice — see below |
+| Tier probe 4 / 5 | first attempt failed: missing `named_result` / `exercise` |
+
+**The HelgaBench delta is not yet interpretable.** −0.44 exceeds its own
+±0.37 two-SE floor, and socratic (−1.27) and adaptation (−1.13) are large. But
+`helgabench_a1_calibrated.json` predates the swap to `nail-35b-a3b-ctx`, so
+this compares two different models as well as two different codebases. It is
+recorded as **unresolved**, not as a regression and not dismissed. A clean
+answer needs a new baseline captured on the current model.
+
+### Three bugs only a live run could find
+
+1. **A6 and A7 are correct alone and broken together.** The 30m idle window
+   means the first call after a gap pays a ~142s load; the judge's per-call
+   timeout is 60s; two timeouts trip the A7 breaker, which then fast-fails
+   everything. A healthy judge reported "MISCALIBRATED" twice. Fixed with
+   `LLMClient.warm_up()` — pay the load once, deliberately, under a timeout
+   sized for it. The probes were never affected: their 180s timeouts happen to
+   outlast the load, which is why they passed the same night the judge
+   "failed". **This is exactly what the still-open soak test exists to catch.**
+2. **The gate was failing on its own instrument.** A concept teaching that
+   trailing zeros are "insignificant placeholders" tripped a bare
+   `"placeholder"` stub marker — the same substring-matching class as the
+   tutor's command handling. An instrument gets no exemption. Fixed; the gate
+   then passed.
+3. **A book course opened by teaching Gutenberg boilerplate.** The Art of War
+   built 19 lessons whose first six were "Preface to the Project Gutenberg
+   Etext", "The Commentators", "Apologies for War". The existing front-matter
+   rule only catches front matter that *wears* a chapter number; this
+   edition's is unnumbered, so every comparison ran against None. Fixed —
+   19 → 13, opening at "Chapter I". The book run measured below started
+   before this fix and still contains it.
+
+---
+
 ## 0. Re-measured 2026-08-19 — the state of the actual data directory
 
 Everything below §0 was measured on 2026-08-04. Two weeks of work landed since
