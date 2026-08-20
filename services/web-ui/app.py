@@ -780,8 +780,11 @@ def get_schedule():
         )
         return jsonify({'reviews': reviews}), 200
     except Exception as e:
+        # An unreadable schedule is not an empty month. The calendar renders
+        # {'reviews': []} as "nothing scheduled", which tells a learner they
+        # are free on days they may not be.
         logger.error(f"Schedule fetch error: {e}")
-        return jsonify({'reviews': []}), 200
+        return jsonify({'error': 'schedule unavailable'}), 503
 
 @app.route('/api/schedule/complete', methods=['POST'])
 def complete_schedule_review():
@@ -1098,7 +1101,9 @@ def proxy_search():
         resp = requests.get(f'{SERVICES["rag"]}/search', params=request.args, timeout=5)
         return jsonify(resp.json()), resp.status_code
     except requests.exceptions.RequestException:
-        return jsonify({'results': []}), 200
+        # "No matches" and "search is down" are different sentences, and the
+        # header search box was showing the first whenever RAG was the second.
+        return jsonify({'error': 'search unavailable'}), 503
 
 @app.route('/api/courses', methods=['GET'])
 def get_courses():
@@ -1106,8 +1111,11 @@ def get_courses():
         resp = requests.get(f'{SERVICES["rag"]}/api/courses', timeout=2)
         return jsonify(resp.json()), resp.status_code
     except Exception as e:
+        # The courses page has a real error state with a Retry button; this
+        # catch was routing around it, drawing an empty shelf over a learner's
+        # actual library whenever RAG was unreachable.
         logger.error(f"Error fetching courses: {e}")
-        return jsonify({'courses': []}), 200
+        return jsonify({'error': 'course service unavailable'}), 503
 
 @app.route('/api/delete_course', methods=['DELETE'])
 @csrf_protect
@@ -1915,8 +1923,12 @@ def get_user_profile():
             return jsonify(profile)
         return jsonify({'name': '', 'level': 'intermediate', 'interests': [], 'goals': ''})
     except Exception as e:
+        # No file at all is a fresh install and defaults are honest (handled
+        # above). A file that EXISTS but cannot be read is corruption, and
+        # silently substituting level='intermediate' would quietly steer the
+        # tutor while the learner's real settings sit unreadable on disk.
         logger.error(f"Failed to load user profile: {e}")
-        return jsonify({'name': '', 'level': 'intermediate', 'interests': [], 'goals': ''}), 200
+        return jsonify({'error': 'profile unreadable'}), 503
 
 @app.route('/api/user_profile', methods=['POST'])
 def save_user_profile():
