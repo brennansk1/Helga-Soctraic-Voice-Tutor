@@ -12,6 +12,13 @@ caller. This sweeps the other three, which are the ones a USER notices:
   C. JS reaching for an element id that no template defines. Usually the
      remains of a control that was removed, and usually a silent null
      dereference on the line after.
+  D. A call to a function that no script loaded by that page defines. This is
+     the worst of the four and the reason this check exists: session.js called
+     five functions living only in session-course-creation.js, which no
+     template loaded, so every STRUCT:/LOG:/CHECK:/ERROR: status message threw
+     ReferenceError and abandoned the rest of the handler. A missing element
+     yields null and the next line usually guards it; a missing FUNCTION
+     throws, and everything after it in that handler never runs.
 
 A regex finds CANDIDATES, not truth -- ids are built dynamically, handlers are
 delegated from a parent, routes are registered in blueprints. So everything
@@ -211,6 +218,117 @@ def missing_elements(all_tpl_text, js_files):
     return hits
 
 
+
+
+_VENDOR = re.compile(r"\.min\.js$|^(socket\.io|feather|chart|marked|purify)")
+
+
+def _is_vendor(path):
+    """Minified or third-party. Its internals are not our wiring."""
+    if _VENDOR.search(path.name):
+        return True
+    text = _read(path)
+    # A bundle betrays itself by line length long before anything else.
+    longest = max((len(l) for l in text.splitlines()), default=0)
+    return longest > 500
+
+
+# No string-stripping here on purpose. A JS tokenizer good enough to survive
+# regex literals (/['"]/ opens a quote it never closes) is a project of its
+# own, and the first two attempts silently cut session.js from 59,538
+# characters to 8,709 -- reporting a clean bill of health on a file they had
+# effectively deleted. Precision comes instead from the rule below: the name
+# must be a function some project script actually DEFINES. No CSS string in a
+# template literal contains "addProgressLog(", so literals cost nothing.
+
+
+# ------------------------------------------- calls to functions nothing defines
+# Only names that look like project functions are considered: anything defined
+# by any script, any browser built-in, and any method call (x.foo()) is out of
+# scope. The goal is a name that WILL throw, not a list of globals.
+_DEF = re.compile(r"function\s+([A-Za-z_$][\w$]*)\s*\(")
+_ASSIGNED = re.compile(r"(?:var|let|const)\s+([A-Za-z_$][\w$]*)\s*=")
+_WINDOW_DEF = re.compile(r"window\.([A-Za-z_$][\w$]*)\s*=")
+# Not preceded by a dot (method call), an identifier char, or a QUOTE.
+# The quote is what keeps SVG out of it: aids.js builds
+# "transform: 'translate(14,...)'" and build-view.js happens to define a
+# function called translate(), which is a coincidence, not a call.
+_CALL = re.compile(r"(?<![.\w$\"'`])([a-z_$][\w$]*)\s*\(")
+
+_BUILTINS = {
+    "if", "for", "while", "switch", "catch", "return", "typeof", "function",
+    "new", "delete", "void", "in", "of", "do", "else", "try", "throw", "case",
+    "await", "yield", "with", "super", "this",
+    "fetch", "alert", "confirm", "prompt", "parseInt", "parseFloat", "isNaN",
+    "setTimeout", "setInterval", "clearTimeout", "clearInterval", "encodeURI",
+    "encodeURIComponent", "decodeURI", "decodeURIComponent", "require",
+    "structuredClone", "queueMicrotask", "btoa", "atob", "escape", "unescape",
+    "io", "feather", "getComputedStyle", "requestAnimationFrame",
+    "cancelAnimationFrame", "matchMedia", "scrollTo", "print", "open", "close",
+    "postMessage", "addEventListener", "removeEventListener", "reject",
+    "resolve", "next", "done", "test", "exec", "then", "catch",
+}
+
+
+def _scripts_for_page(tpl_path, js_dir):
+    """Which .js files a template pulls in, following its base template."""
+    names, seen = set(), set()
+    stack = [tpl_path]
+    while stack:
+        f = stack.pop()
+        if f in seen or not f.exists():
+            continue
+        seen.add(f)
+        text = _read(f)
+        names |= set(re.findall(r"filename\s*=\s*['\"]js/([\w.-]+\.js)", text))
+        names |= set(re.findall(r"src\s*=\s*['\"][^'\"]*?/js/([\w.-]+\.js)", text))
+        for m in re.finditer(r"""\{%\s*extends\s+['\"]([^'\"]+)['\"]""", text):
+            stack.append(f.parent / m.group(1))
+            stack.append(TPL / m.group(1))
+    return {js_dir / n for n in names}
+
+
+def undefined_calls():
+    """Names that ARE project functions, called on a page that never loads them.
+
+    Precision comes from that second clause. Reporting every name a file calls
+    and cannot see produces 601 hits -- minified vendor bundles calling their
+    own internals, and `rgba(`/`calc(`/`var(` inside CSS strings. Requiring the
+    name to be DEFINED in some project script and merely absent from this
+    page's script set is exactly the shape of the real bug (session.js calling
+    addProgressLog, defined only in a file no template loads) and almost
+    nothing else.
+    """
+    project = [f for f in sorted(JS.glob("*.js")) if not _is_vendor(f)]
+    defined_where = {}
+    for f in project:
+        text = _strip_js_comments(_read(f))
+        for name in set(_DEF.findall(text)) | set(_WINDOW_DEF.findall(text)):
+            defined_where.setdefault(name, set()).add(f.name)
+
+    hits = []
+    for tpl in sorted(TPL.rglob("*.html")):
+        files = {f for f in _scripts_for_page(tpl, JS) if f.exists()}
+        loaded = {f for f in files if not _is_vendor(f)}
+        if not loaded:
+            continue
+        inline = _strip_js_comments(_strip_html_comments(_read(tpl)))
+        here = set(_DEF.findall(inline)) | set(_WINDOW_DEF.findall(inline))
+        for f in loaded:
+            here |= set(_DEF.findall(_strip_js_comments(_read(f))))
+            here |= set(_WINDOW_DEF.findall(_strip_js_comments(_read(f))))
+        for f in sorted(loaded):
+            text = _strip_js_comments(_read(f))
+            for name in sorted(set(_CALL.findall(text))):
+                if name in here or name in _BUILTINS or len(name) < 3:
+                    continue
+                owners = defined_where.get(name)
+                if not owners:
+                    continue          # not a project function; out of scope
+                hits.append((tpl.name, f.name, name, ", ".join(sorted(owners))))
+    return sorted(set(hits))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--json")
@@ -247,10 +365,18 @@ def main():
     if not missing:
         print("   none")
 
+    undef = undefined_calls()
+    print("\nD. Calls to a function the page never loads  (%d)" % len(undef))
+    for tpl, f, name, owner in undef:
+        print(f"   {tpl}: {f} calls {name}() -- defined in {owner}, "
+              f"which this page does not load")
+    if not undef:
+        print("   none")
+
     if args.json:
         pathlib.Path(args.json).write_text(json.dumps(
             {"broken_calls": bad_calls, "dead_controls": dead,
-             "missing_elements": missing}, indent=2))
+             "missing_elements": missing, "undefined_calls": undef}, indent=2))
     return 0
 
 

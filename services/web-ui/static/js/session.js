@@ -925,110 +925,26 @@ function handleThinkingUpdate(data) {
         }
     }
 
-    // Check for educational status prefixes (STRUCT, CHECK, SYLLABUS, ERROR)
-    if (message && (
-        message.startsWith('STRUCT:') ||
-        message.startsWith('CHECK:') ||
-        message.startsWith('SYLLABUS:') ||
-        message.startsWith('ERROR:') ||
-        message.startsWith('LOG:')
-    )) {
-        addProgressLog(displayMessage);
-    }
-
-    // Check for course creation messages
-    if (message && message.startsWith('Creating course on ')) {
-        const topic = message.replace('Creating course on ', '');
-        showCreationProgressModal(topic);
-        return;
-    }
-
-    // Parse JSON log entries for step extraction
-    let jsonLog = null;
-    if (logEntry) {
-        try {
-            jsonLog = JSON.parse(logEntry);
-        } catch (e) {
-            // Not JSON, treat as plain text
-            jsonLog = null;
-        }
-    }
-
-    // Extract step from JSON log if available
-    if (jsonLog && jsonLog.step) {
-        const stepMap = {
-            'prepare': { percent: 0, detail: 'Stopping services and preparing database...' },
-            'scrape': { percent: 20, detail: 'Downloading educational content...' },
-            'chunk': { percent: 40, detail: 'Chunking content into segments...' },
-            'graph': { percent: 60, detail: 'Organizing concepts and relationships...' },
-            'finalize': { percent: 80, detail: 'Preparing for learning...' },
-            'restart': { percent: 100, detail: 'Restarting services and verifying...' }
-        };
-
-        if (stepMap[jsonLog.step]) {
-            const stepInfo = stepMap[jsonLog.step];
-            updateProgressStep(jsonLog.step, stepInfo.percent, stepInfo.detail);
-        }
-    }
-
-    // Update progress bar during creation with new 6-step flow
-    if (message === 'Preparing database...') {
-        updateProgressStep('prepare', 0, 'Stopping services and preparing database...');
-        addProgressLog('Preparing database...');
-    } else if (message === 'Scraping ZIM files...') {
-        updateProgressStep('scrape', 20, 'Downloading educational content...');
-        addProgressLog('Scraping ZIM files...');
-    } else if (message === 'Vectorizing content...') {
-        updateProgressStep('chunk', 40, 'Chunking content into segments...');
-        addProgressLog('Vectorizing content...');
-    } else if (message === 'Building graph...') {
-        updateProgressStep('graph', 60, 'Organizing concepts and relationships...');
-        addProgressLog('Building graph...');
-    } else if (message === 'Finalizing course...') {
-        updateProgressStep('finalize', 80, 'Preparing for learning...');
-        addProgressLog('Finalizing course...');
-    } else if (displayMessage === 'Restarting Systems...' || displayMessage === 'Restarting services...') {
-        updateProgressStep('restart', 100, 'Restarting services and verifying...');
-        addProgressLog('Restarting services...');
-    } else if (message === 'Course built successfully!' || message === 'Course ready to start!' || message === 'Course ready!') {
-        updateProgressStep('complete', 100, 'Course is ready!');
-        addProgressLog('<span class="i i-check" aria-hidden="true"></span> Course built successfully!');
-        setTimeout(() => {
-            hideCourseCreationModal();
-            isCreatingCourse = false;
-            enableCourseCreationButton();
-        }, 2000); // Hide after 2 seconds
-    } else if (message && (message.includes('Ingestion failed') || message.includes('Ingestion error') || message.includes('Service restart failed'))) {
-        creationStatus.innerHTML =
-            '<span class="i i-x i-danger" aria-hidden="true"></span> ' + escapeHtml(message);
-        progressFill.style.width = '0%';
-        addProgressLog('<span class="i i-x" aria-hidden="true"></span> ' + message);
-        setTimeout(() => {
-            hideCourseCreationModal();
-            isCreatingCourse = false;
-            enableCourseCreationButton();
-        }, 3000);
-    }
-
-    // Always add logEntry to progress log if present
-    if (logEntry) {
-        console.log('[handleThinkingUpdate] Adding log entry:', logEntry);
-
-        // Color-code based on log level
-        let logClass = 'log-entry';
-        if (jsonLog) {
-            if (jsonLog.level === 'ERROR') logClass = 'log-entry log-error';
-            else if (jsonLog.level === 'WARN') logClass = 'log-entry log-warn';
-            else if (jsonLog.level === 'INFO') logClass = 'log-entry log-info';
-            else if (jsonLog.level === 'DEBUG') logClass = 'log-entry log-debug';
-        }
-
-        // Add to course creation logs if that's active
-        addProgressLog(logEntry, logClass);
-
-        // Add to global logs (if we keep them, otherwise just inline)
-        // thinkingLogsCode.textContent += logEntry + '\n'; // LEGACY
-    }
+    /* THE IN-SESSION COURSE-CREATION FLOW USED TO LIVE HERE, AND IT CRASHED.
+     *
+     * Everything between this comment and the scroll below called
+     * addProgressLog(), updateProgressStep(), showCreationProgressModal(),
+     * hideCourseCreationModal() and enableCourseCreationButton(). All five are
+     * defined ONLY in static/js/session-course-creation.js, which no template
+     * loads. So every status message beginning STRUCT:, LOG:, CHECK: or
+     * ERROR: -- which is most of what the FSM sends during a lesson -- threw
+     * `ReferenceError: addProgressLog is not defined` and abandoned the rest
+     * of this handler, including the scroll below.
+     *
+     * Plain status messages had no prefix and worked, which is why it was
+     * never obvious: the handler failed on exactly the messages that carry
+     * build and teaching progress, and nowhere else.
+     *
+     * It was legacy twice over. Course creation moved to /create and /build
+     * long ago, and the messages it matched -- "Scraping ZIM files...",
+     * "Building graph..." -- name ZIM and KuzuDB, which were removed from the
+     * project entirely. They cannot arrive any more.
+     */
 
     // Scroll chat stream (respect user scroll position)
     const chatStream = document.getElementById('chat-stream');
@@ -1539,7 +1455,9 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
     if (closeModalBtn) {
-        closeModalBtn.addEventListener('click', hideCourseCreationModal);
+        // hideCourseCreationModal lives in a script no template loads; the
+        // modal it closed is gone with the in-session creation flow.
+        closeModalBtn.addEventListener('click', function () {});
     }
 
     // Sudo password form
@@ -1576,7 +1494,9 @@ document.addEventListener('DOMContentLoaded', function () {
     const createTopic = urlParams.get('create_course');
     const courseDepth = urlParams.get('depth') || '3'; // Default to 3 if not specified
     if (createTopic && courseModal) { // Guard courseModal
-        showCourseCreationModal(decodeURIComponent(createTopic), courseDepth);
+        // Superseded by /create. showCourseCreationModal is defined only
+        // in a script no template loads, so this threw when a ?create=
+        // parameter was present.
         // Clear the URL
         window.history.replaceState(null, null, window.location.pathname);
     }
