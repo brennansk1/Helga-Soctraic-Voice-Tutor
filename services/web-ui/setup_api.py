@@ -605,13 +605,19 @@ def _step_model(r):
 
     guessing = None
     if source == "default":
-        # Named rather than assumed: the web-ui service is not currently given
-        # OLLAMA_MODEL by docker-compose, so this process can be checking a
-        # different model from the one core and rag actually call.
-        guessing = (f"No LLM_MODEL or OLLAMA_MODEL is set in this process, so "
-                    f"this is the built-in default '{model}' and may not be the "
-                    f"model the rest of the stack uses. Set OLLAMA_MODEL to be "
-                    f"certain.")
+        # The web-ui service is not given OLLAMA_MODEL by docker-compose, so
+        # this process can be checking a different model from the one core and
+        # rag call. That used to be likely, because the built-in default and
+        # the compose default were different models; they are the same now and
+        # a test keeps them that way, so the only way they diverge is if
+        # OLLAMA_MODEL is set for the other services and not for this one.
+        # Saying so beats a blanket "this may be wrong" on the ordinary path,
+        # which teaches people to ignore the warning.
+        guessing = (f"No LLM_MODEL or OLLAMA_MODEL is set here, so this is the "
+                    f"built-in default '{model}' — the same model "
+                    f"docker-compose defaults to. If you set OLLAMA_MODEL for "
+                    f"the other services, set it here too so this check reads "
+                    f"the model they actually call.")
 
     reachable = _as_bool(r.get("ollama_reachable"))
     if reachable is not True:
