@@ -123,6 +123,45 @@
         service latency: an operator tool, not a learner tool. On a
         single-user appliance that belongs in Settings, and this link is the
         only way in now that it is out of the nav. #}
+    <!-- Storage and hardware.
+         An offline appliance runs on ONE machine with a fixed amount of RAM
+         and disk, and the model alone takes half the memory. Where the space
+         went, and whether there is room right now, are facts the person at the
+         keyboard is entitled to see rather than infer from things being slow. -->
+    <section class="settings-section" id="section-resources">
+        <h2>Storage &amp; hardware</h2>
+
+        <div id="res-loading" class="setting-hint">Measuring…</div>
+        <div id="res-error" class="setting-hint" hidden></div>
+
+        <div id="res-body" hidden>
+            <div class="res-figures">
+                <div class="res-figure">
+                    <span class="res-figure-value" id="res-total">—</span>
+                    <span class="res-figure-label">Helga on disk</span>
+                </div>
+                <div class="res-figure">
+                    <span class="res-figure-value" id="res-free">—</span>
+                    <span class="res-figure-label">Free on this drive</span>
+                </div>
+                <div class="res-figure">
+                    <span class="res-figure-value" id="res-mem">—</span>
+                    <span class="res-figure-label">Memory available</span>
+                </div>
+            </div>
+
+            <!-- One bar, segmented by course, so "which course is costing me
+                 the space" is answered by looking rather than by arithmetic. -->
+            <div class="res-bar" id="res-bar" role="img"
+                 aria-label="Disk use by course"></div>
+            <ul class="res-legend" id="res-legend"></ul>
+
+            <table class="res-hw">
+                <tbody id="res-hw-body"></tbody>
+            </table>
+        </div>
+    </section>
+
     <section class="settings-section" id="section-system">
         <h2>System</h2>
         <div class="setting-row">

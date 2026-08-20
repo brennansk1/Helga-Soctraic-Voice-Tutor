@@ -7,6 +7,8 @@ import os
 import uuid
 import yaml
 import subprocess
+import platform
+import shutil
 import threading
 # ThreadPoolExecutor removed — TTS thread pool no longer needed
 import json
@@ -4408,6 +4410,133 @@ def get_visual_aid(aid_id):
     # already knows from the transcript descriptor — safe to cache privately.
     resp.headers["Cache-Control"] = "private, max-age=600"
     return resp
+
+
+# --- System resources --------------------------------------------------------
+#
+# memory_guard has measured pressure since it was written -- psutil with a
+# vm_stat fallback, the kernel's own pressure level, WARN/CRITICAL thresholds
+# -- and only gpu_gate ever asked it anything. On an appliance running a 12 GB
+# model on a 24 GB desktop, "is there room right now" is something the person
+# at the keyboard needs to see, not only something the scheduler consults.
+# This is the read side of that, plus where the disk went.
+
+def _cpu_brand():
+    """The marketing name ("Apple M4") rather than the bare architecture.
+    platform.processor() returns "arm" on macOS, which tells a user nothing."""
+    try:
+        r = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"],
+                           capture_output=True, text=True, timeout=2)
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout.strip()
+    except Exception:
+        pass
+    return platform.processor() or platform.machine()
+
+
+def _dir_size(path):
+    """Bytes under `path`. Skips what it cannot stat rather than failing the
+    whole report over one unreadable file."""
+    total = 0
+    for root, _dirs, files in os.walk(path):
+        for f in files:
+            try:
+                total += os.path.getsize(os.path.join(root, f))
+            except OSError:
+                continue
+    return total
+
+
+@app.route("/api/system/resources", methods=["GET"])
+def system_resources():
+    """Memory, disk and hardware in one call.
+
+    Each section fails independently: a broken disk walk must not cost the
+    caller the memory reading, because the memory reading is the one the
+    safeguard card depends on.
+    """
+    out = {}
+
+    try:
+        from services.common import memory_guard as mg
+        snap = mg.snapshot(force=True)
+        out["memory"] = {
+            "total_gb": round(snap.total_gb, 2),
+            "available_gb": round(snap.available_gb, 2),
+            "used_pct": round(snap.used_pct, 1),
+            "swap_used_gb": round(snap.swap_used_gb, 2),
+            "swap_used_frac": round(snap.swap_used_frac, 3),
+            "pressure_level": mg.macos_pressure_level(),
+            "under_pressure": bool(mg.under_pressure(snap)),
+            "allow_background": bool(mg.allow_background(snap)),
+            # None when there is nothing wrong: the card appears only when the
+            # guard has something to say, and says exactly what it said.
+            "reason": mg.pressure_reason(snap),
+            "source": snap.source,
+        }
+    except Exception as e:
+        logging.warning("memory snapshot unavailable: %s", e)
+        out["memory"] = {"error": str(e)}
+
+    try:
+        data_dir = _shared_storage.data_dir
+        courses_dir = _shared_storage.courses_dir
+        per_course = []
+        listing = sorted(os.listdir(courses_dir)) if os.path.isdir(courses_dir) else []
+        for uid in listing:
+            d = os.path.join(courses_dir, uid)
+            if not os.path.isdir(d):
+                continue
+            try:
+                meta = _shared_storage.courses.get_course(uid)
+            except Exception:
+                meta = None
+            per_course.append({"uid": uid,
+                               "title": (meta or {}).get("title") or uid,
+                               "bytes": _dir_size(d)})
+        per_course.sort(key=lambda c: -c["bytes"])
+
+        db_bytes = 0
+        for suffix in ("", "-wal", "-shm"):
+            try:
+                db_bytes += os.path.getsize(_shared_storage.db_path + suffix)
+            except OSError:
+                pass
+
+        total = _dir_size(data_dir)
+        try:
+            usage = shutil.disk_usage(data_dir)
+            disk = {"total_bytes": usage.total, "free_bytes": usage.free}
+        except Exception:
+            disk = None
+
+        out["storage"] = {
+            "total_bytes": total,
+            "database_bytes": db_bytes,
+            # Uploads, assets, logs. Named rather than left as an unexplained
+            # gap between the bar segments and the total.
+            "other_bytes": max(0, total - db_bytes
+                               - sum(c["bytes"] for c in per_course)),
+            "courses": per_course,
+            "disk": disk,
+        }
+    except Exception as e:
+        logging.warning("storage report unavailable: %s", e)
+        out["storage"] = {"error": str(e)}
+
+    try:
+        out["hardware"] = {
+            "platform": platform.platform(),
+            "machine": platform.machine(),
+            "processor": _cpu_brand(),
+            "cpu_count": os.cpu_count(),
+            "python": platform.python_version(),
+            "model": os.environ.get("OLLAMA_MODEL", ""),
+        }
+    except Exception as e:
+        out["hardware"] = {"error": str(e)}
+
+    return out
 
 
 # --- Degree programmes -------------------------------------------------------

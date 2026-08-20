@@ -1112,6 +1112,22 @@ def get_concept_details():
     except Exception as e:
         return jsonify({'error': str(e)}), 502
 
+@app.route('/api/system/resources', methods=['GET'])
+def system_resources():
+    """Feeds the Settings storage panel and the memory safeguard card.
+
+    Short timeout: this is polled while the app is open, and a slow answer is
+    worse than no answer for a card whose entire job is to disappear promptly
+    once there is room again.
+    """
+    try:
+        r = requests.get(f'{SERVICES["core"]}/api/system/resources', timeout=8)
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        app.logger.warning("system resources proxy failed: %s", e)
+        return jsonify({'error': 'unavailable'}), 200
+
+
 # --- Degree programmes -------------------------------------------------------
 # degree.js and home.js have called these three since they were written; there
 # was nothing on the other end, so the flagship surface has been rendering

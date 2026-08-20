@@ -1,0 +1,100 @@
+/* Storage panel + memory safeguard card. Tokens only, both themes. */
+
+.res-figures {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: var(--space-3); margin-bottom: var(--space-4);
+}
+.res-figure {
+    box-sizing: border-box;
+    padding: var(--space-3);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    color: var(--text-primary);
+}
+.res-figure-value {
+    display: block; font-size: 1.25rem; font-weight: 700;
+    font-variant-numeric: tabular-nums; color: var(--text-primary);
+}
+.res-figure-label {
+    display: block; font-size: .78rem; color: var(--text-secondary); margin-top: .2em;
+}
+
+.res-bar {
+    display: flex; height: 14px; border-radius: 999px; overflow: hidden;
+    border: 1px solid var(--border-color); background: var(--bg-tertiary);
+}
+.res-seg { display: block; height: 100%; min-width: 2px; }
+
+/* Six course colours drawn from the brand accents rather than a rainbow, so a
+   long list still looks like one product. */
+.res-seg-0, .res-swatch.res-seg-0 { background: var(--accent-primary); }
+.res-seg-1, .res-swatch.res-seg-1 { background: var(--accent-tertiary); }
+.res-seg-2, .res-swatch.res-seg-2 { background: var(--accent-secondary); }
+.res-seg-3, .res-swatch.res-seg-3 { background: var(--accent-primary-dark); }
+.res-seg-4, .res-swatch.res-seg-4 { background: var(--color-info); }
+.res-seg-5, .res-swatch.res-seg-5 { background: var(--color-success); }
+.res-seg-db, .res-swatch.res-seg-db { background: var(--text-secondary); }
+.res-seg-other, .res-swatch.res-seg-other { background: var(--border-color); }
+
+.res-legend { list-style: none; margin: var(--space-3) 0 0; padding: 0; }
+.res-legend-item {
+    display: flex; align-items: center; gap: .6em;
+    padding: .3em 0; font-size: .85rem; color: var(--text-primary);
+    border-bottom: 1px solid var(--border-color);
+}
+.res-legend-item:last-child { border-bottom: 0; }
+.res-swatch { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; }
+.res-legend-label { overflow-wrap: anywhere; }
+.res-legend-bytes {
+    margin-left: auto; color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+.res-legend-empty { color: var(--text-secondary); font-size: .85rem; }
+
+.res-hw { width: 100%; margin-top: var(--space-4); border-collapse: collapse; }
+.res-hw th, .res-hw td {
+    text-align: left; padding: .4em 0; font-size: .85rem;
+    border-bottom: 1px solid var(--border-color); vertical-align: top;
+}
+.res-hw th { color: var(--text-secondary); font-weight: 500; width: 40%; }
+.res-hw td { color: var(--text-primary); overflow-wrap: anywhere; }
+
+/* --- the safeguard card --------------------------------------------------
+   Fixed, bottom-left, above content but below any modal. It appears and
+   disappears on its own; there is no dismiss button by design, because the
+   condition it reports is not something the user can acknowledge away. */
+.mem-guard {
+    position: fixed; left: var(--space-4); bottom: var(--space-4); z-index: 60;
+    box-sizing: border-box;
+    display: flex; gap: .75em; align-items: flex-start;
+    width: min(400px, calc(100vw - 2 * var(--space-4)));
+    padding: var(--space-3) var(--space-4);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--color-warning);
+    border-left-width: 4px;
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-lg);
+    animation: mem-guard-in 200ms ease-out;
+}
+.mem-guard.is-critical { border-color: var(--color-danger); }
+.mem-guard.hidden { display: none; }
+.mem-guard-mark { flex: 0 0 auto; margin-top: .15em; }
+.mem-guard-body h3 { margin: 0 0 .3em; font-size: .95rem; }
+.mem-guard-body p { margin: 0 0 .4em; font-size: .84rem; line-height: 1.45;
+                    color: var(--text-secondary); }
+.mem-guard-figures { font-variant-numeric: tabular-nums; }
+
+@keyframes mem-guard-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .mem-guard { animation: none; }
+}
+
+@media (max-width: 760px) {
+    .mem-guard { left: var(--space-3); right: var(--space-3); bottom: var(--space-3);
+                 width: auto; }
+}
