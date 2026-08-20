@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 260" width="180" height="260"
+     role="img" aria-label="No cover image available">
+  <title>No cover available</title>
+  <!--
+    The blank a book falls back to when no source has cover art for it.
+
+    Drawn locally rather than fetched, because the whole reason this exists is
+    that a network image was unavailable — going back to the network for the
+    apology would fail in exactly the same weather. It is also why archive.org's
+    own 2212-byte grey placeholder is rejected upstream: a stand-in that arrives
+    over the wire is not a fallback.
+
+    DELIBERATELY NOT THEME-SWITCHED, and this was measured rather than assumed.
+    An <img> does not inherit the page's data-theme attribute, so the only hook
+    available inside the file is prefers-color-scheme — which follows the
+    OPERATING SYSTEM. A first version used it and rendered a dark blank on a
+    light Helga page, because the two disagree whenever the user has picked a
+    theme that is not their OS default. One mid-tone stone that sits acceptably
+    on both surfaces is honest about what an <img> can actually know; a palette
+    that guesses is wrong roughly half the time and looks broken when it is.
+  -->
+  <style>
+    .cover { fill: #c3cac5; }
+    .spine { fill: #aab3ad; }
+    .rule  { fill: #9aa49e; }
+    .mark  { fill: #8a948d; }
+  </style>
+
+  <rect class="cover" x="10" y="8" width="160" height="244" rx="8"/>
+  <rect class="spine" x="10" y="8" width="20" height="244" rx="8"/>
+  <rect class="spine" x="24" y="8" width="8" height="244"/>
+
+  <!-- Three blank rules where a title would sit, so the shape reads as a book
+       with nothing printed on it rather than as a loading skeleton. -->
+  <rect class="rule" x="52" y="96" width="96" height="7" rx="3.5"/>
+  <rect class="rule" x="52" y="116" width="72" height="7" rx="3.5"/>
+  <rect class="rule" x="52" y="152" width="48" height="5" rx="2.5"/>
+
+  <path class="mark" d="M52 196h96v4H52zm0 14h64v4H52z" opacity="0.6"/>
+</svg>

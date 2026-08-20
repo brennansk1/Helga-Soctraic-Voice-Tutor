@@ -1,0 +1,533 @@
+/* Library — the book-search surface.
+ *
+ * Every colour below is a token, and every token is defined TWICE: once on
+ * :root and once on [data-theme="dark"]. design-system.css states the rule and
+ * tools/css_theme_guard.py enforces it, for a reason this project already paid
+ * for -- a custom property with an inline hex fallback and no definition
+ * behind it is not a fallback at all, it is a light-mode constant that renders
+ * white on a dark surface and looks deliberate while doing it.
+ *
+ * The availability palette is the one place colour carries meaning rather than
+ * decoration: full text, lending-only and catalogue-only are three different
+ * answers and are never allowed to look like one.
+ */
+
+:root {
+    --lib-card-bg: var(--bg-secondary);
+    --lib-card-border: var(--border-color);
+    --lib-cover-bg: #e6eae7;
+    --lib-chip-bg: var(--bg-tertiary);
+    --lib-chip-text: var(--text-secondary);
+    --lib-chip-on-bg: var(--accent-primary);
+    --lib-chip-on-text: var(--on-accent);
+    --lib-tag-bg: #e3ebf0;
+    --lib-tag-text: #34586b;
+    --lib-lic-bg: #e2efe6;
+    --lib-lic-text: #2f6146;
+    --lib-avail-open-bg: #dcefe3;
+    --lib-avail-open-text: #256143;
+    --lib-avail-restricted-bg: #f7e6de;
+    --lib-avail-restricted-text: #8a4526;
+    --lib-avail-metadata-bg: #ece9e2;
+    --lib-avail-metadata-text: #6b6355;
+    --lib-avail-unknown-bg: #e7eaec;
+    --lib-avail-unknown-text: #5c666c;
+    --lib-src-ok-text: var(--text-secondary);
+    --lib-src-down-bg: #f7e2dd;
+    --lib-src-down-text: #8a3d28;
+    --lib-excerpt-bg: #f4f2ec;
+    --lib-excerpt-text: #40453f;
+    --lib-scrim: rgba(18, 26, 22, 0.48);
+    --lib-skeleton: #e6e9e7;
+}
+
+[data-theme="dark"] {
+    --lib-cover-bg: #2a352f;
+    --lib-tag-bg: #253840;
+    --lib-tag-text: #9fc6d8;
+    --lib-lic-bg: #22392c;
+    --lib-lic-text: #8fcaa8;
+    --lib-avail-open-bg: #1f3a2b;
+    --lib-avail-open-text: #8ed3ab;
+    --lib-avail-restricted-bg: #3d2a20;
+    --lib-avail-restricted-text: #eaa382;
+    --lib-avail-metadata-bg: #322f29;
+    --lib-avail-metadata-text: #b6ad9c;
+    --lib-avail-unknown-bg: #2b3134;
+    --lib-avail-unknown-text: #a4b0b6;
+    --lib-src-down-bg: #3d251e;
+    --lib-src-down-text: #eda58c;
+    --lib-excerpt-bg: #232b26;
+    --lib-excerpt-text: #ccd4cd;
+    --lib-scrim: rgba(6, 10, 8, 0.66);
+    --lib-skeleton: #2b352f;
+}
+
+/* ---------------------------------------------------------------- filters */
+
+.lib-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-4);
+    margin: var(--space-4) 0 var(--space-3);
+}
+
+.lib-filter-group {
+    border: none;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+}
+
+.lib-filter-group--inline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.lib-filter-legend {
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    padding: 0 0 var(--space-1);
+}
+
+.lib-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+}
+
+.lib-chip {
+    background: var(--lib-chip-bg);
+    color: var(--lib-chip-text);   /* a <button> does not inherit page colour */
+    border: 1px solid var(--lib-card-border);
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-size: var(--font-size-sm);
+    font-family: inherit;
+    cursor: pointer;
+    transition: var(--transition-fast);
+}
+
+.lib-chip:hover { border-color: var(--accent-primary); }
+
+.lib-chip.is-active {
+    background: var(--lib-chip-on-bg);
+    color: var(--lib-chip-on-text);
+    border-color: var(--lib-chip-on-bg);
+}
+
+.lib-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
+
+.lib-inline-label {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
+
+.lib-year { width: 6.5rem; }
+.lib-sort { width: auto; }
+
+/* ------------------------------------------------------------- source bar */
+
+.lib-sourcebar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    align-items: center;
+    margin-bottom: var(--space-3);
+    font-size: var(--font-size-xs);
+}
+
+.lib-src {
+    display: inline-flex;
+    gap: 6px;
+    align-items: baseline;
+    padding: 3px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--lib-card-border);
+    color: var(--lib-src-ok-text);
+}
+
+.lib-src-name { font-weight: var(--font-weight-semibold); }
+
+.lib-src-count { opacity: 0.85; }
+
+/* A source that did not answer is stated, not hidden. Silently returning
+ * fewer books reads as "this source has nothing on the subject", which is a
+ * different and false claim. */
+.lib-src.is-down {
+    background: var(--lib-src-down-bg);
+    color: var(--lib-src-down-text);
+    border-color: var(--lib-src-down-bg);
+}
+
+.lib-src-merged { color: var(--text-secondary); font-style: italic; }
+
+/* -------------------------------------------------------------- the grid */
+
+.lib-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: var(--space-4);
+    align-items: start;
+}
+
+.lib-card {
+    display: flex;
+    flex-direction: column;
+    background: var(--lib-card-bg);
+    border: 1px solid var(--lib-card-border);
+    border-radius: var(--border-radius-lg);
+    overflow: hidden;
+    box-shadow: var(--shadow-soft);
+    transition: var(--transition-fast);
+}
+
+.lib-card:hover { box-shadow: var(--shadow-card); }
+
+/* Hidden rather than removed: the card is already on screen when the Archive
+ * finally answers, and yanking it out from under a cursor mid-scroll is worse
+ * than letting it fade. */
+.lib-card.is-filtered-out { display: none; }
+
+.lib-cover {
+    width: 100%;
+    aspect-ratio: 180 / 260;
+    object-fit: cover;
+    background: var(--lib-cover-bg);
+    display: block;
+}
+
+.lib-card--skeleton {
+    min-height: 340px;
+    background: var(--lib-skeleton);
+    border-color: transparent;
+    animation: lib-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes lib-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .lib-card--skeleton { animation: none; }
+}
+
+.lib-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: var(--space-3);
+    flex: 1;
+}
+
+.lib-card-title {
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.3;
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.lib-card-meta,
+.lib-card-desc,
+.lib-card-also,
+.lib-card-reason {
+    margin: 0;
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+}
+
+.lib-card-desc {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.lib-card-also { font-style: italic; }
+
+.lib-card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.lib-source-tag,
+.lib-lic-tag {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--lib-tag-bg);
+    color: var(--lib-tag-text);
+}
+
+.lib-lic-tag {
+    background: var(--lib-lic-bg);
+    color: var(--lib-lic-text);
+}
+
+.lib-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: auto;
+    padding-top: var(--space-2);
+}
+
+/* -------------------------------------------------------- availability
+ * Three answers, three colours, never collapsed into one. */
+
+.book-availability {
+    font-size: 11px;
+    font-weight: var(--font-weight-semibold);
+    padding: 3px 9px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+.book-availability.is-open {
+    background: var(--lib-avail-open-bg);
+    color: var(--lib-avail-open-text);
+}
+
+.book-availability.is-restricted {
+    background: var(--lib-avail-restricted-bg);
+    color: var(--lib-avail-restricted-text);
+}
+
+.book-availability.is-metadata {
+    background: var(--lib-avail-metadata-bg);
+    color: var(--lib-avail-metadata-text);
+}
+
+.book-availability.is-checking,
+.book-availability.is-unknown {
+    background: var(--lib-avail-unknown-bg);
+    color: var(--lib-avail-unknown-text);
+}
+
+/* ------------------------------------------------------------- buttons */
+
+.lib-detail-btn,
+.lib-more-btn,
+.lib-detail-close {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--lib-card-border);
+    border-radius: var(--border-radius-sm);
+    padding: 5px 12px;
+    font-size: var(--font-size-xs);
+    font-family: inherit;
+    cursor: pointer;
+    transition: var(--transition-fast);
+}
+
+.lib-detail-btn:hover,
+.lib-more-btn:hover,
+.lib-detail-close:hover { border-color: var(--accent-primary); }
+
+.lib-build-btn {
+    background: var(--accent-primary);
+    color: var(--on-accent);
+    border: 1px solid var(--accent-primary);
+    border-radius: var(--border-radius-sm);
+    padding: 5px 12px;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    font-family: inherit;
+    cursor: pointer;
+    transition: var(--transition-fast);
+}
+
+.lib-build-btn:hover { background: var(--accent-primary-dark); }
+
+.lib-build-btn:disabled {
+    background: var(--lib-chip-bg);
+    color: var(--text-secondary);
+    border-color: var(--lib-card-border);
+    cursor: not-allowed;
+}
+
+.lib-more {
+    display: flex;
+    justify-content: center;
+    margin: var(--space-5) 0;
+}
+
+.lib-more-btn { padding: 8px 22px; font-size: var(--font-size-sm); }
+
+/* ------------------------------------------------------- empty and error
+ * Two different messages, because "nobody has this book" and "nothing
+ * answered" call for two different next actions. */
+
+.lib-empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: var(--space-8) var(--space-4);
+    border: 1px dashed var(--lib-card-border);
+    border-radius: var(--border-radius-lg);
+}
+
+.lib-empty-title {
+    margin: 0 0 var(--space-2);
+    font-size: var(--font-size-lg);
+    color: var(--text-primary);
+}
+
+.lib-empty-body {
+    margin: 0 auto;
+    max-width: 46ch;
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+/* ------------------------------------------------------------ detail view */
+
+.lib-detail {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: var(--lib-scrim);
+    display: flex;
+    justify-content: flex-end;
+    overflow-y: auto;
+}
+
+.lib-detail[hidden] { display: none; }
+
+.lib-detail-inner {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    width: min(560px, 100%);
+    min-height: 100%;
+    padding: var(--space-5);
+    box-shadow: var(--shadow-lg);
+}
+
+.lib-detail-close { float: right; }
+
+.lib-detail-head {
+    display: flex;
+    gap: var(--space-4);
+    align-items: flex-start;
+    margin-bottom: var(--space-4);
+}
+
+.lib-detail-cover {
+    width: 120px;
+    flex: 0 0 120px;
+    aspect-ratio: 180 / 260;
+    object-fit: cover;
+    background: var(--lib-cover-bg);
+    border-radius: var(--border-radius-sm);
+}
+
+.lib-detail-meta { display: flex; flex-direction: column; gap: 6px; }
+
+.lib-detail-title {
+    margin: 0;
+    font-size: var(--font-size-xl);
+    line-height: 1.25;
+}
+
+.lib-detail-h {
+    margin: var(--space-4) 0 var(--space-1);
+    font-size: var(--font-size-sm);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+}
+
+.lib-detail-desc,
+.lib-detail-note,
+.lib-detail-reason,
+.lib-detail-loading {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    line-height: 1.55;
+}
+
+.lib-detail-error {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    color: var(--status-error);
+}
+
+.lib-facts {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 4px var(--space-3);
+    margin: var(--space-3) 0 0;
+    font-size: var(--font-size-xs);
+}
+
+.lib-fact-k {
+    color: var(--text-secondary);
+    font-weight: var(--font-weight-semibold);
+}
+
+.lib-fact-v { margin: 0; color: var(--text-primary); }
+
+/* Monospaced and pre-wrapped on purpose: this is raw OCR, and the point of
+ * showing it is to let a reader see the mush before a course is built on it.
+ * Reflowing it as prose would disguise exactly what we want visible. */
+.lib-excerpt {
+    background: var(--lib-excerpt-bg);
+    color: var(--lib-excerpt-text);
+    border: 1px solid var(--lib-card-border);
+    border-radius: var(--border-radius-sm);
+    padding: var(--space-3);
+    max-height: 320px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.lib-detail-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    align-items: center;
+    margin-top: var(--space-5);
+}
+
+.lib-detail-link {
+    font-size: var(--font-size-xs);
+    color: var(--accent-primary);
+    text-decoration: underline;
+}
+
+body.lib-detail-open { overflow: hidden; }
+
+/* --------------------------------------------------------------- upload */
+
+.lib-upload-lead {
+    margin: 0 0 var(--space-4);
+    max-width: 60ch;
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+@media (max-width: 640px) {
+    .lib-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+    .lib-detail-inner { padding: var(--space-4); }
+    .lib-detail-head { flex-direction: column; }
+}

@@ -8,8 +8,17 @@
     answers — full public-domain text, lending-only, or metadata alone — and
     presenting them as one is how a learner ends up with a 12-concept course
     generated from a 200-word catalogue blurb. Every structural check we run
-    would pass that course.
+    would pass that course. The filters below are built around that same
+    distinction, because it is the actual decision being made on this page.
 #}
+
+{% block head_scripts %}
+{#  base.html links every stylesheet globally and has no per-page style block.
+    head_scripts is inside <head>, so the library sheet loads before first
+    paint here without editing the shared template on behalf of every other
+    page in the app. #}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/library.css') }}?v=1">
+{% endblock %}
 
 {% block content %}
 <div class="library-shell">
@@ -26,7 +35,7 @@
     <button class="library-tab is-active" role="tab" id="ltab-search"
             data-panel="lpanel-search" aria-selected="true">Search books</button>
     <button class="library-tab" role="tab" id="ltab-upload"
-            data-panel="lpanel-upload" aria-selected="false">Upload a file</button>
+            data-panel="lpanel-upload" aria-selected="false">Upload your own</button>
   </div>
 
   <section class="library-panel" id="lpanel-search" role="tabpanel"
@@ -38,16 +47,69 @@
       <button class="btn btn-primary" type="submit">Search</button>
     </form>
 
-    <div id="book-results" class="library-results" aria-live="polite"></div>
+    <div class="lib-filters" id="lib-filters" hidden>
+      <fieldset class="lib-filter-group">
+        <legend class="lib-filter-legend">Helga can read</legend>
+        <div class="lib-chips" id="lib-avail-chips" role="group">
+          <button type="button" class="lib-chip is-active" data-avail="full_text">
+            Full text only</button>
+          <button type="button" class="lib-chip" data-avail="any">Everything</button>
+        </div>
+      </fieldset>
+
+      <fieldset class="lib-filter-group">
+        <legend class="lib-filter-legend">Sources</legend>
+        <div class="lib-chips" id="lib-source-chips" role="group"></div>
+      </fieldset>
+
+      <fieldset class="lib-filter-group lib-filter-group--inline">
+        <legend class="lib-filter-legend">Refine</legend>
+        <label class="lib-check">
+          <input type="checkbox" id="lib-open-only">
+          <span>Open licence only</span>
+        </label>
+        <label class="lib-inline-label" for="lib-year-min">From</label>
+        <input class="form-input lib-year" id="lib-year-min" type="number"
+               inputmode="numeric" placeholder="year" min="1000" max="2100">
+        <label class="lib-inline-label" for="lib-year-max">to</label>
+        <input class="form-input lib-year" id="lib-year-max" type="number"
+               inputmode="numeric" placeholder="year" min="1000" max="2100">
+        <label class="lib-inline-label" for="lib-sort">Sort</label>
+        <select class="form-input lib-sort" id="lib-sort">
+          <option value="relevance">Relevance</option>
+          {# "Downloaded", not "read" or "popular": it is a download count from
+             the sources that publish one, and the wikis publish none rather
+             than a substitute that would only look like a measurement. #}
+          <option value="popular">Most downloaded</option>
+          <option value="year_desc">Newest first</option>
+          <option value="year_asc">Oldest first</option>
+          <option value="title">Title</option>
+        </select>
+      </fieldset>
+    </div>
+
+    <div class="lib-sourcebar" id="lib-sourcebar" aria-live="polite" hidden></div>
+
+    <div id="book-results" class="library-results lib-grid" aria-live="polite"></div>
+
+    <div class="lib-more" id="lib-more" hidden>
+      <button class="lib-more-btn" type="button" id="lib-more-btn">Load more books</button>
+    </div>
+
     <p class="library-note">
-      Searching the Internet Archive. Helga only builds from books whose full
-      text is actually readable — lending-only titles are shown, and clearly
-      marked, so you know they exist.
+      Searching the Internet Archive, Project Gutenberg, Wikibooks, Wikiversity
+      and OpenStax at once. Helga only builds from books whose full text is
+      actually readable — lending-only and catalogue-only titles are shown, and
+      clearly marked, so you know they exist.
     </p>
   </section>
 
   <section class="library-panel" id="lpanel-upload" role="tabpanel"
            aria-labelledby="ltab-upload" hidden>
+    <p class="lib-upload-lead">
+      Already have the book? Helga reads it directly — no search, no archive,
+      nothing leaves this machine.
+    </p>
     <div class="library-drop" id="library-drop">
       <p class="library-drop-title">Drop a file here, or choose one</p>
       <p class="library-drop-sub">EPUB, PDF, Markdown or plain text — up to 50&nbsp;MB</p>
@@ -61,12 +123,20 @@
       <div id="library-plan-body"></div>
       <button class="btn btn-primary" id="library-build" disabled>Build the course</button>
     </div>
-
-    <p class="library-error" id="library-error" hidden></p>
   </section>
+
+  <p class="library-error" id="library-error" hidden></p>
+
+  <aside class="lib-detail" id="lib-detail" hidden role="dialog" aria-modal="true"
+         aria-label="Book details" tabindex="-1">
+    <div class="lib-detail-inner">
+      <button class="lib-detail-close" type="button" id="lib-detail-close">Close</button>
+      <div id="lib-detail-body"></div>
+    </div>
+  </aside>
 </div>
 {% endblock %}
 
 {% block page_scripts %}
-<script src="{{ url_for('static', filename='js/library.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='js/library.js') }}?v=2"></script>
 {% endblock %}
