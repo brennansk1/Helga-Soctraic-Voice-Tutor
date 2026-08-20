@@ -125,10 +125,12 @@ def test_abstaining_where_no_aid_is_called_for_is_rewarded():
     assert r["score"] == 5
 
 
-def test_never_drawing_where_a_figure_is_needed_is_punished():
+def test_no_figure_where_one_is_needed_is_punished():
+    """Wording is "no figure shown", not "never drew": a figure can arrive
+    from the build without the model drawing anything."""
     r = bd.score_visuals(_tutor("What is an eigenvalue?"), MATH)
     assert r["score"] <= 2
-    assert "never drew" in r["note"]
+    assert "no figure shown" in r["note"]
 
 
 # ------------------------------------------------------------- other defects
@@ -351,3 +353,62 @@ def test_rescoring_a_good_turn_scores_it_well(tmp_path):
                               "marks": [{"label": "lambda v", "stage": 1}]}))
     sc = bd.rescore(str(path), samples=0)[0]["topics"][0]["profiles"]["p"]["scores"]
     assert sc["visual_policy"] == 5
+
+
+# ------------------------------------------------- the reuse path
+#
+# Assets are generated at BUILD time -- course_440a8494 shipped 44 of them for
+# 24 concepts -- and a `reuse` decision attaches one straight to the UI with no
+# model involvement. It therefore leaves no ```aid fence. A scorer that reads
+# only the transcript text records "never drew" for a turn that showed a
+# figure, which is the wrong way round: reuse is the PREFERRED path.
+
+def _tutor_with_decision(text, action, slot=None):
+    return [{"role": "tutor", "text": text,
+             "aid_decision": {"action": action, "slot": slot,
+                              "reason": "test", "suggested_kinds": []}}]
+
+
+def test_a_reused_build_time_figure_counts_as_shown():
+    r = bd.score_visuals(_tutor_with_decision("Where does v land?", "reuse",
+                                              "opening"), MATH)
+    assert r["aids_reused"] == 1
+    assert r["figures_shown"] == 1
+    assert r["score"] == 5, "reuse is the preferred path, not a failure"
+
+
+def test_reuse_is_not_confused_with_the_model_drawing():
+    r = bd.score_visuals(_tutor_with_decision("Where does v land?", "reuse"),
+                         MATH)
+    assert r["aids_drawn"] == 0, "no model call happened"
+    assert "build-time" in r["note"]
+
+
+def test_a_policy_that_never_asks_is_scored_differently_from_a_tutor_that_ignores_it():
+    """Two different bugs needing two different fixes.
+
+    'The policy never asked' is a policy defect. 'The policy asked and nothing
+    came back' is a tutor defect. Collapsing them into one score hides which.
+    """
+    never_asked = bd.score_visuals(
+        _tutor_with_decision("What is an eigenvalue?", "none"), MATH)
+    asked_ignored = bd.score_visuals(
+        _tutor_with_decision("What is an eigenvalue?", "generate"), MATH)
+    assert never_asked["policy_asked"] == 0
+    assert asked_ignored["policy_asked"] == 1
+    assert asked_ignored["score"] < never_asked["score"]
+    assert "never asked" in never_asked["note"]
+    assert "none was produced" in asked_ignored["note"]
+
+
+def test_reusing_where_no_figure_is_wanted_is_still_punished():
+    r = bd.score_visuals(_tutor_with_decision("It was 1066. Why?", "reuse"),
+                         ARBITRARY)
+    assert r["figures_shown"] == 1
+    assert r["score"] < 5
+
+
+def test_a_transcript_with_no_decisions_still_scores():
+    """Older saved runs predate the decision being recorded."""
+    r = bd.score_visuals(_tutor("What is an eigenvalue?"), MATH)
+    assert r["policy_asked"] == 0 and r["aids_reused"] == 0

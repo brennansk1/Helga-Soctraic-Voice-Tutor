@@ -302,8 +302,23 @@ def _chat_messages(url, model, messages, max_tokens=700, temperature=0.7):
 
 
 def run_dialogue(client, profile_key, topic, turns, verbose=False,
-                 url=DEFAULT_OLLAMA_URL, model=DEFAULT_MODEL):
-    """Run one tutor<->simulated-student dialogue. Returns the transcript."""
+                 url=DEFAULT_OLLAMA_URL, model=DEFAULT_MODEL, aid_decider=None):
+    """Run one tutor<->simulated-student dialogue. Returns the transcript.
+
+    `aid_decider(turn_index, transcript) -> AidDecision | None` reproduces the
+    PRODUCTION visual-aid path. It matters more than it looks:
+
+    with no decider, `aid_policy=None` reaches the prompt, which includes the
+    ~400-token diagram grammar on EVERY turn and no instruction to use it,
+    alongside rules that say "most turns need none" and "No diagram is better
+    than a pointless one". The live tutor never runs that way -- it includes
+    the grammar only when the policy says `generate`, and then appends an
+    explicit nudge naming the kind. Benchmarking without the decider measures
+    a configuration the product does not have.
+
+    Defaults to None so the core benchmark's numbers stay comparable with the
+    baselines already recorded against it.
+    """
     from services.common.prompts import get_socratic_tutor_prompt
 
     profile = PROFILES[profile_key]
@@ -314,10 +329,17 @@ def run_dialogue(client, profile_key, topic, turns, verbose=False,
     for turn in range(turns):
         # --- tutor turn: the REAL production prompt ------------------------
         try:
+            decision = None
+            if aid_decider is not None:
+                try:
+                    decision = aid_decider(turn, transcript)
+                except Exception:
+                    decision = None          # a decider bug must not cost a turn
             messages = get_socratic_tutor_prompt(
                 context_text=topic["context"],
                 conversation_history=history,
                 bloom_level=2,
+                aid_policy=decision,
             )
         except Exception as e:
             return {"error": f"prompt build failed: {e}", "transcript": transcript}
@@ -333,7 +355,19 @@ def run_dialogue(client, profile_key, topic, turns, verbose=False,
         if not tutor_msg.strip():
             transcript.append({"role": "tutor", "text": "", "empty": True})
             break
-        transcript.append({"role": "tutor", "text": tutor_msg})
+        # The policy's decision travels WITH the turn. A `reuse` attaches a
+        # build-time figure straight to the UI with no model involvement, so it
+        # leaves no ```aid fence -- a scorer that only reads the text would
+        # record "never drew" for a turn that showed a diagram.
+        entry = {"role": "tutor", "text": tutor_msg}
+        if decision is not None:
+            entry["aid_decision"] = {
+                "action": getattr(decision, "action", "none"),
+                "slot": getattr(decision, "slot", None),
+                "reason": getattr(decision, "reason", ""),
+                "suggested_kinds": list(getattr(decision, "suggested_kinds", ())),
+            }
+        transcript.append(entry)
         if verbose:
             print(f"    TUTOR   : {tutor_msg[:110]}")
 

@@ -382,6 +382,19 @@ def score_visuals(transcript, topic):
     turns = [t for t in transcript if t.get("role") == "tutor"]
     want = _expected_kind(topic)
     valid = _valid_kinds()
+    # A figure can reach the learner two ways, and only one leaves a fence:
+    #   reuse    -- a BUILD-TIME asset attached straight to the UI. This is the
+    #               main path in production (course_440a8494 shipped 44 assets
+    #               for 24 concepts) and the preferred one: deterministic,
+    #               provenance-tracked, zero model latency, zero risk of the
+    #               model drawing the answer.
+    #   generate -- the model draws inline. The fallback, when no build-time
+    #               asset fits the moment.
+    # Scoring only the fence would mark a reuse turn as "never drew".
+    reused = sum(1 for t in turns
+                 if (t.get("aid_decision") or {}).get("action") == "reuse")
+    asked = sum(1 for t in turns
+                if (t.get("aid_decision") or {}).get("action") in ("reuse", "generate"))
 
     drawn, bad_json, wrong_kind, narrated, multi = [], 0, 0, 0, 0
     unstaged_answer = 0
@@ -413,17 +426,30 @@ def score_visuals(transcript, topic):
             narrated += 1
 
     n = len(drawn)
+    shown = n + reused              # figures the learner actually saw
     kinds = [a.get("kind") for a in drawn]
 
     if want is None:
         # Restraint is the whole score here. The aid rules are explicit: "No
         # diagram is better than a pointless one."
-        score = 5 if n == 0 else max(1, 5 - 2 * n)
-        note = ("no aid kind carries this concept — drew none"
-                if n == 0 else f"drew {n} aid(s) where none was called for")
+        score = 5 if shown == 0 else max(1, 5 - 2 * shown)
+        note = ("no aid kind carries this concept — showed none"
+                if shown == 0 else
+                f"showed {shown} figure(s) where none was called for")
     else:
-        if n == 0:
-            score, note = 2, f"never drew; this concept calls for a {want}"
+        if shown == 0:
+            # Distinguish "the policy never asked" from "it asked and nothing
+            # happened". The first is a POLICY failure and the second a tutor
+            # failure, and they need different fixes.
+            if asked == 0:
+                score, note = 2, (f"no figure shown; this concept calls for a "
+                                  f"{want}, and the policy never asked for one")
+            else:
+                score, note = 1, (f"the policy asked for a figure {asked} "
+                                  f"time(s) and none was produced")
+        elif reused and n == 0:
+            score, note = 5, (f"showed {reused} build-time figure(s) — the "
+                              f"preferred path: no model call, provenance kept")
         else:
             score = 5
             reasons = []
@@ -452,6 +478,7 @@ def score_visuals(transcript, topic):
             note = "; ".join(reasons) or f"drew a {want} correctly and staged it"
 
     return {"score": score, "note": note, "aids_drawn": n,
+            "aids_reused": reused, "figures_shown": shown, "policy_asked": asked,
             "kinds": kinds, "expected_kind": want, "bad_json": bad_json,
             "unstaged_answer": unstaged_answer, "narrated": narrated}
 
@@ -714,6 +741,47 @@ def compare(current, baseline_path, floor=None):
             print(f"      exceeds the noise floor ({floor}) — real movement")
 
 
+def make_aid_decider(topic):
+    """The PRODUCTION aid path, reproduced for the benchmark.
+
+    Without this the bench hands the model the diagram grammar on every turn
+    with no instruction to use it, next to rules telling it most turns need
+    none -- and then scores it for not drawing. The live tutor instead asks
+    `aid_policy.decide()` and only includes the grammar on a `generate`, with
+    a nudge naming the likely kind. Measuring the permissive-but-silent
+    configuration was measuring something the product does not do.
+
+    Turn state is reconstructed from the transcript, so this stays pure: no
+    FSM, no storage, and the same AidMoment the live path builds.
+    """
+    try:
+        from services.common.aid_policy import AidMoment, decide
+    except Exception:
+        return None
+
+    def decider(turn_index, transcript):
+        tutor_turns = [t for t in transcript if t.get("role") == "tutor"]
+        since = 99
+        shown = 0
+        for i, t in enumerate(tutor_turns):
+            if extract_aids(t.get("text", ""))[0]:
+                shown += 1
+                since = len(tutor_turns) - i - 1
+        moment = AidMoment(
+            teaching_mode="QUESTION",
+            is_concept_opening=(turn_index == 0),
+            bloom_level=2,
+            question_count=turn_index,
+            concept_title=topic.get("concept", ""),
+            concept_text=topic.get("context", ""),
+            turns_since_aid=since,
+            aids_shown_this_concept=shown,
+        )
+        return decide(moment)
+
+    return decider
+
+
 # ----------------------------------------------------------------- the run
 def run_domain(domain_key, profiles=None, turns=4, samples=3,
                url=None, model=None, static_only=False, verbose=False):
@@ -754,7 +822,8 @@ def run_domain(domain_key, profiles=None, turns=4, samples=3,
 
         for pk in profiles:
             d = hb.run_dialogue(client, pk, topic, turns=turns,
-                                url=url, model=model, verbose=verbose)
+                                url=url, model=model, verbose=verbose,
+                                aid_decider=make_aid_decider(topic))
             tr = d.get("transcript") if isinstance(d, dict) else d
             if isinstance(d, dict) and d.get("error"):
                 print(f"      {pk}: ERROR {d['error']}", flush=True)
