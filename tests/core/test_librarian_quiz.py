@@ -266,20 +266,114 @@ class TestQuizGradeEndpoint(unittest.TestCase):
 
     @patch('services.rag.librarian.storage')
     @patch('services.common.llm_utils.llm_generate_json')
-    def test_grade_llm_failure_gives_fallback(self, mock_llm_json, mock_storage):
-        """If LLM fails to grade, should return a fallback result."""
-        mock_llm_json.return_value = None  # LLM failure
+    def test_grade_llm_outage_is_not_reported_as_a_fail(self, mock_llm_json, mock_storage):
+        """An LLM outage must be a named error, never a FAIL verdict.
+
+        Regression guard: this used to substitute grade="FAIL", score=0 and
+        return 200, so a model hiccup showed the student a red X for an answer
+        nobody actually graded.
+        """
+        mock_llm_json.return_value = None  # LLM / transport down
 
         resp = self.client.post('/api/quiz/grade', json={
             'question': 'Q',
             'answer': 'A',
             'context': 'C',
         })
+        self.assertEqual(resp.status_code, 503)
+        data = json.loads(resp.data)
+        self.assertEqual(data['error_code'], 'GRADING_UNAVAILABLE')
+        self.assertFalse(data['graded'])
+        self.assertTrue(data['retryable'])
+        # Crucially: no verdict at all, so no client can render a pass/fail.
+        self.assertNotIn('grade', data)
+        self.assertNotIn('score', data)
+
+    @patch('services.rag.librarian.storage')
+    @patch('services.common.llm_utils.llm_generate_json')
+    def test_grade_llm_outage_does_not_touch_fsrs(self, mock_llm_json, mock_storage):
+        """An LLM outage must leave the student's review schedule untouched.
+
+        This is the data-damaging half of the old bug: the fabricated FAIL fell
+        into the FAIL branch, which graded up to five EXISTING cards as
+        "Again" (rating 1). A model outage permanently damaged the schedule.
+        """
+        mock_llm_json.return_value = None
+        mock_storage.flashcards.get_cards_for_concept.return_value = [
+            {'uid': 'card_1'}, {'uid': 'card_2'}, {'uid': 'card_3'},
+        ]
+
+        resp = self.client.post('/api/quiz/grade', json={
+            'question': 'Q',
+            'answer': 'A correct answer, as it happens',
+            'context': 'C',
+            'concept_uid': 'con_1',
+            'course_uid': 'c1',
+        })
+
+        self.assertEqual(resp.status_code, 503)
+        mock_storage.flashcards.grade_card_fsrs.assert_not_called()
+        mock_storage.flashcards.add_card.assert_not_called()
+
+    @patch('services.rag.librarian.storage')
+    @patch('services.common.llm_utils.llm_generate_json')
+    def test_grade_malformed_verdict_is_unavailable_not_fail(self, mock_llm_json, mock_storage):
+        """JSON with no usable verdict is "we don't know", not "you were wrong"."""
+        mock_llm_json.return_value = {'feedback': 'hmm', 'score': 0}
+        mock_storage.flashcards.get_cards_for_concept.return_value = [{'uid': 'card_1'}]
+
+        resp = self.client.post('/api/quiz/grade', json={
+            'question': 'Q', 'answer': 'A', 'context': 'C',
+            'concept_uid': 'con_1', 'course_uid': 'c1',
+        })
+
+        self.assertEqual(resp.status_code, 503)
+        self.assertEqual(json.loads(resp.data)['error_code'], 'GRADING_UNAVAILABLE')
+        mock_storage.flashcards.grade_card_fsrs.assert_not_called()
+
+    @patch('services.rag.librarian.storage')
+    @patch('services.common.llm_utils.llm_generate_json')
+    def test_genuine_fail_is_distinguishable_from_outage(self, mock_llm_json, mock_storage):
+        """A real FAIL still returns 200 with a verdict — and still downgrades."""
+        mock_llm_json.return_value = {
+            'grade': 'FAIL',
+            'score': 20,
+            'feedback': 'Incorrect.',
+            'missing_concepts': [],
+            'key_point': 'The thing to remember.',
+        }
+        mock_storage.flashcards.get_cards_for_concept.return_value = [{'uid': 'card_1'}]
+        mock_storage.flashcards.add_card.return_value = 'card_new'
+
+        resp = self.client.post('/api/quiz/grade', json={
+            'question': 'Q', 'answer': 'Wrong', 'context': 'C',
+            'concept_uid': 'con_1', 'course_uid': 'c1',
+        })
+
         self.assertEqual(resp.status_code, 200)
         data = json.loads(resp.data)
-        # Should still have grade and feedback keys
-        self.assertIn('grade', data)
-        self.assertIn('feedback', data)
+        self.assertEqual(data['grade'], 'FAIL')
+        self.assertTrue(data['graded'])
+        self.assertNotIn('error_code', data)
+        # A genuine FAIL is exactly when the schedule SHOULD move.
+        mock_storage.flashcards.grade_card_fsrs.assert_called()
+
+    @patch('services.rag.librarian.storage')
+    @patch('services.common.llm_utils.llm_generate_json')
+    def test_grade_non_numeric_score_does_not_500(self, mock_llm_json, mock_storage):
+        """A model returning a word for the score is cosmetic noise, not a failure."""
+        mock_llm_json.return_value = {
+            'grade': 'PASS', 'score': 'eighty-five', 'feedback': 'ok',
+            'missing_concepts': None, 'key_point': '',
+        }
+
+        resp = self.client.post('/api/quiz/grade', json={
+            'question': 'Q', 'answer': 'A', 'context': 'C',
+        })
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.data)
+        self.assertEqual(data['grade'], 'PASS')
+        self.assertIsInstance(data['score'], int)
 
     @patch('services.rag.librarian.storage')
     @patch('services.common.llm_utils.llm_generate_json')
@@ -324,6 +418,73 @@ class TestQuizGradeEndpoint(unittest.TestCase):
         })
         data = json.loads(resp.data)
         self.assertIsInstance(data['score'], (int, float))
+
+
+class TestDueConceptsEndpoint(unittest.TestCase):
+    """Tests for GET /api/due_concepts — failure must not look like "caught up"."""
+
+    @classmethod
+    def setUpClass(cls):
+        try:
+            cls.app, cls.mock_storage = _setup_librarian_app()
+            cls.client = cls.app.test_client()
+            cls.app.config['TESTING'] = True
+        except Exception as e:
+            cls.skip_reason = str(e)
+            cls.client = None
+
+    def setUp(self):
+        if self.client is None:
+            self.skipTest(f"Could not import librarian: {self.skip_reason}")
+
+    @patch('services.rag.librarian.storage')
+    def test_total_failure_is_named_error_not_empty_list(self, mock_storage):
+        """Both sources down must 503, not render as "you're all caught up"."""
+        mock_storage.flashcards.get_due_cards.side_effect = RuntimeError('db locked')
+        mock_storage.schedule.get_scheduled_reviews.side_effect = RuntimeError('db locked')
+
+        resp = self.client.get('/api/due_concepts')
+
+        self.assertEqual(resp.status_code, 503)
+        data = json.loads(resp.data)
+        self.assertEqual(data['error_code'], 'DUE_REVIEWS_UNAVAILABLE')
+        self.assertNotIn('concepts', data)
+        self.assertCountEqual(
+            data['failed_sources'], ['flashcards', 'scheduled_reviews'])
+
+    @patch('services.rag.librarian.storage')
+    def test_genuine_empty_is_still_a_200(self, mock_storage):
+        """Actually having nothing due must stay distinguishable from a failure."""
+        mock_storage.flashcards.get_due_cards.return_value = []
+        mock_storage.schedule.get_scheduled_reviews.return_value = []
+
+        resp = self.client.get('/api/due_concepts')
+
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.data)
+        self.assertEqual(data['concepts'], [])
+        self.assertNotIn('degraded', data)
+        self.assertNotIn('error_code', data)
+
+    @patch('services.rag.librarian.storage')
+    def test_partial_failure_is_flagged_degraded(self, mock_storage):
+        """One source down: serve what we have, but say the list is incomplete."""
+        mock_storage.flashcards.get_due_cards.side_effect = RuntimeError('db locked')
+        mock_storage.schedule.get_scheduled_reviews.return_value = [{
+            'unit_uid': 'con_1',
+            'course_uid': 'c1',
+            'unit_title': 'Photosynthesis',
+            'scheduled_date': '2026-01-01',
+            'status': 'pending',
+        }]
+
+        resp = self.client.get('/api/due_concepts')
+
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.data)
+        self.assertEqual(len(data['concepts']), 1)
+        self.assertTrue(data['degraded'])
+        self.assertEqual(data['degraded_sources'], ['flashcards'])
 
 
 if __name__ == '__main__':

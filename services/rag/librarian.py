@@ -575,7 +575,10 @@ def teaching_context():
     uid = request.args.get("uid")
     course_uid = request.args.get("course_uid")
     if not uid:
-        return jsonify({"misconceptions": [], "analogies": []}), 200
+        # A missing required argument is a bad request, not a concept that
+        # happens to have no misconceptions listed. Returning the empty
+        # success shape hid caller bugs indefinitely.
+        return jsonify({"error": "uid required"}), 400
     try:
         content = ""
         if course_uid:
@@ -589,8 +592,16 @@ def teaching_context():
         analogies = _extract_section(content, "Analogies")
         return jsonify({"misconceptions": misconceptions, "analogies": analogies})
     except Exception as e:
-        logger.error(f"teaching_context error: {e}")
-        return jsonify({"misconceptions": [], "analogies": []}), 200
+        # "This concept lists no misconceptions" and "we could not read the
+        # concept" are very different facts, and the empty-200 shape made them
+        # identical. A tutor that quietly drops its misconception coaching
+        # because storage threw is worse than one that says it is broken.
+        logger.error(f"teaching_context error: {e}", exc_info=True)
+        return jsonify({
+            "error": "teaching_context_unavailable",
+            "error_code": "TEACHING_CONTEXT_UNAVAILABLE",
+            "detail": str(e),
+        }), 503
 
 
 @app.route("/api/create_custom_course", methods=["POST"])
@@ -869,12 +880,20 @@ def review_stats_endpoint():
         stats = storage.flashcards.get_review_stats(
             course_uid=course_uid if course_uid else None
         )
-        # Also include streak from activity store
+        # Also include streak from activity store. The stats themselves are the
+        # point of this endpoint, so a streak lookup failure should not 503 the
+        # whole response — but a fabricated 0 reads as "your streak is broken",
+        # so flag it rather than let the caller believe the number.
+        streak_unavailable = False
         try:
             streak = storage.activity.get_streak()
-        except Exception:
+        except Exception as streak_err:
+            logger.warning(f"review_stats: streak lookup failed: {streak_err}")
             streak = 0
+            streak_unavailable = True
         stats["streak"] = streak
+        if streak_unavailable:
+            stats["streak_unavailable"] = True
         return jsonify(stats)
     except Exception as e:
         logger.error(f"Review stats error: {e}")
@@ -1016,19 +1035,59 @@ def quiz_grade_endpoint():
 
         result = llm_generate_json(user_prompt, sys_prompt=sys_prompt, max_tokens=400)
 
-        if not result:
-            result = {
-                "grade": "FAIL",
-                "score": 0,
-                "feedback": "Could not grade the answer. Please try again.",
-                "missing_concepts": [],
-                "key_point": "",
-            }
+        # An infrastructure failure is not an assessment.
+        #
+        # This used to substitute {"grade": "FAIL", "score": 0} whenever the LLM
+        # returned nothing, and return it with HTTP 200 as though grading had
+        # happened. Two things then went wrong at once: the student saw a red ✗
+        # for an answer that was very possibly correct, and — because the FAIL
+        # branch below downgrades existing cards — up to five of their EXISTING
+        # flashcards for that concept were graded "Again" (rating 1) through
+        # FSRS. A single Ollama hiccup mid-quiz therefore did permanent damage
+        # to a review schedule the model never actually looked at.
+        #
+        # Grading either happened or it did not. When it did not we say so with
+        # a distinct, named error and a non-2xx status so no client can mistake
+        # it for a verdict, and we return before touching FSRS at all.
+        raw_grade = (result or {}).get("grade")
+        grade = raw_grade.strip().upper() if isinstance(raw_grade, str) else ""
+        if grade not in ("PASS", "FAIL"):
+            # Covers both a falsy result (LLM or transport down) and a
+            # structurally valid response with no usable verdict in it. Both
+            # mean "we do not know", which is never "the student was wrong".
+            logger.warning(
+                "Quiz grading unavailable — no usable verdict from the grader "
+                "(result=%r). No grade reported, FSRS schedule untouched.",
+                result,
+            )
+            return jsonify({
+                "error": "grading_unavailable",
+                "error_code": "GRADING_UNAVAILABLE",
+                "graded": False,
+                "retryable": True,
+                "message": (
+                    "The grader is unavailable right now. Your answer was not "
+                    "graded, and nothing in your review schedule changed. "
+                    "Please try again."
+                ),
+            }), 503
 
-        # Anki integration: If FAIL or low score, create flashcards for weak areas
-        grade = result.get("grade", "FAIL")
-        score = int(result.get("score", 0))
-        missing = result.get("missing_concepts", [])
+        # Past this point a real verdict exists, so the Anki side effects below
+        # are acting on an actual assessment.
+        result["grade"] = grade
+
+        try:
+            score = int(float(result.get("score", 0)))
+        except (TypeError, ValueError):
+            # A malformed score is cosmetic — the verdict above is what drives
+            # the FSRS side effects — so clamp it rather than fail the request.
+            score = 0
+        score = max(0, min(100, score))
+        result["score"] = score
+
+        missing = result.get("missing_concepts") or []
+        if not isinstance(missing, list):
+            missing = []
         key_point = result.get("key_point", "")
 
         cards_created = 0
@@ -1056,15 +1115,24 @@ def quiz_grade_endpoint():
                             )
                             cards_created += 1
 
-                    # Downgrade existing cards' stability (they need more review)
+                    # Downgrade existing cards' stability (they need more review).
+                    # Only ever reached on a real FAIL verdict — see the
+                    # grading_unavailable guard above.
                     if existing:
                         from services.core.fsrs_engine import FSRSEngine
                         fsrs = FSRSEngine()
                         for card in existing[:5]:
                             try:
                                 storage.flashcards.grade_card_fsrs(card["uid"], 1, fsrs)
-                            except Exception:
-                                pass
+                            except Exception as card_err:
+                                # One card failing to reschedule should not abort
+                                # the rest, but it must not vanish either — a
+                                # silent skip here is a review that never comes
+                                # back.
+                                logger.warning(
+                                    "Could not downgrade card %s after a quiz FAIL: %s",
+                                    card.get("uid"), card_err,
+                                )
 
             except Exception as e:
                 logger.warning(f"Failed to create quiz-based flashcards: {e}")
@@ -1072,6 +1140,10 @@ def quiz_grade_endpoint():
         result["cards_created"] = cards_created
         if cards_created > 0:
             result["flashcard_note"] = f"{cards_created} flashcard(s) added for review"
+
+        # Explicit positive marker so a client never has to infer "this was
+        # really graded" from the mere presence of a `grade` key.
+        result["graded"] = True
 
         return jsonify(result)
 
@@ -1751,6 +1823,9 @@ def due_concepts_endpoint():
     today_iso = _dt_date.today().isoformat()
     seen_uids = set()
     results = []
+    # Which of the two sources failed to answer at all. An exception here is not
+    # "nothing due" — see the guard at the bottom of this handler.
+    failed_sources = []
     try:
         cards = storage.flashcards.get_due_cards(
             course_uid=course_uid if course_uid else None
@@ -1762,7 +1837,8 @@ def due_concepts_endpoint():
                 seen_uids.add(uid)
                 results.append(d)
     except Exception as e:
-        logger.warning(f"due_concepts: flashcards fetch failed: {e}")
+        logger.error(f"due_concepts: flashcards fetch failed: {e}", exc_info=True)
+        failed_sources.append("flashcards")
     try:
         scheduled = storage.schedule.get_scheduled_reviews(
             end_date=today_iso,
@@ -1783,8 +1859,38 @@ def due_concepts_endpoint():
                     "source": "scheduled_review",
                 })
     except Exception as e:
-        logger.warning(f"due_concepts: scheduled reviews fetch failed: {e}")
-    return jsonify({"concepts": results})
+        logger.error(f"due_concepts: scheduled reviews fetch failed: {e}", exc_info=True)
+        failed_sources.append("scheduled_reviews")
+
+    # A failure must never be served as an empty list.
+    #
+    # Both fetches above used to swallow their exception and fall through to
+    # `{"concepts": []}` with HTTP 200, which the Practice tab renders as the
+    # "You're all caught up" empty state. For a spaced-repetition tool that is
+    # the one direction you cannot fail in: the learner is told there is nothing
+    # to do, closes the tab, and reviews that were genuinely due are skipped —
+    # cards lapse, the schedule degrades, and nothing ever surfaces the fact
+    # that the answer was a lie. An empty list is only trustworthy when every
+    # source actually answered.
+    if failed_sources and not results:
+        return jsonify({
+            "error": "due_reviews_unavailable",
+            "error_code": "DUE_REVIEWS_UNAVAILABLE",
+            "failed_sources": failed_sources,
+            "message": (
+                "Could not load your due reviews. This does NOT mean you are "
+                "caught up — please retry."
+            ),
+        }), 503
+
+    payload = {"concepts": results}
+    if failed_sources:
+        # One source answered, so showing what we have beats erroring out — but
+        # the list is known-incomplete and the client must be able to say so
+        # rather than presenting it as the full picture.
+        payload["degraded"] = True
+        payload["degraded_sources"] = failed_sources
+    return jsonify(payload)
 
 
 # --- VG-03: Update Mastery API ---
@@ -2046,9 +2152,17 @@ def get_gamification():
             "achievements_locked": [],
         })
     except Exception as e:
-        logger.error(f"gamification read failed: {e}")
-        return jsonify({"total_xp": 0, "level": 1, "streak_days": 0,
-                        "daily_xp": 0, "achievements_unlocked": []}), 200
+        # Zeros-with-200 told the learner they had 0 XP and a 0-day streak, which
+        # for a streak mechanic reads as "you lost it" — a fabricated fact
+        # indistinguishable from a real reset. Both callers (base.html's XP bar
+        # and session.js) already treat a non-ok response as "hide the bar",
+        # which is the honest outcome.
+        logger.error(f"gamification read failed: {e}", exc_info=True)
+        return jsonify({
+            "error": "gamification_unavailable",
+            "error_code": "GAMIFICATION_UNAVAILABLE",
+            "detail": str(e),
+        }), 503
 
 
 @app.route("/api/gamification/award_xp", methods=["POST"])
