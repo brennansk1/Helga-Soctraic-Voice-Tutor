@@ -27,6 +27,21 @@ function escapeHtml(str) {
     return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
+// Build course cards out of nodes, not out of strings. Course titles and
+// descriptions are stored data and go in with textContent, so no escaping
+// question ever arises for them.
+function mkEl(tag, className) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    return node;
+}
+
+function mkIcon(name) {
+    const span = mkEl('span', 'i ' + name);
+    span.setAttribute('aria-hidden', 'true');
+    return span;
+}
+
 // --- Course Loading ---
 
 let coursesBuildingPollTimer = null;
@@ -62,13 +77,16 @@ async function loadCourses() {
         // should look normal, not deficient.
         const assetChip = (course) => {
             const a = course.assets;
-            if (!a || !a.collected) return '';
+            if (!a || !a.collected) return null;
             const parts = [];
             if (a.diagrams) parts.push(a.diagrams + ' diagram' + (a.diagrams === 1 ? '' : 's'));
             if (a.images) parts.push(a.images + ' image' + (a.images === 1 ? '' : 's'));
-            if (!parts.length) return '';
-            return `<span class="course-card-assets" title="Visuals prepared when this course was built">`
-                 + `<span class="i i-spark" aria-hidden="true"></span> ${parts.join(' · ')}</span>`;
+            if (!parts.length) return null;
+            const chip = mkEl('span', 'course-card-assets');
+            chip.title = 'Visuals prepared when this course was built';
+            chip.appendChild(mkIcon('i-spark'));
+            chip.appendChild(document.createTextNode(' ' + parts.join(' · ')));
+            return chip;
         };
 
         courses.forEach(course => {
@@ -82,14 +100,40 @@ async function loadCourses() {
             const isReady = status === 'ready';   // 'available' (part-built) is NOT enterable
             const isBuilding = status === 'skeleton' || status === 'building';
 
+            /* THE TITLE IS DATA, AND IT USED TO BE CODE.
+               These buttons carried onclick="startCourse('uid', 'TITLE', this)"
+               with the title run through escapeHtml(). That is the wrong escape
+               for this position: the HTML parser turns &#39; back into a literal
+               apostrophe BEFORE the attribute's contents are parsed as
+               JavaScript, so a course called Newton's Laws produced
+               startCourse('...', 'Newton's Laws', this) — a SyntaxError that
+               made Delete and Start Learning do nothing at all, and a title
+               chosen on purpose could close the string and run whatever
+               followed. Adding a second layer of escaping would only move the
+               boundary; the fix is to stop generating code from data. The uid
+               and title travel as data-* attributes and the handler reads them
+               back as strings. */
             let actionButton;
             if (isBuilding) {
-                actionButton = `<button class="btn-alpine btn-alpine-primary" style="flex: 1; opacity: 0.6;" disabled>Building...</button>`;
+                actionButton = mkEl('button', 'btn-alpine btn-alpine-primary');
+                actionButton.style.cssText = 'flex: 1; opacity: 0.6;';
+                actionButton.disabled = true;
+                actionButton.textContent = 'Building...';
             } else if (isReady) {
-                actionButton = `<button class="btn-alpine btn-alpine-primary" style="flex: 1;" onclick="startCourse('${course.uid}', '${escapeHtml(course.title)}', this)">${progress > 0 ? 'Continue' : 'Start Learning'}</button>`;
+                actionButton = mkEl('button', 'btn-alpine btn-alpine-primary');
+                actionButton.style.flex = '1';
+                actionButton.dataset.action = 'start';
+                actionButton.dataset.uid = course.uid;
+                actionButton.dataset.title = course.title || '';
+                actionButton.textContent = progress > 0 ? 'Continue' : 'Start Learning';
             } else {
                 // failed, hydration_failed, partial, unknown — show disabled with status
-                actionButton = `<button class="btn-alpine btn-alpine-primary" style="flex: 1; opacity: 0.6;" disabled>${status === 'failed' || status === 'hydration_failed' ? 'Build Failed' : 'Not Ready'}</button>`;
+                actionButton = mkEl('button', 'btn-alpine btn-alpine-primary');
+                actionButton.style.cssText = 'flex: 1; opacity: 0.6;';
+                actionButton.disabled = true;
+                actionButton.textContent =
+                    (status === 'failed' || status === 'hydration_failed')
+                        ? 'Build Failed' : 'Not Ready';
             }
 
             // A5.3 — the header was a full-bleed gradient slab in a colour
@@ -103,36 +147,82 @@ async function loadCourses() {
             // fail. Those are surfaced as incomplete builds instead.
             const isEmpty = !(stats.concepts > 0);
             card.style.setProperty('--course-accent', bg1);
-            card.innerHTML = `
-                <div class="course-card-body">
-                    <h3 class="course-card-title">${escapeHtml(course.title)}</h3>
-                    <p class="course-card-desc">
-                        ${escapeHtml(course.description || 'A comprehensive interactive course.')}
-                    </p>
-                    <div class="course-card-stats">
-                        ${isEmpty
-                          ? `<span class="course-card-empty"><span class="i i-warning" aria-hidden="true"></span> No content — build did not finish</span>`
-                          : `<span>${stats.modules || 0} modules</span>
-                             <span>${stats.lessons || 0} lessons</span>
-                             <span>${stats.concepts || 0} concepts</span>
-                             ${assetChip(course)}`}
-                    </div>
-                    ${isEmpty ? '' : `
-                    <div class="course-card-progress">
-                        <div class="alpine-progress"><div class="alpine-progress-fill" style="width: ${progress}%;"></div></div>
-                        <span class="course-card-pct">${Math.round(progress)}%</span>
-                    </div>`}
-                    <div class="course-card-actions">
-                        ${isEmpty
-                          ? `<button class="btn-alpine btn-alpine-secondary" style="flex:1;" disabled>Incomplete</button>`
-                          : actionButton}
-                        <button class="btn-alpine btn-alpine-ghost course-card-icon-btn" onclick="window.location.href='/course/view?uid=${course.uid}'" title="View structure" aria-label="View structure for ${escapeHtml(course.title)}"><span class="i i-clipboard" aria-hidden="true"></span></button>
-                        <button class="btn-alpine btn-alpine-ghost course-card-icon-btn is-danger" onclick="deleteCourse('${course.uid}', '${escapeHtml(course.title)}')" title="Delete course" aria-label="Delete ${escapeHtml(course.title)}"><span class="i i-trash" aria-hidden="true"></span></button>
-                    </div>
-                </div>
-            `;
+
+            const body = mkEl('div', 'course-card-body');
+
+            const h3 = mkEl('h3', 'course-card-title');
+            h3.textContent = course.title || '';
+            body.appendChild(h3);
+
+            const desc = mkEl('p', 'course-card-desc');
+            desc.textContent = course.description || 'A comprehensive interactive course.';
+            body.appendChild(desc);
+
+            const statsRow = mkEl('div', 'course-card-stats');
+            if (isEmpty) {
+                const warn = mkEl('span', 'course-card-empty');
+                warn.appendChild(mkIcon('i-warning'));
+                warn.appendChild(document.createTextNode(' No content — build did not finish'));
+                statsRow.appendChild(warn);
+            } else {
+                [(stats.modules || 0) + ' modules',
+                 (stats.lessons || 0) + ' lessons',
+                 (stats.concepts || 0) + ' concepts'].forEach(t => {
+                    const s = document.createElement('span');
+                    s.textContent = t;
+                    statsRow.appendChild(s);
+                });
+                const chip = assetChip(course);
+                if (chip) statsRow.appendChild(chip);
+            }
+            body.appendChild(statsRow);
+
+            if (!isEmpty) {
+                const prog = mkEl('div', 'course-card-progress');
+                const bar = mkEl('div', 'alpine-progress');
+                const fill = mkEl('div', 'alpine-progress-fill');
+                fill.style.width = progress + '%';
+                bar.appendChild(fill);
+                const pct = mkEl('span', 'course-card-pct');
+                pct.textContent = Math.round(progress) + '%';
+                prog.appendChild(bar);
+                prog.appendChild(pct);
+                body.appendChild(prog);
+            }
+
+            const actions = mkEl('div', 'course-card-actions');
+            if (isEmpty) {
+                const inc = mkEl('button', 'btn-alpine btn-alpine-secondary');
+                inc.style.flex = '1';
+                inc.disabled = true;
+                inc.textContent = 'Incomplete';
+                actions.appendChild(inc);
+            } else {
+                actions.appendChild(actionButton);
+            }
+
+            const viewBtn = mkEl('button', 'btn-alpine btn-alpine-ghost course-card-icon-btn');
+            viewBtn.dataset.action = 'view';
+            viewBtn.dataset.uid = course.uid;
+            viewBtn.title = 'View structure';
+            viewBtn.setAttribute('aria-label', 'View structure for ' + (course.title || ''));
+            viewBtn.appendChild(mkIcon('i-clipboard'));
+            actions.appendChild(viewBtn);
+
+            const delBtn = mkEl('button', 'btn-alpine btn-alpine-ghost course-card-icon-btn is-danger');
+            delBtn.dataset.action = 'delete';
+            delBtn.dataset.uid = course.uid;
+            delBtn.dataset.title = course.title || '';
+            delBtn.title = 'Delete course';
+            delBtn.setAttribute('aria-label', 'Delete ' + (course.title || ''));
+            delBtn.appendChild(mkIcon('i-trash'));
+            actions.appendChild(delBtn);
+
+            body.appendChild(actions);
+            card.appendChild(body);
             grid.appendChild(card);
         });
+        wireCardActions(grid);
 
         // Auto-refresh if any course is still building — without this the user
         // sees "Building..." forever until they manually reload the page.
@@ -159,6 +249,24 @@ async function loadCourses() {
             </div>
         `;
     }
+}
+
+/* One listener on the grid, rebound after every render. Delegation keeps the
+   card markup free of behaviour, and — the point of the exercise — means no
+   course title is ever concatenated into something that will later be parsed
+   as JavaScript. */
+function wireCardActions(grid) {
+    if (grid.dataset.actionsWired) return;
+    grid.dataset.actionsWired = '1';
+    grid.addEventListener('click', function (ev) {
+        const btn = ev.target.closest('[data-action]');
+        if (!btn || !grid.contains(btn)) return;
+        const uid = btn.dataset.uid;
+        if (!uid) return;
+        if (btn.dataset.action === 'start') startCourse(uid, btn.dataset.title || '', btn);
+        else if (btn.dataset.action === 'view') window.location.href = '/course/view?uid=' + encodeURIComponent(uid);
+        else if (btn.dataset.action === 'delete') deleteCourse(uid, btn.dataset.title || '');
+    });
 }
 
 function startCourse(uid, title, triggerEl) {

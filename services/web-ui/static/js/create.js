@@ -484,15 +484,36 @@
                     source: "create_carousel",
                 },
             }),
-        }).then(function () {
-            if (window.HelgaBuildGuard) window.HelgaBuildGuard.set();
-            window.location.href = "/build";
-        }).catch(function (e) {
-            createBtn.disabled = false;
-            createBtn.querySelector(".create-btn-label").textContent = "Create";
-            reviewNote.textContent = "Could not start the build: " + e.message +
-                " — nothing was created.";
-        });
+        })
+            .then(function (r) {
+                /* THE REPLY HAS TO BE READ. This used to arm the four-hour
+                   single-build lock and navigate to /build on any settled
+                   fetch — including the 502 web-ui returns when core is down
+                   and the 401 it returns without a student session. The
+                   learner was then sent to watch a build that had never
+                   started, and could not create anything for the rest of the
+                   lock's life. A refusal is an answer, and it is reported
+                   with the name the server gave it. */
+                return r.json()
+                    .catch(function () { return {}; })   // 502 pages are not JSON
+                    .then(function (b) { return { ok: r.ok, status: r.status, body: b || {} }; });
+            })
+            .then(function (res) {
+                if (!res.ok) {
+                    throw new Error(res.status === 401
+                        ? "you are not signed in as a student"
+                        : (res.body.error || "HTTP " + res.status));
+                }
+                // Only now: the build exists, so the lock may be armed.
+                if (window.HelgaBuildGuard) window.HelgaBuildGuard.set();
+                window.location.href = "/build";
+            })
+            .catch(function (e) {
+                createBtn.disabled = false;
+                createBtn.querySelector(".create-btn-label").textContent = "Create";
+                reviewNote.textContent = "Could not start the build: " + e.message +
+                    " — nothing was created.";
+            });
     }
 
     /* Touch swipe: phones and iPads navigate by gesture as well as arrows.

@@ -101,14 +101,31 @@
         // is only ever shown when there is genuinely nothing to show, and it
         // says so on the page — a preview that appears over a learner's real
         // programmes would be a lie about their own data.
+        //
+        // Which means "no programmes" and "could not ask" must be told apart,
+        // and the list alone does not tell them apart. When web-ui cannot reach
+        // core it answers HTTP 200 with {programs: [], error: "unavailable"} —
+        // an empty list that means nothing of the sort. Falling through drew a
+        // FABRICATED bachelor's map over a learner's real degree, labelled only
+        // "Preview with example data" in the subtitle. So: the error field, a
+        // non-ok status, a body that is not a list, and a network failure are
+        // all "could not load", and only a clean empty list earns the example.
         fetch("/api/programs")
-            .then(function (r) { return r.json(); })
+            .then(function (r) {
+                if (!r.ok) throw new Error("HTTP " + r.status);
+                return r.json();
+            })
             .then(function (d) {
-                var list = (d && d.programs) || [];
-                if (list.length) { loadPlan(list[0].uid); return; }
+                if (!d || d.error) throw new Error((d && d.error) || "no reply");
+                if (!Array.isArray(d.programs)) throw new Error("unreadable reply");
+                if (d.programs.length) { loadPlan(d.programs[0].uid); return; }
                 render(demoPlan());
             })
-            .catch(function () { render(demoPlan()); });
+            .catch(function (err) {
+                showEmpty("Your programmes could not be loaded (" + err.message +
+                          "). This is not a statement that you have none — " +
+                          "reload once the tutor service is back.");
+            });
     }
 
     /* ---------------------------------------------------------- render */

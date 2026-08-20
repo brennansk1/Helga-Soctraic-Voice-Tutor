@@ -202,20 +202,173 @@
         });
     }
 
+    /* The question being asked right now. Grading needs the reference material
+       the question was generated from, and /api/quiz hands it over only here. */
+    var current = null;
+
     function renderQuiz(q) {
         var area = $('quiz-area');
         if (!area) return;
         if (!q || !q.question) {
-            area.innerHTML = '<p class="practice-error">No question came back.</p>';
+            area.innerHTML = '<p class="practice-error"></p>';
+            area.firstChild.textContent = (q && q.error) || 'No question came back.';
             return;
         }
-        area.innerHTML =
-            '<article class="practice-question u-animate-pop">' +
-              '<p class="practice-question-context">' + esc(q.concept_title || '') + '</p>' +
-              '<h3 class="practice-question-text">' + esc(q.question) + '</h3>' +
-              '<textarea class="form-input practice-answer" rows="4" ' +
-                 'placeholder="Answer from memory first."></textarea>' +
-            '</article>';
+        current = q;
+
+        /* THE TAB USED TO END HERE.
+           It drew the question and a textarea and stopped: no submit control,
+           no listener, and no call to /api/quiz/grade anywhere in this file. A
+           learner could type an answer and had no way to hand it in — retrieval
+           practice with the retrieval taken out. The /quiz page already speaks
+           to the grader; this is the same conversation. */
+        area.textContent = '';
+        var art = document.createElement('article');
+        art.className = 'practice-question u-animate-pop';
+
+        var ctx = document.createElement('p');
+        ctx.className = 'practice-question-context';
+        ctx.textContent = q.concept_title || '';
+
+        var h = document.createElement('h3');
+        h.className = 'practice-question-text';
+        h.textContent = q.question;
+
+        var ta = document.createElement('textarea');
+        ta.className = 'form-input practice-answer';
+        ta.rows = 4;
+        ta.id = 'quiz-answer';
+        ta.placeholder = 'Answer from memory first.';
+
+        var row = document.createElement('div');
+        row.className = 'practice-course-picker';
+        var submit = document.createElement('button');
+        submit.className = 'btn btn-primary';
+        submit.id = 'quiz-submit';
+        submit.type = 'button';
+        submit.textContent = 'Check my answer';
+        var skip = document.createElement('button');
+        skip.className = 'btn btn-secondary';
+        skip.type = 'button';
+        skip.textContent = 'Another question';
+        row.appendChild(submit);
+        row.appendChild(skip);
+
+        var result = document.createElement('div');
+        result.id = 'quiz-result';
+        result.setAttribute('aria-live', 'polite');
+
+        art.appendChild(ctx);
+        art.appendChild(h);
+        art.appendChild(ta);
+        art.appendChild(row);
+        art.appendChild(result);
+        area.appendChild(art);
+
+        submit.addEventListener('click', function () { gradeAnswer(ta, submit, result); });
+        // Ctrl/Cmd+Enter submits — Enter alone has to stay a newline in a
+        // multi-line answer box.
+        ta.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                gradeAnswer(ta, submit, result);
+            }
+        });
+        skip.addEventListener('click', nextQuestion);
+        ta.focus();
+    }
+
+    function nextQuestion() {
+        var btn = $('quiz-start');
+        if (btn) btn.click();
+    }
+
+    function gradeError(result, detail) {
+        /* A GRADER THAT COULD NOT RUN IS NOT A VERDICT. librarian answers a
+           failed grading with a non-2xx and a named error precisely so that no
+           client turns an Ollama hiccup into a red cross against the learner —
+           and, downstream of that, into FSRS downgrades of cards the model never
+           looked at. Say what failed; do not render a grade. */
+        result.textContent = '';
+        var p = document.createElement('p');
+        p.className = 'practice-error';
+        p.textContent = 'Your answer was not graded (' + detail +
+            '). It has not been marked wrong — try again in a moment.';
+        result.appendChild(p);
+    }
+
+    function gradeAnswer(ta, submit, result) {
+        var answer = (ta.value || '').trim();
+        if (!answer || !current) return;
+        submit.disabled = true;
+        submit.textContent = 'Checking…';
+        result.textContent = '';
+
+        fetch('/api/quiz/grade', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                question: current.question,
+                answer: answer,
+                context: current.context_text || '',
+                concept_uid: current.concept_uid || '',
+                course_uid: current.course_uid || ''
+            })
+        })
+            .then(function (r) {
+                return r.json().catch(function () { return {}; })
+                    .then(function (b) { return { ok: r.ok, status: r.status, body: b || {} }; });
+            })
+            .then(function (res) {
+                submit.disabled = false;
+                submit.textContent = 'Check my answer';
+                if (!res.ok || !res.body.grade) {
+                    gradeError(result, res.body.error || 'HTTP ' + res.status);
+                    return;
+                }
+                renderGrade(result, res.body);
+            })
+            .catch(function (e) {
+                submit.disabled = false;
+                submit.textContent = 'Check my answer';
+                gradeError(result, e.message);
+            });
+    }
+
+    function renderGrade(result, data) {
+        result.textContent = '';
+
+        var verdict = document.createElement('p');
+        verdict.className = 'practice-question-context';
+        var pct = parseInt(data.score, 10);
+        verdict.textContent = String(data.grade) +
+            (isNaN(pct) ? '' : ' — ' + pct + '%');
+        result.appendChild(verdict);
+
+        if (data.feedback) {
+            var fb = document.createElement('p');
+            fb.textContent = data.feedback;          // server text: textContent
+            result.appendChild(fb);
+        }
+        if (data.missing_concepts && data.missing_concepts.length) {
+            var miss = document.createElement('p');
+            miss.className = 'practice-question-context';
+            miss.textContent = 'Missing: ' + data.missing_concepts.join(', ');
+            result.appendChild(miss);
+        }
+        if (data.cards_created) {
+            var cards = document.createElement('p');
+            cards.className = 'practice-question-context';
+            cards.textContent = data.cards_created + ' flashcard(s) added for review.';
+            result.appendChild(cards);
+        }
+
+        var again = document.createElement('button');
+        again.className = 'btn btn-primary';
+        again.type = 'button';
+        again.textContent = 'Next question';
+        again.addEventListener('click', nextQuestion);
+        result.appendChild(again);
     }
 
     // --- upcoming -----------------------------------------------------------

@@ -165,21 +165,47 @@ async function suggestModules() {
         const data = await resp.json();
         const suggestions = data.modules || [];
 
-        // Show suggestion cards
+        /* THE SUGGESTED TITLE IS DATA, AND IT USED TO BE CODE.
+           This card carried onclick="acceptSuggestion(this, 'TITLE')" with the
+           title run through escapeHtml(). Wrong escape for the position: the
+           HTML parser decodes &#39; back to a bare apostrophe BEFORE the
+           attribute is parsed as JavaScript, so a module the model called
+           "Newton's Laws" produced a SyntaxError and an Accept button that did
+           nothing. The title now travels as a data-* attribute and is read back
+           as a string; nothing derived from a response is ever parsed as code.
+           Titles and descriptions go in with textContent for the same reason. */
         const container = document.getElementById('wiz-modules-list');
         suggestions.forEach(s => {
             const card = document.createElement('div');
             card.className = 'suggestion-card';
-            card.innerHTML = `
-                <div>
-                    <strong>${escapeHtml(s.title)}</strong>
-                    <div style="font-size: 0.8rem; color: var(--text-secondary);">${escapeHtml(s.description || '')}</div>
-                </div>
-                <div class="suggestion-actions">
-                    <button class="accept-btn" onclick="acceptSuggestion(this, '${escapeHtml(s.title)}')">Accept</button>
-                    <button class="dismiss-btn" onclick="this.closest('.suggestion-card').remove()">Dismiss</button>
-                </div>
-            `;
+
+            const text = document.createElement('div');
+            const strong = document.createElement('strong');
+            strong.textContent = s.title || '';
+            const sub = document.createElement('div');
+            sub.style.cssText = 'font-size: 0.8rem; color: var(--text-secondary);';
+            sub.textContent = s.description || '';
+            text.appendChild(strong);
+            text.appendChild(sub);
+
+            const acts = document.createElement('div');
+            acts.className = 'suggestion-actions';
+            const accept = document.createElement('button');
+            accept.className = 'accept-btn';
+            accept.textContent = 'Accept';
+            accept.dataset.title = s.title || '';
+            accept.addEventListener('click', function () {
+                acceptSuggestion(accept, accept.dataset.title);
+            });
+            const dismiss = document.createElement('button');
+            dismiss.className = 'dismiss-btn';
+            dismiss.textContent = 'Dismiss';
+            dismiss.addEventListener('click', function () { card.remove(); });
+            acts.appendChild(accept);
+            acts.appendChild(dismiss);
+
+            card.appendChild(text);
+            card.appendChild(acts);
             container.appendChild(card);
         });
     } catch (e) {
@@ -270,18 +296,36 @@ async function suggestConcepts(modIdx) {
         const data = await resp.json();
         const suggestions = data.concepts || [];
 
+        // Same fix as the module suggestions above: a concept title the model
+        // wrote is data, so it goes in as a data-* attribute and textContent,
+        // never as a JavaScript string literal inside an onclick.
         const container = document.getElementById(`concepts-${modIdx}`).parentElement;
         suggestions.forEach(s => {
             const card = document.createElement('div');
             card.className = 'suggestion-card';
             card.style.marginTop = '0.5rem';
-            card.innerHTML = `
-                <span>${escapeHtml(s.title)}</span>
-                <div class="suggestion-actions">
-                    <button class="accept-btn" onclick="acceptConceptSuggestion(this, ${modIdx}, '${escapeHtml(s.title)}')">Add</button>
-                    <button class="dismiss-btn" onclick="this.closest('.suggestion-card').remove()">Skip</button>
-                </div>
-            `;
+
+            const label = document.createElement('span');
+            label.textContent = s.title || '';
+
+            const acts = document.createElement('div');
+            acts.className = 'suggestion-actions';
+            const add = document.createElement('button');
+            add.className = 'accept-btn';
+            add.textContent = 'Add';
+            add.dataset.title = s.title || '';
+            add.addEventListener('click', function () {
+                acceptConceptSuggestion(add, modIdx, add.dataset.title);
+            });
+            const skip = document.createElement('button');
+            skip.className = 'dismiss-btn';
+            skip.textContent = 'Skip';
+            skip.addEventListener('click', function () { card.remove(); });
+            acts.appendChild(add);
+            acts.appendChild(skip);
+
+            card.appendChild(label);
+            card.appendChild(acts);
             container.appendChild(card);
         });
     } catch (e) {

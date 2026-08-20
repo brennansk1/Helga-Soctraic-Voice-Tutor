@@ -102,19 +102,7 @@
         [/^RESEARCH:COURSE:([^|]+)\|([^|]+)\|(\d+)/, function (m) {
             return 'Found course — ' + m[1] + ': "' + m[2] + '" (' + m[3] + ' sections)'; }],
         [/^RESEARCH:BOOK:(.+)/,           function (m) {
-            return 'Found book — ' + m[1];
-
-    // One sentence for the live stream, or '' when a message is purely
-    // internal. Walks the same HUMAN table the log renderer uses, so the
-    // stream and the log can never tell two different stories.
-    function translate(msg) {
-        for (var i = 0; i < HUMAN.length; i++) {
-            var m = msg.match(HUMAN[i][0]);
-            if (m) { try { return HUMAN[i][1](m) || ''; } catch (e) { return ''; } }
-        }
-        return '';
-    }
- }],
+            return 'Found book — ' + m[1]; }],
         [/^HYDRATE:SOURCES:([^|]+)\|([^|]+)\|([\d.]+)/, function (m) {
             return 'Wrote "' + m[1] + '" — grounded in ' + m[2] +
                    ' (confidence ' + m[3] + ')'; }],
@@ -194,6 +182,24 @@
             if (m) return HUMAN[i][1](m);
         }
         return msg;
+    }
+
+    // One sentence for the live stream, or '' when a message is purely
+    // internal. Walks the same HUMAN table the log renderer uses, so the
+    // stream and the log can never tell two different stories.
+    //
+    // This declaration used to sit INSIDE the RESEARCH:BOOK entry of the HUMAN
+    // table, so it was scoped to that callback and never existed out here.
+    // handle() calls it on the very first status message, which therefore threw
+    // ReferenceError and took the whole build view down with it — no stages, no
+    // stream, no completion. Everything below depends on it being at this
+    // scope, so it stays here.
+    function translate(msg) {
+        for (var i = 0; i < HUMAN.length; i++) {
+            var m = msg.match(HUMAN[i][0]);
+            if (m) { try { return HUMAN[i][1](m) || ''; } catch (e) { return ''; } }
+        }
+        return '';
     }
 
     function log(text, kind) {
@@ -446,6 +452,22 @@
         if (msg.indexOf('ERROR:') === 0) {
             log(msg, 'error');
         }
+
+        /* THE END OF THE BUILD, READ FROM THE STREAM THAT ACTUALLY EXISTS.
+           This view waited for a 'course_ready' Socket.IO event; nothing on the
+           server has ever emitted one. So a finished build showed the last
+           hydration line forever, never revealed the "Open it" panel, and never
+           released the single-build lock — which then walled off /create for the
+           guard's full four-hour expiry. The pipeline's own last words are these
+           two lines, and they are what we listen for instead. */
+        if (/^Course built successfully/i.test(msg)) {
+            settle('complete');
+            return;
+        }
+        if (/^Error creating course|^Skeleton generation failed/i.test(msg)) {
+            settle('error', msg);
+            return;
+        }
     }
 
     function fail(text) {
@@ -454,7 +476,36 @@
         e.hidden = false;
     }
 
+    // A build ends once. Both the status stream and the poll below can spot the
+    // same ending, and neither may draw the panel twice or fight the other.
+    var settled = false;
+
+    function settle(phase, detail) {
+        if (settled) return;
+        settled = true;
+        stopPolling();
+        // Release the lock either way: a build that has ended is not a build in
+        // progress, and a failed one that keeps the lock is the worse outcome —
+        // it blocks the retry.
+        if (window.HelgaBuildGuard) window.HelgaBuildGuard.clear();
+        if (phase === 'error') {
+            fail(detail
+                ? 'The build stopped: ' + detail
+                : 'The build stopped before it finished. Nothing was saved.');
+            return;
+        }
+        // The uid is not in the status text, so ask the service that holds it.
+        // Without one the panel still appears — the course exists — but it
+        // points at Courses rather than pretending to know which one.
+        fetch('/api/creation_status')
+            .then(function (r) { return r.ok ? r.json() : {}; })
+            .catch(function () { return {}; })
+            .then(function (s) { finish(s && s.course_uid); });
+    }
+
     function finish(courseUid) {
+        settled = true;
+        stopPolling();
         ORDER.forEach(function (s) {
             var el = stageEls[s];
             if (el && !el.classList.contains('is-warn')) {
@@ -470,8 +521,36 @@
             ' — built in ' + $('build-elapsed').textContent + '.';
         if (courseUid) {
             $('build-open').href = '/learn?course_uid=' + encodeURIComponent(courseUid);
+        } else {
+            $('build-open').href = '/courses';
+            $('build-open').textContent = 'Open your courses';
         }
         done.hidden = false;
+    }
+
+    /* --- the poll ------------------------------------------------------------
+       The Socket.IO stream only reaches a browser that is on this page at the
+       moment a message is sent. A learner who opened /build after the pipeline
+       had already finished, or whose socket dropped during a build that runs for
+       tens of minutes, would see a page that never resolves.
+
+       The verdict comes from the build guard so this page and the nav pill read
+       the server the same way — including its rule that only positive evidence
+       of an ending counts, because a proxy that cannot reach core answers 200
+       with an error field and that must not be mistaken for "finished". */
+    var pollTimer = null;
+
+    function stopPolling() {
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    }
+
+    function poll() {
+        if (settled || !window.HelgaBuildGuard || !window.HelgaBuildGuard.probe) return;
+        window.HelgaBuildGuard.probe(function (verdict, courseUid, phase) {
+            if (settled || verdict !== 'ended') return;
+            if (phase === 'error') settle('error', null);
+            else { settled = true; stopPolling(); finish(courseUid); }
+        });
     }
 
     // --- wiring -------------------------------------------------------------
@@ -505,10 +584,15 @@
             socket.on('status_update', function (d) {
                 handle(d && (d.message || d.status || d.text));
             });
-            socket.on('course_ready', function (d) {
-                finish(d && d.course_uid);
-            });
+            // There was a socket.on('course_ready', …) here. No server code has
+            // ever emitted that event — app.py emits state_update, health_update,
+            // stream_token and status_update, and nothing else — so it was the
+            // only path to the completion panel and it could never fire.
+            // Completion now comes from the status stream and the poll below.
         }
+
+        poll();                              // settles a build already finished
+        pollTimer = setInterval(poll, 10000);
 
         /* --- cancel ---------------------------------------------------
            The endpoint existed from the start with nothing calling it. A

@@ -730,13 +730,49 @@
                     '<span>Loading cards…</span>' +
                     '</div>';
 
-                // Fetch actual cards due for this date
+                /* WHICH DAY'S CARDS THESE ACTUALLY ARE.
+                   This sent ?target_date=<the clicked day>. Nothing reads it:
+                   web-ui's /api/due_cards proxy forwards only topic and
+                   course_uid, and librarian's endpoint never looks at it either,
+                   so the parameter was dropped twice over and every future day
+                   listed TODAY's cards under that day's heading — a schedule
+                   view that shows the wrong schedule.
+
+                   What the endpoint does return is every card due now or
+                   overdue, each carrying its own next_review_date. That is
+                   enough to answer honestly for today and for past days: filter
+                   to the day that was clicked. It cannot answer for a FUTURE day
+                   — those cards are not in the response at all — so that case
+                   says so rather than showing today's list under tomorrow's
+                   date. Making it answerable needs target_date honoured in
+                   librarian's due_cards_endpoint and forwarded by the web-ui
+                   proxy; storage.get_due_cards already accepts it. */
+                const todayStr = (() => {
+                    const t = new Date();
+                    return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+                })();
+
+                if (dateStr > todayStr) {
+                    listEl.innerHTML = '';
+                    const info = document.createElement('div');
+                    info.className = 'empty-state';
+                    info.textContent =
+                        `${cardCount} card(s) are scheduled for this day. ` +
+                        `Helga can only list the individual cards once they are due.`;
+                    listEl.appendChild(info);
+                    // No "Start Review" here: that button starts TODAY's session,
+                    // which is a different set of cards from the ones this panel
+                    // is headed with.
+                    return;
+                }
+
                 try {
-                    const res = await fetch(`/api/due_cards?target_date=${encodeURIComponent(dateStr)}`);
+                    const res = await fetch('/api/due_cards');
                     if (!res.ok) throw new Error('HTTP ' + res.status);
                     const data = await res.json();
                     listEl.innerHTML = '';
-                    const cards = data.cards || [];
+                    const cards = (data.cards || []).filter(
+                        c => (c.next_review_date || '').slice(0, 10) === dateStr);
 
                     if (cards.length === 0) {
                         const info = document.createElement('div');
@@ -778,7 +814,9 @@
                     if (window.showToast) window.showToast('Failed to load card details', 'error');
                 }
 
-                // "Start Review" button
+                // "Start Review" button. Only on this path: it opens today's
+                // session, which is the right offer for a day whose cards are
+                // due, and the wrong one for a future day.
                 const startBtn = document.createElement('a');
                 startBtn.href = '/review';
                 startBtn.className = 'complete-btn';

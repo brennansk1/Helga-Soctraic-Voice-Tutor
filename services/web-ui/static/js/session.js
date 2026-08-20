@@ -583,8 +583,7 @@ function updateChatStream(transcript) {
 
             messageDiv.innerHTML = `
                 <div class="chat-msg-content">
-                    <img class="chat-msg-avatar" src="${avatarSrc}" alt="${avatarAlt}"
-                         onerror="this.src='/static/img/${fallbackAvatar}'">
+                    <img class="chat-msg-avatar" src="${avatarSrc}" alt="${avatarAlt}">
                     <div class="chat-msg-body">
                         ${gradeBadge}
                         <div class="chat-msg-text">${renderedText}</div>
@@ -592,6 +591,19 @@ function updateChatStream(transcript) {
                     ${actions}
                 </div>
             `;
+
+            // The avatar fallback was an onerror="" attribute with the filename
+            // interpolated into a JS string literal. Nothing hostile could reach
+            // it — both filenames are ours — but it is the same shape as the
+            // course-title handlers that did break, so it is a listener now and
+            // no template ever writes executable text. Image error events are
+            // asynchronous, so attaching here still catches a 404.
+            const avatarEl = messageDiv.querySelector('.chat-msg-avatar');
+            if (avatarEl) {
+                avatarEl.addEventListener('error', function () {
+                    avatarEl.src = '/static/img/' + fallbackAvatar;
+                }, { once: true });
+            }
 
             // B13: visual teaching aids render ABOVE the message text, inside
             // the same bubble group. The transcript carries only descriptors;
