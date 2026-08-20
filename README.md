@@ -47,13 +47,27 @@ Mac Mini M4 Pro 24GB
 
 # 2. Clone and start
 git clone <repo-url> && cd helga
-cp .env.example .env
-docker compose build
-docker compose up -d
+./deploy.sh
+```
 
+`./deploy.sh` rather than `docker compose up`, and the difference matters.
+Three services -- Ollama, TTS and STT -- run on the HOST, not in a container,
+because they need the GPU or the Neural Engine and a Linux container on macOS
+has neither. `docker compose up` starts none of them and sets none of the
+Ollama environment that decides whether the stack feels fast, so it produces a
+healthy-looking container stack with no voice in either direction and no error
+explaining why. deploy.sh starts both halves, builds the 16k-context model if
+you only have the base, and runs the preflight.
+
+```bash
 # 3. Open browser
 open http://localhost:5050
 ```
+
+If anything is missing, **http://localhost:5050/setup** checks each part of the
+installation, says what is wrong in plain words, and gives you the exact
+command to fix it. It re-checks itself, so you can leave it open while you
+work through the list.
 
 ### Verify
 

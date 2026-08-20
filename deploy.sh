@@ -117,6 +117,8 @@ python3 scripts/mac_preflight.py || true
 echo ""
 echo "=== Helga is running ==="
 echo "  Web UI:  http://localhost:5050"
+# The one page that turns "something is wrong" into "run this command".
+echo "  Setup:   http://localhost:5050/setup   <- if anything above looked wrong"
 echo "  Ollama:  http://localhost:11434"
 echo "  Host:    scripts/host_services.sh status"
 echo "  Logs:    docker compose logs -f   |   logs/host-*.log"
