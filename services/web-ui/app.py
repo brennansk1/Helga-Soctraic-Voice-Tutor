@@ -779,6 +779,13 @@ try:
 except Exception as _e:
     logger.error(f"notes_api blueprint unavailable: {_e}")
 
+# First-run setup: hardware check, Ollama, the model pull, voice, containers.
+try:
+    from setup_api import setup_api
+    app.register_blueprint(setup_api)
+except Exception as _e:
+    logger.error(f"setup_api blueprint unavailable: {_e}")
+
 @app.route('/api/schedule', methods=['GET'])
 def get_schedule():
     try:

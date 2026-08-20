@@ -17,6 +17,11 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
+      # web-ui was never told which model the stack actually uses, so its
+      # preflight and setup pages checked the built-in default and could
+      # confidently report on the wrong model name.
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-nail-35b-a3b-ctx}
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
       - FLASK_ENV=production
       - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-}
       - CORE_LOGIC_URL=http://helga-core-logic:5003
