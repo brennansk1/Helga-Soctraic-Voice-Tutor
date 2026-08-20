@@ -8,45 +8,65 @@
 {% block content %}
 <div class="degree-shell">
 
-  <header class="degree-header">
-    <div>
-      <h1 id="deg-title">Your programme</h1>
-      <p class="degree-sub" id="deg-sub">Terms run left to right; arrows are
-         prerequisites. Courses build one ahead of you.</p>
-    </div>
-    <div class="degree-legend" aria-hidden="true">
-      <span><i class="lg lg-complete"></i>complete</span>
-      <span><i class="lg lg-ready"></i>ready</span>
-      <span><i class="lg lg-building"></i>building</span>
-      <span><i class="lg lg-locked"></i>locked</span>
-      <span><i class="lg lg-choice"></i>your choice</span>
+  <header class="degree-masthead">
+    <p class="degree-eyebrow" id="deg-eyebrow">Your programme</p>
+    <h1 class="degree-title" id="deg-title">Programme</h1>
+
+    <!-- Provenance: whether this programme mirrors a published curriculum or
+         was proposed by the model. The planner records it; hiding it would let
+         a proposed degree read as an accredited one. -->
+    <p class="degree-provenance" id="deg-provenance" hidden></p>
+
+    <!-- Progress leads with the COUNT, not the bar. "7 of 20 complete" is a
+         fact a learner can hold; a bar alone is a mood. The bar is support. -->
+    <div class="degree-progress" id="deg-progress" hidden>
+      <p class="degree-count" id="deg-count"></p>
+      <div class="degree-meter" id="deg-meter" role="img" aria-label="">
+        <span class="degree-meter-fill" id="deg-meter-fill"></span>
+      </div>
+      <ul class="degree-tally" id="deg-tally"></ul>
     </div>
   </header>
 
-  <!-- Provenance: whether this programme mirrors a published curriculum or
-       was proposed. The planner records it; hiding it would let a proposed
-       degree read as an accredited one. -->
-  <p class="degree-provenance" id="deg-provenance" hidden></p>
+  <p class="degree-preview" id="deg-preview" hidden></p>
 
-  <!-- Pan by dragging, zoom by wheel/pinch or the buttons. The whole map is
-       one SVG so edges, nodes and labels scale together. -->
-  <div class="degree-viewport" id="deg-viewport">
-    <svg id="deg-svg" role="group" aria-label="Programme map"></svg>
-    <div class="degree-zoom">
-      <button id="deg-zoom-in" aria-label="Zoom in">+</button>
-      <button id="deg-zoom-fit" aria-label="Fit to view">fit</button>
-      <button id="deg-zoom-out" aria-label="Zoom out">&minus;</button>
+  <!-- 1. ONE COURSE AT A TIME. A learner studies exactly one course; the build
+       scheduler can only build one at a time too. So the page has exactly one
+       focus slot, and it is the largest thing on it. -->
+  <section class="degree-focus" id="deg-focus" aria-labelledby="deg-focus-h" hidden>
+    <h2 class="degree-section-title" id="deg-focus-h">Now studying</h2>
+    <div id="deg-focus-body"></div>
+  </section>
+
+  <!-- 2. THE DECISION. Every course whose prerequisites are satisfied. This is
+       the reason to open this page, so it sits above the full plan and is the
+       loudest state in the type and colour hierarchy. -->
+  <section class="degree-next" id="deg-next" aria-labelledby="deg-next-h" hidden>
+    <div class="degree-section-head">
+      <h2 class="degree-section-title" id="deg-next-h">Choose what to study next</h2>
+      <p class="degree-section-sub" id="deg-next-sub"></p>
     </div>
-  </div>
+    <div class="degree-next-grid" id="deg-next-grid"></div>
+  </section>
 
-  <!-- The registration moment: appears when a term's elective slot opens.
-       Choosing LOCKS the choice and triggers the lazy build — this is where
-       "the university builds itself as you go" becomes visible. -->
-  <section class="degree-choice hidden" id="deg-choice" aria-live="polite">
-    <h2>Choose your elective</h2>
-    <p class="degree-choice-sub">Pick one — it locks, and Helga builds it before
-       you arrive. The options you pass over cost nothing.</p>
-    <div class="degree-choice-cards" id="deg-choice-cards"></div>
+  <!-- 3 & 4. THE WHOLE DEGREE: what is finished, and what is still gated by
+       what. Grouped the way a catalogue groups a degree — by requirement area,
+       not by a calendar — because the learner sets the order, not a timetable. -->
+  <section class="degree-plan" id="deg-plan" aria-labelledby="deg-plan-h" hidden>
+    <div class="degree-section-head">
+      <h2 class="degree-section-title" id="deg-plan-h">The whole degree</h2>
+      <p class="degree-section-sub" id="deg-plan-sub">Every course here counts
+        toward the degree. Courses joined by a line must be taken in that
+        order; everything else is yours to sequence.</p>
+      <ul class="degree-legend" id="deg-legend">
+        <li class="degree-legend-item"><span class="degree-key is-complete"></span>complete</li>
+        <li class="degree-legend-item"><span class="degree-key is-current"></span>studying</li>
+        <li class="degree-legend-item"><span class="degree-key is-available"></span>available now</li>
+        <li class="degree-legend-item"><span class="degree-key is-building"></span>building</li>
+        <li class="degree-legend-item"><span class="degree-key is-locked"></span>locked</li>
+      </ul>
+    </div>
+    <div class="degree-areas" id="deg-areas"></div>
   </section>
 
   <p class="degree-empty hidden" id="deg-empty">No programme yet — create one

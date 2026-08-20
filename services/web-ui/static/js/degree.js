@@ -1,16 +1,37 @@
-/* The degree map — a pannable, zoomable prerequisite DAG.
+/* The degree viewer.
  *
- * Terms are columns, courses are nodes, prerequisite edges are drawn as real
- * curves. Status is colour: complete, ready, building (with a pulse), locked,
- * and elective-choice. The generation story is ON the map — a node that is
- * being built says so, because "the university builds itself as you go" is the
- * product's most marketable sentence and it should be visible rather than
- * asserted.
+ * WHAT A PROGRAMME ACTUALLY IS
+ * ----------------------------
+ * A fixed list of courses that together make the degree. The learner completes
+ * all of them, chooses the ORDER, and studies exactly ONE at a time. The only
+ * real constraint is the prerequisite graph: a course is available the moment
+ * everything it requires is complete.
+ *
+ * That model is why this file no longer draws a term grid. `term` is still in
+ * the plan JSON and is still useful as the planner's rough difficulty ordering,
+ * but a "4 terms x 5 courses" layout says five courses run in parallel on a
+ * calendar, and nothing in this product works that way — there is one learner,
+ * one course, and a single-build lock underneath.
+ *
+ * WHY THIS IS NOT A NODE GRAPH EITHER
+ * -----------------------------------
+ * Measured on the two real planned programmes rather than assumed:
+ *
+ *   associate:  20 courses,  2 prerequisite edges — 16 isolated, 2 pairs
+ *   bachelor's: 40 courses, 17 prerequisite edges — 19 isolated, 3 chains of
+ *               6, 1 chain of 3; no chain crosses a requirement area
+ *
+ * A pannable DAG canvas spends its entire area drawing almost no structure, and
+ * laying courses out by dependency depth collapses too: 18 of the associate's
+ * 20 courses sit at depth 0, so "depth" is one tall column and a rounding
+ * error. The honest shape of this data is a small number of short SEQUENCES
+ * inside a mostly unordered set — which is exactly how a real catalogue prints
+ * a degree. So: requirement areas, sequences drawn as sequences, and every gate
+ * named in words instead of implied by a curve the eye has to trace.
  *
  * Data: GET /api/program/<uid>, the JSON plan_degree() emits
- * ({subject, template, terms, courses:[{title, term, slot, requires[], status}]}).
- * A demo plan renders when the API is absent so the page is designable and
- * testable without a backend — clearly labelled as a preview, never silently.
+ * ({subject, template, terms, courses:[{title, term, slot, requires[], built,
+ * course_uid, completed}]}).
  */
 (function () {
     "use strict";
@@ -20,12 +41,17 @@
     // knows which programme an action applies to.
     var currentUid = null;
 
-    var svg = document.getElementById("deg-svg");
-    var viewport = document.getElementById("deg-viewport");
-    var NS = "http://www.w3.org/2000/svg";
-
-    // Layout constants (SVG user units; zoom scales everything together).
-    var COL_W = 260, ROW_H = 92, NODE_W = 220, NODE_H = 68, PAD = 60;
+    /* Requirement areas, in the order a catalogue prints them. The plan's
+       `slot` is the planner's vocabulary; these are the learner's. An unknown
+       slot is humanised rather than dropped, because a slot this file has
+       never heard of is still a course the learner has to pass. */
+    var AREA_LABELS = {
+        gen_ed: "General education",
+        core: "Core requirements",
+        elective: "Electives",
+        capstone: "Capstone",
+    };
+    var AREA_ORDER = ["gen_ed", "core", "elective", "capstone"];
 
     /* ---------------------------------------------------------- data */
     function demoPlan() {
@@ -35,57 +61,163 @@
             subject: "Economics", template: "associate", terms: 4,
             demo: true,
             courses: [
-                { title: "English Composition I", term: 1, slot: "gen_ed", status: "complete" },
-                { title: "Introduction to Statistics", term: 1, slot: "gen_ed", status: "complete" },
-                { title: "Principles of Microeconomics", term: 1, slot: "core", status: "complete" },
-                { title: "Principles of Macroeconomics", term: 1, slot: "core", status: "ready" },
-                { title: "Calculus for Business I", term: 1, slot: "core", status: "ready" },
-                { title: "Financial Accounting", term: 1, slot: "core", status: "building" },
-                { title: "English Composition II", term: 2, slot: "gen_ed", requires: ["English Composition I"], status: "locked" },
-                { title: "College Algebra", term: 2, slot: "gen_ed", status: "locked" },
-                { title: "American Government", term: 2, slot: "gen_ed", status: "locked" },
-                { title: "Introduction to Psychology", term: 2, slot: "gen_ed", status: "locked" },
-                { title: "Calculus for Business II", term: 3, slot: "core", requires: ["Calculus for Business I"], status: "locked" },
-                { title: "Managerial Accounting", term: 3, slot: "core", requires: ["Financial Accounting"], status: "locked" },
-                { title: "Business Law", term: 3, slot: "core", status: "locked" },
-                { title: "Economic Statistics", term: 3, slot: "core", requires: ["Introduction to Statistics"], status: "locked" },
-                { title: "Money and Banking", term: 4, slot: "elective", status: "choice" },
-                { title: "International Economics", term: 4, slot: "elective", status: "choice" },
-                { title: "Environmental Economics", term: 4, slot: "elective", status: "choice" },
-                { title: "Economics Research Seminar", term: 4, slot: "capstone",
-                  requires: ["Introduction to Statistics", "Principles of Microeconomics",
-                             "Principles of Macroeconomics"], status: "locked" },
+                { title: "English Composition I", slot: "gen_ed", term: 1, completed: true, built: true },
+                { title: "Introduction to Statistics", slot: "gen_ed", term: 1, completed: true, built: true },
+                { title: "College Algebra", slot: "gen_ed", term: 1, completed: true, built: true },
+                { title: "English Composition II", slot: "gen_ed", term: 2, requires: ["English Composition I"], built: true },
+                { title: "American Government", slot: "gen_ed", term: 1 },
+                { title: "Introduction to Psychology", slot: "gen_ed", term: 2 },
+                { title: "Natural Science with Laboratory", slot: "gen_ed", term: 2 },
+                { title: "Principles of Microeconomics", slot: "core", term: 1, current: true, built: true },
+                { title: "Principles of Macroeconomics", slot: "core", term: 2, built: true },
+                { title: "Calculus for Business and Economics I", slot: "core", term: 2, building: true },
+                { title: "Calculus for Business and Economics II", slot: "core", term: 3,
+                  requires: ["Calculus for Business and Economics I"] },
+                { title: "Financial Accounting", slot: "core", term: 2 },
+                { title: "Managerial Accounting", slot: "core", term: 3 },
+                { title: "Business Law", slot: "core", term: 3 },
+                { title: "Economic Statistics", slot: "core", term: 3,
+                  requires: ["Introduction to Statistics"], built: true },
+                { title: "Money and Banking", slot: "elective", term: 4 },
+                { title: "International Economics", slot: "elective", term: 4 },
+                { title: "Environmental Economics", slot: "elective", term: 4 },
+                { title: "Economics Research Seminar", slot: "capstone", term: 4,
+                  requires: ["Principles of Microeconomics", "Principles of Macroeconomics",
+                             "Economic Statistics"] },
             ],
         };
     }
 
-    /* The planner stores what it decided (chosen, built, course_uid); the map
-       speaks in states. Deriving one from the other HERE keeps the derivation
-       in one place and stops the UI inventing a status the data cannot support
-       — notably "complete", which needs progress the plan does not carry, and
-       "building", which would claim work is under way when nothing said so. */
-    function withStatus(plan) {
-        (plan.courses || []).forEach(function (c) {
-            if (c.status) return;                     // demo plans set it directly
-            if (c.chosen === false)      c.status = "choice";
-            else if (c.built)            c.status = "ready";
-            else                         c.status = "locked";
+    function isComplete(c) {
+        return c.completed === true || c.status === "complete";
+    }
+
+    /* The plan stores what the planner decided; the page speaks in states.
+       Deriving one from the other HERE keeps the derivation in one place and
+       stops the UI inventing a status the data cannot support — notably
+       "complete", which needs progress the plan may not carry, and "building",
+       which would claim work is under way when nothing said so.
+
+       Older stored plans carry `chosen: false` on courses that used to be
+       exclusive electives. Under the current model there is no such thing as an
+       unchosen course, so the flag is simply ignored: those courses are part of
+       the programme like every other, gated only by their prerequisites. */
+    function derive(plan) {
+        var courses = (plan.courses || []).slice();
+        var byTitle = {};
+        courses.forEach(function (c) { byTitle[c.title] = c; });
+
+        var currentTaken = false;
+        courses.forEach(function (c) {
+            if (isComplete(c)) { c._state = "complete"; c._gates = []; return; }
+
+            // A prerequisite the plan does not contain cannot be evidence of
+            // anything, so it does not gate. Only courses in this programme do.
+            c._gates = (c.requires || []).filter(function (r) {
+                var p = byTitle[r];
+                return p && !isComplete(p);
+            });
+
+            // Exactly one course can be in progress: one learner, one course at
+            // a time. A second claimant falls back to its ordinary state rather
+            // than splitting the page's attention between two "now"s.
+            if (!currentTaken &&
+                (c.current === true || c.in_progress === true ||
+                 c.status === "current" || plan.current_title === c.title)) {
+                currentTaken = true;
+                c._state = "current";
+                return;
+            }
+
+            // Building is NOT folded into the focus slot. The scheduler builds
+            // one course ahead of the learner, so a course can legitimately be
+            // generating while a different one is being studied — and an
+            // earlier version of this file, which let the focus slot claim the
+            // only building state, labelled that course "Available now" while
+            // Helga was still writing it.
+            if (c.building === true || c.status === "building") {
+                c._state = "building";
+                return;
+            }
+            c._state = c._gates.length ? "locked" : "available";
         });
+
+        plan._byTitle = byTitle;
+        plan._courses = courses;
         return plan;
+    }
+
+    /* Connected components over the prerequisite edges. A component with more
+       than one member is a SEQUENCE — the only genuine structure in the plan —
+       and is drawn as one. Everything else is a track of one. */
+    function tracks(plan) {
+        var parent = {};
+        function find(x) {
+            while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+            return x;
+        }
+        plan._courses.forEach(function (c) { parent[c.title] = c.title; });
+        plan._courses.forEach(function (c) {
+            (c.requires || []).forEach(function (r) {
+                if (!(r in parent)) return;
+                var a = find(r), b = find(c.title);
+                if (a !== b) parent[a] = b;
+            });
+        });
+
+        // How many courses must precede this one — the order inside a sequence.
+        var depths = {};
+        function depth(title, seen) {
+            if (title in depths) return depths[title];
+            var c = plan._byTitle[title];
+            if (!c || seen.indexOf(title) !== -1) return 0;
+            var reqs = (c.requires || []).filter(function (r) { return r in plan._byTitle; });
+            var d = 0;
+            reqs.forEach(function (r) { d = Math.max(d, 1 + depth(r, seen.concat([title]))); });
+            depths[title] = d;
+            return d;
+        }
+
+        var groups = {};
+        plan._courses.forEach(function (c) {
+            var k = find(c.title);
+            (groups[k] = groups[k] || []).push(c);
+        });
+        return Object.keys(groups).map(function (k) {
+            var members = groups[k].slice().sort(function (a, b) {
+                return depth(a.title, []) - depth(b.title, []) ||
+                       (a.term || 0) - (b.term || 0) ||
+                       a.title.localeCompare(b.title);
+            });
+            return members;
+        });
+    }
+
+    function areaRank(slot) {
+        var i = AREA_ORDER.indexOf(slot || "");
+        return i < 0 ? 99 : i;
+    }
+
+    function areaLabel(slot) {
+        if (!slot) return "Programme courses";
+        if (AREA_LABELS[slot]) return AREA_LABELS[slot];
+        return slot.replace(/_/g, " ").replace(/^./, function (m) { return m.toUpperCase(); });
     }
 
     function showEmpty(msg) {
         var e = document.getElementById("deg-empty");
         if (msg) e.textContent = msg;
         e.classList.remove("hidden");
-        viewport.classList.add("hidden");
+        ["deg-progress", "deg-focus", "deg-next", "deg-plan"].forEach(function (id) {
+            document.getElementById(id).hidden = true;
+        });
     }
 
     function loadPlan(uid) {
         currentUid = uid;
         fetch("/api/program/" + encodeURIComponent(uid))
             .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-            .then(function (p) { render(withStatus(p)); })
+            .then(function (p) { render(p); })
             .catch(function (err) {
                 showEmpty("That programme could not be loaded (" + err.message +
                           "). Nothing has been lost — try again, or pick another " +
@@ -128,134 +260,82 @@
             });
     }
 
-    /* ---------------------------------------------------------- render */
-    function el(tag, attrs) {
-        var e = document.createElementNS(NS, tag);
-        for (var k in attrs) e.setAttribute(k, attrs[k]);
+    /* ---------------------------------------------------------- helpers */
+    function elem(tag, cls, text) {
+        var e = document.createElement(tag);
+        if (cls) e.className = cls;
+        // textContent, always: course titles come from a model and a title
+        // containing "<" must render as a title, not as markup.
+        if (text !== undefined && text !== null) e.textContent = text;
         return e;
     }
 
+    function icon(name) {
+        var i = elem("span", "i i-" + name);
+        i.setAttribute("aria-hidden", "true");
+        return i;
+    }
+
+    /* One line per state, in the learner's terms.
+       `built` is orthogonal to availability: a course can be open to start and
+       not yet generated. On the DECISION surface that difference is the offer
+       — "ready now" against "Helga builds it before you arrive" — so it is
+       spelled out. In the plan below, where the same sentence would repeat
+       fifteen times down a column and stop being read, availability alone is
+       the fact worth printing. */
+    function stateNote(c, prominent) {
+        if (c._state === "complete") return "Complete";
+        if (c._state === "current") return "In progress";
+        if (c._state === "building") {
+            // A course being built ahead of the learner may still be gated.
+            // Saying only "building" would imply it is theirs to start.
+            return c._gates && c._gates.length
+                ? "Building now — unlocks after " + c._gates.join(" and ")
+                : "Building now";
+        }
+        if (c._state === "available") {
+            if (!prominent) return "Available now";
+            return c.built ? "Ready to start now" : "Built when you choose it";
+        }
+        if (c._gates && c._gates.length) {
+            return "Unlocks after " + c._gates.join(" and ");
+        }
+        return "Locked";
+    }
+
+    /* On the decision surface an available course gets an arrow, because there
+       the card is a control and the arrow is its "go". In the plan the same
+       course is a record, not a button, so it gets the neutral mark the legend
+       uses — an arrow that leads nowhere is a promise the page does not keep. */
+    var STATE_ICON = {
+        complete: "check", current: "book", building: "build",
+        available: "dot", locked: "lock",
+    };
+    var ACTION_ICON = "arrow-right";
+
+    /* ---------------------------------------------------------- render */
     function render(plan) {
-        var title = document.getElementById("deg-title");
-        title.textContent = plan.subject + " — " +
-            (plan.template === "bachelors" ? "Bachelor's" : "Associate");
+        derive(plan);
+
+        var level = plan.template === "bachelors" ? "Bachelor's" : "Associate";
+        document.getElementById("deg-title").textContent =
+            (plan.subject || "Programme") + " — " + level;
+
+        var preview = document.getElementById("deg-preview");
+        preview.textContent = "";
+        preview.hidden = !plan.demo;
         if (plan.demo) {
-            document.getElementById("deg-sub").textContent =
-                "Preview with example data — create a degree to see your own. " +
-                "Terms run left to right; arrows are prerequisites.";
+            preview.appendChild(icon("spark"));
+            preview.appendChild(document.createTextNode(
+                "An example degree, so you can see how a programme reads. " +
+                "Create one of your own from the Create page."));
         }
 
-        // Where this programme's shape came from. The planner already records
-        // whether it transcribed a published curriculum or proposed the course
-        // list itself, and writes a plain-English note when it did the latter;
-        // showing a Bachelor's map without it lets a proposed programme pass
-        // for an accredited one.
         renderProvenance(plan);
-
-        var byTerm = {};
-        plan.courses.forEach(function (c) {
-            (byTerm[c.term] = byTerm[c.term] || []).push(c);
-        });
-        var pos = {};   // title -> {x,y}
-        var maxRows = 0;
-
-        Object.keys(byTerm).forEach(function (t) {
-            byTerm[t].forEach(function (c, row) {
-                pos[c.title] = {
-                    x: PAD + (c.term - 1) * COL_W,
-                    y: PAD + 40 + row * ROW_H,
-                };
-                maxRows = Math.max(maxRows, row + 1);
-            });
-        });
-
-        var W = PAD * 2 + plan.terms * COL_W;
-        var H = PAD * 2 + 40 + maxRows * ROW_H;
-        svg.setAttribute("viewBox", "0 0 " + W + " " + H);
-        svg.textContent = "";
-
-        // Term column headers
-        for (var t = 1; t <= plan.terms; t++) {
-            var th = el("text", { x: PAD + (t - 1) * COL_W + NODE_W / 2,
-                                  y: PAD, class: "deg-term-label",
-                                  "text-anchor": "middle" });
-            th.textContent = "Term " + t;
-            svg.appendChild(th);
-        }
-
-        // Edges first, under the nodes. A cubic curve from the right edge of
-        // the prerequisite to the left edge of the dependent.
-        plan.courses.forEach(function (c) {
-            (c.requires || []).forEach(function (req) {
-                var a = pos[req], b = pos[c.title];
-                if (!a || !b) return;
-                var x1 = a.x + NODE_W, y1 = a.y + NODE_H / 2;
-                var x2 = b.x, y2 = b.y + NODE_H / 2;
-                var mx = (x1 + x2) / 2;
-                svg.appendChild(el("path", {
-                    d: "M" + x1 + " " + y1 + " C" + mx + " " + y1 + " " +
-                       mx + " " + y2 + " " + x2 + " " + y2,
-                    class: "deg-edge",
-                }));
-            });
-        });
-
-        // Nodes
-        plan.courses.forEach(function (c) {
-            var p = pos[c.title];
-            var g = el("g", { class: "deg-node deg-" + (c.status || "locked"),
-                              transform: "translate(" + p.x + "," + p.y + ")",
-                              tabindex: "0", role: "img",
-                              "aria-label": c.title + " — " + (c.status || "locked") });
-            g.appendChild(el("rect", { width: NODE_W, height: NODE_H,
-                                       rx: 10, class: "deg-node-box" }));
-            var label = el("text", { x: 12, y: 26, class: "deg-node-title" });
-            // Wrap long titles onto two lines by hand — SVG has no text wrap.
-            var words = c.title.split(" ");
-            var line1 = "", line2 = "";
-            words.forEach(function (w) {
-                if ((line1 + " " + w).trim().length <= 26 && !line2) {
-                    line1 = (line1 + " " + w).trim();
-                } else { line2 = (line2 + " " + w).trim(); }
-            });
-            var t1 = el("tspan", { x: 12, dy: 0 }); t1.textContent = line1;
-            label.appendChild(t1);
-            if (line2) {
-                var t2 = el("tspan", { x: 12, dy: 18 });
-                t2.textContent = line2.length > 26 ? line2.slice(0, 25) + "…" : line2;
-                label.appendChild(t2);
-            }
-            g.appendChild(label);
-            var slot = el("text", { x: 12, y: NODE_H - 10, class: "deg-node-slot" });
-            slot.textContent = (c.slot || "") +
-                (c.status === "building" ? " · building now" : "");
-            g.appendChild(slot);
-            if (c.status === "building") {
-                g.appendChild(el("circle", { cx: NODE_W - 16, cy: 16, r: 5,
-                                             class: "deg-node-pulse" }));
-            }
-            // A LOCKED COURSE KEEPS ITS NAME AND EXPLAINS ITSELF. Grey is the
-            // state, not a secret: clicking says what has to finish first —
-            // the specific prerequisite when one exists, otherwise the current
-            // course — rather than a mute dead node.
-            if ((c.status || "locked") === "locked") {
-                g.addEventListener("click", function () {
-                    var blockers = (c.requires || []).filter(function (r) {
-                        var rc = plan.courses.find(function (x) { return x.title === r; });
-                        return rc && rc.status !== "complete";
-                    });
-                    var why = blockers.length
-                        ? "Locked until you finish " + blockers.join(" and ") + "."
-                        : "Locked — finish your current course to unlock it. " +
-                          "It will be built before you arrive.";
-                    toast(c.title + ": " + why);
-                });
-            }
-            svg.appendChild(g);
-        });
-
-        renderChoice(plan);
-        fit();
+        renderProgress(plan);
+        renderFocus(plan);
+        renderNext(plan);
+        renderAreas(plan);
     }
 
     function renderProvenance(plan) {
@@ -266,129 +346,339 @@
         host.hidden = false;
         host.classList.toggle("is-proposed", plan.authoritative === false);
 
-        var tag = document.createElement("span");
-        tag.className = "deg-prov-tag";
-        tag.textContent = plan.authoritative
-            ? "Published curriculum" : "Model-proposed";
+        var tag = elem("span", "deg-prov-tag", plan.authoritative
+            ? "Published curriculum" : "Model-proposed");
         host.appendChild(tag);
 
-        var text = document.createElement("span");
-        text.className = "deg-prov-text";
         // The planner's own note when it has one -- it says the useful thing
         // (that each course is still evidence-gated) better than a generic
         // disclaimer would.
-        text.textContent = plan.note ? plan.note
-            : (plan.reference || plan.curriculum_source);
-        host.appendChild(text);
+        host.appendChild(elem("span", "deg-prov-text",
+            plan.note ? plan.note : (plan.reference || plan.curriculum_source)));
     }
 
-    /* The registration moment. */
-    function renderChoice(plan) {
-        var choices = plan.courses.filter(function (c) { return c.status === "choice"; });
-        var box = document.getElementById("deg-choice");
-        var cards = document.getElementById("deg-choice-cards");
-        if (!choices.length) { box.classList.add("hidden"); return; }
-        box.classList.remove("hidden");
-        cards.textContent = "";
-        choices.forEach(function (c) {
-            var card = document.createElement("button");
-            card.className = "deg-choice-card";
-            var h = document.createElement("h3"); h.textContent = c.title;
-            var p = document.createElement("p");
-            p.textContent = "Term " + c.term + " elective. Choosing locks it " +
-                "and starts its build.";
-            card.appendChild(h); card.appendChild(p);
-            card.addEventListener("click", function () {
-                if (plan.demo) {
-                    p.textContent = "Preview only — in a real programme this " +
-                        "locks the choice and the build begins.";
-                    return;
-                }
-                // currentUid, not the query string: the page reaches a
-                // programme either by ?uid= or by resolving the most recent
-                // one, and reading the URL meant the second path POSTed to
-                // /api/program/null/choose.
-                if (!currentUid) {
-                    p.textContent = "Could not tell which programme this is — " +
-                        "reload the page and try again.";
-                    return;
-                }
-                card.disabled = true;
-                fetch("/api/program/" + encodeURIComponent(currentUid) + "/choose",
-                      { method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ title: c.title }) })
-                    .then(function (r) {
-                        if (!r.ok) throw new Error("HTTP " + r.status);
-                        return r.json();
-                    })
-                    .then(function (d) {
-                        // A 200 carrying {status:"missing"} is still a failure;
-                        // reloading on it would silently discard the choice.
-                        if (d && d.status && d.status !== "ok") {
-                            throw new Error(d.status);
-                        }
-                        location.reload();
-                    })
-                    .catch(function (err) {
-                        card.disabled = false;
-                        p.textContent = "That choice did not save (" +
-                            err.message + "). Nothing has changed — try again.";
-                    });
-            });
-            cards.appendChild(card);
+    function counts(plan) {
+        var n = { complete: 0, current: 0, building: 0, available: 0, locked: 0 };
+        plan._courses.forEach(function (c) { n[c._state] += 1; });
+        n.total = plan._courses.length;
+        return n;
+    }
+
+    function renderProgress(plan) {
+        var n = counts(plan);
+        var host = document.getElementById("deg-progress");
+        host.hidden = false;
+
+        // The COUNT is the progress statement. A percentage bar alone tells a
+        // learner how they feel; "3 of 20" tells them where they are.
+        var count = document.getElementById("deg-count");
+        count.textContent = "";
+        count.appendChild(elem("strong", null, String(n.complete)));
+        count.appendChild(document.createTextNode(
+            " of " + n.total + " courses complete"));
+
+        var pct = n.total ? Math.round(n.complete / n.total * 100) : 0;
+        document.getElementById("deg-meter-fill").style.width = pct + "%";
+        document.getElementById("deg-meter").setAttribute(
+            "aria-label", n.complete + " of " + n.total + " courses complete");
+
+        // Everything else is a tally, not a bar segment: four coloured slivers
+        // in one track cannot be read, and three of these four numbers are not
+        // progress at all.
+        var tally = document.getElementById("deg-tally");
+        tally.textContent = "";
+        [["current", n.current, "in progress"],
+         ["building", n.building, "building"],
+         ["available", n.available, "available now"],
+         ["locked", n.locked, "locked"]].forEach(function (row) {
+            if (!row[1]) return;
+            var li = elem("li", "degree-tally-item is-" + row[0]);
+            li.appendChild(elem("span", "degree-key is-" + row[0]));
+            li.appendChild(elem("span", null, row[1] + " " + row[2]));
+            tally.appendChild(li);
         });
     }
 
-    /* ---------------------------------------------------------- pan & zoom */
-    var view = { x: 0, y: 0, k: 1 };
-    function apply() {
-        svg.style.transform = "translate(" + view.x + "px," + view.y + "px) scale(" + view.k + ")";
-    }
-    function fit() { view = { x: 0, y: 0, k: 1 }; apply(); }
+    /* 1. ONE COURSE AT A TIME. */
+    function renderFocus(plan) {
+        var section = document.getElementById("deg-focus");
+        var body = document.getElementById("deg-focus-body");
+        var n = counts(plan);
+        body.textContent = "";
+        section.hidden = false;
 
-    document.getElementById("deg-zoom-in").addEventListener("click", function () {
-        view.k = Math.min(3, view.k * 1.25); apply();
-    });
-    document.getElementById("deg-zoom-out").addEventListener("click", function () {
-        view.k = Math.max(.4, view.k / 1.25); apply();
-    });
-    document.getElementById("deg-zoom-fit").addEventListener("click", fit);
+        // The course being studied owns the slot. Only when nothing is in
+        // progress does a build get to stand in it — then "what is happening
+        // right now" genuinely is Helga writing a course.
+        var focus = plan._courses.filter(function (c) { return c._state === "current"; })[0] ||
+                    plan._courses.filter(function (c) { return c._state === "building"; })[0];
 
-    viewport.addEventListener("wheel", function (e) {
-        if (!e.ctrlKey && Math.abs(e.deltaY) < 40) return;  // let page scroll win
-        e.preventDefault();
-        view.k = Math.max(.4, Math.min(3, view.k * (e.deltaY < 0 ? 1.1 : 0.9)));
-        apply();
-    }, { passive: false });
-
-    var drag = null;
-    viewport.addEventListener("pointerdown", function (e) {
-        drag = { x: e.clientX - view.x, y: e.clientY - view.y };
-        viewport.setPointerCapture(e.pointerId);
-        viewport.classList.add("dragging");
-    });
-    viewport.addEventListener("pointermove", function (e) {
-        if (!drag) return;
-        view.x = e.clientX - drag.x; view.y = e.clientY - drag.y; apply();
-    });
-    viewport.addEventListener("pointerup", function () {
-        drag = null; viewport.classList.remove("dragging");
-    });
-
-    /* One transient toast; textContent only. */
-    var toastEl = null, toastTimer = null;
-    function toast(text) {
-        if (!toastEl) {
-            toastEl = document.createElement("div");
-            toastEl.className = "deg-toast";
-            toastEl.setAttribute("role", "status");
-            document.querySelector(".degree-shell").appendChild(toastEl);
+        if (!focus) {
+            // Not an error state and not a shrug: the learner has a programme
+            // and a decision waiting, so this says what to do next.
+            document.getElementById("deg-focus-h").textContent =
+                n.complete ? "Nothing in progress" : "Ready to begin";
+            var card = elem("div", "degree-focus-card is-empty");
+            card.appendChild(elem("p", "degree-focus-lead",
+                n.complete
+                    ? "You have finished " + n.complete + " " +
+                      (n.complete === 1 ? "course" : "courses") +
+                      ". Pick the next one when you are ready."
+                    : "You take one course at a time, and the order is yours. " +
+                      "Anything with its prerequisites behind it is open to you."));
+            var go = elem("button", "degree-focus-action", n.available
+                ? "See the " + n.available + " courses open to you"
+                : "See your programme");
+            go.type = "button";
+            go.addEventListener("click", function () {
+                var target = document.getElementById(n.available ? "deg-next" : "deg-plan");
+                target.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth",
+                                        block: "start" });
+            });
+            card.appendChild(go);
+            body.appendChild(card);
+            return;
         }
-        toastEl.textContent = text;
-        toastEl.classList.add("show");
-        clearTimeout(toastTimer);
-        toastTimer = setTimeout(function () { toastEl.classList.remove("show"); }, 4200);
+
+        document.getElementById("deg-focus-h").textContent = "Now studying";
+        var box = elem("div", "degree-focus-card is-" + focus._state);
+        box.appendChild(elem("p", "degree-focus-area", areaLabel(focus.slot)));
+        box.appendChild(elem("h3", "degree-focus-name", focus.title));
+
+        if (focus._state === "building") {
+            box.appendChild(elem("p", "degree-focus-lead",
+                "Helga is writing this course now. It will be waiting when it " +
+                "is done — you do not have to sit here."));
+            var bar = elem("div", "degree-build-bar");
+            bar.setAttribute("role", "progressbar");
+            bar.setAttribute("aria-label", "Building " + focus.title);
+            box.appendChild(bar);
+        } else {
+            box.appendChild(elem("p", "degree-focus-lead",
+                "One course at a time. Finish this one and the courses it " +
+                "unlocks open up."));
+            if (focus.course_uid) {
+                var open = elem("a", "degree-focus-action", "Continue this course");
+                open.href = "/learn?course_uid=" + encodeURIComponent(focus.course_uid);
+                box.appendChild(open);
+            }
+        }
+        body.appendChild(box);
+    }
+
+    /* 2. THE DECISION. */
+    function renderNext(plan) {
+        var section = document.getElementById("deg-next");
+        var grid = document.getElementById("deg-next-grid");
+        grid.textContent = "";
+
+        var open = plan._courses.filter(function (c) { return c._state === "available"; });
+        if (!open.length) {
+            section.hidden = true;
+            return;
+        }
+        section.hidden = false;
+
+        // The promise belongs HERE, said once, rather than repeated on all
+        // twenty-three cards until it stops being read.
+        document.getElementById("deg-next-sub").textContent =
+            open.length + " " + (open.length === 1 ? "course is" : "courses are") +
+            " open to you — every prerequisite they have is already behind you. " +
+            "Pick one and Helga builds it before you arrive.";
+
+        // A course Helga has already built can start this second, so those come
+        // first; after that the list runs in requirement-area order, because at
+        // forty courses an unsorted wall of twenty-three is not a decision, it
+        // is a search. Term is the planner's rough difficulty hint and breaks
+        // the remaining ties.
+        open.sort(function (a, b) {
+            return (b.built ? 1 : 0) - (a.built ? 1 : 0) ||
+                   areaRank(a.slot) - areaRank(b.slot) ||
+                   (a.term || 0) - (b.term || 0) ||
+                   a.title.localeCompare(b.title);
+        }).forEach(function (c) {
+            grid.appendChild(courseCard(plan, c, true));
+        });
+    }
+
+    /* 3 & 4. THE WHOLE DEGREE, grouped the way a catalogue groups one. */
+    function renderAreas(plan) {
+        var host = document.getElementById("deg-areas");
+        document.getElementById("deg-plan").hidden = false;
+        host.textContent = "";
+
+        var allTracks = tracks(plan);
+        var areas = {};
+        allTracks.forEach(function (t) {
+            // A sequence never crossed a requirement area in either real plan;
+            // if one ever does, its first course decides where it is filed
+            // rather than the sequence being torn in half.
+            var slot = t[0].slot || "";
+            (areas[slot] = areas[slot] || []).push(t);
+        });
+
+        Object.keys(areas).sort(function (a, b) {
+            return areaRank(a) - areaRank(b) || a.localeCompare(b);
+        }).forEach(function (slot) {
+            var group = areas[slot];
+            var flat = [];
+            group.forEach(function (t) { flat = flat.concat(t); });
+            var done = flat.filter(function (c) { return c._state === "complete"; }).length;
+
+            var area = elem("section", "degree-area");
+            var head = elem("div", "degree-area-head");
+            head.appendChild(elem("h3", "degree-area-name", areaLabel(slot)));
+            head.appendChild(elem("p", "degree-area-count",
+                done + " of " + flat.length + " complete"));
+            var meter = elem("div", "degree-area-meter");
+            var fill = elem("span", "degree-area-fill");
+            fill.style.width = (flat.length ? Math.round(done / flat.length * 100) : 0) + "%";
+            meter.appendChild(fill);
+            head.appendChild(meter);
+            area.appendChild(head);
+
+            var wrap = elem("div", "degree-tracks");
+            // Longest sequences first: they carry the area's structure, and a
+            // track of one reads fine wherever it lands.
+            group.sort(function (a, b) {
+                return b.length - a.length ||
+                       (a[0].term || 0) - (b[0].term || 0) ||
+                       a[0].title.localeCompare(b[0].title);
+            }).forEach(function (t) {
+                if (t.length === 1) {
+                    var single = elem("div", "degree-track");
+                    single.appendChild(courseCard(plan, t[0], false));
+                    wrap.appendChild(single);
+                    return;
+                }
+                // A sequence gets a band of its own across the full width, and
+                // runs left to right. Stacked in one grid cell it left three
+                // columns of dead space beside it on the 40-course plan and
+                // buried the free courses six rows down.
+                var band = elem("div", "degree-track is-sequence");
+                band.appendChild(elem("p", "degree-track-label", "Take in order"));
+                var flow = elem("div", "degree-track-flow");
+                t.forEach(function (c) { flow.appendChild(courseCard(plan, c, false)); });
+                band.appendChild(flow);
+                wrap.appendChild(band);
+            });
+            area.appendChild(wrap);
+            host.appendChild(area);
+        });
+
+        markScrollableSequences();
+        // A chain that fits at 1280 will not at 800, so the hint is measured
+        // again on resize rather than decided once at render. Removed first:
+        // render() can run more than once per page.
+        window.removeEventListener("resize", markScrollableSequences);
+        window.addEventListener("resize", markScrollableSequences);
+    }
+
+    /* Mark only the sequences whose chain is genuinely wider than its band, so
+       a two-course sequence is never given a scroll hint it does not need. */
+    function markScrollableSequences() {
+        var bands = document.querySelectorAll(".degree-track.is-sequence");
+        [].forEach.call(bands, function (band) {
+            var flow = band.querySelector(".degree-track-flow");
+            if (!flow) return;
+            band.classList.toggle("has-more", flow.scrollWidth - flow.clientWidth > 4);
+        });
+    }
+
+    /* One card, one course. `prominent` is the decision surface, where a card
+       is a control; in the plan below it the same course is a record. */
+    function courseCard(plan, c, prominent) {
+        var actionable = prominent && c._state === "available";
+        var card = elem(actionable ? "button" : "div",
+                        "degree-course is-" + c._state + (prominent ? " is-prominent" : ""));
+        if (actionable) card.type = "button";
+
+        if (prominent) {
+            // The decision surface has room to say which requirement this
+            // satisfies, and puts the arrow on the right where a control's
+            // "go" lives rather than in front of the label.
+            var head = elem("div", "degree-course-head");
+            head.appendChild(elem("span", "degree-course-area", areaLabel(c.slot)));
+            head.appendChild(icon(actionable ? ACTION_ICON : (STATE_ICON[c._state] || "dot")));
+            card.appendChild(head);
+            // h3 here, h4 in the plan: the decision cards sit directly under
+            // the section's h2, while a plan card sits under its area's h3.
+            // The heading level follows the nesting rather than the styling.
+            card.appendChild(elem("h3", "degree-course-title", c.title));
+        } else {
+            // In the plan the state icon rides on the title line: a card whose
+            // first line is an icon and nothing else wastes a row of height
+            // twenty times over.
+            var line = elem("div", "degree-course-line");
+            line.appendChild(icon(STATE_ICON[c._state] || "dot"));
+            line.appendChild(elem("h4", "degree-course-title", c.title));
+            card.appendChild(line);
+        }
+
+        var note = elem("p", "degree-course-note", stateNote(c, prominent));
+        // "Ready now" is a stronger offer than "will be built", and only the
+        // stronger one gets the accent.
+        if (prominent && c._state === "available" && !c.built) note.className += " is-quiet";
+        card.appendChild(note);
+
+        if (c._state === "building") card.appendChild(elem("div", "degree-build-bar"));
+
+        if (actionable) {
+            card.addEventListener("click", function () { start(plan, c, card); });
+        }
+        return card;
+    }
+
+    /* Starting a course. A course that already exists opens; one that does not
+       is requested, and the plan reloads showing it as the thing being built.
+       The endpoint is still /choose — under the old model it locked an elective,
+       under this one it records which course the learner is taking next, which
+       is the same write. */
+    function start(plan, c, card) {
+        if (plan.demo) {
+            card.querySelector(".degree-course-note").textContent =
+                "Example programme — in your own, this starts the course.";
+            return;
+        }
+        if (c.built && c.course_uid) {
+            location.href = "/learn?course_uid=" + encodeURIComponent(c.course_uid);
+            return;
+        }
+        // currentUid, not the query string: the page reaches a programme either
+        // by ?uid= or by resolving the most recent one, and reading the URL
+        // meant the second path POSTed to /api/program/null/choose.
+        var note = card.querySelector(".degree-course-note");
+        if (!currentUid) {
+            note.textContent = "Could not tell which programme this is — " +
+                "reload the page and try again.";
+            return;
+        }
+        card.disabled = true;
+        note.textContent = "Asking Helga to build it…";
+        fetch("/api/program/" + encodeURIComponent(currentUid) + "/choose",
+              { method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ title: c.title }) })
+            .then(function (r) {
+                if (!r.ok) throw new Error("HTTP " + r.status);
+                return r.json();
+            })
+            .then(function (d) {
+                // A 200 carrying {status:"missing"} is still a failure;
+                // reloading on it would silently discard the choice.
+                if (d && d.status && d.status !== "ok") throw new Error(d.status);
+                location.reload();
+            })
+            .catch(function (err) {
+                card.disabled = false;
+                note.textContent = "That did not save (" + err.message +
+                    "). Nothing has changed — try again.";
+            });
+    }
+
+    function prefersReducedMotion() {
+        return window.matchMedia &&
+               window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     }
 
     load();
