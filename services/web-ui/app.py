@@ -527,6 +527,62 @@ def books_build():
     title = (meta.get('metadata') or {}).get('title') or ident
     if isinstance(title, list):
         title = title[0]
+
+    # This used to end here: validate the book, answer
+    # {'status':'started'} 202, and start NOTHING — no thread, no core POST.
+    # The 202 made it read as queued, so the user was sent to /build to watch
+    # an elapsed counter for a build that never existed. It now does what the
+    # upload path does: fetch the text, save it where the pipeline reads
+    # uploads from, and hand core the same event an uploaded book sends —
+    # one build path, not two.
+    try:
+        text_url = f'https://archive.org/download/{ident}/{fulltext[0]}'
+        r = requests.get(text_url, headers={'User-Agent': 'Helga/1.0'},
+                         timeout=120, stream=True)
+        r.raise_for_status()
+        upload_dir = '/app/data/uploads'
+        os.makedirs(upload_dir, exist_ok=True)
+        safe = secure_filename(f'{ident}.txt')
+        filepath = os.path.join(upload_dir, safe)
+        size = 0
+        # 80 MB cap: the largest full-text scans are tens of MB; anything past
+        # this is a mis-tagged item and would only stall the build.
+        with open(filepath, 'wb') as fh:
+            for chunk in r.iter_content(1 << 16):
+                size += len(chunk)
+                if size > 80 * 1024 * 1024:
+                    fh.close()
+                    os.unlink(filepath)
+                    return jsonify({'error': 'This text is implausibly large '
+                                    'for a book and was not downloaded.'}), 422
+                fh.write(chunk)
+    except requests.RequestException as e:
+        app.logger.warning("book text download failed for %s: %s", ident, e)
+        return jsonify({'error': 'The archive did not deliver the book text. '
+                        'Nothing was started — try again.'}), 502
+
+    event = {
+        'type': 'TEXT_INPUT',
+        'payload': {
+            'text': f'create course from epub {filepath}',
+            'source': 'library_archive',
+            'filepath': filepath,
+            'book_title': str(title)[:180],
+        },
+    }
+    try:
+        resp = requests.post(f'{SERVICES["core"]}/event', json=event, timeout=60)
+        if resp.status_code >= 400:
+            raise requests.RequestException(f'core answered {resp.status_code}')
+    except requests.RequestException as e:
+        app.logger.error("book build handoff failed: %s", e)
+        try:
+            os.unlink(filepath)
+        except OSError:
+            pass
+        return jsonify({'error': 'The book downloaded but the build service '
+                        'did not accept it. Nothing was started.'}), 502
+
     return jsonify({'status': 'started', 'title': title, 'identifier': ident,
                     'text_file': fulltext[0]}), 202
 
@@ -622,7 +678,7 @@ def book_availability():
     restricted = str((meta.get('metadata') or {}).get(
         'access-restricted-item', '')).lower() == 'true'
     files = [f.get('name', '') for f in (meta.get('files') or [])]
-    fulltext = [f for f in files if f.endswith('_djvu.txt') or f.endswith('.txt')]
+    fulltext = [f for f in files if f.endswith('_djvu.txt')]  # must match the build gate: *_meta.txt sidecars are not text
 
     if restricted or not fulltext:
         return jsonify({
@@ -859,10 +915,11 @@ def get_gamification():
                             params={'student_id': current_student_id()}, timeout=5)
         return jsonify(resp.json()), resp.status_code
     except Exception as e:
-        return jsonify({
-            "total_xp": 0, "level": 1, "streak_days": 0,
-            "daily_xp": 0, "achievements_unlocked": [],
-        })
+        # Fabricated zeros are worse than an error here: a fake 0-day streak
+        # reads as "you lost your streak", which is the opposite of motivating
+        # and not even true.
+        app.logger.warning("gamification proxy failed: %s", e)
+        return jsonify({'error': 'gamification unavailable'}), 503
 
 
 @app.route('/api/gamification/award_xp', methods=['POST'])
@@ -1075,6 +1132,11 @@ def set_active_course():
     try:
         event = {
             'type': 'SET_CONTEXT',
+            # Without this the event lands on the DEFAULT student's FSM: on a
+            # multi-profile install, profile B's course switch would mutate
+            # someone else's session. /api/event already injects it; these two
+            # side doors did not.
+            'student_id': current_student_id(),
             'payload': {
                 'course_uid': data.get('uid'),
                 'title': data.get('title')
@@ -1213,8 +1275,11 @@ def list_programs():
         r = requests.get(f'{SERVICES["core"]}/api/programs', timeout=6)
         return jsonify(r.json()), r.status_code
     except Exception as e:
+        # 503, never 200-with-empty: an empty 200 is indistinguishable from
+        # "you have no programmes", and the degree page draws its example plan
+        # over a learner's real data on exactly that misreading.
         app.logger.warning("list_programs proxy failed: %s", e)
-        return jsonify({'programs': [], 'error': 'unavailable'}), 200
+        return jsonify({'error': 'programme service unavailable'}), 503
 
 
 @app.route('/api/program/<uid>', methods=['GET'])
@@ -1360,6 +1425,9 @@ def upload_epub():
         # Forward to core for course creation from EPUB
         event = {
             'type': 'TEXT_INPUT',
+            # Same student routing as /api/event — an upload from profile B
+            # must not build on the default profile's FSM.
+            'student_id': current_student_id(),
             'payload': {
                 'text': f'create course from epub {filepath}',
                 'source': 'epub_upload',
@@ -1533,10 +1601,19 @@ def get_due_cards():
     topic = request.args.get('topic', '')
     course_uid = request.args.get('course_uid', '')
     try:
-        resp = requests.get(f'{SERVICES["rag"]}/api/due_cards', params={'topic': topic, 'course_uid': course_uid}, timeout=5)
+        params = {'topic': topic, 'course_uid': course_uid}
+        # The schedule calendar sends target_date for "what is due on THIS
+        # day"; the proxy dropped it, so every future day listed today's cards
+        # under that day's heading.
+        if request.args.get('target_date'):
+            params['target_date'] = request.args['target_date']
+        resp = requests.get(f'{SERVICES["rag"]}/api/due_cards', params=params, timeout=5)
         return jsonify(resp.json()), resp.status_code
     except Exception as e:
-        return jsonify({'cards': []}), 200
+        # A failed request is not an empty schedule. The librarian side of
+        # this was fixed today; answering {'cards': []} 200 here re-introduced
+        # the identical lie one layer up whenever RAG itself was unreachable.
+        return jsonify({'error': 'review service unavailable'}), 503
 
 @app.route('/api/generate_flashcards', methods=['POST'])
 def generate_flashcards():
@@ -1911,7 +1988,11 @@ def proxy_create_course():
 def proxy_creation_status():
     """Monitor course creation progress — phase, topic, progress %."""
     try:
-        resp = requests.get(f'{SERVICES["core"]}/api/creation_status', timeout=5)
+        resp = requests.get(f'{SERVICES["core"]}/api/creation_status',
+                            # Without this, core falls back to the DEFAULT
+                            # student's FSM and a multi-profile install
+                            # reads someone else's build phase.
+                            params={'student_id': current_student_id()}, timeout=5)
         return jsonify(resp.json()), resp.status_code
     except Exception as e:
         return jsonify({'active': False, 'phase': None, 'error': str(e)}), 200
@@ -1935,7 +2016,10 @@ def proxy_due_concepts():
         resp = requests.get(f'{SERVICES["rag"]}/api/due_concepts', params=params, timeout=5)
         return jsonify(resp.json()), resp.status_code
     except Exception as e:
-        return jsonify({'concepts': []}), 200
+        # Same class as due_cards above — and this one silently defeated the
+        # librarian's own 503, because practice.js only ever sees this proxy.
+        app.logger.warning("due_concepts proxy failed: %s", e)
+        return jsonify({'error': 'review service unavailable'}), 503
 
 
 def _monitored_spawn(fn, name):

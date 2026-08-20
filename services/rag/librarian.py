@@ -768,10 +768,16 @@ def health():
 def due_cards_endpoint():
     topic = request.args.get("topic", "")
     course_uid = request.args.get("course_uid", "")
+    # The calendar asks about a specific DAY. get_due_cards has accepted
+    # target_date all along; this endpoint just never read it, so every
+    # future day on the schedule page listed today's cards under that
+    # day's heading.
+    target_date = request.args.get("target_date") or None
     try:
         # Pass course_uid only if non-empty; otherwise fetch all due cards
         cards = storage.flashcards.get_due_cards(
-            course_uid=course_uid if course_uid else None
+            course_uid=course_uid if course_uid else None,
+            target_date=target_date,
         )
         return jsonify({"cards": cards})
     except Exception as e:
