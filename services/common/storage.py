@@ -1159,12 +1159,50 @@ class CourseStore:
         if "status" not in course_dict:
             course_dict["status"] = "skeleton"
 
-        # AUTO-10: Write SQLite row first; only write JSON if SQLite succeeds
+        # AUTO-10, both directions. A course lives in two stores — the row in
+        # `courses` and the directory holding structure.json — and this method
+        # is the only place both are created. Whatever order it writes them in,
+        # a failure between the two writes leaves the system holding one.
+        #
+        # The order here used to be SQLite first, on the reasoning that the row
+        # is what the course list reads. That gets the asymmetry backwards. The
+        # two residues are not equally bad:
+        #
+        #   row without directory   The row is a title and a status. The course
+        #                           itself is GONE and nothing can rebuild it.
+        #                           The list offers an entry that cannot open.
+        #   directory without row   structure.json IS the course. The row is
+        #                           derived metadata, regenerable from the file
+        #                           at any time.
+        #
+        # Measured against the live data directory on 2026-08-19: 19 rows, 3
+        # directories — sixteen unopenable courses, all of them produced by
+        # this window. So write the recoverable store first, and if the second
+        # write fails, undo the first so neither store keeps a half-course.
+        # tools/reconcile_courses.py repairs whatever already leaked.
+        payload = json.dumps(course_dict, indent=2)  # before touching any store
+
+        course_dir = os.path.join(self.courses_dir, uid)
+        structure_path = os.path.join(course_dir, "structure.json")
+        # Only a directory this call actually created may be rolled back. An
+        # INSERT OR REPLACE over an existing uid must never delete content that
+        # was already on disk.
+        dir_existed = os.path.exists(course_dir)
+
+        os.makedirs(course_dir, exist_ok=True)
+        os.makedirs(os.path.join(course_dir, "content"), exist_ok=True)
+
+        # Temp + rename, so a crash mid-write cannot leave a truncated
+        # structure.json that reads as neither a course nor an absence.
+        tmp_path = structure_path + ".tmp"
+        with open(tmp_path, "w") as f:
+            f.write(payload)
+        os.replace(tmp_path, structure_path)
+
         cat = course_dict.get("catalog") or {}
-        db_path = os.path.join(self.data_dir, "helga.db")
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
+        conn = self._get_db()
+        try:
+            conn.execute("""
                 INSERT OR REPLACE INTO courses (uid, title, overview, status, teaching_style,
                     subject, grade_band, grade_numeric, is_catalog, catalog_status,
                     version, visibility, reviewed_by, published_at, enrichment_included)
@@ -1184,14 +1222,47 @@ class CourseStore:
                 1 if cat.get("enrichment_included") else 0,
             ))
             conn.commit()
-
-        course_dir = os.path.join(self.courses_dir, uid)
-        os.makedirs(course_dir, exist_ok=True)
-        os.makedirs(os.path.join(course_dir, "content"), exist_ok=True)
-
-        structure_path = os.path.join(course_dir, "structure.json")
-        with open(structure_path, "w") as f:
-            json.dump(course_dict, f, indent=2)
+        except Exception as db_err:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            if not dir_existed:
+                # Undo the disk half, so a failed create_course leaves no trace
+                # in either store. Safe only because dir_existed proves we were
+                # the ones who made this directory a moment ago.
+                try:
+                    shutil.rmtree(course_dir)
+                    logger.error(
+                        f"create_course({uid}): SQLite registration failed; "
+                        f"rolled back the on-disk course directory, so neither "
+                        f"store was modified. Cause: {db_err}"
+                    )
+                except Exception as rb_err:
+                    # Write failed AND undo failed. This is the one path that
+                    # can still diverge, so it is NAMED rather than swallowed:
+                    # the operator needs the uid and the repair command.
+                    logger.error(
+                        f"DIVERGENCE (AUTO-10) course={uid}: structure.json "
+                        f"exists at {structure_path} but the `courses` row was "
+                        f"NOT written, and rolling the directory back also "
+                        f"failed. The course is invisible to the course list "
+                        f"until re-registered. Repair with: python3 "
+                        f"tools/reconcile_courses.py {self.data_dir} --fix "
+                        f"(db error: {db_err}; rollback error: {rb_err})"
+                    )
+            else:
+                # Pre-existing directory: rolling it back would destroy content
+                # this call did not create, so the divergence is reported
+                # instead of repaired. structure.json is now newer than the row.
+                logger.error(
+                    f"DIVERGENCE (AUTO-10) course={uid}: structure.json was "
+                    f"overwritten but the `courses` row was NOT updated, so "
+                    f"the two stores disagree about this course. Inspect with: "
+                    f"python3 tools/reconcile_courses.py {self.data_dir} "
+                    f"(db error: {db_err})"
+                )
+            raise
 
         logger.info(f"Created course structure: {structure_path}")
         return uid
@@ -1250,6 +1321,20 @@ class CourseStore:
                     1 if cat.get("enrichment_included") else 0,
                     uid
                 ))
+                # An UPDATE that matches nothing is not an error to SQLite, so
+                # this was the quietest way for the two stores to drift: the
+                # JSON above is already written, the row never existed (or was
+                # removed under us), and the course simply never appears in the
+                # list. Same divergence AUTO-10 describes, arrived at by doing
+                # nothing wrong. Name it here rather than let it pass.
+                if cursor.rowcount == 0:
+                    logger.error(
+                        f"DIVERGENCE (AUTO-10) course={uid}: structure.json "
+                        f"updated but no `courses` row matched the UPDATE, so "
+                        f"this course is invisible to the course list. Repair "
+                        f"with: python3 tools/reconcile_courses.py "
+                        f"{self.data_dir} --fix"
+                    )
                 conn.commit()
         except Exception as e:
             logger.error(f"Failed to update course metadata in SQLite: {e}")
