@@ -29,7 +29,11 @@
 
     /* Text — deep forest and stone */
     --text-primary: #2d3a2e;
-    --text-secondary: #6b7c6e;
+    /* Measured, not eyeballed. #6b7c6e ran 3.92:1 on --bg-primary,
+       4.44 on --bg-secondary and 3.94 on --bg-tertiary -- every muted
+       caption in the product was under AA. #607063 is the same hue a
+       few steps down: 4.64 / 5.26 / 4.66. */
+    --text-secondary: #607063;
     --text-inverted: #ffffff;
 
     /* Accent — Alpine Blue (Bavarian sky) */
@@ -125,7 +129,8 @@
     --bg-tertiary: #2a3830;
     --bg-chat: #1e2824;
     --text-primary: #d8e0d9;
-    --text-secondary: #8a9a8d;
+    /* 4.15:1 on --bg-tertiary before; 4.63 now (5.99 / 5.29 / 4.63). */
+    --text-secondary: #92a395;
     --border-color: #3a4a3e;
     --accent-primary: #5da0c2;
     /* Dark ink on the pale accent: 6.0:1, versus 2.9:1 for white. */
@@ -150,7 +155,11 @@
     --bg-secondary: #ffffff;
     --bg-tertiary: #e8f4f0;
     --text-primary: #2d3a2e;
-    --text-secondary: #6b7c6e;
+    /* Measured, not eyeballed. #6b7c6e ran 3.92:1 on --bg-primary,
+       4.44 on --bg-secondary and 3.94 on --bg-tertiary -- every muted
+       caption in the product was under AA. #607063 is the same hue a
+       few steps down: 4.64 / 5.26 / 4.66. */
+    --text-secondary: #607063;
     --border-color: #d4cdc4;
     --accent-primary: #2e6b8a;
     --shadow-soft: 0 2px 8px rgba(45, 58, 46, 0.06);

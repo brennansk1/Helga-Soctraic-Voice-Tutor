@@ -1197,3 +1197,24 @@ body:not(.page-home) .matterhorn-bg { display: none; }
 }
 .app-nav .nav-link:hover { color: var(--accent-primary); }
 
+
+/* Prose links.
+ *
+ * There was no base anchor colour anywhere, so any <a> written without a class
+ * fell through to the user agent's #0000EE. On the dark theme that measures
+ * about 2.3:1 and reads as a broken page rather than a link. (Found on the
+ * degree page's empty state: "...from the Create page and choose a degree.")
+ *
+ * Scoped to :not([class]) on purpose: every anchor the product styles itself
+ * -- nav links, card wrappers, pills, button-shaped links -- carries a class
+ * and relies on inheriting its own colour, so a bare `a {}` rule would repaint
+ * all of them. This catches exactly the unstyled ones, now and in future.
+ */
+a:not([class]) {
+    color: var(--accent-primary);
+    text-decoration: underline;
+    text-underline-offset: 0.15em;
+}
+a:not([class]):hover {
+    color: var(--accent-primary-dark);
+}

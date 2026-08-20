@@ -38,12 +38,24 @@
     <link rel="preload" as="font" type="font/woff2" crossorigin
           href="{{ url_for('static', filename='fonts/plexsans-600.woff2') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=2">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=5">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=6">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/icons.css') }}?v=1">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/design-system.css') }}?v=1">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/setup.css') }}?v=1">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/design-system.css') }}?v=2">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/setup.css') }}?v=5">
 </head>
 <body class="page-setup">
+
+{# The brand bar. Not base.html's header — that navigates to Learn, Practice
+   and Review, none of which work on the machine this page exists to fix — but
+   the mark and the gradient belong here all the same. This is a first
+   impression, and a page that carries none of the product's identity reads as
+   a diagnostic tool someone bolted on rather than the front door. #}
+<div class="setup-brandbar" aria-hidden="true"></div>
+<header class="setup-brand">
+    <span class="setup-brand-mark"></span>
+    <span class="setup-brand-word">Helga</span>
+</header>
+
 <main class="setup-shell" id="setup-shell">
 
     <header class="setup-head">

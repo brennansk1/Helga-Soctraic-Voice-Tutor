@@ -21,6 +21,39 @@
     min-height: 100vh;
 }
 
+/* --- the brand, and why it is here ---------------------------------------
+ * This page does not inherit base.html's chrome (its navigation points at
+ * features that do not work yet), but it is still the FIRST THING a person
+ * sees. Carrying none of the product's identity made it read as a diagnostic
+ * tool bolted on beside Helga rather than Helga's own front door — so the
+ * mark, the wordmark and the brand hairline come across on their own.
+ */
+.setup-brandbar {
+    height: 3px;
+    background: linear-gradient(90deg,
+        var(--accent-primary) 0%,
+        var(--accent-tertiary) 42%,
+        var(--accent-secondary) 78%,
+        var(--accent-primary) 100%);
+}
+.setup-brand {
+    display: flex; align-items: center; gap: .55em;
+    width: min(760px, 100%);
+    margin: 0 auto;
+    padding: var(--space-4) var(--space-4) 0;
+    box-sizing: border-box;
+}
+.setup-brand-mark {
+    width: 1.6em; height: 1.6em; flex: 0 0 auto;
+    background: url('/static/img/logo-helga.svg') center / contain no-repeat;
+}
+.setup-brand-word {
+    font-family: var(--font-brand);
+    font-size: 1.15rem; font-weight: var(--font-weight-bold);
+    letter-spacing: -0.015em;
+    color: var(--accent-primary);
+}
+
 .setup-shell {
     box-sizing: border-box;
     width: min(760px, 100%);
@@ -32,13 +65,19 @@
 
 .setup-kicker {
     margin: 0 0 .35em;
-    font-size: .74rem; font-weight: 600; letter-spacing: .09em;
+    font-size: .74rem; font-weight: 700; letter-spacing: .09em;
     text-transform: uppercase;
-    color: var(--text-secondary);
+    /* Brand accent, not the generic secondary grey. This eyebrow is the first
+       coloured thing under the wordmark and it should belong to Helga. */
+    color: var(--accent-primary);
 }
 .setup-title {
+    /* The display size the rest of the product uses for a page it wants you
+       to feel something about, not the 1.75rem of a settings subhead. */
+    font-family: var(--font-brand);
     margin: 0 0 var(--space-3);
-    font-size: 1.75rem; line-height: 1.15;
+    font-size: clamp(2rem, 4vw, 2.6rem); line-height: 1.1;
+    letter-spacing: -0.02em;
     color: var(--text-primary);
 }
 .setup-lead {
@@ -114,12 +153,20 @@
 .setup-step {
     box-sizing: border-box;
     margin: 0 0 var(--space-3);
-    padding: var(--space-4);
+    padding: var(--space-4) var(--space-5);
     background: var(--bg-secondary);
     color: var(--text-primary);
     border: 1px solid var(--border-color);
     border-left-width: 4px;
-    border-radius: var(--border-radius);
+    /* The product's card treatment — larger radius and a real shadow — rather
+       than a hairline box. These are the same cards as everywhere else. */
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-card);
+    transition: box-shadow 160ms ease, transform 160ms ease;
+}
+.setup-step:hover { box-shadow: var(--shadow-lg); }
+@media (prefers-reduced-motion: reduce) {
+    .setup-step { transition: none; }
 }
 /* The left edge carries the state at a glance; the pill carries it in words.
    Colour alone is never the only signal — the pill's text is the accessible
@@ -140,9 +187,13 @@
     width: 1.6em; height: 1.6em;
     font-size: .78rem; font-weight: 700;
     font-variant-numeric: tabular-nums;
-    color: var(--text-secondary);
+    /* The accent lives in the ring, not the glyph. Accent-on-bg-tertiary
+       measures 4.26:1 in dark, which is fine for a 1px UI boundary (needs 3)
+       and fails for a 12.5px numeral (needs 4.5), so the digit keeps
+       --text-primary and the brand rides the border instead. */
+    color: var(--text-primary);
     background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--accent-primary);
     border-radius: 999px;
 }
 .setup-step-title {
@@ -356,7 +407,10 @@
    a long `pip install -r …` never widens the page. */
 @media (max-width: 560px) {
     .setup-shell { padding: var(--space-4) var(--space-3); }
-    .setup-title { font-size: 1.4rem; }
+    /* 1.4rem next to a .88rem lead is only a 1.6x step -- too flat for the
+       page's one heading. 1.75rem still fits "Set up Helga" on a 375px
+       screen with room to spare. */
+    .setup-title { font-size: 1.75rem; }
     .setup-lead { font-size: .88rem; }
     .setup-step { padding: var(--space-3); }
     .setup-step-head { flex-wrap: wrap; }
