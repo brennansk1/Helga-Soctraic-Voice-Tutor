@@ -126,9 +126,35 @@ printf 'FROM nail-35b-a3b\nPARAMETER num_ctx 16384\n' > Modelfile.ctx
 ollama create nail-35b-a3b-ctx -f Modelfile.ctx     # reuses the blob, no re-download
 ```
 
-`nail-35b-a3b-ctx` is now the default in `docker-compose.yml` and in the code
+`nail-35b-a3b-ctx` is the default in `docker-compose.yml` and in the code
 defaults, so nothing needs setting by hand. Override with `OLLAMA_MODEL` if you
 register it under a different name.
+
+> **This sentence was false from the day it was written until 2026-08-20.** Only
+> the compose half had been done; `services/common/model_roles.py` still
+> defaulted to `qwen3.5:9b`, so containers ran Nail and everything on the host —
+> every tool in `tools/`, every benchmark, every long run — ran the old model.
+> The golden matrix produced an hour and a half of quality numbers for a model
+> the project does not ship before anyone noticed, and nothing in its output
+> said which model it had used.
+>
+> The default now lives in one place, `model_roles.DEFAULT_MODEL`, and
+> `tests/common/test_model_default_agrees.py` fails if compose and the code
+> stop naming the same model. Documenting a default is not setting one.
+
+### Cold load: 3m31s
+
+Measured on this machine, weights not resident: **211s** to first token. That
+matters because `llm_generate`'s timeout floor is 90s, so a cold start used to
+burn all three retries and open the circuit breaker before the model had
+finished reading itself into memory — a machine where nothing was wrong,
+reporting a dead LLM.
+
+`llm_utils` now tells the two apart by asking Ollama what is resident: a
+timeout with the model absent from `/api/ps` is a cold load, and buys a
+`COLD_LOAD_TIMEOUT` of 420s instead of a strike against the breaker. An
+unreachable Ollama stays "unknown" rather than "loading", so a genuinely dead
+host still fails fast.
 
 ### It is enforced, not just documented
 

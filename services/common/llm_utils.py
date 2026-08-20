@@ -391,6 +391,41 @@ def validate_schema(data: Any, schema: dict) -> bool:
     return True
 
 
+# A COLD LOAD IS NOT A HANG.
+#
+# The timeout floor is 90s. Loading nail-35b-a3b-ctx from disk was MEASURED at
+# 3m31s on this machine -- so the first call after Ollama has evicted the
+# weights times out three times, the breaker opens on three "transport
+# failures", and a build that was about to work fails before the model has
+# finished reading itself into memory. Watched it happen to the golden matrix.
+#
+# The two cases look identical from the client (no bytes, no response) and are
+# told apart by asking Ollama what is resident: if the model we want is NOT in
+# /api/ps, nothing is wrong, it is still loading. That timeout then buys a
+# longer one instead of a strike against the breaker.
+COLD_LOAD_TIMEOUT = 420          # > the 211s measured, with room for a slower disk
+
+
+def _weights_resident(model, base_url, timeout=5):
+    """True/False if Ollama answers, None if we cannot tell.
+
+    None matters: an unreachable Ollama must NOT be read as "still loading" or
+    a genuinely dead host would retry forever on the long timeout.
+    """
+    try:
+        root = (base_url or "").split("/v1/")[0].rstrip("/")
+        if not root:
+            return None
+        r = requests.get(root + "/api/ps", timeout=timeout)
+        if r.status_code != 200:
+            return None
+        names = {m.get("name", "") for m in (r.json() or {}).get("models", [])}
+    except Exception:
+        return None
+    return any(n == model or n.split(":")[0] == str(model).split(":")[0]
+               for n in names)
+
+
 def llm_generate(
     prompt: str,
     sys_prompt: str = 'Expert curriculum designer. Response must be a Python list of dictionaries. IMPORTANT: Use double quotes (") for all strings.',
@@ -429,6 +464,7 @@ def llm_generate(
     breaker = get_breaker()
     clear_llm_failure()
     failure = None
+    _cold_load_grace = False
     for attempt in range(retries):
         # A7: fast-fail BEFORE the heartbeat thread, the GPU slot and the socket.
         # While the circuit is open the answer is already known, and the whole
@@ -445,6 +481,9 @@ def llm_generate(
         timeout = max(
             90, min(600, max_tokens * 0.5)
         )  # 90s floor, scale with tokens, 10 min cap
+        if _cold_load_grace:
+            # One attempt already timed out with the weights not resident.
+            timeout = max(timeout, COLD_LOAD_TIMEOUT)
 
         # Heartbeat: send periodic "still working" updates while LLM is blocked
         heartbeat_stop = threading.Event()
@@ -649,6 +688,23 @@ def llm_generate(
                 time.sleep(2 ** attempt)
         except requests.exceptions.Timeout:
             heartbeat_stop.set()
+            if not _cold_load_grace and attempt < retries - 1:
+                resident = _weights_resident(_role_model, _role_url)
+                if resident is False:
+                    # Still reading the weights off disk. Not a failure, and
+                    # emphatically not a breaker strike: three of these would
+                    # open the breaker on a machine where nothing is wrong.
+                    _cold_load_grace = True
+                    logger.warning(
+                        "LLM timeout after %.0fs, but %s is not resident yet -- "
+                        "treating as a cold load and allowing %ds",
+                        timeout, _role_model, COLD_LOAD_TIMEOUT)
+                    if progress_callback:
+                        progress_callback(
+                            "LOG: the model is still loading into memory; "
+                            "this first call can take a few minutes")
+                    time.sleep(2)
+                    continue
             failure = record_failure_reason(
                 LLMTimeout(f"no response in {timeout:.0f}s"))
             breaker.record_failure(failure)
