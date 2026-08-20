@@ -132,6 +132,44 @@ this compares two different models as well as two different codebases. It is
 recorded as **unresolved**, not as a regression and not dismissed. A clean
 answer needs a new baseline captured on the current model.
 
+### The tutor-quality gate FAILS, and now we know why
+
+The -0.44 recorded above was ambiguous because the baseline predated the model
+swap. A fresh baseline was captured on `nail-35b-a3b-ctx`
+(`docs/baselines/helgabench_nail35b_2026-08-20.json`), so there are now TWO
+independent median-of-3 runs on the current model to compare against the old
+`qwen3.5:9b` baseline:
+
+| dimension | qwen3.5:9b | nail run 1 | nail run 2 | run spread | vs old |
+|---|---|---|---|---|---|
+| socratic | 3.40 | 2.13 | 2.07 | **0.06** | **-1.30** |
+| adaptation | 2.80 | 1.67 | 1.87 | 0.20 | **-1.03** |
+| accuracy | 3.67 | 4.20 | 4.33 | 0.13 | +0.60 |
+| misconception_handling | 3.00 | 4.00 | 4.83 | 0.83 | +1.42 |
+| progression | 3.27 | 2.67 | 3.13 | 0.46 | -0.37 (noise) |
+| **overall** | 3.27 | 2.83 | 3.05 | 0.22 | -0.33 |
+
+**This is not instrument noise.** The two runs on the same model agree to
+within 0.06 on socratic, while the gap to the old baseline is 1.30 — twenty
+times the spread. Same for adaptation.
+
+**The swap traded Socratic ability for accuracy.** nail-35b is meaningfully
+more accurate and much better at catching misconceptions. It is meaningfully
+worse at asking rather than telling.
+
+**The absolute numbers matter more than the deltas.** socratic 2.10/5 and
+adaptation 1.77/5, in a product whose entire claim is Socratic tutoring. This
+is the core value proposition underperforming, not a regression against an
+arbitrary reference — and it is the same defect §4.1 already recorded from the
+judge's worst_moment notes ("lecturing instead of questioning", "ignoring what
+the student actually asked"), now measured and worse.
+
+*Release gate "tutor quality at/above calibrated baseline": **FAILS**, for a
+real and specific reason.* The fix is not another model swap — accuracy and
+misconception handling would regress. It is A4.1a/b, the dialogue contract and
+learner-history personalisation: prompt-level work aimed squarely at asking
+instead of telling, measured against the new baseline with median-of-3.
+
 ### Three bugs only a live run could find
 
 1. **A6 and A7 are correct alone and broken together.** The 30m idle window
