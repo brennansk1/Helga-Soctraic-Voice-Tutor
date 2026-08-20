@@ -1,0 +1,13 @@
+# HOST path — the default deployment on Apple Silicon (STT_BACKEND=nemotron-mlx).
+#
+# This file did not exist. The backend is imported lazily, so a machine without
+# it starts the service cleanly and fails only when someone speaks — which is
+# how voice INPUT came to be as unusable as voice output was.
+#
+# Python >= 3.10 (same constraint as the TTS host path; see
+# services/tts/requirements-host.txt for what a 3.9 interpreter silently does
+# to these pins). Installed into .venv-host by scripts/host_services.sh.
+flask==3.0.0
+nemotron-asr-mlx==0.2.0
+numpy==1.26.4
+soundfile==0.14.0

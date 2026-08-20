@@ -1,5 +1,8 @@
 flask==3.0.0
-requests==2.31.0
+# 2.32.0 fixes CVE-2024-35195: on a Session, one request made with
+# verify=False made EVERY later request to that host skip certificate
+# verification, whatever verify was set to afterwards.
+requests==2.34.2
 # sentence-transformers REMOVED: embeddings now come from Ollama
 # (services/common/embeddings.py). That drops PyTorch + transformers from this
 # image entirely and upgrades the model from all-MiniLM-L6-v2 (384-dim) to

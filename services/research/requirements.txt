@@ -1,9 +1,22 @@
 flask==3.0.0
 trafilatura==1.12.0
 wikipedia-api==0.6.0
-aiohttp==3.9.5
+# 3.9.5 carries a zip-bomb memory exhaustion and several DoS issues. Most
+# aiohttp CVEs are server-side and would not apply here, but this is a
+# CLIENT fetching arbitrary pages found by SearXNG — decompression of a
+# hostile response is exactly our exposure.
+aiohttp==3.14.3
 diskcache==5.6.3
-requests==2.31.0
+# book_reader.py and textbook_figures.py run in this service as well, and both
+# import PyMuPDF (`fitz`) and BeautifulSoup unguarded. Neither was declared:
+# verified against the built image, `fitz` and `bs4` both raised ImportError,
+# so this container could read neither a PDF nor an EPUB.
+pymupdf==1.28.2
+beautifulsoup4==4.15.0
+# 2.32.0 fixes CVE-2024-35195: on a Session, one request made with
+# verify=False made EVERY later request to that host skip certificate
+# verification, whatever verify was set to afterwards.
+requests==2.34.2
 
 # JSON repair for LLM output (services/common/llm_utils.repair_json). Both are
 # OPTIONAL — repair_json falls back to its stdlib passes if they are absent —

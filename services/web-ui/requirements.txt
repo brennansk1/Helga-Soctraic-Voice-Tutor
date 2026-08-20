@@ -1,5 +1,8 @@
 Flask==3.0.0
-requests==2.31.0
+# 2.32.0 fixes CVE-2024-35195: on a Session, one request made with
+# verify=False made EVERY later request to that host skip certificate
+# verification, whatever verify was set to afterwards.
+requests==2.34.2
 Flask-SocketIO==5.3.6
 python-socketio==5.11.2
 gevent-websocket==0.10.1

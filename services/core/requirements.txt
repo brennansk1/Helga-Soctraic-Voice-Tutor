@@ -1,5 +1,8 @@
 flask==3.0.0
-requests==2.31.0
+# 2.32.0 fixes CVE-2024-35195: on a Session, one request made with
+# verify=False made EVERY later request to that host skip certificate
+# verification, whatever verify was set to afterwards.
+requests==2.34.2
 pyyaml==6.0.1
 psutil==5.9.8
 tiktoken==0.7.0
@@ -38,4 +41,12 @@ fast-json-repair==0.2.2; python_version >= "3.11"
 # and no native toolchain in the image. Pillow reads figure dimensions for the
 # formats the header sniffer does not cover.
 pypdf==6.14.2
+# PyMuPDF (imported as `fitz`) — book_reader.py opens every PDF through it,
+# UNGUARDED, and it was declared nowhere. It happened to work on a dev host
+# that has it globally; inside the image `import fitz` raised, so uploading a
+# PDF textbook — the feature this product leads with — could not work at all.
+pymupdf==1.28.2
+# safety.py does `import numpy as np` at module scope. It arrived transitively
+# via scikit-learn, which means a scikit-learn change could have removed it.
+numpy==1.26.4
 pillow==12.3.0
