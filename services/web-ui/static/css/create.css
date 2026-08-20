@@ -294,6 +294,35 @@
 }
 
 /* --- page 5: review -------------------------------------------------------------*/
+
+/* --- the review step is ONE column --------------------------------------
+ * Four stacked elements had three different widths (review card 612, gen-ed
+ * fieldset 788, Create button 420, note 788) and the button's top edge sat
+ * exactly on the fieldset's bottom edge -- a measured 0px gap, which read as
+ * the button overlapping the panel above it.
+ *
+ * The card was already designed at 560; that is the measure, and everything
+ * in the step now shares it. border-box so the number means the rendered
+ * width: the card's max-width was content-box, so 560 was really 612 once its
+ * padding was added, and nothing else could line up with it by construction.
+ */
+.car-page[data-page="review"] {
+    /* 620 to match the `subject` step, the other form-like page in this
+       carousel. Every page is left-aligned (checked all five), so the column
+       must not be centred -- that would jump on swipe -- but 560 was a width
+       nothing else used, which left more dead space on the right than the
+       steps either side of it. */
+    --review-col: 620px;
+}
+.car-page[data-page="review"] .review-panel,
+.car-page[data-page="review"] .gened-choice,
+.car-page[data-page="review"] .create-btn,
+.car-page[data-page="review"] .review-note {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: var(--review-col);
+}
+
 .review-panel {
     display: grid; gap: 6px;
     max-width: 560px;
@@ -357,9 +386,13 @@
 .review-row .v { font-weight: 600; text-align: right; }
 
 .create-btn {
-    display: inline-flex; flex-direction: column; align-items: center;
-    max-width: 420px;                 /* a long sub-label must not stretch it */
-    padding: 1.05em 3.2em;
+    display: flex; flex-direction: column; align-items: center;
+    /* Spans the review column rather than capping at 420. The old cap existed
+       to stop a long sub-label stretching the button; at the column width the
+       sub-label fits on one line instead, which is what it wanted all along.
+       Horizontal padding drops with it -- the width is set now, not implied. */
+    margin-top: var(--space-4);
+    padding: 1.05em 1.5em;
     font-size: 1.25rem; font-weight: 700;
     color: var(--on-accent);
     background: var(--accent-primary);
