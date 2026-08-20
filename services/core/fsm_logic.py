@@ -4741,6 +4741,32 @@ def create_program():
         logging.exception("plan_degree failed for %r/%r", subject, template)
         return {"error": str(e)}, 500
 
+    # Shape gate. validate() catches what makes a programme UNTEACHABLE —
+    # cycles, missing prerequisites, duplicates — and says nothing about
+    # whether the result looks like a degree. A plan_degree() run with no
+    # model falls back to placeholder titles ("Economics: gen_ed 1"), passes
+    # validate() cleanly, and was persisted and rendered on the degree map as
+    # a real programme. Measured on exactly that plan: NOT_DEGREE_SHAPED on
+    # breadth, capstone and titles.
+    #
+    # The check is arithmetic on the plan — no model, no latency — so there is
+    # no reason not to run it before writing. A misshapen plan is reported
+    # rather than stored: the learner sees why, instead of a course list of
+    # numbered placeholders.
+    try:
+        from tools.degree_quality import assess
+        shape = assess(plan)
+        if shape.get("verdict") != "DEGREE_SHAPED":
+            failed = ", ".join(shape.get("failed", []))
+            logging.warning("programme for %r rejected: %s", subject, failed)
+            return {"error": f"the planner produced a programme that does not "
+                             f"look like a degree ({failed}) — nothing was "
+                             f"saved", "reason": "not_degree_shaped",
+                    "checks": shape.get("checks", {})}, 422
+    except ImportError:
+        # The harness is a dev tool; its absence must not block a build.
+        logging.info("degree_quality unavailable — shape gate skipped")
+
     uid = "prog_" + uuid.uuid4().hex[:8]
     _shared_storage.programs.create(uid, plan)
     plan["uid"] = uid
