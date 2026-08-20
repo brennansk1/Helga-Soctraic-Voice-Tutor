@@ -377,6 +377,26 @@
         count.appendChild(document.createTextNode(
             " of " + n.total + " courses complete"));
 
+        // The credit-hour equivalent, because "60 credits" is a size a person
+        // already knows and "20 courses" is not. Derived, not invented: a
+        // credit is 45 hours of student work, a standard course is 3 credits,
+        // and this associate lands on exactly the 60 a real one carries.
+        // Marked as an estimate while it still is one — a figure that cannot
+        // say whether it was measured is not worth printing.
+        var size = plan.size;
+        if (size && size.credits_total) {
+            var sub = elem("p", "degree-credits");
+            sub.appendChild(document.createTextNode(
+                size.credits_complete + " of " + size.credits_total +
+                " credit hours \u00b7 about " +
+                size.hours_total.toLocaleString() + " hours of study"));
+            if (size.estimated_share >= 0.5) {
+                sub.appendChild(elem("span", "degree-credits-est",
+                                     "estimated until built"));
+            }
+            count.parentNode.insertBefore(sub, count.nextSibling);
+        }
+
         var pct = n.total ? Math.round(n.complete / n.total * 100) : 0;
         document.getElementById("deg-meter-fill").style.width = pct + "%";
         document.getElementById("deg-meter").setAttribute(
@@ -628,6 +648,13 @@
             card.appendChild(line);
         }
 
+        // What this course COSTS, next to the decision to take it. Three
+        // credits means something to anyone who has been to college; "144
+        // concepts" does not.
+        if (prominent && c.size && c.size.credits) {
+            card.appendChild(elem("p", "degree-course-size",
+                c.size.credits + " credits \u00b7 ~" + c.size.hours + " h"));
+        }
         var note = elem("p", "degree-course-note", stateNote(c, prominent));
         // "Ready now" is a stronger offer than "will be built", and only the
         // stronger one gets the accent.

@@ -4732,6 +4732,17 @@ def get_program(uid):
         plan = _shared_storage.programs.get(uid)
         if not plan:
             return {"error": "no such programme"}, 404
+        # Size in CONCEPTS — this product's honest equivalent of credit hours,
+        # because it is the unit actually counted, taught and reviewed. Sent
+        # with the plan so the degree page can say how much degree this is
+        # without inventing a duration nobody measured.
+        try:
+            from services.core.program import programme_size, course_size
+            plan["size"] = programme_size(plan)
+            for c in plan.get("courses", []):
+                c["size"] = course_size(c)
+        except Exception as e:
+            logging.debug("programme sizing unavailable: %s", e)
         return plan
     except Exception as e:
         logging.error("get_program %s failed: %s", uid, e)

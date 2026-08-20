@@ -724,3 +724,56 @@ class TestDegreeCreationPipeline(unittest.TestCase):
         self.assertEqual(sum(1 for c in courses if c["built"]), 1)
         self.assertEqual(sum(1 for c in courses if not c["built"]),
                          len(courses) - 1)
+
+
+class TestCreditHourEquivalent(unittest.TestCase):
+    """A degree stated in units a person already understands.
+
+    A semester credit hour is one hour of instruction plus two of independent
+    work, each week, over ~15 weeks — 45 hours of student work per credit, so
+    a standard course is 3 credits and 135 hours. This model reaches the same
+    place from the other side: scope 3 is documented as one semester of 45
+    class sessions, and 45 x 3 h = 135 h. The conversion is derived from two
+    agreeing definitions rather than invented.
+    """
+
+    def test_a_standard_course_is_three_credits(self):
+        from services.core.program import course_size
+        sz = course_size({"preset": "college"})
+        self.assertEqual(sz["credits"], 3.0)
+        self.assertEqual(sz["hours"], 135)
+
+    def test_an_associate_is_sixty_credits_and_a_bachelors_is_a_hundred_and_twenty(self):
+        """The real totals. If a template drifts, this catches it."""
+        from services.core.program import programme_size
+        self.assertEqual(
+            programme_size(plan_from_template("Economics", "associate"))["credits_total"],
+            60.0)
+        self.assertEqual(
+            programme_size(plan_from_template("Economics", "bachelors"))["credits_total"],
+            120.0)
+
+    def test_hours_and_credits_agree_with_the_carnegie_ratio(self):
+        from services.core.program import programme_size, HOURS_PER_CREDIT
+        z = programme_size(plan_from_template("Economics", "associate"))
+        self.assertEqual(z["hours_total"], int(z["credits_total"] * HOURS_PER_CREDIT))
+
+    def test_an_unmeasured_figure_admits_it(self):
+        """Before anything is built every number is an estimate from a preset,
+        and a progress figure that cannot say so claims precision it lacks."""
+        from services.core.program import programme_size, course_size
+        self.assertTrue(course_size({"preset": "college"})["estimated"])
+        self.assertFalse(
+            course_size({"preset": "college", "concept_count": 98,
+                         "lesson_count": 40})["estimated"])
+        z = programme_size(plan_from_template("Economics", "associate"))
+        self.assertEqual(z["estimated_share"], 1.0,
+                         "a fresh programme is entirely estimated")
+
+    def test_completion_is_counted_in_credits_not_only_courses(self):
+        from services.core.program import programme_size
+        p = plan_from_template("Economics", "associate")
+        p["courses"][0]["completed"] = True
+        z = programme_size(p)
+        self.assertEqual(z["courses_complete"], 1)
+        self.assertEqual(z["credits_complete"], 3.0)

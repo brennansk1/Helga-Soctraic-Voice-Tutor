@@ -197,6 +197,101 @@ def validate(courses):
     return True
 
 
+# THE CREDIT-HOUR EQUIVALENT, and why these particular numbers.
+#
+# A semester credit hour is defined (Carnegie unit, and the US federal
+# definition that follows it) as one hour of instruction plus two hours of
+# independent work, each week, across a ~15-week term. So:
+#
+#     1 credit  = 15 x (1 + 2) = 45 hours of total student work
+#     3 credits = 135 hours    = the standard one-semester course
+#
+# This model already encodes the same thing from the other direction: scope 3
+# is documented as "exactly one semester, 45 class sessions", and one session
+# carries its own two hours of study. 45 lessons x 3 h = 135 h = 3 credits.
+# The two derivations agree, which is why this is a conversion rather than an
+# invention — and scope_check independently uses 135 / 2700 / 5400 hours for
+# course / associate / bachelor's, which is 3 / 60 / 120 credits.
+#
+# The templates then land exactly on the real thing: 20 courses x 3 credits is
+# the 60-credit associate, and 40 x 3 is the 120-credit bachelor's.
+HOURS_PER_CREDIT = 45          # 15 weeks x (1 h instruction + 2 h independent)
+HOURS_PER_LESSON = 3           # one session and the study that belongs to it
+
+
+def course_size(course):
+    """How much course this is, in the units a person recognises.
+
+    `concepts` is what Helga actually counts, teaches and schedules reviews
+    against. `credits` and `hours` are the standard-equivalent, derived from
+    the lesson budget rather than guessed — a lesson is one class session and
+    a session is three hours of student work.
+
+    A built course reports what it measured. An unbuilt one is estimated from
+    the preset its slot was planned at, and says so, because a figure that
+    cannot say whether it was measured is not a figure worth printing.
+    """
+    concepts = course.get("concept_count")
+    lessons = course.get("lesson_count")
+    estimated = not (concepts and lessons)
+    if estimated:
+        try:
+            from services.core.course_builder import (COURSE_PRESETS,
+                                                      compute_course_params)
+            pre = COURSE_PRESETS.get(course.get("preset") or "college")
+            if pre:
+                params = compute_course_params(pre["scope"], pre["mastery"],
+                                               pre.get("starting_from", 1))
+                concepts = concepts or int(params["total_concepts_approx"])
+                lessons = lessons or int(params["lessons_total"])
+        except Exception as e:
+            logger.debug("course_size estimate unavailable: %s", e)
+    if not lessons:
+        return {"concepts": concepts, "credits": None, "hours": None,
+                "estimated": True}
+    hours = lessons * HOURS_PER_LESSON
+    return {"concepts": concepts,
+            "lessons": lessons,
+            "credits": round(hours / HOURS_PER_CREDIT, 1),
+            "hours": hours,
+            "estimated": estimated}
+
+
+def programme_size(program):
+    """The degree in concepts: total, completed, and how much is measured.
+
+    `estimated_share` is the honest caveat — before anything is built every
+    figure is an estimate from a preset, and a progress bar that does not say
+    so is claiming precision it does not have.
+    """
+    courses = (program or {}).get("courses", [])
+    tot = {"concepts": 0, "credits": 0.0, "hours": 0}
+    done = {"concepts": 0, "credits": 0.0, "hours": 0}
+    est_credits = 0.0
+    for c in courses:
+        sz = course_size(c)
+        for k in tot:
+            v = sz.get(k) or 0
+            tot[k] += v
+            if c.get("completed"):
+                done[k] += v
+        if sz.get("estimated"):
+            est_credits += sz.get("credits") or 0
+    return {
+        "concepts_total": tot["concepts"], "concepts_complete": done["concepts"],
+        "credits_total": round(tot["credits"], 1),
+        "credits_complete": round(done["credits"], 1),
+        "hours_total": tot["hours"], "hours_complete": done["hours"],
+        "courses_total": len(courses),
+        "courses_complete": sum(1 for c in courses if c.get("completed")),
+        # What share of the credit figure is still an estimate rather than a
+        # measurement. A bar that cannot say this is claiming precision it
+        # does not have.
+        "estimated_share": (round(est_credits / tot["credits"], 2)
+                            if tot["credits"] else 1.0),
+    }
+
+
 def available_courses(program):
     """Every course the learner could start RIGHT NOW.
 
@@ -387,7 +482,23 @@ _UNTEACHABLE = re.compile(
     r"|\bensemble\b|\b(marching\s+)?band\b|\bchoir\b|\borchestra\b"
     r"|\brecital\b|\bapplied\s+(music|voice|piano)\b"
     r"|\bdissection\b|\bwelding\b|\bmachine\s+shop\b"
-    r"|\bsupervised\s+practice\b|\bservice\s+learning\b",
+    r"|\bsupervised\s+practice\b|\bservice\s+learning\b"
+    # Courses that are PRODUCING rather than learning. A tutor can teach the
+    # ideas behind original work; it cannot supervise the work, read a draft
+    # nobody wrote yet, or sit on a defence.
+    #
+    # A SEMINAR IS NOT ON THIS LIST, deliberately. A seminar is structured
+    # discussion of readings — that is the Socratic form itself, and the best
+    # thing this tutor does. "Economics Research Seminar" is a fine capstone;
+    # "Senior Thesis" is not.
+    # "thesis" names a course TYPE here, not a topic. Without the lookahead
+    # this rejected "Thesis Statements and Argument" — a composition course
+    # about writing them, entirely teachable. Same trap as Labor Economics.
+    r"|\bthesis\b(?!\s+statement)|\bdissertation\b|\bcapstone\s+project\b"
+    r"|\b(senior|final|independent|group)\s+project\b"
+    r"|\bindependent\s+study\b|\bdirected\s+research\b"
+    r"|\bstudy\s+abroad\b|\bco-?op(erative)?\s+education\b"
+    r"|\bcomprehensive\s+exam(ination)?s?\b|\bportfolio\s+review\b",
     re.IGNORECASE)
 
 
@@ -455,8 +566,12 @@ def propose_slot_subjects(subject, template, llm_json_fn, brief_fn=None):
                     f"in {subject}.\n\nSlots to fill:\n{lines}\n\n"
                     f"gen_ed is general education outside the major; core is the "
                     f"major itself in teaching order; elective is optional "
-                    f"depth; capstone is the final PROJECT — never a practicum "
-                    f"or placement.\n\n"
+                    f"depth; capstone is the final SYNTHESIS COURSE — a "
+                    f"seminar or advanced course that pulls the programme "
+                    f"together through discussion. Never a thesis, a project, "
+                    f"an independent study or a placement: this tutor can "
+                    f"teach the ideas behind original work but cannot "
+                    f"supervise the work itself.\n\n"
                     f"CONCEPTUAL COURSES ONLY. This programme is taught entirely "
                     f"by conversation: there is no laboratory, studio, clinic, "
                     f"ensemble or placement, and nobody to supervise one. Do not "

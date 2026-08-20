@@ -704,3 +704,25 @@
 @media (prefers-reduced-motion: reduce) {
     .build-notice { animation: none; }
 }
+
+
+/* --- credit-hour equivalent ----------------------------------------------
+ * "60 credit hours" is a size a person already knows; "20 courses" is not.
+ * Secondary to the course count, which is what actually moves.
+ */
+.degree-credits {
+    margin: .2em 0 0; font-size: .84rem; color: var(--text-secondary);
+    display: flex; align-items: baseline; gap: .6em; flex-wrap: wrap;
+}
+.degree-credits-est {
+    padding: .05em .45em; border-radius: 999px;
+    font-size: .68rem; font-weight: 600; letter-spacing: .03em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+}
+.degree-course-size {
+    margin: .1em 0 0; font-size: .74rem; color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
