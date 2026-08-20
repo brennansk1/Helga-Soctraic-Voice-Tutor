@@ -1,472 +1,143 @@
 {% extends "base.html" %}
-{% block title %}Helga - Home{% endblock %}
-{% block body_class %}page-home{% endblock %}
+{% block title %}Helga{% endblock %}
+
+{% block head_scripts %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/home.css') }}">
+{% endblock %}
 
 {% block content %}
-<div class="home-container">
-    <!-- Hero -->
-    <div class="hero-section">
-        <h1 id="greeting-heading">Welcome to Helga</h1>
-        <p class="subtitle">Your Socratic AI Tutor</p>
-    </div>
+{#  Home.
 
-    <!-- Stats row -->
-    <div class="stats-row" id="stats-row">
-        <div class="stat-card">
-            <span class="stat-value stat-skeleton" id="total-courses">&nbsp;</span>
-            <span class="stat-label">Courses</span>
-        </div>
-        <div class="stat-card">
-            <span class="stat-value stat-skeleton" id="concepts-mastered">&nbsp;</span>
-            <span class="stat-label">Concepts</span>
-        </div>
-        <div class="stat-card">
-            <span class="stat-value stat-skeleton" id="cards-due">&nbsp;</span>
-            <span class="stat-label">Due Today</span>
-        </div>
-        <div class="stat-card">
-            <span class="stat-value stat-skeleton" id="active-streak">&nbsp;</span>
-            <span class="stat-label">Streak</span>
-        </div>
-    </div>
-    <!-- Stats error banner — hidden by default, shown when API fails -->
-    <div id="stats-error" class="stats-error-banner" style="display: none;">
-        <span>Could not load stats.</span>
-        <button onclick="loadStats()" class="stats-retry-btn" aria-label="Retry loading stats">Retry</button>
-    </div>
+    The old page opened with "Welcome to Helga / Your Socratic AI Tutor" and a
+    row of four numbers — a greeting that told a returning learner nothing and
+    a new one no more. This page answers the only two questions a home screen
+    has to: what do I do next, and what is this thing actually doing for me.
 
-    <!-- Primary action -->
-    <div class="home-cta" id="home-cta">
-        <a href="/courses" class="cta-btn primary" id="cta-primary">Create Your First Course</a>
-    </div>
+    So state leads. A learner mid-course sees Continue first; a learner with a
+    degree sees the programme's real progress; a first-time visitor sees the
+    product's claim and one button. Nothing here is decorative.
+#}
+<div class="home">
 
-    <!-- Continue learning (populated by loadRecentCourses() when courses exist) -->
-    <div id="continue-learning" style="display: none; margin-bottom: 2rem;"></div>
-
-    <!-- Quick links -->
-    <div class="quick-links">
-        <a href="/courses" class="quick-card" aria-label="Courses — Create and manage learning paths">
-            <span class="qc-icon" aria-hidden="true"><span class="i i-books" aria-hidden="true"></span></span>
-            <div>
-                <strong>Courses</strong>
-                <span>Create & manage learning paths</span>
-            </div>
-        </a>
-        <a href="/courses" class="quick-card" aria-label="Learn — Socratic dialogue sessions">
-            <span class="qc-icon" aria-hidden="true"><span class="i i-chat" aria-hidden="true"></span></span>
-            <div>
-                <strong>Learn</strong>
-                <span>Socratic dialogue sessions</span>
-            </div>
-        </a>
-        <a href="/practice" class="quick-card" aria-label="Practice — Reviews due, quizzes and what is coming up">
-            <span class="qc-icon" aria-hidden="true"><span class="i i-refresh" aria-hidden="true"></span></span>
-            <div>
-                <strong>Practice</strong>
-                <span>Due reviews, quizzes, upcoming</span>
-            </div>
-        </a>
-        <a href="/progress" class="quick-card" aria-label="Progress — What you know and where the gaps are">
-            <span class="qc-icon" aria-hidden="true"><span class="i i-brain" aria-hidden="true"></span></span>
-            <div>
-                <strong>Progress</strong>
-                <span>Mastery, recall strength, gaps</span>
-            </div>
-        </a>
-        <a href="/settings" class="quick-card" aria-label="Settings — Profile, voice, theme">
-            <span class="qc-icon" aria-hidden="true"><span class="i i-settings" aria-hidden="true"></span></span>
-            <div>
-                <strong>Settings</strong>
-                <span>Profile, voice, theme</span>
-            </div>
-        </a>
+  <!-- HERO. Swaps between first-visit (the claim) and returning (the state).
+       Both are rendered server-blind and chosen by JS once data arrives, so
+       there is no flash of the wrong one: the shell starts neutral. -->
+  <section class="home-hero" id="home-hero">
+    <div class="home-hero-copy">
+      <h1 id="hero-title">Helga</h1>
+      <p class="home-hero-sub" id="hero-sub">Loading your workspace&hellip;</p>
+      <div class="home-hero-actions" id="hero-actions"></div>
     </div>
+    <div class="home-hero-art" aria-hidden="true">
+      <svg viewBox="0 0 220 160" class="hero-art-svg">
+        <!-- A course being built: modules resolving into lessons. Abstract on
+             purpose — a literal screenshot would date the moment the UI moves. -->
+        <rect x="8"  y="20" width="58" height="26" rx="6" class="ha-node ha-done"/>
+        <rect x="8"  y="58" width="58" height="26" rx="6" class="ha-node ha-done"/>
+        <rect x="8"  y="96" width="58" height="26" rx="6" class="ha-node ha-live"/>
+        <rect x="92" y="30" width="58" height="26" rx="6" class="ha-node ha-done"/>
+        <rect x="92" y="68" width="58" height="26" rx="6" class="ha-node"/>
+        <rect x="92" y="106" width="58" height="26" rx="6" class="ha-node"/>
+        <rect x="164" y="49" width="48" height="26" rx="6" class="ha-node"/>
+        <rect x="164" y="87" width="48" height="26" rx="6" class="ha-node"/>
+        <path d="M66 33 C80 33 78 43 92 43" class="ha-edge"/>
+        <path d="M66 71 C80 71 78 81 92 81" class="ha-edge"/>
+        <path d="M66 109 C80 109 78 119 92 119" class="ha-edge"/>
+        <path d="M150 43 C158 43 156 62 164 62" class="ha-edge"/>
+        <path d="M150 81 C158 81 156 100 164 100" class="ha-edge"/>
+      </svg>
+    </div>
+  </section>
+
+  <!-- DEGREE STRIP. Only when a programme exists. The flagship deserves the
+       first band on the page, and its progress is the one number that answers
+       "am I actually getting somewhere". -->
+  <section class="home-degree hidden" id="home-degree">
+    <div class="home-degree-head">
+      <h2 id="degree-name">Your programme</h2>
+      <a href="/degree" class="home-link">Open the map &rarr;</a>
+    </div>
+    <div class="degree-bar" id="degree-bar" role="img" aria-label="Programme progress"></div>
+    <p class="home-degree-note" id="degree-note"></p>
+  </section>
+
+  <!-- STATE. Four numbers, but each is a link to the thing it describes —
+       a stat you cannot act on is decoration. -->
+  <section class="home-stats" id="home-stats">
+    <a class="home-stat" href="/courses">
+      <span class="home-stat-value" id="stat-courses">&mdash;</span>
+      <span class="home-stat-label">Courses</span>
+    </a>
+    <a class="home-stat" href="/progress">
+      <span class="home-stat-value" id="stat-concepts">&mdash;</span>
+      <span class="home-stat-label">Concepts learned</span>
+    </a>
+    <a class="home-stat" href="/practice">
+      <span class="home-stat-value" id="stat-due">&mdash;</span>
+      <span class="home-stat-label">Due today</span>
+    </a>
+    <a class="home-stat" href="/progress">
+      <span class="home-stat-value" id="stat-streak">&mdash;</span>
+      <span class="home-stat-label">Day streak</span>
+    </a>
+  </section>
+  <p class="home-error hidden" id="home-error">
+    Could not load your progress.
+    <button type="button" class="home-retry" id="home-retry">Retry</button>
+  </p>
+
+  <!-- RECENT COURSES -->
+  <section class="home-recent hidden" id="home-recent">
+    <div class="home-degree-head">
+      <h2>Your courses</h2>
+      <a href="/courses" class="home-link">All courses &rarr;</a>
+    </div>
+    <div class="home-course-grid" id="home-course-grid"></div>
+  </section>
+
+  <!-- WHAT IT DOES. Shown to everyone: it is the product's claim, and a
+       returning learner is also the person who recommends it to someone else.
+       Each line is a capability that actually exists. -->
+  <section class="home-claims">
+    <h2 class="home-claims-title">What Helga does</h2>
+    <div class="home-claim-grid">
+      <article class="home-claim">
+        <h3>Builds the course from real sources</h3>
+        <p>Open textbooks and archives are swept before anything is written,
+           and the course is checked against a published syllabus — you can see
+           what it was built from.</p>
+      </article>
+      <article class="home-claim">
+        <h3>Or from a book you upload</h3>
+        <p>EPUB, PDF or text. The course follows the book's own structure —
+           one lesson per chapter — and every concept is read from its chapter,
+           not recalled.</p>
+      </article>
+      <article class="home-claim">
+        <h3>Teaches by asking</h3>
+        <p>Socratic dialogue with six question types and a difficulty that
+           tracks you within a session, not a lecture with a quiz bolted on.</p>
+      </article>
+      <article class="home-claim">
+        <h3>Checks you still have it</h3>
+        <p>Spaced review schedules every concept, so a pass means you retained
+           it months later — a stronger claim than a one-shot exam.</p>
+      </article>
+      <article class="home-claim">
+        <h3>Whole degree programmes</h3>
+        <p>Associate and bachelor's plans with real prerequisites and electives
+           you choose. Each course is built as you approach it.</p>
+      </article>
+      <article class="home-claim">
+        <h3>Runs entirely on your machine</h3>
+        <p>No cloud service, no account, no data leaving the device. The model
+           and every course live here.</p>
+      </article>
+    </div>
+  </section>
 </div>
+{% endblock %}
 
-<style>
-.home-container {
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 2rem 1rem 3rem;
-}
-.hero-section {
-    text-align: center;
-    margin-bottom: 2rem;
-    animation: fadeIn 0.4s ease-out;
-}
-.hero-section h1 {
-    font-size: 2.2rem;
-    font-weight: var(--font-weight-bold);
-    margin: 0 0 0.25rem 0;
-    color: var(--text-primary);
-}
-.subtitle {
-    font-size: 1rem;
-    color: var(--text-secondary);
-    margin: 0;
-}
-.stats-row {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 0.75rem;
-    margin-bottom: 1.5rem;
-}
-.stat-card {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    padding: 1rem;
-    text-align: center;
-}
-.stat-value {
-    display: block;
-    font-size: 1.6rem;
-    font-weight: var(--font-weight-bold);
-    color: var(--accent-primary);
-    line-height: 1.2;
-    min-height: 1.6rem;
-}
-.stat-value.stat-skeleton {
-    display: inline-block;
-    background: linear-gradient(90deg,
-        var(--border-color) 25%,
-        var(--bg-tertiary) 50%,
-        var(--border-color) 75%);
-    background-size: 200% 100%;
-    animation: home-shimmer 1.4s ease-in-out infinite;
-    border-radius: 6px;
-    min-width: 3ch;
-    color: transparent;
-}
-@keyframes home-shimmer {
-    0%   { background-position: -200% 0; }
-    100% { background-position: 200% 0; }
-}
-.stat-label {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-}
-.home-cta {
-    text-align: center;
-    margin-bottom: 2rem;
-}
-.cta-btn {
-    display: inline-block;
-    padding: 0.75rem 2rem;
-    border-radius: 10px;
-    font-weight: 700;
-    font-size: 1rem;
-    text-decoration: none;
-    transition: transform 0.15s, box-shadow 0.15s;
-}
-.cta-btn.primary {
-    background: var(--accent-primary);
-    color: var(--text-inverted);
-    box-shadow: 0 3px 0 var(--accent-primary-shadow, #1d4a6a);
-}
-.cta-btn.primary:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(46, 107, 138, 0.3);
-}
-.quick-links {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0.75rem;
-}
-.quick-card {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    padding: 1rem;
-    text-decoration: none;
-    color: var(--text-primary);
-    transition: transform 0.15s, border-color 0.15s;
-}
-.quick-card:hover {
-    transform: translateY(-2px);
-    border-color: var(--accent-primary);
-}
-.qc-icon { font-size: 1.5rem; flex-shrink: 0; }
-.quick-card strong {
-    display: block;
-    font-size: 0.9rem;
-    margin-bottom: 0.1rem;
-}
-.quick-card span {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-}
-
-.stats-error-banner {
-    text-align: center;
-    padding: var(--space-2) var(--space-4);
-    margin-bottom: var(--space-5);
-    border: 1px solid var(--color-danger);
-    border-radius: var(--border-radius-sm);
-    background: var(--bg-danger);
-    color: var(--color-danger);
-    font-size: var(--font-size-sm);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-3);
-}
-.stats-retry-btn {
-    background: transparent;
-    border: 1px solid var(--color-danger);
-    color: var(--color-danger);
-    border-radius: var(--border-radius-sm);
-    padding: var(--space-1) var(--space-3);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-semibold);
-}
-.stats-retry-btn:hover {
-    background: var(--color-danger);
-    color: var(--text-inverted);
-}
-.home-empty-state {
-    text-align: center;
-    padding: 2rem 1rem;
-    margin-bottom: 1.5rem;
-    background: var(--bg-secondary);
-    border: 1px dashed var(--border-color);
-    border-radius: 12px;
-}
-.home-empty-state h3 {
-    margin: 0.5rem 0 0.25rem;
-    font-size: 1.1rem;
-}
-.home-empty-state p {
-    color: var(--text-secondary);
-    margin: 0 0 1rem;
-    font-size: 0.9rem;
-}
-/* --- First-run onboarding guide --- */
-.empty-state-intro {
-    color: var(--text-secondary);
-    font-size: 0.9rem;
-    margin: 0 0 1rem;
-}
-.how-it-works {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    text-align: left;
-}
-.how-it-works li {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
-    background: var(--bg-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    padding: 0.75rem 1rem;
-}
-.hiw-icon {
-    font-size: 1.4rem;
-    flex-shrink: 0;
-    margin-top: 0.05rem;
-}
-.how-it-works li div {
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
-}
-.how-it-works li strong {
-    font-size: 0.9rem;
-    color: var(--text-primary);
-}
-.how-it-works li span {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-}
-
-/* --- Continue learning section --- */
-.section-heading {
-    font-size: 1rem;
-    font-weight: var(--font-weight-semibold);
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    margin: 0 0 0.75rem;
-}
-.recent-courses-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-}
-.recent-course-card {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    padding: 0.75rem 1rem;
-}
-.recent-course-title {
-    font-size: 0.95rem;
-    font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    min-width: 0;
-}
-.recent-resume-btn {
-    padding: 0.4rem 1.1rem;
-    font-size: 0.85rem;
-    flex-shrink: 0;
-    background: var(--accent-primary);
-    color: var(--text-inverted);
-    border-radius: 8px;
-    text-decoration: none;
-    font-weight: 600;
-    transition: opacity 0.15s;
-}
-.recent-resume-btn:hover { opacity: 0.88; }
-
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(12px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-@media (max-width: 768px) {
-    .stats-row { grid-template-columns: repeat(2, 1fr); }
-    .quick-links { grid-template-columns: 1fr 1fr; }
-    .hero-section h1 { font-size: 1.8rem; }
-}
-@media (max-width: 480px) {
-    .quick-links { grid-template-columns: 1fr; }
-}
-</style>
-
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    loadStats();
-    loadGreeting();
-});
-
-function setStatValue(id, value) {
-    var el = document.getElementById(id);
-    if (!el) return;
-    el.classList.remove('stat-skeleton');
-    el.textContent = value;
-}
-
-async function loadStats() {
-    var errorBanner = document.getElementById('stats-error');
-    var statsRow = document.getElementById('stats-row');
-    var ctaDiv = document.getElementById('home-cta');
-    // Hide error banner at start of load (in case this is a retry)
-    if (errorBanner) errorBanner.style.display = 'none';
-    if (statsRow) statsRow.style.display = '';
-
-    try {
-        var res = await fetch('/api/stats');
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        var data = await res.json();
-        setStatValue('total-courses', data.courses || 0);
-        setStatValue('concepts-mastered', data.concepts || 0);
-        setStatValue('active-streak', data.streak || 0);
-
-        // Update CTA based on whether courses exist
-        var ctaBtn = document.getElementById('cta-primary');
-        if (data.courses > 0) {
-            ctaBtn.textContent = 'Browse all courses';
-            ctaBtn.href = '/courses';
-            loadRecentCourses();
-        } else {
-            // Empty state: first-run — show a friendly how-it-works guide + CTA
-            ctaDiv.innerHTML =
-                '<div class="home-empty-state">' +
-                    '<p class="empty-state-intro">Here\'s how Helga works:</p>' +
-                    '<ol class="how-it-works">' +
-                        '<li><span class="hiw-icon" aria-hidden="true"><span class="i i-books" aria-hidden="true"></span></span><div><strong>Create a course</strong><span>Type a topic and Helga builds a structured syllabus with concepts at your level.</span></div></li>' +
-                        '<li><span class="hiw-icon" aria-hidden="true"><span class="i i-chat" aria-hidden="true"></span></span><div><strong>Learn Socratically</strong><span>Helga asks questions instead of lecturing — you reason through each concept out loud.</span></div></li>' +
-                        '<li><span class="hiw-icon" aria-hidden="true"><span class="i i-refresh" aria-hidden="true"></span></span><div><strong>Review with spaced repetition</strong><span>Flashcards surface at the right time so knowledge sticks long-term.</span></div></li>' +
-                    '</ol>' +
-                    '<a href="/courses" class="cta-btn primary" style="margin-top: 1.5rem;">Create your first course</a>' +
-                '</div>';
-        }
-    } catch (e) {
-        console.warn('Stats load failed:', e);
-        // Show error banner instead of silent zeros
-        if (errorBanner) errorBanner.style.display = 'flex';
-        // Still clear skeletons so they don't shimmer forever
-        setStatValue('total-courses', '--');
-        setStatValue('concepts-mastered', '--');
-        setStatValue('active-streak', '--');
-    }
-
-    try {
-        var revRes = await fetch('/api/review_stats');
-        if (!revRes.ok) throw new Error('HTTP ' + revRes.status);
-        var review = await revRes.json();
-        setStatValue('cards-due', review.due_today || 0);
-    } catch (e) {
-        console.warn('Review stats unavailable:', e);
-        setStatValue('cards-due', '--');
-    }
-}
-
-async function loadRecentCourses() {
-    try {
-        var res = await fetch('/api/courses');
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        var data = await res.json();
-        var courses = (data.courses || []).filter(function(c) {
-            var s = (c.status || '').toLowerCase();
-            return s === 'ready';
-        }).slice(0, 3);
-        if (courses.length === 0) return;
-
-        var container = document.getElementById('continue-learning');
-        if (!container) return;
-
-        var cards = courses.map(function(c) {
-            // XSS-safe: build text nodes, not innerHTML interpolation
-            var safeTitle = c.title
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;');
-            var safeUid = encodeURIComponent(c.uid);
-            return '<div class="recent-course-card">' +
-                '<span class="recent-course-title">' + safeTitle + '</span>' +
-                '<a href="/learn?course_uid=' + safeUid + '" class="cta-btn recent-resume-btn">Resume</a>' +
-                '</div>';
-        }).join('');
-
-        container.innerHTML =
-            '<h2 class="section-heading">Continue learning</h2>' +
-            '<div class="recent-courses-list">' + cards + '</div>';
-        container.style.display = 'block';
-    } catch (e) {
-        // Non-fatal — dashboard still usable without recent courses
-        console.warn('Recent courses load failed:', e);
-    }
-}
-
-async function loadGreeting() {
-    try {
-        var res = await fetch('/api/profile');
-        if (res.ok) {
-            var profile = await res.json();
-            if (profile.display_name && profile.display_name.trim()) {
-                document.getElementById('greeting-heading').textContent = 'Welcome back, ' + profile.display_name.trim();
-            }
-        }
-    } catch (e) {}
-}
-</script>
+{% block page_scripts %}
+<script src="{{ url_for('static', filename='js/home.js') }}"></script>
 {% endblock %}

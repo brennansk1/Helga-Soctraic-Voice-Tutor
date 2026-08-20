@@ -36,6 +36,7 @@
     --accent-primary: #2e6b8a;
     --accent-primary-dark: #23567a;
     --accent-secondary: #c17f4a;
+    --accent-secondary-hover: #a8693a;
     --accent-tertiary: #4a8c6f;
 
     /* Status Colors */
@@ -120,6 +121,7 @@
     --accent-primary: #5da0c2;
     --accent-primary-dark: #4a8db0;
     --accent-secondary: #d4a066;
+    --accent-secondary-hover: #e2b585;
     --accent-tertiary: #6aac8f;
     --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.2);
     --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.3);
@@ -719,7 +721,7 @@ select:focus,
     color: var(--text-primary);
     padding: 15px 20px;
     border-radius: 5px;
-    border-left: 4px solid var(--accent-amber);
+    border-left: 4px solid var(--accent-secondary);
     margin-bottom: 10px;
     opacity: 0;
     transform: translateX(100%);
@@ -2755,7 +2757,7 @@ select:focus {
 }
 
 .btn-alpine-accent:hover {
-    background: var(--accent-secondary-hover, #a8693a);
+    background: var(--accent-secondary-hover);
 }
 
 .btn-alpine-success {

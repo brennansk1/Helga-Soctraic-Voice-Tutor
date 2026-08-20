@@ -1,0 +1,140 @@
+/* Home. Tokens only — both themes come free, and nothing here is a light-mode
+ * constant waiting to look broken. */
+
+.home { max-width: 1120px; margin: 0 auto; padding: var(--space-5, 1.5rem); }
+
+/* --- hero -------------------------------------------------------------- */
+.home-hero {
+    display: grid; grid-template-columns: 1.15fr .85fr;
+    gap: var(--space-5, 1.5rem); align-items: center;
+    padding: clamp(1.5rem, 4vw, 3rem) 0 var(--space-6, 2rem);
+}
+.home-hero h1 {
+    font-size: clamp(1.9rem, 4.4vw, 3rem);
+    line-height: 1.1; letter-spacing: -0.02em; margin: 0 0 .35em;
+}
+.home-hero-sub {
+    font-size: clamp(1rem, 1.6vw, 1.15rem);
+    color: var(--text-secondary);
+    max-width: 46ch; margin: 0 0 var(--space-4, 1rem);
+}
+.home-hero-actions { display: flex; gap: var(--space-3, .75rem); flex-wrap: wrap; }
+.home-btn {
+    display: inline-block; padding: .8em 1.6em;
+    border-radius: var(--border-radius);
+    border: 1.5px solid var(--border-color);
+    color: var(--text-primary);
+    text-decoration: none; font-weight: 600;
+    transition: transform var(--dur-fast, 140ms) ease, box-shadow var(--dur-fast) ease;
+}
+.home-btn:hover { transform: translateY(-1px); box-shadow: var(--shadow-2); }
+.home-btn-primary {
+    background: var(--accent-primary); border-color: var(--accent-primary);
+    color: #fff; box-shadow: var(--shadow-2));
+}
+
+/* The art carries the product's idea — a course resolving into structure.
+   Light mode draws it as outlines on paper; dark mode as lit nodes. */
+.hero-art-svg { width: 100%; height: auto; max-height: 220px; }
+.ha-node { fill: var(--bg-secondary); stroke: var(--border-color); stroke-width: 2; }
+.ha-done { stroke: var(--accent-primary); }
+.ha-live { stroke: var(--color-warning); stroke-dasharray: 5 3; }
+.ha-edge { fill: none; stroke: var(--border-color); stroke-width: 2; }
+:root[data-theme="dark"] .ha-node, [data-theme="dark"] .ha-node {
+    fill: color-mix(in srgb, var(--accent-primary) 10%, transparent);
+}
+@media (prefers-reduced-motion: no-preference) {
+    .ha-live { animation: ha-pulse 2.2s ease-in-out infinite; }
+    @keyframes ha-pulse { 50% { opacity: .55; } }
+}
+
+/* --- degree strip ------------------------------------------------------- */
+.home-degree {
+    padding: var(--space-4, 1rem) var(--space-5);
+    border-radius: var(--border-radius-lg);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    margin-bottom: var(--space-5);
+}
+.home-degree-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: var(--space-4); margin-bottom: var(--space-3);
+}
+.home-degree-head h2 { margin: 0; font-size: 1.1rem; }
+.home-link { color: var(--accent-primary); text-decoration: none; font-size: .9rem; font-weight: 600; }
+.home-link:hover { text-decoration: underline; }
+.degree-bar { display: flex; gap: 3px; height: 12px; }
+.degree-seg { flex: 1; border-radius: 3px; background: var(--border-color); min-width: 4px; }
+.degree-seg-complete { background: var(--color-success); }
+.degree-seg-ready    { background: var(--accent-primary); }
+.degree-seg-building { background: var(--color-warning); }
+.degree-seg-choice   { background: #9b59d0; }
+.home-degree-note { margin: .7em 0 0; font-size: .9rem; color: var(--text-secondary); }
+
+/* --- stats -------------------------------------------------------------- */
+.home-stats {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: var(--space-3, .75rem); margin-bottom: var(--space-5);
+}
+.home-stat {
+    color: var(--text-primary);
+    display: block; text-align: center; text-decoration: none;
+    padding: var(--space-4, 1rem);
+    border-radius: var(--border-radius-lg);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    transition: transform var(--dur-fast) ease, border-color var(--dur-fast) ease;
+}
+.home-stat:hover { transform: translateY(-2px); border-color: var(--accent-primary); }
+.home-stat-value {
+    display: block; font-size: 1.9rem; font-weight: 700;
+    color: var(--text-primary); font-variant-numeric: tabular-nums;
+}
+.home-stat-label { display: block; font-size: .82rem; color: var(--text-secondary); }
+
+.home-error { color: var(--color-warning); font-size: .92rem; }
+.home-retry {
+    margin-left: .6em; padding: .25em .8em;
+    border: 1px solid var(--border-color); border-radius: var(--border-radius);
+    background: transparent; color: inherit; cursor: pointer;
+}
+
+/* --- courses ------------------------------------------------------------ */
+.home-recent { margin-bottom: var(--space-6, 2rem); }
+.home-course-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: var(--space-3);
+}
+.home-course {
+    display: block; text-decoration: none;
+    padding: var(--space-4);
+    border-radius: var(--border-radius-lg); border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    transition: transform var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
+}
+.home-course:hover { transform: translateY(-2px); box-shadow: var(--shadow-2); }
+.home-course h3 { margin: 0 0 .3em; font-size: 1rem; color: var(--text-primary); }
+.home-course p { margin: 0; font-size: .84rem; color: var(--text-secondary); }
+.home-course-pending { border-style: dashed; }
+
+/* --- claims ------------------------------------------------------------- */
+.home-claims { padding-top: var(--space-5); border-top: 1px solid var(--border-color); }
+.home-claims-title { font-size: 1.1rem; margin: 0 0 var(--space-4); }
+.home-claim-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: var(--space-4);
+}
+.home-claim h3 { margin: 0 0 .35em; font-size: .98rem; }
+.home-claim p { margin: 0; font-size: .89rem; color: var(--text-secondary); line-height: 1.5; }
+
+.hidden { display: none !important; }
+
+/* --- responsive --------------------------------------------------------- */
+@media (max-width: 900px) {
+    .home-stats { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 760px) {
+    .home-hero { grid-template-columns: 1fr; padding-top: var(--space-4); }
+    .home-hero-art { display: none; }   /* copy and the button matter more here */
+    .home-btn { flex: 1; text-align: center; }
+}
