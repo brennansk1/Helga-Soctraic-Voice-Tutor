@@ -93,7 +93,17 @@ Everything below §0 was measured on 2026-08-04. Two weeks of work landed since
 assets, degrees, the frontend). This section is what is true of the REAL data
 directory today, not of the code.
 
-**The live database is at schema_version 10.** Migrations v11-v17 have never
+> **RESOLVED 2026-08-19, later the same day.** The migration has now been run
+> against the real database: it is at **v17**, both `user_progress` rows
+> survived, and all ten new tables exist. A backup of the pre-migration file is
+> in the session scratchpad. The three features that depend on those tables
+> were then exercised against the REAL data and degrade correctly rather than
+> raising: the trust surface reports `available: false` for a course built
+> before v12 — which the UI renders as "Sources not recorded", and which is
+> the honest answer for that course — and the programme store returns an empty
+> list and `None` for a missing programme.
+>
+> **The live database was at schema_version 10.** Migrations v11-v17 have never
 run against `data/helga.db`. That means `sources`, `claim_sources`,
 `taught_concepts`, `session_notes`, `teaching_objects`, `concepts` (+FTS5),
 `concept_math`, `concept_assets`, `programs` and `program_courses` **do not
@@ -134,9 +144,13 @@ open. Needs a reconciliation pass that either restores or removes them.
   and the supplementary share render per concept in the session view, with
   "not recorded" and "unavailable" as distinct honest states. It will stay
   empty for existing courses until the migration runs and a course is built.
-- **§4.0b `/build` has been driven in a browser**, including the book rail, the
-  live stream, the single-build lock and cancellation. `/library` still has
-  not.
+- **§4.0b is closed — both `/build` and `/library` have now been driven in a
+  browser.** `/build`: the book rail, the live stream, the single-build lock
+  and cancellation. `/library`: both tabs render, the upload drop zone works,
+  and a search with the backend absent says "Book search is unavailable right
+  now" rather than showing an empty result set — the distinction this codebase
+  keeps insisting on, holding in the one surface that had never been looked at.
+- **The schema migration has been run** — see the note in §0.
 
 ---
 
