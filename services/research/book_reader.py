@@ -259,6 +259,29 @@ def _drop_front_matter(chapters):
             dropped += 1
             continue
         break
+    # The arithmetic tell only fires when the front matter WEARS a chapter
+    # number. Gutenberg's Art of War (pglaf mirror edition) is the other
+    # shape: six unnumbered items — "Preface to the Project Gutenberg Etext",
+    # "The Commentators", "Apologies for War" — sit in front of a clean
+    # "Chapter I", so every number comparison is against None and nothing is
+    # dropped. The course then opened by teaching the Gutenberg boilerplate.
+    #
+    # When a book numbers its chapters from I, that is where the book starts.
+    # Requiring the first numbered chapter to be 1, and requiring at least
+    # three numbered chapters, keeps this from firing on a book whose
+    # numbering is incidental — and it never drops anything at or after the
+    # first numbered chapter.
+    if not dropped:
+        numbered = [(i, n) for i, n in enumerate(nums) if n is not None]
+        if len(numbered) >= 3:
+            first_idx, first_num = numbered[0]
+            if first_num == 1 and first_idx > 0:
+                for c in chapters[:first_idx]:
+                    logger.info(f"[BOOK] dropping front matter {c.title[:48]!r} "
+                                f"— it precedes chapter 1 and carries no "
+                                f"chapter number of its own")
+                dropped = first_idx
+
     if not dropped:
         return chapters
     kept = chapters[dropped:]

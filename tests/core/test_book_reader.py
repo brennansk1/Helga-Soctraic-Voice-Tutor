@@ -627,3 +627,54 @@ class TestConceptNamingTally(unittest.TestCase):
                               lambda **kw: {"concepts": [{"title": "A"},
                                                          {"title": "B"}]})
         self.assertEqual((res["named"], res["skipped"]), (2, 0))
+
+
+class TestUnnumberedFrontMatter(unittest.TestCase):
+    """Front matter that carries no chapter number at all.
+
+    The arithmetic rule only fires when front matter WEARS a chapter number.
+    Gutenberg's Art of War is the other shape: six unnumbered items sit before
+    a clean "Chapter I", every number comparison is against None, and the
+    course opened by teaching "Preface to the Project Gutenberg Etext".
+    """
+
+    def _chapters(self, titles):
+        from services.research.book_reader import Chapter
+        return [Chapter(t, "word " * 400, i) for i, t in enumerate(titles, 1)]
+
+    def test_unnumbered_front_matter_before_chapter_one_is_dropped(self):
+        from services.research.book_reader import _drop_front_matter
+        kept = _drop_front_matter(self._chapters([
+            "Preface to the Project Gutenberg Etext",
+            "The Commentators",
+            "Apologies for War",
+            "Chapter I. LAYING PLANS",
+            "Chapter II. WAGING WAR",
+            "Chapter III. ATTACK BY STRATAGEM",
+        ]))
+        self.assertEqual([c.title for c in kept],
+                         ["Chapter I. LAYING PLANS", "Chapter II. WAGING WAR",
+                          "Chapter III. ATTACK BY STRATAGEM"])
+        self.assertEqual([c.order for c in kept], [1, 2, 3])
+
+    def test_a_book_of_unnumbered_chapters_is_left_alone(self):
+        """No numbering means no evidence of where the book starts."""
+        from services.research.book_reader import _drop_front_matter
+        titles = ["Of Truth", "Of Death", "Of Unity In Religion", "Of Revenge"]
+        kept = _drop_front_matter(self._chapters(titles))
+        self.assertEqual([c.title for c in kept], titles)
+
+    def test_numbering_that_does_not_start_at_one_is_not_a_signal(self):
+        """A book opening at chapter 4 is a fragment, not front matter — and
+        guessing would silently delete real teaching content."""
+        from services.research.book_reader import _drop_front_matter
+        titles = ["Author's Note", "Chapter IV. Later", "Chapter V. Later Still",
+                  "Chapter VI. Last"]
+        kept = _drop_front_matter(self._chapters(titles))
+        self.assertEqual([c.title for c in kept], titles)
+
+    def test_nothing_is_dropped_when_chapter_one_leads(self):
+        from services.research.book_reader import _drop_front_matter
+        titles = ["Chapter I. First", "Chapter II. Second", "Chapter III. Third"]
+        kept = _drop_front_matter(self._chapters(titles))
+        self.assertEqual([c.title for c in kept], titles)
