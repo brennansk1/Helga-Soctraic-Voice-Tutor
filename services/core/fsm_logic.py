@@ -1300,34 +1300,77 @@ class MnemosyneFSM:
         # returned True, which reported success for a state change that never
         # happened. If a global mute is ever wanted, it belongs in the client
         # next to the playback it controls, not in the FSM.
-        if "pause" in text or event_type == "PAUSE":
+        # A command is what the student SAID, not a word that happens to appear
+        # inside an answer. Substring matching here was destructive rather than
+        # merely wrong: a genetics student typing "the stop codon terminates
+        # translation" hit `"stop" in text`, which cleared current_lesson_node
+        # and emptied syllabus_queue -- their answer ungraded and their session
+        # queue gone. "A caesura is a pause" moved the FSM to PAUSED, which has
+        # no handler in transition(), so every later message was silently
+        # dropped until they happened to type a word containing "resume".
+        #
+        # `_is_command` requires the utterance to BE the command, allowing only
+        # trivial politeness around it. Explicit events still route as before,
+        # and they are how the UI actually sends these.
+        if self._is_command(text, ("pause",)) or event_type == "PAUSE":
             if self.state != "PAUSED":
                 self.previous_state = self.state
                 self.state = "PAUSED"
+            self.speak("Paused. Say resume when you are ready.")
             return True
-        if "resume" in text or event_type == "RESUME":
+        if self._is_command(text, ("resume", "continue")) or event_type == "RESUME":
             if self.state == "PAUSED":
                 self.state = self.previous_state if self.previous_state else "LOBBY"
+                self.speak("Resuming.")
             return True
-        if "stop" in text or "reset" in text or "go to lobby" in text:
+        if self._is_command(text, ("stop", "reset", "go to lobby", "exit")):
             self.state = "LOBBY"
             self.speak("Returned to lobby.")
             self.current_lesson_node = None
             self.syllabus_queue = []
             return True
-        if "end session" in text or "shutdown" in text:
+        if self._is_command(text, ("end session", "shutdown")):
             self.shutdown()
             return True
         return False
 
+    # Politeness that may wrap a bare command without changing that it is one.
+    _COMMAND_FILLER = {"please", "ok", "okay", "now", "helga", "can", "you",
+                       "we", "lets", "let's", "just", "i", "want", "to", "the"}
+
+    def _is_command(self, text, commands):
+        """True only when the utterance IS one of `commands`.
+
+        Deliberately strict. The cost of a false positive here is a destroyed
+        session; the cost of a false negative is that a student types the word
+        again on its own. Those are not close.
+        """
+        cleaned = (text or "").lower().strip().strip(".,!?")
+        if not cleaned:
+            return False
+        for c in commands:
+            if cleaned == c:
+                return True
+            # Allow "please stop", "ok pause now" -- but nothing carrying
+            # content of its own.
+            extra = [w for w in cleaned.replace(c, " ").split()
+                     if w.strip(".,!?")]
+            if c in cleaned and extra and all(
+                    w.strip(".,!?") in self._COMMAND_FILLER for w in extra):
+                return True
+        return False
+
     def handle_nav_commands(self, text):
-        if "next" in text:
+        # Same reasoning as handle_global_commands. "The next step is to divide
+        # both sides by 3" was skipping the concept and abandoning the answer
+        # ungraded; "in the previous chapter we saw" was leaving the session.
+        if self._is_command(text, ("next", "skip", "move on")):
             if self.state == "SOCRATIC_LEARNING":
                 self._advance_without_completing()
                 return True
             self.play_sound("STEP_FORWARD")
             return False
-        if "go back" in text or "previous" in text:
+        if self._is_command(text, ("go back", "previous", "back")):
             # Save progress and return to path view
             self._save_current_course_progress()
             self.stop_audio()
@@ -2652,11 +2695,29 @@ class MnemosyneFSM:
         raw_lower = text.lower().strip()
         text_lower = raw_lower.strip(".,!?")
 
-        # Direct match or phrase match
+        # Whether a student is admitting ignorance is a property of the WHOLE
+        # utterance, never of a substring inside it. Matching substrings meant
+        # this fired on correct answers constantly, because the list contains
+        # ordinary content words: "ions pass through the membrane" (pass),
+        # "energy is lost as heat" (lost), "solve for the unknown" (unknown),
+        # "the enzyme helps catalyse" (help), "skip connections" (skip). Every
+        # one skipped the grader entirely and was hard-coded to grade 1, so a
+        # right answer reset the streak and dropped the Bloom level. On real
+        # STEM content this was not an edge case.
         if text_lower in idk_phrases:
             return True
-        if any(phrase in text_lower for phrase in idk_phrases):
-            return True
+
+        # Multi-word admissions are unambiguous enough to find inside a
+        # sentence, but only a SHORT one. "I'm not sure, but I think the
+        # derivative is 2x" is an attempt with a hedge on it, and grading it as
+        # a refusal to answer would be worse than grading it wrong.
+        words = text_lower.split()
+        if len(words) <= 8:
+            for phrase in idk_phrases:
+                if " " not in phrase:
+                    continue          # single words: exact utterance only, above
+                if re.search(r"\b" + re.escape(phrase) + r"\b", text_lower):
+                    return True
 
         # Short question check (e.g. "What?", "Huh?")
         if len(text_lower) < 5 and "?" in raw_lower:
