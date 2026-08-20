@@ -44,13 +44,21 @@ COURSES_DIR = os.path.join(DATA_DIR, "courses")
 # generation rather than real teaching content.
 MIN_REAL_WORDS = 200
 
+# Each marker must be a phrase that only occurs in TEMPLATE text, never in
+# real teaching prose. Bare "placeholder" flagged a perfectly good concept
+# that teaches trailing zeros as "insignificant placeholders" — a real
+# mathematical usage — and bare "todo" would flag any Spanish sentence. The
+# same substring-matching bug class the tutor's own command handling had; an
+# instrument gets no exemption from it.
 STUB_MARKERS = (
     "currently unavailable",
-    "content for this",
+    "content for this concept",
     "is currently being",
-    "placeholder",
+    "placeholder text",
+    "[placeholder]",
     "lorem ipsum",
-    "todo",
+    "todo:",
+    "[hydration failed]",
 )
 
 # Strict: only a resolvable reference counts. An earlier looser pattern also
