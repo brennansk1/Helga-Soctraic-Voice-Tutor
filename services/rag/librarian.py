@@ -452,6 +452,26 @@ def flat_syllabus():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/concept_sources", methods=["GET"])
+def concept_sources():
+    """Where a concept's content actually came from.
+
+    Read-only view over the sources the build already retained. Answers with
+    available:false rather than a 404 when a course predates the sources
+    table, so the client can say "not recorded for this course" instead of
+    rendering an error over a lesson that is otherwise fine.
+    """
+    uid = request.args.get("uid")
+    course_uid = request.args.get("course_uid")
+    if not uid or not course_uid:
+        return jsonify({"error": "uid and course_uid are required"}), 400
+    try:
+        return jsonify(storage.courses.get_concept_sources(course_uid, uid))
+    except Exception as e:
+        logging.exception("concept_sources failed for %s/%s", course_uid, uid)
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/concept_details", methods=["GET"])
 def concept_details():
     uid = request.args.get("uid")

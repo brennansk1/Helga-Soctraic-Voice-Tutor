@@ -1443,6 +1443,65 @@ class CourseStore:
         return [{"latex": r[0], "speech": r[1],
                  "unspoken": (r[2] or "").split() if r[2] else []} for r in rows]
 
+    def get_concept_sources(self, course_uid, concept_uid):
+        """What this concept was actually written from.
+
+        The build already records every retained source and which claims rest
+        on which one; nothing read it back. Returns the sources ordered by
+        grounding (strongest first) alongside the claim counts, so the UI can
+        show a learner where a lesson came from and how much of it leans on
+        supplementary rather than primary material — the same share the build
+        policy caps, reported rather than asserted.
+
+        Degrades to an empty result rather than raising: a course built before
+        v12, or one whose sources were never written, must still open.
+        """
+        out = {"sources": [], "claims_total": 0, "claims_supplementary": 0,
+               "supplementary_share": 0.0, "available": False}
+        try:
+            db = self._get_db()
+            rows = db.execute(
+                "SELECT rowid, title, url, source_type, domain_tier, grounding, "
+                "       degraded, passage "
+                "FROM sources WHERE course_uid=? AND concept_uid=? "
+                "ORDER BY grounding DESC", (course_uid, concept_uid)).fetchall()
+            counts = db.execute(
+                "SELECT source_id, COUNT(*), "
+                "       SUM(CASE WHEN supplementary THEN 1 ELSE 0 END) "
+                "FROM claim_sources WHERE course_uid=? AND concept_uid=? "
+                "GROUP BY source_id", (course_uid, concept_uid)).fetchall()
+        except Exception as e:
+            logger.debug("get_concept_sources unavailable for %s/%s: %s",
+                         course_uid, concept_uid, e)
+            return out
+
+        by_id = {c[0]: (c[1] or 0, c[2] or 0) for c in counts}
+        for r in rows:
+            n_claims, n_supp = by_id.get(r[0], (0, 0))
+            passage = r[7] or ""
+            out["sources"].append({
+                "id": r[0],
+                "title": r[1] or "Untitled source",
+                "url": r[2] or "",
+                "source_type": r[3] or "",
+                "domain_tier": r[4] or "",
+                # Rounded for display only; the stored value keeps full precision.
+                "grounding": round(r[5], 2) if r[5] is not None else None,
+                "degraded": bool(r[6]),
+                "claims": n_claims,
+                "supplementary": bool(n_supp) and n_supp == n_claims,
+                # Enough to recognise the passage, not enough to reproduce it.
+                "excerpt": (passage[:280] + "…") if len(passage) > 280 else passage,
+            })
+
+        total = sum(c[1] or 0 for c in counts)
+        supp = sum(c[2] or 0 for c in counts)
+        out["claims_total"] = total
+        out["claims_supplementary"] = supp
+        out["supplementary_share"] = round(supp / total, 3) if total else 0.0
+        out["available"] = bool(rows)
+        return out
+
     def speakable(self, course_uid, concept_uid, markdown):
         """`markdown` with every formula replaced by its spoken form.
 

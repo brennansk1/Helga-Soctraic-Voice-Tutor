@@ -1112,6 +1112,29 @@ def get_concept_details():
     except Exception as e:
         return jsonify({'error': str(e)}), 502
 
+@app.route('/api/concept_sources', methods=['GET'])
+def get_concept_sources():
+    """Proxy for the trust panel in the session view.
+
+    A source list is supporting detail, never the lesson itself, so a failure
+    here answers available:false with the reason attached rather than a 502 —
+    the panel says it could not load and the session carries on.
+    """
+    uid = request.args.get('uid')
+    course_uid = request.args.get('course_uid')
+    if not uid or not course_uid:
+        return jsonify({'error': 'uid and course_uid are required'}), 400
+    try:
+        resp = requests.get(f'{SERVICES["rag"]}/concept_sources',
+                            params={'uid': uid, 'course_uid': course_uid},
+                            timeout=4)
+        return jsonify(resp.json()), resp.status_code
+    except Exception as e:
+        app.logger.warning("concept_sources proxy failed: %s", e)
+        return jsonify({'available': False, 'sources': [],
+                        'error': 'sources unavailable'}), 200
+
+
 @app.route('/api/check_sudo', methods=['GET'])
 def check_sudo():
     # Sudo no longer required as per README updates, return available: true to bypass UI prompt

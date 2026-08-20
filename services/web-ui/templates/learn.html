@@ -11,6 +11,7 @@
      Loaded BEFORE session.js, which calls into window.HelgaAids while rendering
      each message. No vendor library — the renderer is self-contained. -->
 <link rel="stylesheet" href="{{ url_for('static', filename='css/aids.css') }}?v=3">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/trust.css') }}">
 <script src="{{ url_for('static', filename='js/aids.js') }}?v=2"></script>
 <script src="{{ url_for('static', filename='js/session.js') }}?v=10"></script>
 {% endblock %}
@@ -85,8 +86,15 @@
                 <span id="session-progress-pill" class="learn-chat-badge progress hidden" title="Course progress">0 / 0</span>
                 <span id="mode-indicator-badge" class="learn-chat-badge mode"><span class="i i-graduation" aria-hidden="true"></span> Socratic</span>
                 <span id="bloom-level-badge" class="learn-chat-badge bloom hidden">Lv 1</span>
+                <!-- The trust surface. Helga's claim is that it builds from real
+                     material; this is where a learner checks that claim for the
+                     concept actually on screen. -->
+                <button type="button" id="trust-pill" class="trust-pill hidden"
+                        aria-expanded="false" aria-controls="trust-panel">Sources…</button>
             </div>
         </div>
+        <div id="trust-panel" class="trust-panel hidden" role="dialog"
+             aria-label="Sources for this concept"></div>
         <!-- Mastery progress bar: thin fill under the topbar that ticks up
              as the user demonstrates understanding of the current concept.
              Driven by concept_correct_streak + concept_question_count. -->
@@ -1291,6 +1299,14 @@
             // Remember the node we came from so we can restore focus on back.
             _lastEnteredNodeUid = uid;
 
+            // Sources follow the concept: load for THIS uid, and let a late
+            // reply for a previous concept be discarded rather than shown
+            // against the wrong lesson.
+            if (window.HelgaTrust) {
+                window.HelgaTrust.toggle(false);
+                window.HelgaTrust.load(courseUid, uid);
+            }
+
             pathView.classList.add('hidden');
             sessionView.classList.remove('hidden');
             // Fade-in animation so the swap feels intentional instead of
@@ -1958,4 +1974,5 @@
 {% block page_scripts %}
 <!-- session.js loaded via head_scripts block -->
 <script src="{{ url_for('static', filename='js/session-rails.js') }}"></script>
+<script src="{{ url_for('static', filename='js/trust.js') }}"></script>
 {% endblock %}
