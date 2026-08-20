@@ -2606,6 +2606,11 @@ class MnemosyneFSM:
                 grade_band=self.grade_band,
                 health_strand6=self._current_concept_is_hd(),
                 aid_policy=aid_decision,
+                # A4.1b — what THIS learner has struggled with, from their own
+                # past sessions. None when the record is too thin to mean
+                # anything, which is a real answer: an invented struggle would
+                # have the tutor open by correcting a mistake never made.
+                learner_history=self._learner_history_note(),
             )
         # Tune max_tokens: lectures need more room for explanations, questions are shorter
         token_limit = 500 if teaching_mode == "LECTURE" else 400
@@ -2666,6 +2671,13 @@ class MnemosyneFSM:
             question = question.rstrip() + "\n\n" + fallback_q
             logging.info(f"[FLOW] Appended {current_q_type['key']} fallback question — LLM response did not end with '?'")
 
+        # A4.1a — the dialogue contract. Checking is free; regeneration costs
+        # ONE extra call and happens only when a rule actually trips, so the
+        # common case is unchanged. An interactive turn is ~4.5s, so a second
+        # call still lands well inside the budget.
+        question = self._enforce_dialogue_contract(
+            question, prompt, token_limit, context_trigger)
+
         self.last_question = question
         self.conversation_history.append((context_trigger, question))
 
@@ -2675,6 +2687,103 @@ class MnemosyneFSM:
 
     # NOTE: Dead duplicate _detect_ignorance removed during audit.
     # The canonical version is below (line ~1045).
+
+
+    # ------------------------------------------------------------------ #
+    # A4.1a / A4.1b — the dialogue contract and the learner's own record. #
+    # ------------------------------------------------------------------ #
+    def _concept_terms(self):
+        """The subject's vocabulary, for the one-new-idea rule.
+
+        Scoped to the current concept so ordinary English the tutor happens to
+        use for the first time is not mistaken for a new technical idea.
+        """
+        node = self.current_lesson_node or {}
+        terms = set()
+        for key in ("title", "complexity_role"):
+            for w in re.findall(r"[A-Za-z][A-Za-z'\-]+", str(node.get(key) or "")):
+                if len(w) > 3:
+                    terms.add(w.lower())
+        for obj in (node.get("learning_objectives") or []):
+            for w in re.findall(r"[A-Za-z][A-Za-z'\-]+", str(obj)):
+                if len(w) > 3:
+                    terms.add(w.lower())
+        return terms
+
+    def _seen_terms(self):
+        """Every content word the dialogue has already used."""
+        seen = set()
+        for pair in (self.conversation_history or [])[-8:]:
+            for part in pair:
+                for w in re.findall(r"[A-Za-z][A-Za-z'\-]+", str(part or "")):
+                    seen.add(w.lower())
+        return seen
+
+    def _enforce_dialogue_contract(self, question, prompt, token_limit,
+                                   learner_said=""):
+        """Regenerate once against NAMED violations, and only if any trip.
+
+        Returns the better of the two turns. A retry that fixes nothing is not
+        shipped just because it is newer -- prompt-only enforcement measured
+        0/5 in this repo, and an unchecked retry is prompt-only enforcement
+        wearing a second call.
+        """
+        try:
+            from services.common import dialogue_contract as dc
+        except Exception:
+            return question
+
+        kw = {"learner_said": learner_said or "",
+              "concept_terms": self._concept_terms(),
+              "already_seen": self._seen_terms(),
+              "is_opening": not (self.conversation_history or [])}
+        try:
+            violations = dc.check(question, **kw)
+        except Exception as e:
+            logging.warning(f"[CONTRACT] check failed, shipping as-is: {e}")
+            return question
+        if not violations:
+            return question
+
+        names = ", ".join(f"{v.rule}({v.detail})" for v in violations)
+        logging.info(f"[CONTRACT] {len(violations)} violation(s): {names}")
+
+        try:
+            retry_prompt = list(prompt) + [
+                {"role": "assistant", "content": question},
+                {"role": "user", "content": dc.correction_note(violations)},
+            ]
+            raw = self._call_llm(retry_prompt, max_tokens=token_limit, timeout=60)
+            candidate = clean_llm_response(raw) if raw else ""
+            if candidate and dc.is_better(candidate, question, **kw):
+                logging.info("[CONTRACT] regeneration accepted")
+                return candidate
+            logging.info("[CONTRACT] regeneration did not improve; keeping original")
+        except Exception as e:
+            logging.warning(f"[CONTRACT] regeneration failed: {e}")
+        return question
+
+    def _learner_history_note(self):
+        """A4.1b — this learner's record for the concepts in play, or None."""
+        try:
+            from services.common import learner_history as lh
+        except Exception:
+            return None
+        node = self.current_lesson_node or {}
+        uid = node.get("uid")
+        if not uid:
+            return None
+        titles = {uid: node.get("title") or ""}
+        related = []
+        for item in (self.syllabus_queue or [])[:8]:
+            ruid = item.get("uid") if isinstance(item, dict) else None
+            if ruid:
+                related.append(ruid)
+                titles[ruid] = (item.get("title") or "") if isinstance(item, dict) else ""
+        return lh.for_concept(self.storage, uid,
+                              course_uid=self.active_course_uid,
+                              student_id=getattr(self, "student_id", None),
+                              related_uids=related, titles=titles)
 
     def _detect_ignorance(self, text):
         """

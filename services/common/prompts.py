@@ -341,7 +341,8 @@ def get_typed_socratic_prompt(question_type_key, context_text, conversation_hist
                               aid_policy=None,
                                system_note=None, misconceptions=None, analogies=None,
                                style_modifier=None, user_profile=None, bloom_level=1,
-                               prior_concepts=None, grade_band=None, health_strand6=False):
+                               prior_concepts=None, grade_band=None, health_strand6=False,
+                               learner_history=None):
     """
     Generates a Socratic prompt with a specific question TYPE instruction injected.
 
@@ -371,10 +372,11 @@ def get_typed_socratic_prompt(question_type_key, context_text, conversation_hist
         prior_concepts=prior_concepts,
         grade_band=grade_band,
         health_strand6=health_strand6,
+        learner_history=learner_history,
     )
 
 
-def get_socratic_tutor_prompt(context_text, conversation_history, aid_policy=None, system_note=None, misconceptions=None, analogies=None, style_modifier=None, user_profile=None, bloom_level=1, prior_concepts=None, grade_band=None, health_strand6=False):
+def get_socratic_tutor_prompt(context_text, conversation_history, aid_policy=None, system_note=None, misconceptions=None, analogies=None, style_modifier=None, user_profile=None, bloom_level=1, prior_concepts=None, grade_band=None, health_strand6=False, learner_history=None):
     """
     Generates a Socratic question or response as a messages array.
 
@@ -397,6 +399,13 @@ def get_socratic_tutor_prompt(context_text, conversation_history, aid_policy=Non
     misc_str = ""
     if misconceptions:
         misc_str = f"\nWARNING: Students often believe {', '.join(misconceptions)}. Correct this if they mention it."
+
+    # A4.1b. Deliberately NOT folded into misconceptions above: that line says
+    # "students often", a claim about students in general. This one is about
+    # the person in the chair, watched doing it, and has to read that way.
+    learner_str = ""
+    if learner_history:
+        learner_str = "\n" + str(learner_history)
 
     analog_str = ""
     if analogies:
@@ -509,7 +518,7 @@ STRICT OUTPUT RULES:
 - NEVER include meta-commentary ("Let's explore", "Great question", "That's interesting").
 - NEVER repeat the context material verbatim.
 - NEVER prefix your response with a role label like "Tutor:" or "Lecturer:".
-{band_register}{style_constraint}{profile_str}{misc_str}{analog_str}{bloom_str}{prior_str}{hook_str}{notes_str}{aid_str}
+{band_register}{style_constraint}{profile_str}{learner_str}{misc_str}{analog_str}{bloom_str}{prior_str}{hook_str}{notes_str}{aid_str}
 
 INSTRUCTOR NOTES (pedagogical guidance only — the student has NOT seen any of this material):
 "{context_text}" """
