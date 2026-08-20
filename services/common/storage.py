@@ -2819,6 +2819,26 @@ class ProgramStore:
             # available_courses() and the progress meter both read this.
             c["completed"] = bool(r[4])
             c["completed_at"] = r[5]
+
+        # A STORED plan can still carry a course this tutor cannot deliver.
+        # The planner filters at creation, but programmes created before that
+        # existed — or transcribed from a catalogue that legitimately requires
+        # a lab — keep theirs forever, and a degree containing a course Helga
+        # can never build is a degree that can never reach 100%. Filtering on
+        # read rather than migrating: the stored plan stays a faithful record
+        # of what was planned, and what is SHOWN is what can be delivered.
+        try:
+            from services.core.program import teachable
+            keep = [c for c in plan.get("courses", []) if teachable(c.get("title"))]
+            dropped = len(plan.get("courses", [])) - len(keep)
+            if dropped:
+                logger.info("programme %s: hiding %d stored course(s) this "
+                            "tutor cannot deliver", uid, dropped)
+                plan["courses"] = keep
+                plan["hidden_undeliverable"] = dropped
+        except Exception as e:
+            # Never let the filter cost the caller their programme.
+            logger.debug("teachability filter unavailable: %s", e)
         return plan
 
     def list(self) -> List[dict]:
