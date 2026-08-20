@@ -1175,6 +1175,13 @@ class MnemosyneFSM:
                 self._save_current_course_progress()
             self.resume_course(uid, title)
             return
+        # Deleting a course has to work from wherever you are standing.
+        # This lived inside `if self.state == "LOBBY"`, so deleting the course
+        # you were mid-session in removed the rows and the markdown and left
+        # the FSM still holding it -- same LOBBY-only shape as LRN-4.
+        elif event_type == "DELETE_COURSE":
+            self.delete_course_state(event.get("payload", {}).get("uid"))
+            return
         # Handle PAUSE_SESSION from learn tab back button (LRN-9)
         elif event_type == "PAUSE_SESSION":
             if self.state == "SOCRATIC_LEARNING":
@@ -1227,10 +1234,6 @@ class MnemosyneFSM:
                     self.list_courses()
                 elif "status" in text:
                     self.report_status()
-            elif event_type == "DELETE_COURSE":
-                uid = event.get("payload", {}).get("uid")
-                self.delete_course_state(uid)
-
         elif self.state == "SOCRATIC_LEARNING":
             if event_type == "SKIP_CONCEPT":
                 self.speak("Skipping this concept.")
@@ -4369,6 +4372,11 @@ class MnemosyneFSM:
                 self.active_course_uid = None
                 self.current_lesson_node = None
                 self.syllabus_queue = []
+                # The conversation belonged to the course. Leaving it on screen
+                # after the course is gone means the next thing the learner
+                # reads is a dialogue about material that no longer exists.
+                self.transcript = []
+                self.conversation_history = []
                 self.state = "LOBBY"
                 self.speak("Course deleted. Returning to lobby.")
 

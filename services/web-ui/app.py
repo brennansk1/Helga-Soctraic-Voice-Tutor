@@ -1142,18 +1142,42 @@ def get_courses():
 @csrf_protect
 def delete_course():
     uid = request.args.get('uid')
+    if not uid:
+        return jsonify({'error': 'uid is required'}), 400
     try:
-        # 1. Notify RAG (Deletes DB nodes and Filesystem)
-        resp_rag = requests.delete(f'{SERVICES["rag"]}/api/courses', params={'uid': uid}, timeout=5)
-        
-        # 2. Notify CORE (Clears runtime state/active course)
-        event = {'type': 'DELETE_COURSE', 'payload': {'uid': uid}}
-        requests.post(f'{SERVICES["core"]}/event', json=event, timeout=2)
-        
-        return jsonify(resp_rag.json()), resp_rag.status_code
+        # 1. RAG owns the rows and the files. This is the delete; if it fails,
+        #    nothing was deleted and the caller must hear so.
+        #    30s, not 5: a large course is a directory of markdown plus its
+        #    progress and flashcard rows, and a slow disk should not be
+        #    reported to the user as a failure to delete.
+        resp_rag = requests.delete(f'{SERVICES["rag"]}/api/courses',
+                                   params={'uid': uid}, timeout=30)
     except Exception as e:
-        logger.error(f"Error in delete_course: {e}")
+        logger.error(f"delete_course: RAG delete failed for {uid}: {e}")
         return jsonify({'error': str(e)}), 502
+
+    # 2. Telling core to drop its runtime state is BEST EFFORT, and must not
+    #    turn a completed delete into a reported failure. It used to share the
+    #    try block above, so a core that was busy (a 2s timeout, while it may
+    #    be mid-build) produced a 502 and a "Failed to delete course" toast
+    #    for a course that was already gone -- the user retries, and the thing
+    #    they are trying to delete is no longer there to delete.
+    if resp_rag.ok:
+        try:
+            requests.post(f'{SERVICES["core"]}/event', timeout=10,
+                          json={'type': 'DELETE_COURSE', 'payload': {'uid': uid}})
+        except Exception as e:
+            # Core will still be holding a course that no longer exists; say so
+            # in the log, where it is actionable, rather than to the user, for
+            # whom the delete did in fact happen.
+            logger.warning(
+                "delete_course: %s deleted, but core was not notified (%s). "
+                "Its runtime state will clear on the next restart.", uid, e)
+    try:
+        return jsonify(resp_rag.json()), resp_rag.status_code
+    except ValueError:
+        return jsonify({'status': 'deleted' if resp_rag.ok else 'error'}), \
+            resp_rag.status_code
 
 @app.route('/api/set_active_course', methods=['POST'])
 def set_active_course():

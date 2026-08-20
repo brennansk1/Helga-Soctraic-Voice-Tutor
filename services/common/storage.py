@@ -1458,6 +1458,24 @@ class CourseStore:
                     except sqlite3.OperationalError as e:
                         # Table or column may not exist in older schemas — skip.
                         logger.debug(f"Cascade skip for {table}: {e}")
+                # program_courses is DETACHED, not deleted. A course built
+                # from a degree is still part of that degree -- the learner
+                # deleted the built content, not the requirement -- so the row
+                # stays and reverts to unbuilt. Deleting it would silently
+                # shrink the programme, and leaving it as-is would show a
+                # course as built with nothing behind it.
+                try:
+                    cursor.execute(
+                        "UPDATE program_courses SET built=0, course_uid=NULL "
+                        "WHERE course_uid=?", (uid,))
+                    if cursor.rowcount > 0:
+                        logger.info(
+                            "Detached %d programme slot(s) from deleted course "
+                            "%s; they are open to be built again",
+                            cursor.rowcount, uid)
+                except sqlite3.OperationalError as e:
+                    logger.debug(f"program_courses detach skipped: {e}")
+
                 conn.commit()
                 if total_rows > 0:
                     logger.info(
