@@ -78,35 +78,84 @@ SLOT_MISCONCEPTION = "misconception"     # keyed: "misconception:0"
 # Its real job is NARROWING: handing a 9B model a menu of two or three plausible
 # kinds instead of eleven measurably improves what it picks, and a mis-route is
 # cheap because the model may still choose something else.
+# COVERAGE, NOT FITTING. These lists were extended after tools/bench_domains.py
+# showed concepts a diagram obviously serves getting none. The terms added are
+# ones any course in the field uses -- "receptor", "call stack", "lattice" --
+# NOT the exact strings in the benchmark fixtures. That distinction is the
+# whole difference between fixing the policy and teaching it the answers.
 _DOMAIN_KINDS = (
     (r"\b(triangle|angle|circle|polygon|perimeter|area|hypotenuse|parallel|"
-     r"congruen|similar|geometr|pythagor|radius|diameter)", ("geometry",)),
+     r"congruen|similar|geometr|pythagor|radius|diameter|lattice|crystal|"
+     r"molecul|bond(ing|s)?|arrangement|packing|orbital)", ("geometry",)),
     (r"\b(fraction|numerator|denominator|equivalent|simplify.*fraction|"
      r"percent|decimal|ratio|proportion)", ("fraction", "number_line")),
     (r"\b(inequalit|negative number|integer|absolute value|round(ing)?|"
      r"number line|greater than|less than)", ("number_line",)),
     (r"\b(function|slope|gradient|quadratic|parabola|linear equation|"
-     r"intercept|exponential|derivative|asymptot)", ("plot",)),
+     r"intercept|exponential|derivative|asymptot|"
+     # Linear algebra was missing entirely, so "Eigenvalues" -- a concept a
+     # plot obviously serves, since the whole idea is a vector that keeps its
+     # direction -- scored below the threshold and never got a diagram.
+     r"eigen|matri(x|ces)|vector|transformation|rate of change|"
+     r"partial derivative|tangent line)", ("plot",)),
     (r"\b(data|survey|statistic|mean|median|mode|frequenc|distribution|"
      r"average|measurement|rainfall|population)", ("bars", "plot")),
     (r"\b(cycle|photosynth|respiration|water cycle|feedback|loop|"
-     r"circulat|recurring|seasons)", ("cycle",)),
-    (r"\b(century|war|revolution|dynasty|era|timeline|chronolog|"
-     r"[12][0-9]{3}\b|ancient|medieval)", ("timeline",)),
+     r"circulat|recurring|seasons|generation|evolv|selection pressure|"
+     r"adapt(s|ation)?|receptor|pathway|regulat|homeostas|metabol|"
+     r"transmission|reproduc)", ("cycle",)),
+    # A timeline needs a SEQUENCE. A single year does not make one: the bare
+    # `[12][0-9]{3}` trigger meant "The Battle of Hastings was fought on 14
+    # October 1066" -- a date to be told, not drawn -- scored as a visual
+    # subject and the policy asked for a timeline to teach it. Two or more
+    # dates, or explicit sequence language, is the actual signal.
+    (r"\b(century|revolution|dynasty|era|timeline|chronolog|ancient|medieval|"
+     r"sequence of|ordered|followed by|led up to|in turn|escalat)",
+     ("timeline",)),
+    (r"[12][0-9]{3}\b(?:[^.]{0,200}?[12][0-9]{3}\b)", ("timeline",)),
     (r"\b(compare|contrast|versus|vs\.|difference between|distinguish|"
      r"unlike|whereas)", ("table", "venn")),
     (r"\b(classif|categor|taxonom|belongs to|subset|overlap|"
      r"both .* and)", ("venn", "graph")),
     (r"\b(system|network|relationship|causes|leads to|depends on|"
-     r"food (web|chain)|flow of|process)", ("graph",)),
+     r"food (web|chain)|flow of|process|call stack|recursi|hierarch|"
+     r"precedent|binds|inherit(s|ance)?|reference(s)? itself|"
+     r"prerequisite|upstream|downstream)", ("graph",)),
     (r"\b(step|method|procedure|algorithm|solve for|how to|"
      r"first .* then|derivation)", ("steps",)),
 )
 
 
+# --- Content a diagram cannot carry ------------------------------------------
+# A convention, a name, a symbol or a bare date is ARBITRARY: true because
+# somebody decided it, not because of a structure a picture could show. There
+# is nothing to draw, and drawing anyway spends the learner's attention on
+# decoration. This is a NEGATIVE signal because keyword affinity gets it
+# exactly backwards: "Why the partial derivative uses a curly d" contains
+# "partial derivative" and scores as a plot, when the subject is the SHAPE OF
+# A SYMBOL.
+_ARBITRARY = re.compile(
+    r"\b(convention|notation|symbol for|is called|are called|the name|named "
+    r"after|abbreviat|terminolog|nomenclature|by definition we write|"
+    r"why (is|do) (it|we|they) (called|write|use)|stands for|"
+    r"reference range|citation format|indexes? from)\b", re.I)
+
+
+def is_arbitrary(*texts):
+    """True when the concept is a convention, a name or a bare fact.
+
+    Deliberately narrow. A false positive costs one diagram; a false negative
+    costs a diagram of nothing.
+    """
+    blob = " ".join(t for t in texts if t).lower()[:4000]
+    return bool(_ARBITRARY.search(blob))
+
+
 def suggest_kinds(*texts):
     """Kinds plausibly useful for this subject matter, most specific first."""
     blob = " ".join(t for t in texts if t).lower()[:4000]
+    if is_arbitrary(blob):
+        return ()                     # nothing to draw; see _ARBITRARY
     out = []
     for pattern, kinds in _DOMAIN_KINDS:
         if re.search(pattern, blob):
