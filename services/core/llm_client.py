@@ -39,11 +39,16 @@ logger = logging.getLogger(__name__)
 
 OLLAMA_URL = os.environ.get('OLLAMA_URL', 'http://host.docker.internal:11434')
 OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'nail-35b-a3b-ctx')
-# How long Ollama should keep the weights resident after a request. "-1" pins
-# them indefinitely, which is what a single-user tutor on a dedicated machine
-# wants: the alternative is paying a multi-second cold load every time the
-# student pauses to think for five minutes.
-KEEP_ALIVE = os.environ.get('OLLAMA_KEEP_ALIVE', '-1')
+# How long Ollama keeps the weights resident after a request. The policy
+# REVERSED with A6: pinning ("-1") optimised the one number a stopwatch can
+# see and spent ~12.7 GB of a ~15.0 GB safe ceiling on the hours nobody is
+# studying — the same hours the night audit and host-native TTS/STT want the
+# RAM. 30m outlasts a student thinking about a hard question; what it costs is
+# one ~2-minute reload on the first question after a genuine break, which the
+# UI narrates. This default MUST agree with docker-compose/.env: a per-request
+# keep_alive overrides the server's own setting, so one stale "-1" here would
+# silently re-pin the model no matter what the host says.
+KEEP_ALIVE = os.environ.get('OLLAMA_KEEP_ALIVE', '30m')
 
 
 class LLMClient:
@@ -116,8 +121,9 @@ class LLMClient:
             # This is belt-and-braces, not the primary mechanism: the /v1
             # OpenAI-compatible shim may ignore the field depending on the
             # Ollama version, and it ignores unknown fields harmlessly either
-            # way. The reliable lever is OLLAMA_KEEP_ALIVE on the host, which
-            # `warn_if_not_pinned()` checks and complains about at startup.
+            # way. The reliable lever is OLLAMA_KEEP_ALIVE — set both on the
+            # host and here, because whichever request runs last resets the
+            # timer with ITS value. `warn_residency()` checks at startup.
             "keep_alive": KEEP_ALIVE,
             # A1/A6: qwen3.5 is a reasoning model and this is Ollama's /v1
             # shim. With reasoning on, the thinking block consumes the whole
@@ -529,6 +535,7 @@ class LLMClient:
                     continue
                 expires = entry.get("expires_at")
                 pinned = None
+                remaining = None
                 if expires:
                     try:
                         from datetime import datetime, timezone
@@ -538,26 +545,47 @@ class LLMClient:
                         pinned = remaining > 3600
                     except (ValueError, TypeError):
                         pinned = None
-                return {"loaded": True, "expires_at": expires, "pinned": pinned}
-            return {"loaded": False, "expires_at": None, "pinned": None}
+                # expires_in_s is what the too-short-window warning reads; it
+                # was computed here and thrown away, which made that warning
+                # structurally impossible to fire.
+                return {"loaded": True, "expires_at": expires,
+                        "expires_in_s": remaining, "pinned": pinned}
+            return {"loaded": False, "expires_at": None,
+                    "expires_in_s": None, "pinned": None}
         except Exception as e:
             return {"error": str(e)}
 
-    def warn_if_not_pinned(self):
+    def warn_residency(self):
         """Log the exact fix when the model will idle out from under us."""
         state = self.residency()
         if state.get("error"):
             return state
-        if state.get("pinned") is False or not state.get("loaded"):
+        # The A6 policy is an idle WINDOW, not a pin. Both extremes are now
+        # wrong ways: pinned means ~12.7 GB held through every idle hour on a
+        # 24 GB machine with a measured ~15.0 GB safe ceiling, and a window
+        # under ~10 minutes means a student who stops to think pays a
+        # ~2-minute reload mid-lesson. Warn on either; say which.
+        if state.get("pinned") is True:
             logger.warning(
-                "Ollama is not pinning %s in memory (loaded=%s, expires_at=%s). "
-                "Every request after an idle gap will pay a cold model load — "
-                "seconds of latency handed to whoever is waiting. Fix on the "
-                "HOST, where Ollama runs: "
-                "`launchctl setenv OLLAMA_KEEP_ALIVE -1` then restart "
-                "`ollama serve`.",
-                self.model, state.get("loaded"), state.get("expires_at"))
+                "Ollama is PINNING %s in memory (expires_at=%s). That holds "
+                "the weights through every idle hour and starves the night "
+                "audit and host TTS/STT. Fix on the HOST: "
+                "`launchctl setenv OLLAMA_KEEP_ALIVE 30m` then restart "
+                "`ollama serve` — and check no container overrides it, since "
+                "a per-request keep_alive wins over the server setting.",
+                self.model, state.get("expires_at"))
+        elif state.get("loaded") and state.get("expires_in_s") is not None                 and state["expires_in_s"] < 600:
+            logger.warning(
+                "Ollama keep-alive for %s is under 10 minutes (%.0fs). A "
+                "student who pauses to think will pay a ~2-minute cold load "
+                "mid-lesson. Raise OLLAMA_KEEP_ALIVE toward 30m.",
+                self.model, state["expires_in_s"])
         return state
+
+    # The old name asserted the old policy in its very grammar. Kept callable
+    # so callers keep working whatever order changes land in.
+    def warn_if_not_pinned(self):
+        return self.warn_residency()
 
     def health_check(self):
         """Check if Ollama is reachable and model is loaded."""

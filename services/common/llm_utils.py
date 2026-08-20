@@ -494,9 +494,9 @@ def llm_generate(
                 # of these with research fetches in between; without this the
                 # model can idle out mid-pipeline and each phase pays a cold
                 # load. The /v1 shim may ignore it depending on Ollama version
-                # — OLLAMA_KEEP_ALIVE on the host is the reliable lever, and
+                # — OLLAMA_KEEP_ALIVE must agree here and on the host, and
                 # LLMClient.warn_if_not_pinned() checks it at startup.
-                "keep_alive": os.getenv("OLLAMA_KEEP_ALIVE", "-1"),
+                "keep_alive": os.getenv("OLLAMA_KEEP_ALIVE", "30m"),
                 # A1/A6: qwen3.5 is a reasoning model. Left enabled, it spends
                 # the ENTIRE token budget on its thinking block and returns an
                 # empty `content` — measured on this exact prompt:
