@@ -65,6 +65,20 @@ TUTOR = "tutor"
 _DEFAULT_URL = "http://host.docker.internal:11434"
 
 
+# THE default model, in one place.
+#
+# docs/MODEL.md said this was "the default in docker-compose.yml and in the
+# code defaults". Only the compose half was ever done: this module still said
+# qwen3.5:9b, so anything run OUTSIDE a container -- every tool in tools/,
+# every benchmark, every long run -- silently used the previous model while
+# the deployed stack used Nail. A benchmark measuring a model you do not ship
+# is worse than no benchmark, because it looks like evidence.
+#
+# Import this rather than repeating the literal; three copies is how the two
+# halves drifted apart in the first place.
+DEFAULT_MODEL = "nail-35b-a3b-ctx"
+
+
 def _clean(value):
     value = (value or "").strip()
     return value or None
@@ -79,7 +93,7 @@ def resolve(role=TUTOR):
     base = _clean(os.getenv("OLLAMA_URL")) or _DEFAULT_URL
     model = (_clean(os.getenv("LLM_MODEL"))
              or _clean(os.getenv("OLLAMA_MODEL"))
-             or "qwen3.5:9b")
+             or DEFAULT_MODEL)
 
     if role == BUILD:
         return (_clean(os.getenv("HELGA_BUILD_URL")) or base,

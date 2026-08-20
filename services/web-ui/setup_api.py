@@ -111,7 +111,8 @@ def _model_name():
         val = (os.getenv(var) or "").strip()
         if val:
             return val, var
-    return "qwen3.5:9b", "default"
+    from services.common.model_roles import DEFAULT_MODEL
+    return DEFAULT_MODEL, "default"
 
 
 def _in_container():

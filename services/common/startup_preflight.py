@@ -175,8 +175,9 @@ def _ollama_url():
 
 
 def _configured_model():
+    from services.common.model_roles import DEFAULT_MODEL
     return (os.getenv("LLM_MODEL") or os.getenv("OLLAMA_MODEL")
-            or "qwen3.5:9b").strip()
+            or DEFAULT_MODEL).strip()
 
 
 def _model_match(wanted, installed):
