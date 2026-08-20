@@ -5,7 +5,7 @@ either backed by a command you can re-run, or marked as unverified. Nothing here
 is a status someone typed in by hand and forgot to update — if a row claims
 VERIFIED, the command beside it produced that result.
 
-Last measured: 2026-08-19 (§0 re-measured; sections below still carry their 2026-08-04 measurements unless marked).
+Last measured: 2026-08-20 (see "Closed 2026-08-20"; sections below still carry their 2026-08-04 measurements unless marked).
 
 > ## What changed on 2026-08-04 — the grounding chain
 >
@@ -260,6 +260,52 @@ open. Needs a reconciliation pass that either restores or removes them.
   now" rather than showing an empty result set — the distinction this codebase
   keeps insisting on, holding in the one surface that had never been looked at.
 - **The schema migration has been run** — see the note in §0.
+
+### Closed 2026-08-20
+
+- **The first-run setup page is Helga's, not a generic form** (`2e94d55`). It
+  stays standalone on purpose — `base.html`'s nav points at Learn/Practice/
+  Review, none of which work on the machine this page exists to fix, and
+  `resources.js`'s blocking gate would cover the one page that must stay
+  readable while blocked — so it carries the brand itself: gradient hairline,
+  mark and wordmark, accent eyebrow, display heading in the brand face, and
+  the product's real card treatment. Verified in a browser at 375/768/1440 in
+  both themes; no horizontal overflow.
+
+- **`--text-secondary` was under AA product-wide, and is now measured, not
+  eyeballed** (`2e94d55`, guard in `e33d54f`). `#6b7c6e` ran 3.92:1 on
+  `--bg-primary`, 4.44 on `--bg-secondary`, 3.94 on `--bg-tertiary` and 4.19
+  on `--bg-chat` — every muted caption in the product, 218 call sites across
+  16 stylesheets. Dark failed on `--bg-tertiary` at 4.15. Both themes now
+  clear 4.6 on all four surfaces with the hue kept.
+
+  `tools/css_theme_guard.py` now resolves the token table per theme and does
+  the WCAG arithmetic, so this cannot come back silently. **Verified the guard
+  fires**: restoring the old values reports all five failures and exits 1.
+
+- **Unstyled prose links no longer render UA `#0000EE`** (`2e94d55`). The
+  degree page's empty-state "Create" link measured about 2.3:1 on dark.
+  `a:not([class])` is scoped that way deliberately — every anchor the product
+  styles carries a class and inherits its colour, so a bare `a {}` would
+  repaint the nav and every card wrapper.
+
+- **The degree viewer is an actual degree audit** (`e33c068`). Block verdicts,
+  "Still needed:" lines derived from course state, a key that finally explains
+  built-vs-unbuilt, and worksheet rows instead of a card grid at 40 courses.
+  The audit summary moved from 1500px (1.78 screens, behind 23 decision cards)
+  to 675px / 0.80 screens on desktop. Fixed a `ReferenceError` in `stateNote()`
+  that was swallowing the "build already running" card.
+
+- **Full suite: 2160 passed, 32 skipped, 0 failed** (`python3 -m pytest tests/ -q`,
+  634s).
+
+**Contrast sweep caveat worth keeping:** the first run of the whole-page audit
+reported 11 failures on `/` that did not exist. `style.css` transitions link
+colour, and `getComputedStyle` returns interpolated values mid-transition. Any
+colour audit must inject
+`*,*::before,*::after{transition:none!important;animation:none!important}`
+before it reads anything. With that, `/`, `/courses`, `/degree`, `/settings`
+and `/setup` all report zero failures in both themes.
 
 ---
 
