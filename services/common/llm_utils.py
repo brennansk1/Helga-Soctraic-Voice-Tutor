@@ -35,6 +35,17 @@ except ImportError:
     class GpuOverloaded(Exception):
         pass
 
+# A7: the circuit breaker lives in services/common precisely so THIS module gets
+# one. It is the build path — dozens of sequential calls, each with a 90-600 s
+# timeout — so it is the caller that suffers most when the host dies, and until
+# now it was the only major caller with no breaker at all.
+from services.common.llm_breaker import (
+    get_breaker, strict_default, record_failure_reason, last_llm_failure,
+    clear_llm_failure, LLMCircuitOpen, LLMTimeout, LLMTransportError,
+    LLMOverloaded, LLMBadJSON, LLMSchemaMismatch, LLMEmptyResponse,
+    LLMRequestRejected, LLMUnavailable, LLMError, LLMBadOutput,
+)
+
 
 class _NoopSlot:
     def __enter__(self):
@@ -389,6 +400,7 @@ def llm_generate(
     think: bool = False,
     json_format=None,
     role: str = None,
+    strict: bool = None,
 ) -> str:
     """Call LLM with retry logic.
 
@@ -404,8 +416,32 @@ def llm_generate(
     - `think` defaults to False: qwen3.5 is a reasoning model whose thinking
       block otherwise consumes the whole token budget and returns empty
       content. See the comment at the request body below for measurements.
+
+    A7 — failure naming. `strict=True` (or `LLM_STRICT_ERRORS=1`) raises the
+    named exception for whatever actually went wrong instead of returning "".
+    The default stays "" so no existing caller changes behaviour — but the name
+    is recorded either way and is readable afterwards via `last_llm_failure()`.
+    A build that dies can therefore always say WHICH thing happened: the host
+    was unreachable, our own gate shed the call, the server rejected the
+    payload, or the model answered with nothing.
     """
+    strict = strict_default() if strict is None else strict
+    breaker = get_breaker()
+    clear_llm_failure()
+    failure = None
     for attempt in range(retries):
+        # A7: fast-fail BEFORE the heartbeat thread, the GPU slot and the socket.
+        # While the circuit is open the answer is already known, and the whole
+        # point is to not spend a 90-600 s timeout rediscovering it — a build
+        # forty concepts long would otherwise take an hour to report a host that
+        # died in its first minute.
+        if not breaker.allow():
+            failure = record_failure_reason(
+                LLMCircuitOpen(f"retry in {breaker.retry_after():.0f}s"))
+            logger.error("LLM call skipped — %s", failure)
+            if progress_callback:
+                progress_callback(f"LOG: {failure.user_message}")
+            break
         timeout = max(
             90, min(600, max_tokens * 0.5)
         )  # 90s floor, scale with tokens, 10 min cap
@@ -577,13 +613,45 @@ def llm_generate(
                 .get("message", {})
                 .get("content", "")
             )
+            # The transport worked, so the host is healthy regardless of what it
+            # said — close the circuit here, not after the content check below.
+            breaker.record_success()
 
             logger.info(
                 f"[{req_id}] LLM Response (len={len(content)}, words={len(content.split())})"
             )
+            if not content:
+                # A healthy host that returns nothing is its own failure mode
+                # (the thinking-block trap), and it used to be invisible: the
+                # caller got "" and could not tell it apart from a dead host.
+                failure = record_failure_reason(
+                    LLMEmptyResponse(f"tokens={max_tokens}, think={think}"))
+                logger.warning("[%s] %s", req_id, failure)
+                if attempt < retries - 1:
+                    continue
+                break
+            # A later attempt succeeding must erase an earlier attempt's name,
+            # or `last_llm_failure()` reports a failure that did not happen.
+            clear_llm_failure()
             return content
-        except requests.exceptions.Timeout as e:
+        except GpuOverloaded as e:
+            # OUR gate shed this call; the model service is fine. It must not
+            # touch the breaker — tripping on self-inflicted backpressure would
+            # turn a queue into an outage — but it IS worth retrying, because
+            # overload is transient by definition and this is the background
+            # build path, which is shed first and can afford to wait. Retrying
+            # is also what the old generic handler did; only the name is new.
             heartbeat_stop.set()
+            failure = record_failure_reason(LLMOverloaded(str(e)))
+            logger.warning(f"LLM call shed by GPU gate (attempt "
+                           f"{attempt + 1}/{retries}): {e}")
+            if attempt < retries - 1:
+                time.sleep(2 ** attempt)
+        except requests.exceptions.Timeout:
+            heartbeat_stop.set()
+            failure = record_failure_reason(
+                LLMTimeout(f"no response in {timeout:.0f}s"))
+            breaker.record_failure(failure)
             logger.warning(
                 f"LLM Timeout after {timeout:.0f}s (attempt {attempt + 1}/{retries}, tokens={max_tokens})"
             )
@@ -593,6 +661,13 @@ def llm_generate(
                 )
             if attempt < retries - 1:
                 time.sleep(2)
+        except requests.exceptions.ConnectionError as e:
+            heartbeat_stop.set()
+            failure = record_failure_reason(LLMTransportError(str(e)[:200]))
+            breaker.record_failure(failure)
+            logger.warning(f"LLM connection failed (attempt {attempt + 1}/{retries}): {e}")
+            if attempt < retries - 1:
+                time.sleep(2 ** attempt)
         except Exception as e:
             heartbeat_stop.set()
             # A 4xx carries its reason in the BODY, and logging only the status
@@ -608,10 +683,30 @@ def llm_generate(
                     _body = (_resp.text or "")[:600]
                 except Exception:
                     _body = "<unreadable response body>"
-            logger.error(f"LLM Error (attempt {attempt + 1}): {e}"
+            _status = getattr(_resp, "status_code", None)
+            # 4xx and 5xx are opposite facts and only one of them is the host's.
+            # A 400 means the server is up and refused OUR payload (the context
+            # overflow above is exactly this) — counting it would trip the
+            # breaker on a healthy Ollama and pause every other caller for a bug
+            # that lives in our request. A 5xx is the host failing, so it counts.
+            if _status is not None and 400 <= _status < 500:
+                failure = record_failure_reason(
+                    LLMRequestRejected(f"HTTP {_status}: {_body[:200]}"))
+            elif isinstance(e, requests.exceptions.RequestException):
+                failure = record_failure_reason(
+                    LLMTransportError(f"HTTP {_status}: {str(e)[:200]}"
+                                      if _status else str(e)[:200]))
+                breaker.record_failure(failure)
+            else:
+                failure = record_failure_reason(LLMError(str(e)[:200]))
+            logger.error(f"LLM Error (attempt {attempt + 1}) [{failure.reason}]: {e}"
                          + (f" | body: {_body}" if _body else ""))
             if attempt < retries - 1:
                 time.sleep(2**attempt)
+    if failure is not None:
+        record_failure_reason(failure)
+        if strict:
+            raise failure
     return ""
 
 
@@ -717,6 +812,7 @@ def llm_generate_json(
     expected_type: str = "list",
     schema: dict = None,
     progress_callback=None,
+    strict: bool = None,
 ) -> Any:
     """Wrapper that combines generation and JSON parsing with retries.
 
@@ -724,13 +820,29 @@ def llm_generate_json(
         schema: Optional schema dict. Used BOTH to grammar-constrain generation
             (Ollama `format`) and to validate the parsed result (LLM-2).
         progress_callback: Optional callback for heartbeat updates during LLM calls.
+        strict: raise the named failure instead of returning None. Defaults to
+            `LLM_STRICT_ERRORS`.
 
     Robustness ladder, strongest first — smaller/quantised models produce
     malformed JSON often enough that relying on repair alone loses data:
       1. constrained decoding, so invalid JSON cannot be generated
       2. repair_json() for unconstrained output (trailing commas, quotes, ...)
       3. retry, escalating to constrained JSON mode if the first attempt failed
+
+    A7 — this function used to return None for two unrelated facts: "the model
+    service is unreachable" and "the model returned unusable JSON". They have
+    nothing in common. The first means stop the build and start Ollama; the
+    second means the prompt or the schema is wrong and retrying is the right
+    move. Collapsing them is why a dead host produced a course full of stub
+    concepts marked "ready" instead of a build that failed and said why.
+
+    The retry ladder is deliberately NOT duplicated: `llm_generate` owns the
+    transport retries and the breaker owns how many of them are worth making.
+    This loop retries only what a retry can actually fix — output the model got
+    wrong — and abandons the moment the breaker says the host is gone.
     """
+    strict = strict_default() if strict is None else strict
+    failure = None
     _base_prompt = prompt   # retries append corrective notes; keep the original
     for attempt in range(retries):
         # Constrain ONLY with a caller-supplied schema.
@@ -756,8 +868,20 @@ def llm_generate_json(
             max_tokens=max_tokens,
             progress_callback=progress_callback,
             json_format=fmt,
+            strict=False,   # classified here instead, so the name survives
         )
         if not raw:
+            # Whatever llm_generate hit, it named it. Keep that name rather than
+            # flattening it into "no JSON" — they need different responses.
+            failure = last_llm_failure() or LLMEmptyResponse("no content")
+            if isinstance(failure, (LLMCircuitOpen, LLMRequestRejected)):
+                # Neither gets better by asking again in this loop: the circuit
+                # is open (every further call is a no-op that returns instantly),
+                # or the server rejected a payload we would send verbatim again.
+                # Overload is NOT in this list — llm_generate already backs off
+                # and retries it, because it is transient by definition.
+                logger.error("Aborting JSON generation — %s", failure)
+                break
             continue
 
         result = parse_llm_json(raw, expected_type=expected_type)
@@ -770,6 +894,7 @@ def llm_generate_json(
                 # converges, while an identical re-roll mostly reproduces the
                 # same defect and burns a call.
                 _detail = _describe_schema_mismatch(result, schema)
+                failure = record_failure_reason(LLMSchemaMismatch(_detail))
                 logger.warning(
                     f"Attempt {attempt + 1}/{retries}: Schema validation failed "
                     f"({_detail})"
@@ -781,11 +906,22 @@ def llm_generate_json(
                     f"Do not add commentary."
                 )
                 continue
+            clear_llm_failure()
             return result
 
+        failure = record_failure_reason(
+            LLMBadJSON(f"expected {expected_type}, got {len(raw)} chars: "
+                       f"{raw[:120]!r}"))
         logger.warning(
             f"Attempt {attempt + 1}/{retries}: Failed to parse valid {expected_type} from LLM."
         )
+
+    if failure is not None:
+        record_failure_reason(failure)
+        logger.error("JSON generation failed [%s]: %s",
+                     failure.reason, failure.user_message)
+        if strict:
+            raise failure
     return None
 
 

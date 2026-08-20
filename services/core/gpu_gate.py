@@ -327,92 +327,26 @@ def get_gpu_gate() -> GpuGate:
 
 
 # --------------------------------------------------------------------------
-# B27.5 / B9.5: Ollama circuit breaker — the LLM host is a hard external
-# dependency with no fallback; when it is down we fast-fail with a friendly
-# message instead of hanging every student for the full client timeout.
+# B27.5 / B9.5 / A7: Ollama circuit breaker.
+#
+# The implementation used to live here, which meant only the core service had
+# one: `services/common/llm_utils.py` — the BUILD path, the caller with the most
+# to lose from a dead host — could not import it, because the RAG container has
+# no `services/core`. So a course build kept paying full timeouts on every one
+# of its dozens of calls while live tutoring was already fast-failing.
+#
+# It now lives in `services/common/llm_breaker.py`, which every container ships,
+# and both paths share ONE breaker instance. These re-exports keep the historical
+# `gpu_gate` surface (`OllamaBreaker`, `OllamaUnavailable`, `get_breaker`,
+# `CLOSED/OPEN/HALF_OPEN`) working unchanged for fsm_logic, llm_client and their
+# tests.
 
-CLOSED, OPEN, HALF_OPEN = "closed", "open", "half_open"
-
-
-class OllamaBreaker:
-    """CLOSED → OPEN after `trip_after` consecutive connection failures;
-    while OPEN, allow() fast-fails; after `probe_interval` seconds one probe
-    request is let through (HALF_OPEN) — success closes, failure re-opens."""
-
-    def __init__(self, trip_after=3, probe_interval=15.0):
-        self.trip_after = trip_after
-        self.probe_interval = probe_interval
-        self._state = CLOSED
-        self._fails = 0
-        self._opened_at = 0.0
-        self._probing = False
-        self._lock = threading.RLock()
-        self.state_changes = 0
-
-    @property
-    def state(self):
-        return self._state
-
-    def allow(self):
-        """True if a request may proceed (CLOSED always; OPEN only the single
-        half-open probe after the probe interval)."""
-        with self._lock:
-            if self._state == CLOSED:
-                return True
-            if self._state == OPEN:
-                if time.time() - self._opened_at >= self.probe_interval:
-                    self._state = HALF_OPEN
-                    self._probing = True
-                    logger.info("Ollama breaker HALF_OPEN — probing")
-                    return True
-                return False
-            # HALF_OPEN: one probe in flight; everything else fast-fails
-            if not self._probing:
-                self._probing = True
-                return True
-            return False
-
-    def record_success(self):
-        with self._lock:
-            if self._state != CLOSED:
-                logger.info("Ollama breaker CLOSED (recovered)")
-                self.state_changes += 1
-            self._state = CLOSED
-            self._fails = 0
-            self._probing = False
-
-    def record_failure(self):
-        with self._lock:
-            self._fails += 1
-            self._probing = False
-            if self._state == HALF_OPEN or self._fails >= self.trip_after:
-                if self._state != OPEN:
-                    logger.error(f"Ollama breaker OPEN after {self._fails} "
-                                 f"consecutive failures — fast-failing LLM calls")
-                    self.state_changes += 1
-                self._state = OPEN
-                self._opened_at = time.time()
-
-    def stats(self):
-        with self._lock:
-            return {"state": self._state, "consecutive_failures": self._fails,
-                    "state_changes": self.state_changes}
-
-
-class OllamaUnavailable(Exception):
-    """Raised (or mapped to a friendly message) when the breaker is OPEN."""
-
-
-_breaker = None
-_breaker_lock = threading.Lock()
-
-
-def get_breaker() -> OllamaBreaker:
-    global _breaker
-    if _breaker is None:
-        with _breaker_lock:
-            if _breaker is None:
-                _breaker = OllamaBreaker(
-                    trip_after=int(os.getenv("OLLAMA_BREAKER_TRIP", "3")),
-                    probe_interval=float(os.getenv("OLLAMA_BREAKER_PROBE_S", "15")))
-    return _breaker
+from services.common.llm_breaker import (  # noqa: E402,F401
+    CLOSED, OPEN, HALF_OPEN,
+    CircuitBreaker, OllamaBreaker, OllamaUnavailable,
+    LLMError, LLMUnavailable, LLMCircuitOpen, LLMTimeout, LLMTransportError,
+    LLMOverloaded, LLMBadOutput, LLMBadJSON, LLMSchemaMismatch,
+    LLMEmptyResponse, LLMRequestRejected,
+    get_breaker, reset_breaker, last_llm_failure, record_failure_reason,
+    strict_default,
+)

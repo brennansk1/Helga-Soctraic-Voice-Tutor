@@ -23,6 +23,18 @@ except ImportError:
     from services.core.gpu_gate import (get_gpu_gate, GpuOverloaded, LLMContext,
                                         INTERACTIVE, get_breaker)
 
+# A7: import the failure taxonomy from its own home rather than through
+# gpu_gate. gpu_gate re-exports it for compatibility, but the two import paths
+# above ("gpu_gate" vs "services.core.gpu_gate") can load the module twice in a
+# single process, and exception classes that are `except`-ed by identity must
+# come from ONE module object or a caller's `except LLMUnavailable` silently
+# stops matching.
+from services.common.llm_breaker import (
+    strict_default, record_failure_reason, last_llm_failure, clear_llm_failure,
+    LLMCircuitOpen, LLMTimeout, LLMTransportError, LLMOverloaded,
+    LLMBadJSON, LLMEmptyResponse, LLMRequestRejected, LLMError, LLMUnavailable,
+)
+
 logger = logging.getLogger(__name__)
 
 OLLAMA_URL = os.environ.get('OLLAMA_URL', 'http://host.docker.internal:11434')
@@ -58,7 +70,7 @@ class LLMClient:
 
     def chat(self, system_prompt, user_message, max_tokens=512,
              temperature=0.6, json_mode=False, json_schema=None, images=None,
-             timeout=60, retries=3, ctx=None, think=False):
+             timeout=60, retries=3, ctx=None, think=False, strict=None):
         """Send a chat completion request to Ollama.
 
         Args:
@@ -74,10 +86,19 @@ class LLMClient:
                 model (qwen3.5:9b). Enables vision — diagrams/figures in tutoring.
             timeout: Request timeout in seconds
             retries: Number of retry attempts
+            strict: A7 — raise the NAMED failure instead of returning "".
+                Defaults to LLM_STRICT_ERRORS. "" was the only signal this
+                method ever gave, and it meant five different things: circuit
+                open, GPU shed, timeout, HTTP error, or a model that genuinely
+                returned nothing. Callers keeping the "" contract can still read
+                which one it was from `last_llm_failure()`.
 
         Returns:
             Generated text content, or empty string on failure
         """
+        strict = strict_default() if strict is None else strict
+        clear_llm_failure()
+        failure = None
         payload = {
             "model": self.model,
             "messages": [
@@ -138,15 +159,22 @@ class LLMClient:
             try:
                 # B27.5: breaker OPEN → fast-fail, no 60s hang / retry storm
                 if not get_breaker().allow():
+                    failure = record_failure_reason(
+                        LLMCircuitOpen(f"retry in "
+                                       f"{get_breaker().retry_after():.0f}s"))
                     logger.warning("Ollama breaker OPEN — fast-failing chat")
-                    return ""
+                    break
                 # B23.1: bounded, fair GPU admission. Slot held only for the
                 # actual generation; queue-wait overload degrades gracefully.
                 try:
                     slot = get_gpu_gate().admit(ctx)
                 except GpuOverloaded as e:
+                    # Our own backpressure, not the host's health — named
+                    # separately so it never reads as "Ollama is down", and
+                    # never recorded against the breaker.
+                    failure = record_failure_reason(LLMOverloaded(str(e)))
                     logger.warning(f"GPU overloaded, shedding request: {e}")
-                    return ""
+                    break
                 _gen_start = time.monotonic()
                 try:
                     resp = requests.post(
@@ -184,59 +212,111 @@ class LLMClient:
                 content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
 
                 logger.debug(f"LLM response ({len(content)} chars)")
+                if not content:
+                    # Transport fine, model said nothing — the reasoning-block
+                    # trap. Named, so it is never mistaken for an outage.
+                    failure = record_failure_reason(
+                        LLMEmptyResponse(f"tokens={max_tokens}, think={think}"))
+                    logger.warning("Ollama returned empty content: %s", failure)
+                    break
+                clear_llm_failure()
                 return content
 
-            except requests.exceptions.ConnectionError:
-                get_breaker().record_failure()
+            except requests.exceptions.ConnectionError as e:
+                failure = record_failure_reason(LLMTransportError(str(e)[:200]))
+                get_breaker().record_failure(failure)
                 if not get_breaker().allow():
                     logger.error("Ollama breaker tripped mid-retry — aborting")
-                    return ""
+                    break
                 wait = 2 ** attempt
                 logger.warning(f"Ollama connection failed (attempt {attempt + 1}/{retries}), "
                                f"retrying in {wait}s")
                 time.sleep(wait)
             except requests.exceptions.Timeout:
-                get_breaker().record_failure()
+                failure = record_failure_reason(
+                    LLMTimeout(f"no response in {timeout}s"))
+                get_breaker().record_failure(failure)
+                if not get_breaker().allow():
+                    logger.error("Ollama breaker tripped mid-retry — aborting")
+                    break
                 wait = 2 ** attempt
                 logger.warning(f"Ollama timeout after {timeout}s (attempt {attempt + 1}/{retries})")
                 time.sleep(wait)
             except requests.exceptions.HTTPError as e:
+                # 4xx is the server refusing OUR payload and 5xx is the server
+                # failing. Only the second is evidence the host is unhealthy, so
+                # only the second counts toward the breaker — a bad schema must
+                # not pause LLM calls for every other student.
+                status = getattr(getattr(e, "response", None), "status_code", None)
+                if status is not None and 400 <= status < 500:
+                    failure = record_failure_reason(
+                        LLMRequestRejected(f"HTTP {status}"))
+                    logger.error(f"Ollama rejected the request: {e}")
+                    break
+                failure = record_failure_reason(
+                    LLMTransportError(f"HTTP {status}" if status else str(e)[:200]))
+                get_breaker().record_failure(failure)
                 logger.error(f"Ollama HTTP error: {e}")
                 if attempt < retries - 1:
                     time.sleep(2 ** attempt)
                 else:
-                    return ""
+                    break
             except Exception as e:
+                failure = record_failure_reason(LLMError(str(e)[:200]))
                 logger.error(f"LLM client error: {e}")
-                return ""
+                break
 
-        logger.error(f"LLM request failed after {retries} attempts")
+        if failure is None:
+            failure = LLMTransportError(f"failed after {retries} attempts")
+            logger.error(f"LLM request failed after {retries} attempts")
+        record_failure_reason(failure)
+        if strict:
+            raise failure
         return ""
 
     def chat_json(self, system_prompt, user_message, max_tokens=512, ctx=None,
-                  temperature=0.6, json_schema=None, timeout=60, retries=3):
+                  temperature=0.6, json_schema=None, timeout=60, retries=3,
+                  strict=None):
         """Chat with JSON output. If json_schema is given, output is schema-
-        constrained (Ollama >=0.5). Returns parsed dict/list or None."""
+        constrained (Ollama >=0.5). Returns parsed dict/list or None.
+
+        A7: `None` used to mean either "never reached the model" or "the model's
+        JSON was garbage". Those are opposite problems, so the failure is now
+        named — `LLMUnavailable` (or its subclasses) versus `LLMBadJSON` — and
+        readable from `last_llm_failure()` even when None is still returned.
+        """
+        strict = strict_default() if strict is None else strict
         raw = self.chat(
             system_prompt, user_message,
             max_tokens=max_tokens, temperature=temperature,
             json_mode=True, json_schema=json_schema, timeout=timeout, retries=retries,
-            ctx=ctx,
+            ctx=ctx, strict=False,   # classified here so the name survives
         )
         if not raw:
+            failure = last_llm_failure() or LLMEmptyResponse("no content")
+            if strict:
+                raise failure
             return None
         try:
             return json.loads(raw)
         except json.JSONDecodeError:
-            # Try to extract JSON from the response
-            match = re.search(r'[\[{].*[\]}]', raw, re.DOTALL)
-            if match:
-                try:
-                    return json.loads(match.group(0))
-                except json.JSONDecodeError:
-                    pass
-            logger.warning(f"Failed to parse JSON from LLM response: {raw[:200]}")
-            return None
+            pass
+        # Reuse the shared repair ladder instead of this method's old one-line
+        # regex. repair_json() already handles the malformations that actually
+        # occur here (unescaped inner quotes, truncation, smart quotes); keeping
+        # a weaker private copy meant core-service calls threw away responses
+        # the build path would have recovered. Imported lazily: llm_utils
+        # imports gpu_gate, and gpu_gate is mid-import when this module loads.
+        try:
+            from services.common.llm_utils import repair_json
+            return json.loads(repair_json(raw))
+        except Exception:
+            pass
+        failure = record_failure_reason(LLMBadJSON(f"{raw[:120]!r}"))
+        logger.warning(f"Failed to parse JSON from LLM response: {raw[:200]}")
+        if strict:
+            raise failure
+        return None
 
     def describe_image(self, image, instruction=None, max_tokens=400, timeout=90, ctx=None):
         """Vision helper (qwen3.5:9b): caption/analyse an image. `image` is a data
@@ -261,10 +341,22 @@ class LLMClient:
                    "keep_alive": KEEP_ALIVE}
         if tools:
             payload["tools"] = tools
-        with get_gpu_gate().admit(ctx):
-            resp = requests.post(self.api_url, json=payload, timeout=timeout)
-        resp.raise_for_status()
+        # A7: the tool loop was the one LLM path with no breaker, so a dead host
+        # still cost it max_rounds x timeout per turn. It raises rather than
+        # returning a sentinel because chat_with_tools already treats an
+        # exception as "end the loop with best-effort text".
+        get_breaker().raise_if_open()
+        try:
+            with get_gpu_gate().admit(ctx):
+                resp = requests.post(self.api_url, json=payload, timeout=timeout)
+            resp.raise_for_status()
+        except (requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout) as e:
+            failure = record_failure_reason(LLMTransportError(str(e)[:200]))
+            get_breaker().record_failure(failure)
+            raise failure from e
         resp.encoding = "utf-8"
+        get_breaker().record_success()
         return resp.json().get("choices", [{}])[0].get("message", {}) or {}
 
     def chat_with_tools(self, system_prompt, user_message, registry,
@@ -339,12 +431,16 @@ class LLMClient:
             **({} if think else {"reasoning_effort": "none"}),
         }
 
+        clear_llm_failure()
         if not get_breaker().allow():
+            record_failure_reason(
+                LLMCircuitOpen(f"retry in {get_breaker().retry_after():.0f}s"))
             logger.warning("Ollama breaker OPEN — fast-failing stream")
             return
         try:
             slot = get_gpu_gate().admit(ctx)
         except GpuOverloaded as e:
+            record_failure_reason(LLMOverloaded(str(e)))
             logger.warning(f"GPU overloaded, shedding stream request: {e}")
             return
 
@@ -392,9 +488,15 @@ class LLMClient:
 
             get_breaker().record_success()
         except requests.exceptions.ConnectionError as e:
-            get_breaker().record_failure()
+            failure = record_failure_reason(LLMTransportError(str(e)[:200]))
+            get_breaker().record_failure(failure)
             logger.error(f"Streaming connection error: {e}")
+        except requests.exceptions.Timeout as e:
+            failure = record_failure_reason(LLMTimeout(f"no response in {timeout}s"))
+            get_breaker().record_failure(failure)
+            logger.error(f"Streaming timeout: {e}")
         except Exception as e:
+            record_failure_reason(LLMError(str(e)[:200]))
             logger.error(f"Streaming error: {e}")
         finally:
             slot.release()

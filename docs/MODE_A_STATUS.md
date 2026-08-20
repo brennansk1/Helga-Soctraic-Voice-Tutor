@@ -359,8 +359,15 @@ Ranked by risk, not effort.
      loader reads the other's format, and no conversion step exists here.
      Nothing was deleted: on an offline appliance the 319 MB torch copy is not
      a re-downloadable cache entry, it is the local half of the fallback.
-4. **A7 — hardening.** No Ollama circuit-breaker fallback, no soak test, no
-   backup/restore drill. (The `main.py` false green is **fixed** — the preflight
+4. **A7 — hardening.** No soak test, no backup/restore drill. (The **circuit
+   breaker is built** — `services/common/llm_breaker.py`, shared by the tutoring
+   path and the build path, which previously had none at all. It fast-fails
+   while the host is down instead of paying a full timeout per call,
+   half-open-probes its way back, and — the half that matters more here — gives
+   failures NAMES, so "the model service is unreachable" and "the model returned
+   unusable JSON" are no longer the same `None`. Unit-tested without a live
+   Ollama; **not yet observed against a real outage during a real build.**
+   The `main.py` false green is **fixed** — the preflight
    required only a substring, so `qwen3:14b` "matched" `qwen3:14b-q4_K_M` and
    then every call 404'd. It now requires an exact tag, honours the one alias
    Ollama really resolves, and names the closest installed tag on a miss.)
