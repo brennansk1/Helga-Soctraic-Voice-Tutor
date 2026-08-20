@@ -502,16 +502,22 @@ def score_notation(transcript):
     render is a turn the student hears as raw markup. Deterministic.
     """
     try:
-        from services.core.math_speech import unspoken
+        from services.core.math_speech import speech_for
     except Exception:
         return {"score": None, "note": "math_speech unavailable", "unspoken": []}
 
+    # speech_for(), not unspoken(). `unspoken` reports control sequences that
+    # SURVIVED conversion, so it must be given the SPOKEN form. Handing it the
+    # raw turn reports every command in the source -- including \lambda, which
+    # speak() renders perfectly -- and scores notation as broken whenever the
+    # tutor writes any maths at all.
     bad = []
     for t in transcript:
         if t.get("role") != "tutor":
             continue
         try:
-            bad.extend(unspoken(t.get("text", "") or ""))
+            for _latex, _spoken, left in speech_for(t.get("text", "") or ""):
+                bad.extend(left)
         except Exception:
             continue
     uniq = sorted(set(bad))

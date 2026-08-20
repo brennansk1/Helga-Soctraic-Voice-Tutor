@@ -48,6 +48,21 @@ _SYMBOLS = [
     (r"\\times", " times "), (r"\\cdot", " times "), (r"\\div", " divided by "),
     (r"\\pm", " plus or minus "), (r"\\mp", " minus or plus "),
     (r"\\infty", " infinity "), (r"\\partial", " partial "),
+    # Independence before perpendicularity: \perp\!\!\!\perp is the
+    # standard notation for "is independent of" and is all over any causal
+    # inference or statistics course. Matching the single \perp first would
+    # read it as "perpendicular to perpendicular to".
+    (r"\\perp\s*(?:\\!)*\s*\\perp", " is independent of "),
+    (r"\\independent", " is independent of "),
+    (r"\\perp", " is perpendicular to "),
+    (r"\\mid\b", " given "), (r"\\propto", " is proportional to "),
+    (r"\\sim\b", " is distributed as "), (r"\\circ\b", " composed with "),
+    (r"\\angle", " angle "), (r"\\triangle", " triangle "),
+    (r"\\prime", " prime "), (r"\\ll\b", " is much less than "),
+    (r"\\gg\b", " is much greater than "),
+    (r"\\supseteq", " is a superset of "), (r"\\supset", " is a superset of "),
+    (r"\\setminus", " without "), (r"\\oplus", " direct sum "),
+    (r"\\nabla", " del "), (r"\\deg\b", " degree "),
     (r"\\forall", " for all "), (r"\\exists", " there exists "),
     (r"\\in\b", " in "), (r"\\notin", " not in "),
     (r"\\subseteq", " is a subset of "), (r"\\subset", " is a subset of "),
@@ -59,6 +74,11 @@ _SYMBOLS = [
     (r"\\theta", " theta "), (r"\\lambda", " lambda "), (r"\\mu", " mu "),
     (r"\\pi", " pi "), (r"\\rho", " rho "), (r"\\sigma", " sigma "),
     (r"\\tau", " tau "), (r"\\phi", " phi "), (r"\\omega", " omega "),
+    (r"\\nu\b", " nu "), (r"\\xi", " xi "), (r"\\eta", " eta "),
+    (r"\\zeta", " zeta "), (r"\\kappa", " kappa "), (r"\\psi", " psi "),
+    (r"\\chi", " chi "), (r"\\iota", " iota "), (r"\\upsilon", " upsilon "),
+    (r"\\Psi", " psi "), (r"\\Theta", " theta "), (r"\\Pi", " pi "),
+    (r"\\Xi", " xi "), (r"\\Upsilon", " upsilon "),
     (r"\\Delta", " delta "), (r"\\Sigma", " sigma "), (r"\\Omega", " omega "),
     (r"\\Gamma", " gamma "), (r"\\Lambda", " lambda "), (r"\\Phi", " phi "),
     (r"\\sin", " sine "), (r"\\cos", " cosine "), (r"\\tan", " tangent "),
@@ -106,6 +126,14 @@ def speak(latex):
         s = re.sub(r"\\sqrt\s*\[\s*([^\]]+)\s*\]\s*\{([^{}]+)\}",
                    lambda m: f" the {_ORDINAL.get(m.group(1).strip(), m.group(1).strip() + 'th')} root of {m.group(2)} ", s)
         s = re.sub(r"\\sqrt\s*\{([^{}]+)\}", r" the square root of \1 ", s)
+        # Accents read AFTER their argument: "beta hat", not "hat beta".
+        # \hat{\beta} is how every estimator in a statistics course is
+        # written, and it was surviving into speech as a raw control sequence.
+        s = re.sub(r"\\hat\s*\{([^{}]+)\}", r" \1 hat ", s)
+        s = re.sub(r"\\bar\s*\{([^{}]+)\}", r" \1 bar ", s)
+        s = re.sub(r"\\vec\s*\{([^{}]+)\}", r" vector \1 ", s)
+        s = re.sub(r"\\tilde\s*\{([^{}]+)\}", r" \1 tilde ", s)
+        s = re.sub(r"\\overline\s*\{([^{}]+)\}", r" \1 bar ", s)
         s = re.sub(r"\\(sum|prod|int)\s*_\s*\{([^{}]+)\}\s*\^\s*\{([^{}]+)\}",
                    lambda m: (f" the {'sum' if m.group(1)=='sum' else 'product' if m.group(1)=='prod' else 'integral'}"
                               f" from {m.group(2)} to {m.group(3)} of "), s)

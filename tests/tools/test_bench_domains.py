@@ -174,10 +174,24 @@ def test_speakable_notation_scores_full():
 
 
 def test_unspeakable_notation_is_caught():
-    """Helga teaches by voice; raw LaTeX is heard as markup."""
-    r = bd.score_notation(_tutor(r"Given $A \perp B$, what follows?"))
+    """Helga teaches by voice; markup that survives conversion is heard raw."""
+    r = bd.score_notation(_tutor(r"Consider $\oiint_S \mathfrak{X}$."))
     assert r["score"] < 5
-    assert any("perp" in u for u in r["unspoken"])
+    assert any("oiint" in u for u in r["unspoken"])
+
+
+def test_notation_the_converter_HANDLES_is_not_reported_as_unspeakable():
+    """The scorer must run unspoken() on the SPOKEN form, not the source.
+
+    Given the raw turn, unspoken() reports every command in it -- including
+    \lambda, which speak() renders as "lambda" -- so any turn containing any
+    maths scored as broken notation. That is the instrument marking the
+    product down for working.
+    """
+    r = bd.score_notation(_tutor(
+        r"If $A \perp\!\!\!\perp B \mid C$ and $\hat{\beta}$ is the estimate?"))
+    assert r["score"] == 5, r["note"]
+    assert r["unspoken"] == []
 
 
 def test_only_tutor_turns_are_scored():
