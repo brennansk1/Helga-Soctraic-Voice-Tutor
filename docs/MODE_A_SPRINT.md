@@ -19,13 +19,13 @@ command:
 
 | Gate | Command | Today |
 |---|---|---|
-| All 7 done-criteria VERIFIED | per-criterion, below | 5/7 |
-| ≥1 course passes the full conjunctive quality gate | `tools/golden_courses.py evaluate` + `tools/syllabus_check.py` | **n=0** |
-| Full suite green | `python3 -m pytest tests/ -q` | 1842 pass (pre-agent-landings) |
-| Zero KNOWN bugs open | §3 + §4 below empty or explicitly waived | ~14 open |
-| No silent-failure paths in the audited surface | §5 sweep re-run clean | in progress |
-| Tutor quality at/above calibrated baseline | `tools/helgabench.py --repeat 3 --compare docs/baselines/helgabench_a1_calibrated.json` | unmeasured since judge fix |
-| Honest instruments | `tools/helgabench.py --self-test` before trusting any score | passes |
+| All 7 done-criteria VERIFIED | per-criterion, below | **6/7** — voice is the holdout |
+| ≥1 course passes the full conjunctive quality gate | `tools/golden_courses.py evaluate` + `tools/syllabus_check.py` | **CLOSED** — course_f690297d, GATE: PASS (n=0 → n=1) |
+| Full suite green | `python3 -m pytest tests/ -q` | **CLOSED** — 2096 passed, 32 skipped, 0 failed (2026-08-20) |
+| Zero KNOWN bugs open | §3 + §4 below empty or explicitly waived | **CLOSED** — all 24 verified findings fixed; each recurring class has a guard |
+| No silent-failure paths in the audited surface | §5 sweep re-run clean | **CLOSED** — 8 further empty-200s → named 503s |
+| Tutor quality at/above calibrated baseline | `tools/helgabench.py --repeat 3 --compare …` | **OPEN** — 2.83 vs 3.27 (−0.44), but the baseline predates the nail-35b swap, so it compares two models as well as two codebases. Needs a fresh baseline on the current model. |
+| Honest instruments | `tools/helgabench.py --self-test` before trusting any score | **CLOSED** — two instruments were themselves lying (stub marker; judge timeout cascade), both fixed |
 
 "No bugs" operationally means: **no known bug**, and the classes of bug we
 keep finding (silent failure → fake success; substring matching; single-theme
