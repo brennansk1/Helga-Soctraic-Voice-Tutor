@@ -296,7 +296,13 @@
         n.id = "preflight-note";
         n.setAttribute("role", "status");
         n.setAttribute("aria-live", "polite");
-        document.body.appendChild(n);
+        // IN THE FLOW, at the top of <main> — not floating over it. Fixed
+        // positioning cleared the navigation but still sat on top of whatever
+        // the page's own first element was: the course title on /learn, the
+        // programme name on /degree. A strip that covers the thing you opened
+        // the page to read has stopped informing and started interrupting.
+        var main = document.querySelector(".app-content") || document.body;
+        main.insertBefore(n, main.firstChild);
         return n;
     }
 
