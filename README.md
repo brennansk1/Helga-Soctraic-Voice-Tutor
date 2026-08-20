@@ -40,6 +40,10 @@ Mac Mini M4 Pro 24GB
 # The project model is a LOCAL GGUF import, not a registry pull.
 # See docs/MODEL.md for the one-time setup:
 #   hf download peculiar-ragdoll/Nail-Qwen3.6-35B-A3B-GGUF ... && ollama create nail-35b-a3b
+# Then the 16k-context variant the stack actually asks for (reuses the blob):
+#   printf 'FROM nail-35b-a3b\nPARAMETER num_ctx 16384\n' > Modelfile.ctx
+#   ollama create nail-35b-a3b-ctx -f Modelfile.ctx
+# ./deploy.sh does this second step for you if the base model is present.
 
 # 2. Clone and start
 git clone <repo-url> && cd helga
@@ -116,7 +120,9 @@ make backup    # Backup SQLite database
 Copy `.env.example` to `.env` and adjust:
 
 ```bash
-OLLAMA_MODEL=nail-35b-a3b        # project model (see docs/MODEL.md — local GGUF import)
+OLLAMA_MODEL=nail-35b-a3b-ctx    # project model, 16k context (docs/MODEL.md)
+                                 # NOT the bare nail-35b-a3b: its 4096-token
+                                 # context silently truncates 5 of 6 modules.
 OLLAMA_URL=http://host.docker.internal:11434
 FLASK_ENV=production
 DEFAULT_VOICE=af_heart            # Kokoro TTS voice
@@ -132,10 +138,10 @@ the grading/tutoring model is a config change, not a code change.
 ### Swapping the model
 
 Set `OLLAMA_MODEL` in your `.env` (or the environment). `docker-compose.yml`
-already reads it with a default of `nail-35b-a3b` (see `docs/MODEL.md`):
+already reads it with a default of `nail-35b-a3b-ctx` (see `docs/MODEL.md`):
 
 ```yaml
-OLLAMA_MODEL: ${OLLAMA_MODEL:-nail-35b-a3b}
+OLLAMA_MODEL: ${OLLAMA_MODEL:-nail-35b-a3b-ctx}
 ```
 
 ```bash

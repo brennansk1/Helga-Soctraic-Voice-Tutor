@@ -29,17 +29,45 @@ if [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" != "arm64" ]; then
 fi
 
 # 2. Model
-MODEL="${OLLAMA_MODEL:-nail-35b-a3b}"
+#
+# THE -ctx SUFFIX IS NOT COSMETIC. This script used to check for
+# `nail-35b-a3b`, while docker-compose and the code defaults both ask for
+# `nail-35b-a3b-ctx`. Following the documented install therefore left you with
+# a model the stack never requests -- and if you did point the stack at the
+# base tag, its 4096-token context returns
+#
+#     400 — request (4212 tokens) exceeds the available context size
+#
+# for FIVE OF SIX MODULES IN EVERY BUILD. The builder reads that as an empty
+# result and falls back, so nothing surfaces as an error: the course is simply
+# a third shorter than it should be. See docs/MODEL.md.
+#
+# So: target the -ctx tag, and build it from the base if the base is present.
+# `ollama create` reuses the existing blob -- no re-download.
+MODEL="${OLLAMA_MODEL:-nail-35b-a3b-ctx}"
+BASE_MODEL="${MODEL%-ctx}"
 echo "[2/6] Checking $MODEL..."
-# The project model is imported from a local GGUF, not pulled from a registry
-# (see docs/MODEL.md). `ollama pull` on it fails, so only pull when the model
-# is genuinely absent AND looks like a registry name.
-if ollama list 2>/dev/null | awk '{print $1}' | grep -qx "$MODEL"; then
-    echo "  $MODEL already installed (local import — not pulling)"
-elif ollama list 2>/dev/null | awk '{print $1}' | grep -qx "$MODEL:latest"; then
-    echo "  $MODEL:latest already installed (local import — not pulling)"
+
+have() { ollama list 2>/dev/null | awk '{print $1}' | grep -qx "$1" \
+         || ollama list 2>/dev/null | awk '{print $1}' | grep -qx "$1:latest"; }
+
+if have "$MODEL"; then
+    echo "  $MODEL already installed"
+elif [ "$BASE_MODEL" != "$MODEL" ] && have "$BASE_MODEL"; then
+    echo "  $BASE_MODEL is installed but $MODEL is not."
+    echo "  Creating $MODEL from it (reuses the blob, no re-download)..."
+    printf 'FROM %s\nPARAMETER num_ctx 16384\n' "$BASE_MODEL" > /tmp/Helga.Modelfile.ctx
+    ollama create "$MODEL" -f /tmp/Helga.Modelfile.ctx || {
+        echo "  ! Could not create $MODEL. See docs/MODEL.md."
+        exit 1
+    }
+    rm -f /tmp/Helga.Modelfile.ctx
+    echo "  + $MODEL created"
 else
-    echo "  $MODEL not installed."
+    # The project model is imported from a local GGUF, not pulled from a
+    # registry (docs/MODEL.md), so `ollama pull` fails on it. Only try a pull
+    # in case this is some other, published tag.
+    echo "  $MODEL not installed, and neither is $BASE_MODEL."
     echo "  If this is the project model, import it: see docs/MODEL.md"
     echo "  Attempting a registry pull in case it is a published tag..."
     ollama pull "$MODEL" || {

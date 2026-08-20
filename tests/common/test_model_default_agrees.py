@@ -100,3 +100,60 @@ def test_an_explicit_env_still_wins(monkeypatch):
     monkeypatch.setenv("OLLAMA_MODEL", "some-other-model")
     _, model = model_roles.resolve(model_roles.BUILD)
     assert model == "some-other-model"
+
+
+# ------------------------------------------------------- the deploy surface
+#
+# The code/compose agreement above was not enough. A fresh install follows
+# deploy.sh, which copies .env.example to .env -- and .env.example set the BARE
+# `nail-35b-a3b` while everything else asked for `nail-35b-a3b-ctx`. Because an
+# explicit .env value beats the compose default, the documented install
+# actively opted the user into the wrong model, whose 4096-token context
+# returns "400 — request exceeds the available context size" for five of every
+# six modules in a build. Nothing errors; the course is a third shorter.
+#
+# So the agreement is asserted across every file that names a model.
+
+ENV_EXAMPLE = ROOT / ".env.example"
+DEPLOY = ROOT / "deploy.sh"
+
+
+def test_the_env_template_names_the_model_the_stack_requests():
+    if not ENV_EXAMPLE.exists():
+        pytest.skip(".env.example not present")
+    from services.common.model_roles import DEFAULT_MODEL
+
+    m = re.search(r"^OLLAMA_MODEL=(\S+)", ENV_EXAMPLE.read_text(), re.M)
+    assert m, ".env.example does not set OLLAMA_MODEL"
+    assert m.group(1) == DEFAULT_MODEL, (
+        f".env.example sets OLLAMA_MODEL={m.group(1)!r} but the stack requests "
+        f"{DEFAULT_MODEL!r}. deploy.sh copies this file to .env, and an "
+        f"explicit .env value beats the compose default."
+    )
+
+
+def test_deploy_targets_the_model_the_stack_requests():
+    if not DEPLOY.exists():
+        pytest.skip("deploy.sh not present")
+    from services.common.model_roles import DEFAULT_MODEL
+
+    m = re.search(r'^MODEL="\$\{OLLAMA_MODEL:-([^}]+)\}"', DEPLOY.read_text(), re.M)
+    assert m, "deploy.sh does not define MODEL from OLLAMA_MODEL"
+    assert m.group(1) == DEFAULT_MODEL, (
+        f"deploy.sh checks for {m.group(1)!r} but the stack requests "
+        f"{DEFAULT_MODEL!r}; the install would verify a model nothing uses."
+    )
+
+
+def test_the_context_variant_is_built_not_merely_documented():
+    """Having the base model must be enough for deploy.sh to finish.
+
+    The -ctx tag is created from the base with `ollama create`, reusing the
+    blob. Telling someone to go read docs/MODEL.md at that point is how an
+    install ends half-done.
+    """
+    if not DEPLOY.exists():
+        pytest.skip("deploy.sh not present")
+    text = DEPLOY.read_text()
+    assert "ollama create" in text
+    assert "num_ctx" in text
