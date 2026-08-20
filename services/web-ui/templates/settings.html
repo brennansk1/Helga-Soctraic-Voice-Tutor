@@ -163,12 +163,28 @@
     </section>
 
     <section class="settings-section" id="section-system">
-        <h2>System</h2>
+        <h2>System health</h2>
+
+        {# /api/health/all has existed since the beginning and NOTHING displayed
+           it -- the earlier wiring sweep listed it under "backend capability
+           with no user-facing surface". The whole section was a button to
+           another page, which meant the one question people actually open
+           Settings to answer ("is anything broken right now?") needed a
+           navigation to answer. It answers itself here now, and the link
+           stays for the per-service detail. #}
+        <div id="health-loading" class="setting-hint">Checking…</div>
+        <div id="health-error" class="setting-hint" hidden></div>
+
+        <div id="health-body" hidden>
+            <p class="health-summary" id="health-summary" role="status"
+               aria-live="polite"></p>
+            <ul class="health-list" id="health-list"></ul>
+        </div>
+
         <div class="setting-row">
             <a href="/status" class="btn-secondary" role="button">Open System Status</a>
-            <p class="setting-hint">Service health, response times, and model
-               availability. Useful when something feels slow or a course will
-               not build.</p>
+            <p class="setting-hint">Response times and per-service detail.
+               Useful when something feels slow or a course will not build.</p>
         </div>
     </section>
 

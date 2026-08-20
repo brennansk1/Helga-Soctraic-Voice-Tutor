@@ -458,6 +458,112 @@
             });
     }
 
+
+    /* ----------------------------------------------------- system health
+     * Answers "is anything broken right now" without a navigation. The data
+     * comes from /api/health/all, which has been collected since the
+     * beginning and displayed nowhere.
+     *
+     * Names, not service ids: "helga-rag-engine" is a container, "Course
+     * library" is the thing a person loses when it is down. And the reason it
+     * matters is stated per service, because "rag: offline" tells somebody
+     * nothing about what they can still do.
+     */
+    var SERVICE_NAMES = {
+        core: ["Core logic", "the tutor itself"],
+        rag: ["Course library", "your courses, search and flashcards"],
+        tts: ["Speech out", "Helga reading aloud"],
+        stt: ["Speech in", "the microphone"],
+        research: ["Research", "grounding new courses in real sources"],
+        searxng: ["Search", "the index course building draws on"],
+        ollama: ["Language model", "every question and every build"]
+    };
+
+    // Voice is genuinely optional -- text teaching is unaffected -- so it must
+    // not be counted alongside the services that stop the product working.
+    var OPTIONAL = { tts: true, stt: true };
+
+    function renderHealth(d) {
+        var body = document.getElementById("health-body");
+        var loading = document.getElementById("health-loading");
+        var errBox = document.getElementById("health-error");
+        if (!body) return;                     // not on the settings page
+        if (loading) loading.hidden = true;
+
+        if (!d || d.__error) {
+            if (errBox) {
+                errBox.hidden = false;
+                errBox.textContent = "Could not check the services — " +
+                    ((d && d.__error) || "no answer") + ".";
+            }
+            body.hidden = true;
+            return;
+        }
+        body.hidden = false;
+
+        var list = document.getElementById("health-list");
+        list.textContent = "";
+        var downRequired = 0, downOptional = 0, total = 0, required = 0;
+
+        Object.keys(SERVICE_NAMES).forEach(function (key) {
+            var info = d[key];
+            if (!info) return;                 // not part of this deployment
+            total++;
+            if (!OPTIONAL[key]) required++;
+            var ok = info.status === "healthy";
+            if (!ok) { if (OPTIONAL[key]) downOptional++; else downRequired++; }
+
+            var li = document.createElement("li");
+            li.className = "health-item " + (ok ? "is-ok" : "is-down");
+            var dot = document.createElement("span");
+            dot.className = "health-dot";
+            dot.setAttribute("aria-hidden", "true");
+            var name = document.createElement("span");
+            name.className = "health-name";
+            name.textContent = SERVICE_NAMES[key][0];
+            var state = document.createElement("span");
+            state.className = "health-state";
+            // The word carries the state; the colour only reinforces it.
+            state.textContent = ok ? "running"
+                : (OPTIONAL[key] ? "not running — optional" : "not running");
+            var why = document.createElement("span");
+            why.className = "health-why";
+            why.textContent = SERVICE_NAMES[key][1];
+            li.appendChild(dot); li.appendChild(name);
+            li.appendChild(state); li.appendChild(why);
+            list.appendChild(li);
+        });
+
+        var sum = document.getElementById("health-summary");
+        if (downRequired) {
+            // Counted against the services Helga NEEDS, not against every
+            // service listed: "4 of 6 are not running" was printed while all
+            // six rows said not running, because the two optional ones were
+            // in the denominator and not the numerator.
+            sum.textContent = downRequired + " of the " + required +
+                " services Helga needs " + (downRequired === 1 ? "is" : "are") +
+                " not running. It cannot teach until " +
+                (downRequired === 1 ? "that one is" : "they are") + " back.";
+            sum.className = "health-summary is-down";
+        } else if (downOptional) {
+            sum.textContent = "Everything needed to teach is running. Voice is "
+                + "not — Helga will teach in text.";
+            sum.className = "health-summary is-degraded";
+        } else {
+            sum.textContent = "All " + total + " services are running.";
+            sum.className = "health-summary is-ok";
+        }
+    }
+
+    function healthPoll() {
+        fetch("/api/health/all")
+            .then(function (r) { return r.json(); })
+            .then(renderHealth)
+            .catch(function (e) {
+                renderHealth({ __error: String(e && e.message || e).slice(0, 80) });
+            });
+    }
+
     /* ------------------------------------------------------------- driver */
     function poll() {
         fetch("/api/system/resources")
@@ -476,6 +582,12 @@
     document.addEventListener("DOMContentLoaded", function () {
         poll();
         timer = setInterval(poll, POLL_MS);
+        // Only on the settings page: no reason to probe six services from
+        // every other page in the app.
+        if (document.getElementById("health-body")) {
+            healthPoll();
+            setInterval(healthPoll, POLL_MS);
+        }
         preflightPoll();
         setInterval(tickCountdown, 1000);
     });

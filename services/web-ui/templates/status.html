@@ -14,7 +14,7 @@
         <div class="status-card status-healthy" id="context-card">
             <div class="card-header">
                 <span class="service-icon"><span class="i i-brain" aria-hidden="true"></span></span>
-                <h3>Active Context</h3>
+                <h2>Active Context</h2>
                 <div class="status-indicator-icon status-healthy">
                     <span id="context-indicator">●</span>
                 </div>
@@ -37,7 +37,7 @@
                         <path d="M12 16v4h4l4-4v-4h-4l-4 4z" />
                     </svg>
                 </span>
-                <h3>{{ service.name|title }}</h3>
+                <h2>{{ service.name|title }}</h2>
                 <div class="status-indicator-icon status-{{ service.status }}">
                     {% if service.status == 'healthy' %}
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"

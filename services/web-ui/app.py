@@ -114,11 +114,29 @@ def get_csrf_token():
 
 app.jinja_env.globals['csrf_token'] = get_csrf_token
 
+#: GET/HEAD/OPTIONS change nothing, so there is nothing for CSRF to protect.
+SAFE_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS'})
+
+
 def csrf_protect(f):
-    """Decorator to validate CSRF token on state-changing POST endpoints."""
+    """Decorator to validate CSRF token on state-changing endpoints.
+
+    SAFE METHODS ARE EXEMPT, and that is not a relaxation -- it is the only way
+    the contract can work. /login and /signup answer both GET and POST, and the
+    GET is what RENDERS THE FORM CARRYING THE TOKEN. Checking it on the way in
+    demanded a token from a browser that had no way to have one yet, so both
+    pages answered 403 to a plain visit and nobody could sign in or create an
+    account. /students and /parent redirect to /login, so they dead-ended too.
+
+    A GET cannot be a CSRF attack in the sense this guards against: the attack
+    is a forged state change, and a request that changes no state forges
+    nothing.
+    """
     @wraps(f)
     def decorated(*args, **kwargs):
         try:
+            if request.method in SAFE_METHODS:
+                return f(*args, **kwargs)
             # Skip CSRF in test mode
             if app.config.get('TESTING'):
                 return f(*args, **kwargs)
@@ -1238,7 +1256,9 @@ def get_concept_details():
         resp = requests.get(f'{SERVICES["rag"]}/concept_details', params={'uid': uid}, timeout=3)
         return jsonify(resp.json()), resp.status_code
     except Exception as e:
-        return jsonify({'error': str(e)}), 502
+        logger.info("concept_details could not reach rag: %s", e)
+        return jsonify({'error': f'the course library did not answer — '
+                                 f'{transport_reason(e)}'}), 502
 
 @app.route('/api/system/resources', methods=['GET'])
 def system_resources():
@@ -1284,6 +1304,36 @@ def _load_startup_preflight():
     return app._preflight_mod
 
 
+
+def transport_reason(exc):
+    """A requests failure as a sentence a person can read.
+
+    `str(e)` on a requests exception is a nested traceback --
+
+        HTTPConnectionPool(host='helga-core-logic', port=5003): Max retries
+        exceeded with url: /api/system/resources (Caused by
+        NameResolutionError("HTTPConnection(host='helga-core-logic', port=5003):
+        Failed to resolve 'helga-core-logic' ([Errno 8] nodename nor servname
+        provided, or not known)"))
+
+    -- and that was being printed into the Settings page and onto the status
+    cards. It tells a user nothing they can act on and makes a working product
+    look broken. The full text still goes to the log, which is where somebody
+    debugging will look for it.
+    """
+    import requests as _rq
+    if isinstance(exc, _rq.exceptions.Timeout):
+        return "it did not answer in time"
+    if isinstance(exc, _rq.exceptions.ConnectionError):
+        text = str(exc)
+        if "NameResolution" in text or "nodename nor servname" in text:
+            return "it is not running"
+        if "refused" in text.lower():
+            return "it refused the connection"
+        return "it could not be reached"
+    return "it could not be reached"
+
+
 @app.route('/api/system/preflight', methods=['GET'])
 def system_preflight():
     """Can this machine run Helga right now?
@@ -1302,7 +1352,8 @@ def system_preflight():
             resources = r.json()
     except Exception as e:
         app.logger.warning("preflight could not reach core: %s", e)
-        core_note = f"the core service did not answer ({e}); measured locally"
+        core_note = (f"the core service did not answer — {transport_reason(e)}; "
+                     f"measured locally instead")
 
     mod = _load_startup_preflight()
     if mod is None:
@@ -2014,7 +2065,10 @@ def health_all():
             results[name] = {'status': 'healthy' if resp.status_code == 200 else 'unhealthy',
                              'code': resp.status_code}
         except Exception as e:
-            results[name] = {'status': 'offline', 'error': str(e)[:80]}
+            # The reason a person can act on; the traceback goes to the log.
+            logger.info("health check failed for %s: %s", name, e)
+            results[name] = {'status': 'offline',
+                             'error': transport_reason(e)}
     # Check Ollama
     try:
         resp = requests.get('http://host.docker.internal:11434/api/tags', timeout=3)

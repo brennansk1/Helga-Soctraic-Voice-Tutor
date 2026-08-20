@@ -1218,3 +1218,119 @@ a:not([class]) {
 a:not([class]):hover {
     color: var(--accent-primary-dark);
 }
+
+/* ---- System status page -------------------------------------------------
+ * `.status-page` and `.status-grid` had NO rules anywhere. The page rendered
+ * full-bleed at the viewport width with zero padding and `display: block`
+ * where the class name promises a grid, so the cards stacked edge to edge and
+ * the headings sat flush against x=0. Every other page insets its content
+ * (settings 752px, progress 1040, library 1136); this one did not, and it is
+ * reachable from a visible "Open System Status" button in Settings.
+ */
+.status-page {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 992px;
+    margin: 0 auto;
+    padding: var(--space-5) var(--space-4) var(--space-6);
+}
+.status-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+}
+.status-header h1 {
+    margin: 0;
+    font-family: var(--font-brand);
+    font-size: clamp(1.6rem, 3vw, 2rem);
+    color: var(--text-primary);
+}
+.status-header #last-updated {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+.status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: var(--space-4);
+    margin-bottom: var(--space-5);
+}
+.status-page .card-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+}
+/* The heading is an <h2> for the outline -- it used to be an <h3> under the
+   <h1>, which skipped a level -- but it must not inherit h2's display size on
+   a card this small. Semantics from the tag, size from here. */
+.status-page .card-header h2 {
+    margin: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 1.05rem;
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+}
+.status-page .service-icon { flex: 0 0 auto; display: inline-flex; }
+.status-page .status-indicator-icon { flex: 0 0 auto; display: inline-flex; }
+
+/* ---- Settings > System health -------------------------------------------
+ * State is carried by the WORD ("running" / "not running"), never by the dot
+ * alone -- the dot is a scanning aid for people who can use it.
+ */
+.health-summary {
+    margin: 0 0 var(--space-3);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.5;
+    color: var(--text-primary);
+}
+.health-summary.is-ok { color: var(--color-success); }
+.health-summary.is-degraded { color: var(--color-warning); }
+.health-summary.is-down { color: var(--color-danger); }
+
+.health-list {
+    list-style: none;
+    margin: 0 0 var(--space-4);
+    padding: 0;
+}
+.health-item {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: baseline;
+    gap: .15em .6em;
+    padding: var(--space-2) 0;
+}
+.health-item + .health-item { border-top: 1px solid var(--border-color); }
+.health-dot {
+    width: .55em; height: .55em;
+    border-radius: 50%;
+    align-self: center;
+    background: var(--color-danger);
+}
+.health-item.is-ok .health-dot { background: var(--color-success); }
+.health-name {
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+}
+.health-state {
+    grid-column: 3;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+.health-item.is-down .health-state { color: var(--color-danger); }
+.health-why {
+    grid-column: 2 / -1;
+    font-size: var(--font-size-sm);
+    line-height: 1.45;
+    color: var(--text-secondary);
+}
+@media (max-width: 560px) {
+    .health-item { grid-template-columns: auto 1fr; }
+    .health-state { grid-column: 2; }
+}

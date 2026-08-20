@@ -3,6 +3,12 @@
 {% block title %}Helga - Build Custom Course{% endblock %}
 
 {% block content %}
+{# The page had five h2s -- one per step -- and no h1, so it was the only
+   page in the app with no entry in the heading outline. Visually hidden
+   because the step rail already carries the identity on screen; a screen
+   reader has no step rail. #}
+<h1 class="sr-only">Build a custom course</h1>
+
 <div class="page-section" style="max-width: 800px;">
     <a href="/courses" style="color: var(--text-secondary); text-decoration: none; font-size: var(--font-size-sm); display: inline-block; margin-bottom: var(--space-4);">&larr; Back to Courses</a>
 
@@ -272,11 +278,17 @@
     .suggestion-card .accept-btn { background: var(--status-success); color: white; }
     .suggestion-card .dismiss-btn { background: var(--bg-secondary); color: var(--text-secondary); border: 1px solid var(--border-color); }
 </style>
+{% endblock %}
 
+{# page_scripts must be a SIBLING of content, not nested inside it. Jinja
+   renders a nested block both where it is written AND where the parent
+   template declares that block name, so these four tags were emitted twice:
+   wizard.js ran twice, `const wizardState` was declared twice, and the
+   resulting SyntaxError killed the whole script -- leaving /courses/new
+   rendering its header and nothing else. #}
 {% block page_scripts %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/courses.css') }}?v=6">
 <script src="{{ url_for('static', filename='js/socket.io.min.js') }}"></script>
 <script src="{{ url_for('static', filename='js/progress-tree.js') }}?v=1"></script>
 <script src="{{ url_for('static', filename='js/wizard.js') }}?v=2"></script>
-{% endblock %}
 {% endblock %}
