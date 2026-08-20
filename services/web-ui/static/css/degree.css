@@ -662,3 +662,45 @@
 .degree-course.is-prominent.is-built { border-left: 3px solid var(--color-success); }
 .degree-course.is-prominent.is-unbuilt { border-left: 3px dashed var(--border-color); }
 
+
+
+/* --- the one-at-a-time notice (build-notice.js) ---------------------------
+ * Centred rather than tucked under whichever control was clicked: the rule it
+ * explains is about the whole application, not about that button.
+ */
+.build-notice-backdrop {
+    position: fixed; inset: 0; z-index: 80;
+    display: grid; place-items: center;
+    padding: var(--space-4);
+    background: rgba(0, 0, 0, 0.45);
+}
+.build-notice-backdrop.hidden { display: none; }
+.build-notice {
+    box-sizing: border-box;
+    width: min(440px, 100%);
+    padding: var(--space-5);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-top: 3px solid var(--accent-primary);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-lg);
+    animation: build-notice-in 180ms ease-out;
+}
+/* Blocked is a harder stop than busy, and should not wear the same edge. */
+.build-notice.is-blocked { border-top-color: var(--color-warning); }
+.build-notice-title { margin: 0 0 .4em; font-size: 1.05rem; }
+.build-notice-body {
+    margin: 0 0 1.2em; font-size: .88rem; line-height: 1.55;
+    color: var(--text-secondary);
+}
+.build-notice-actions {
+    display: flex; gap: var(--space-3); justify-content: flex-end; flex-wrap: wrap;
+}
+@keyframes build-notice-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .build-notice { animation: none; }
+}

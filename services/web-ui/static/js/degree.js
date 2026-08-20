@@ -684,8 +684,17 @@
                     // words: one course at a time is the model, and a locked
                     // course is locked for a reason the learner can act on.
                     if (d.reason === "build_in_progress") {
-                        throw new Error("a course is already being built — " +
-                                        "one at a time");
+                        // A rule about the whole application does not belong
+                        // in the subtitle of the button that happened to hit
+                        // it. The card says what is running and offers the
+                        // one useful action: go and watch it.
+                        card.disabled = false;
+                        note.textContent = stateNote(c, prominent);
+                        if (window.HelgaBuildNotice) {
+                            window.HelgaBuildNotice.buildInProgress(c.title);
+                            return;
+                        }
+                        throw new Error("a course is already being built");
                     }
                     if (d.reason === "prerequisites_unmet") {
                         throw new Error("finish " +

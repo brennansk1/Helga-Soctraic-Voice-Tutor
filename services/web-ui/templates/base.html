@@ -400,6 +400,10 @@
     <!-- App-wide: renders the storage panel when Settings is open, and the
          memory safeguard card on every page. -->
     <script src="{{ url_for('static', filename='js/resources.js') }}"></script>
+    <!-- The one-at-a-time notice. App-wide because the degree page, the create
+         carousel and the courses page can all provoke the same refusal, and
+         none of them should invent its own words for it. -->
+    <script src="{{ url_for('static', filename='js/build-notice.js') }}"></script>
 
     <!-- Toast Container -->
     <div id="toast-container"></div>
