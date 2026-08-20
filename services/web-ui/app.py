@@ -1112,6 +1112,52 @@ def get_concept_details():
     except Exception as e:
         return jsonify({'error': str(e)}), 502
 
+# --- Degree programmes -------------------------------------------------------
+# degree.js and home.js have called these three since they were written; there
+# was nothing on the other end, so the flagship surface has been rendering
+# example data. These connect it to the planner.
+
+@app.route('/api/programs', methods=['GET'])
+def list_programs():
+    try:
+        r = requests.get(f'{SERVICES["core"]}/api/programs', timeout=6)
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        app.logger.warning("list_programs proxy failed: %s", e)
+        return jsonify({'programs': [], 'error': 'unavailable'}), 200
+
+
+@app.route('/api/program/<uid>', methods=['GET'])
+def get_program(uid):
+    try:
+        r = requests.get(f'{SERVICES["core"]}/api/program/{uid}', timeout=8)
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({'error': str(e)}), 502
+
+
+@app.route('/api/program', methods=['POST'])
+def create_program():
+    """Planning is fast relative to a build but not instant, so this gets a
+    long timeout — it consults curriculum sources and the model."""
+    try:
+        r = requests.post(f'{SERVICES["core"]}/api/program',
+                          json=request.get_json(silent=True) or {}, timeout=180)
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({'error': str(e)}), 502
+
+
+@app.route('/api/program/<uid>/choose', methods=['POST'])
+def choose_program_elective(uid):
+    try:
+        r = requests.post(f'{SERVICES["core"]}/api/program/{uid}/choose',
+                          json=request.get_json(silent=True) or {}, timeout=8)
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({'error': str(e)}), 502
+
+
 @app.route('/api/concept_sources', methods=['GET'])
 def get_concept_sources():
     """Proxy for the trust panel in the session view.

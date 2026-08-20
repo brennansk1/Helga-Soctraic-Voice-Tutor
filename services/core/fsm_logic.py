@@ -4410,6 +4410,89 @@ def get_visual_aid(aid_id):
     return resp
 
 
+# --- Degree programmes -------------------------------------------------------
+#
+# plan_degree() has been able to produce a real programme -- sourced course
+# list, inferred prerequisites, topologically laid-out terms, validated as
+# teachable -- for as long as it has existed, and nothing could ask it for one.
+# It was reachable from the test suite and a QA script and from nowhere else,
+# so the degree tier was complete except for the part where a learner has a
+# degree. These four routes are that part.
+
+@app.route("/api/programs", methods=["GET"])
+def list_programs():
+    try:
+        return {"programs": _shared_storage.programs.list()}
+    except Exception as e:
+        logging.error("list_programs failed: %s", e)
+        return {"error": str(e)}, 500
+
+
+@app.route("/api/program/<uid>", methods=["GET"])
+def get_program(uid):
+    try:
+        plan = _shared_storage.programs.get(uid)
+        if not plan:
+            return {"error": "no such programme"}, 404
+        return plan
+    except Exception as e:
+        logging.error("get_program %s failed: %s", uid, e)
+        return {"error": str(e)}, 500
+
+
+@app.route("/api/program", methods=["POST"])
+def create_program():
+    """Plan a degree and persist it.
+
+    Synchronous on purpose: planning consults the curriculum sources and the
+    model, but it produces a STRUCTURE rather than content, so it finishes in
+    seconds rather than the minutes a build takes. The courses inside it are
+    built later, one ahead of the learner.
+    """
+    data = request.get_json(silent=True) or {}
+    subject = (data.get("subject") or "").strip()
+    template = (data.get("template") or "associate").strip()
+    if not subject:
+        return {"error": "subject is required"}, 400
+    try:
+        from services.core.program import plan_degree, ProgramError
+        from services.common.llm_utils import llm_generate_json
+    except ImportError as e:
+        logging.error("program module unavailable: %s", e)
+        return {"error": "degree planning unavailable"}, 500
+    try:
+        # Same helper the course builder hands the planner elsewhere, so a
+        # programme is planned against the same model and repair path.
+        plan = plan_degree(subject, template, llm_json_fn=llm_generate_json)
+    except ProgramError as e:
+        # An unteachable plan is a real answer, not a server fault: the subject
+        # could not carry a programme of this size.
+        return {"error": str(e), "reason": "unteachable"}, 422
+    except Exception as e:
+        logging.exception("plan_degree failed for %r/%r", subject, template)
+        return {"error": str(e)}, 500
+
+    uid = "prog_" + uuid.uuid4().hex[:8]
+    _shared_storage.programs.create(uid, plan)
+    plan["uid"] = uid
+    return plan, 201
+
+
+@app.route("/api/program/<uid>/choose", methods=["POST"])
+def choose_program_elective(uid):
+    data = request.get_json(silent=True) or {}
+    title = (data.get("title") or "").strip()
+    if not title:
+        return {"error": "title is required"}, 400
+    try:
+        if not _shared_storage.programs.choose(uid, title):
+            return {"error": "no such course in this programme"}, 404
+        return {"status": "ok", "chosen": title}
+    except Exception as e:
+        logging.error("choose elective failed: %s", e)
+        return {"error": str(e)}, 500
+
+
 @app.route("/api/schedule/stats", methods=["GET"])
 def get_schedule_stats():
     sid = _student_id_from_request()

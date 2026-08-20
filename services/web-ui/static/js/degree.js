@@ -15,6 +15,11 @@
 (function () {
     "use strict";
 
+    // The programme currently rendered. Read from the URL when one is named,
+    // otherwise resolved from /api/programs — either way the ONE place that
+    // knows which programme an action applies to.
+    var currentUid = null;
+
     var svg = document.getElementById("deg-svg");
     var viewport = document.getElementById("deg-viewport");
     var NS = "http://www.w3.org/2000/svg";
@@ -54,16 +59,56 @@
         };
     }
 
+    /* The planner stores what it decided (chosen, built, course_uid); the map
+       speaks in states. Deriving one from the other HERE keeps the derivation
+       in one place and stops the UI inventing a status the data cannot support
+       — notably "complete", which needs progress the plan does not carry, and
+       "building", which would claim work is under way when nothing said so. */
+    function withStatus(plan) {
+        (plan.courses || []).forEach(function (c) {
+            if (c.status) return;                     // demo plans set it directly
+            if (c.chosen === false)      c.status = "choice";
+            else if (c.built)            c.status = "ready";
+            else                         c.status = "locked";
+        });
+        return plan;
+    }
+
+    function showEmpty(msg) {
+        var e = document.getElementById("deg-empty");
+        if (msg) e.textContent = msg;
+        e.classList.remove("hidden");
+        viewport.classList.add("hidden");
+    }
+
+    function loadPlan(uid) {
+        currentUid = uid;
+        fetch("/api/program/" + encodeURIComponent(uid))
+            .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+            .then(function (p) { render(withStatus(p)); })
+            .catch(function (err) {
+                showEmpty("That programme could not be loaded (" + err.message +
+                          "). Nothing has been lost — try again, or pick another " +
+                          "from Courses.");
+            });
+    }
+
     function load() {
         var uid = new URLSearchParams(location.search).get("uid");
-        if (!uid) { render(demoPlan()); return; }
-        fetch("/api/program/" + encodeURIComponent(uid))
-            .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-            .then(render)
-            .catch(function () {
-                document.getElementById("deg-empty").classList.remove("hidden");
-                viewport.classList.add("hidden");
-            });
+        if (uid) { loadPlan(uid); return; }
+
+        // No programme named: open the most recent real one. The example plan
+        // is only ever shown when there is genuinely nothing to show, and it
+        // says so on the page — a preview that appears over a learner's real
+        // programmes would be a lie about their own data.
+        fetch("/api/programs")
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                var list = (d && d.programs) || [];
+                if (list.length) { loadPlan(list[0].uid); return; }
+                render(demoPlan());
+            })
+            .catch(function () { render(demoPlan()); });
     }
 
     /* ---------------------------------------------------------- render */
@@ -211,13 +256,37 @@
                         "locks the choice and the build begins.";
                     return;
                 }
-                fetch("/api/program/" +
-                      encodeURIComponent(new URLSearchParams(location.search).get("uid")) +
-                      "/choose",
+                // currentUid, not the query string: the page reaches a
+                // programme either by ?uid= or by resolving the most recent
+                // one, and reading the URL meant the second path POSTed to
+                // /api/program/null/choose.
+                if (!currentUid) {
+                    p.textContent = "Could not tell which programme this is — " +
+                        "reload the page and try again.";
+                    return;
+                }
+                card.disabled = true;
+                fetch("/api/program/" + encodeURIComponent(currentUid) + "/choose",
                       { method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ title: c.title }) })
-                    .then(function () { location.reload(); });
+                    .then(function (r) {
+                        if (!r.ok) throw new Error("HTTP " + r.status);
+                        return r.json();
+                    })
+                    .then(function (d) {
+                        // A 200 carrying {status:"missing"} is still a failure;
+                        // reloading on it would silently discard the choice.
+                        if (d && d.status && d.status !== "ok") {
+                            throw new Error(d.status);
+                        }
+                        location.reload();
+                    })
+                    .catch(function (err) {
+                        card.disabled = false;
+                        p.textContent = "That choice did not save (" +
+                            err.message + "). Nothing has changed — try again.";
+                    });
             });
             cards.appendChild(card);
         });

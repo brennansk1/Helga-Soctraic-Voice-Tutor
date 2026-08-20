@@ -91,6 +91,7 @@ class StorageManager:
         self.progress = ProgressStore(self.db_path)
         self.activity = ActivityStore(self.db_path)
         self.schedule = ScheduleStore(self.db_path)
+        self.programs = ProgramStore(self.db_path)
         self.settings = SettingsStore(self.db_path)
         self.flashcards = FlashcardStore(self.db_path)
         self.search = SearchStore(self.db_path, self.courses)
@@ -909,6 +910,52 @@ class StorageManager:
                                "ON concept_assets(course_uid, concept_uid)")
                 cursor.execute("UPDATE schema_version SET version = 16")
                 logger.info("Schema migrated to v16: spoken math + assets")
+
+            if current_version < 17:
+                # DEGREE PROGRAMMES.
+                #
+                # plan_degree() has produced real programmes -- sourced course
+                # lists, inferred prerequisites, topological term layout, all
+                # validated -- since it was written, and there was nowhere to
+                # put one. The planner was reachable only from tests, so the
+                # degree tier existed end to end except for the part where a
+                # learner could have one.
+                #
+                # The plan is stored whole as JSON because it is the planner's
+                # output and splitting it into tables would mean re-deriving
+                # what it already decided. Only the two things that CHANGE as a
+                # learner moves through it are columns: which electives were
+                # chosen, and which courses have been built.
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS programs (
+                        uid          TEXT PRIMARY KEY,
+                        subject      TEXT NOT NULL,
+                        template     TEXT NOT NULL,
+                        plan_json    TEXT NOT NULL,
+                        status       TEXT DEFAULT 'active',
+                        created_at   TEXT,
+                        updated_at   TEXT
+                    )
+                """)
+                # One row per course slot in the programme. The link to a real
+                # built course is course_uid, NULL until it is built -- which
+                # is what lets the map grey a course out and still name it.
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS program_courses (
+                        program_uid  TEXT NOT NULL,
+                        title        TEXT NOT NULL,
+                        term         INTEGER,
+                        slot         TEXT,
+                        chosen       INTEGER DEFAULT 1,
+                        built        INTEGER DEFAULT 0,
+                        course_uid   TEXT,
+                        PRIMARY KEY (program_uid, title)
+                    )
+                """)
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_program_courses "
+                               "ON program_courses(program_uid)")
+                cursor.execute("UPDATE schema_version SET version = 17")
+                logger.info("Schema migrated to v17: degree programmes")
 
             conn.commit()
         finally:
@@ -2601,6 +2648,107 @@ class FlashcardStore:
         rows = conn.execute("SELECT * FROM flashcards WHERE course_uid = ? AND student_id = ?",
                             (course_uid, _sid(student_id))).fetchall()
         return [dict(r) for r in rows]
+
+
+class ProgramStore:
+    """Degree programmes: the plan, and what has happened to it since.
+
+    The plan itself is written once and read whole. What moves is which
+    electives a learner picked and which courses have actually been built, so
+    those live in program_courses and are merged back over the plan on read --
+    the map always shows the planner's structure with the learner's state on
+    top of it.
+    """
+
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self._db = _ThreadLocalDB(db_path)
+
+    def _get_db(self) -> sqlite3.Connection:
+        return self._db.get()
+
+    def create(self, uid: str, plan: dict) -> str:
+        now = datetime.now().isoformat()
+        db = self._get_db()
+        db.execute(
+            "INSERT OR REPLACE INTO programs "
+            "(uid, subject, template, plan_json, status, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, 'active', ?, ?)",
+            (uid, plan.get("subject", ""), plan.get("template", ""),
+             json.dumps(plan), now, now))
+        for c in plan.get("courses", []):
+            db.execute(
+                "INSERT OR REPLACE INTO program_courses "
+                "(program_uid, title, term, slot, chosen, built, course_uid) "
+                "VALUES (?, ?, ?, ?, ?, ?, "
+                "        COALESCE((SELECT course_uid FROM program_courses "
+                "                  WHERE program_uid=? AND title=?), NULL))",
+                (uid, c.get("title", ""), c.get("term"), c.get("slot"),
+                 1 if c.get("chosen", True) else 0,
+                 1 if c.get("built") else 0, uid, c.get("title", "")))
+        db.commit()
+        return uid
+
+    def get(self, uid: str) -> Optional[dict]:
+        db = self._get_db()
+        row = db.execute("SELECT plan_json, status FROM programs WHERE uid=?",
+                         (uid,)).fetchone()
+        if not row:
+            return None
+        try:
+            plan = json.loads(row[0])
+        except (ValueError, TypeError):
+            logger.error("programme %s has unreadable plan_json", uid)
+            return None
+        plan["uid"] = uid
+        plan["status"] = row[1]
+
+        state = {r[0]: r for r in db.execute(
+            "SELECT title, chosen, built, course_uid FROM program_courses "
+            "WHERE program_uid=?", (uid,)).fetchall()}
+        for c in plan.get("courses", []):
+            r = state.get(c.get("title"))
+            if not r:
+                continue
+            c["chosen"] = bool(r[1])
+            c["built"] = bool(r[2])
+            c["course_uid"] = r[3]
+        return plan
+
+    def list(self) -> List[dict]:
+        """Summaries only -- the map fetches the full plan when it is opened."""
+        rows = self._get_db().execute(
+            "SELECT p.uid, p.subject, p.template, p.status, p.created_at, "
+            "       (SELECT COUNT(*) FROM program_courses c "
+            "        WHERE c.program_uid = p.uid AND c.chosen = 1), "
+            "       (SELECT COUNT(*) FROM program_courses c "
+            "        WHERE c.program_uid = p.uid AND c.built = 1) "
+            "FROM programs p ORDER BY p.created_at DESC").fetchall()
+        return [{"uid": r[0], "subject": r[1], "template": r[2], "status": r[3],
+                 "created_at": r[4], "courses": r[5], "built": r[6]}
+                for r in rows]
+
+    def choose(self, uid: str, title: str) -> bool:
+        """Lock an elective. Returns False if that course is not in the plan."""
+        db = self._get_db()
+        cur = db.execute(
+            "UPDATE program_courses SET chosen=1 "
+            "WHERE program_uid=? AND title=?", (uid, title))
+        db.execute("UPDATE programs SET updated_at=? WHERE uid=?",
+                   (datetime.now().isoformat(), uid))
+        db.commit()
+        return cur.rowcount > 0
+
+    def mark_built(self, uid: str, title: str, course_uid: str) -> bool:
+        """Attach a real built course to its slot in the programme."""
+        db = self._get_db()
+        cur = db.execute(
+            "UPDATE program_courses SET built=1, course_uid=? "
+            "WHERE program_uid=? AND title=?", (course_uid, uid, title))
+        db.execute("UPDATE programs SET updated_at=? WHERE uid=?",
+                   (datetime.now().isoformat(), uid))
+        db.commit()
+        return cur.rowcount > 0
 
 
 class ActivityStore:
