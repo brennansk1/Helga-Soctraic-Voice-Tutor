@@ -2,7 +2,12 @@ version: '3.8'
 
 services:
   web-ui:
-    build: services/web-ui
+    # Context is the repo root, not the service dir: the preflight endpoint
+    # imports services/common (memory_guard, startup_preflight), which a
+    # service-scoped context cannot see. Same pattern core-logic already uses.
+    build:
+      context: .
+      dockerfile: services/web-ui/Dockerfile
     container_name: helga-web-ui
     ports:
       - "5050:5000"
@@ -26,6 +31,10 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./services/web-ui:/app
+      # The /app mount above hides whatever the image copied into /app, so
+      # services/common must be mounted alongside it or the import works in
+      # the image and fails in the running container.
+      - ./services/common:/app/services/common
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
