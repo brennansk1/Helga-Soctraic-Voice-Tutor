@@ -417,6 +417,9 @@
             .then(function (r) { return r.json(); })
             .then(function (v) { preLast = v; })
             .catch(function (e) {
+                if (window.console) {
+                    console.warn("preflight unreachable:", e && e.message);
+                }
                 // Naming the failure rather than treating an unreachable
                 // endpoint as a pass. The gate stays open in this state,
                 // because we did not measure anything that says it should not.
@@ -425,9 +428,16 @@
                     summary: "The startup check could not be reached.",
                     checks: [{ id: "preflight", label: "Startup check",
                                state: "unknown",
-                               reason: "The server did not answer (" +
-                                       (e && e.message ? e.message : "no response") +
-                                       "), so this machine was not measured.",
+                               // The raw exception is for the console, not the
+                               // page. A learner mid-lesson was being shown
+                               // `Unexpected token '<', "<!doctype "... is not
+                               // valid JSON` — a JSON parser's internal
+                               // complaint, which tells them nothing they can
+                               // act on and reads as a broken product.
+                               reason: "The startup check could not reach the " +
+                                       "server, so this machine was not " +
+                                       "measured. Helga is running normally; " +
+                                       "only the hardware check is missing.",
                                remedy: null, measured: {} }],
                     blocking: [], notes: []
                 };
