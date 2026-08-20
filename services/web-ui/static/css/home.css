@@ -30,7 +30,7 @@
 .home-btn:hover { transform: translateY(-1px); box-shadow: var(--shadow-2); }
 .home-btn-primary {
     background: var(--accent-primary); border-color: var(--accent-primary);
-    color: #fff; box-shadow: var(--shadow-2));
+    color: var(--on-accent); box-shadow: var(--shadow-2);
 }
 
 /* The art carries the product's idea — a course resolving into structure.

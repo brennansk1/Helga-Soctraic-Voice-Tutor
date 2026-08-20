@@ -4,7 +4,7 @@
     top: -100%;
     left: 1rem;
     background: var(--accent-primary);
-    color: white;
+    color: var(--on-accent);
     padding: 0.75rem 1.5rem;
     border-radius: 0 0 8px 8px;
     z-index: 10000;
@@ -34,15 +34,24 @@
 
     /* Accent — Alpine Blue (Bavarian sky) */
     --accent-primary: #2e6b8a;
+    /* Text that sits ON an accent fill. White reads over the light theme's
+       deep blue and fails over the dark theme's pale blue (2.9:1) — the same
+       "right in light mode by accident" trap as the missing tokens. */
+    --on-accent: #ffffff;
     --accent-primary-dark: #23567a;
     --accent-secondary: #c17f4a;
     --accent-secondary-hover: #a8693a;
     --accent-tertiary: #4a8c6f;
 
-    /* Status Colors */
-    --status-success: #4a8c6f;
-    --status-warning: #d4a843;
-    --status-error: #c45c4a;
+    /* Status Colors — LIGHT theme.
+       These were tuned against a dark surface and then used on the light
+       parchment too, where warning text measured 1.96:1 and error 3.7:1. The
+       dark theme keeps the lighter set (design-system.css scopes it to
+       [data-theme="dark"]); these are the same hues taken down far enough to
+       read on #f5f0eb: success 5.5:1, warning 4.7:1, error 5.3:1. */
+    --status-success: #2f6b52;
+    --status-warning: #8a6410;
+    --status-error: #a8412e;
 
     /* Gamification */
     --xp-gold: #d4a843;
@@ -119,6 +128,8 @@
     --text-secondary: #8a9a8d;
     --border-color: #3a4a3e;
     --accent-primary: #5da0c2;
+    /* Dark ink on the pale accent: 6.0:1, versus 2.9:1 for white. */
+    --on-accent: #12201b;
     --accent-primary-dark: #4a8db0;
     --accent-secondary: #d4a066;
     --accent-secondary-hover: #e2b585;
@@ -134,6 +145,7 @@
 
 /* Light Theme — same as :root defaults */
 [data-theme="light"] {
+    --on-accent: #ffffff;
     --bg-primary: #f5f0eb;
     --bg-secondary: #ffffff;
     --bg-tertiary: #e8f4f0;
@@ -334,7 +346,7 @@ body {
 .action-btn,
 .send-btn {
     background-color: var(--accent-primary);
-    color: white;
+    color: var(--on-accent);
     box-shadow: 0 4px 0 #2563eb;
     /* Darker blue lip */
 }
@@ -434,7 +446,7 @@ select:focus,
 
 .message.user {
     background-color: var(--accent-primary);
-    color: white;
+    color: var(--on-accent);
     border-bottom-right-radius: 4px;
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
 }
@@ -841,7 +853,7 @@ select:focus,
 
 .font-size-btn {
     background-color: var(--accent-primary);
-    color: white;
+    color: var(--on-accent);
     border: none;
     padding: 8px 12px;
     border-radius: 8px;

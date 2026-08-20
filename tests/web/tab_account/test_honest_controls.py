@@ -112,7 +112,8 @@ class TestNoFeatureReachableOnlyByUrl(unittest.TestCase):
     # every advertised feature needs a way in that is not typing a URL — but
     # "the nav" is no longer the only legitimate entry point, because some
     # features are now modes of a parent surface rather than destinations.
-    NAV_PAGES = ['/courses', '/learn', '/progress', '/practice', '/settings']
+    NAV_PAGES = ['/courses', '/degree', '/progress', '/practice', '/test',
+                 '/settings']
 
     # feature -> the page that must link to it
     NESTED_ENTRY_POINTS = {
@@ -120,7 +121,21 @@ class TestNoFeatureReachableOnlyByUrl(unittest.TestCase):
         '/status': '/settings',  # an operator tool, not a learner tool
     }
 
-    ADVERTISED_PAGES = NAV_PAGES + list(NESTED_ENTRY_POINTS)
+    # feature -> the script that must build a link to it.
+    #
+    # /learn left the nav deliberately: it requires a course_uid and bounced to
+    # /courses without one, so as a tab it only worked AFTER visiting another
+    # tab. Its real entry points are a course card and the Continue pill, both
+    # rendered by script, so they can never appear in server-rendered HTML and
+    # the assertion has to look where the link actually is. The guarantee is
+    # unchanged — something must link there — only the place it is written.
+    SCRIPT_ENTRY_POINTS = {
+        '/learn': ['services/web-ui/static/js/courses.js',
+                   'services/web-ui/static/js/build-guard.js'],
+    }
+
+    ADVERTISED_PAGES = (NAV_PAGES + list(NESTED_ENTRY_POINTS)
+                        + list(SCRIPT_ENTRY_POINTS))
 
     def test_every_nav_page_is_linked_from_the_nav(self):
         html = app.test_client().get('/').data.decode()
@@ -144,6 +159,25 @@ class TestNoFeatureReachableOnlyByUrl(unittest.TestCase):
                 f'href="{feature}', body,
                 f"{feature} was removed from the nav and {parent} does not "
                 f"link to it — that is an advertised feature with no way in"
+            )
+
+    def test_script_rendered_features_have_an_entry_point(self):
+        """A link built in JavaScript is still a link; a missing one is still
+        a feature reachable only by typing a URL."""
+        import os
+        root = os.path.join(os.path.dirname(__file__), '..', '..', '..')
+        for feature, scripts in self.SCRIPT_ENTRY_POINTS.items():
+            found = []
+            for rel in scripts:
+                path = os.path.abspath(os.path.join(root, rel))
+                with open(path, encoding='utf-8') as fh:
+                    if feature in fh.read():
+                        found.append(rel)
+            self.assertTrue(
+                found,
+                f"{feature} is advertised, is not in the nav, and no script "
+                f"in {scripts} builds a link to it — that is a feature "
+                f"reachable only by typing a URL"
             )
 
     def test_advertised_pages_actually_render(self):
@@ -183,16 +217,25 @@ class TestNoFeatureReachableOnlyByUrl(unittest.TestCase):
                     offenders.append(f"{os.path.basename(path)} -> {dead}")
         self.assertEqual(offenders, [], f"links to retired tabs: {offenders}")
 
-    def test_the_nav_stays_at_six_destinations(self):
+    # The real constraint is that the bar must not wrap onto a second row at
+    # 1280px — nine links did, and orphaned the settings icon. The count is the
+    # cheap proxy for it. Seven is the current shape: Learn left (it needed a
+    # course_uid and bounced without one), Degree and Test arrived. Seven is
+    # verified not to wrap at 1280px by the responsive sweep; raising this
+    # number again without re-checking that is how the bar breaks twice.
+    MAX_NAV_DESTINATIONS = 7
+
+    def test_the_nav_does_not_grow_until_it_wraps(self):
         """The A5.1 target shape. Nine links wrapped onto a second row at
         1280px and orphaned the settings icon; this is the regression guard."""
         html = app.test_client().get('/').data.decode()
         nav = html.split('app-nav', 1)[-1].split('</nav>', 1)[0]
         links = re.findall(r'class="nav-link[^"]*"', nav)
-        self.assertEqual(
-            len(links), 6,
-            f"nav has {len(links)} destinations; A5.1 fixed it at six "
-            f"(Home, Courses, Learn, Progress, Practice, Settings)"
+        self.assertLessEqual(
+            len(links), self.MAX_NAV_DESTINATIONS,
+            f"nav has {len(links)} destinations; more than "
+            f"{self.MAX_NAV_DESTINATIONS} wrapped the bar onto a second row "
+            f"at 1280px last time"
         )
 
 if __name__ == '__main__':

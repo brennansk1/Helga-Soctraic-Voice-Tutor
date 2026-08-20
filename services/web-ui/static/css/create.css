@@ -133,7 +133,7 @@
 }
 .car-arrow svg { width: 22px; height: 22px; fill: none; stroke: currentColor;
                  stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-.car-arrow:hover:not(:disabled) { transform: scale(1.06); box-shadow: var(--shadow-2)); }
+.car-arrow:hover:not(:disabled) { transform: scale(1.06); box-shadow: var(--shadow-2); }
 .car-arrow:disabled { opacity: .3; cursor: default; }
 .car-arrow-left  { grid-column: 1; }
 .car-arrow-right { grid-column: 3; }
@@ -361,7 +361,7 @@
     max-width: 420px;                 /* a long sub-label must not stretch it */
     padding: 1.05em 3.2em;
     font-size: 1.25rem; font-weight: 700;
-    color: #fff;
+    color: var(--on-accent);
     background: var(--accent-primary);
     border: none; border-radius: var(--border-radius-lg);
     cursor: pointer;
