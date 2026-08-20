@@ -61,6 +61,52 @@ TEMPLATES = {
 }
 
 
+# WHAT TO DO ABOUT GENERAL EDUCATION
+#
+# A real degree makes you take composition and a lab science whether or not
+# they have anything to do with your major. Copying that wholesale gives a
+# Dungeon Mastering associate twelve courses of English and Calculus, which is
+# nobody's reason for being here -- and a learner who already HAS a degree
+# should not be asked to retake them either.
+#
+# But silently dropping them is also wrong: the whole point of counting credit
+# hours is comparability with a real programme, and a 28-course "bachelor's" is
+# not a bachelor's. So it is a choice at creation, recorded on the plan, and
+# the page says which was chosen rather than quietly showing a smaller number.
+GEN_ED_INCLUDE = "include"          # the full programme, as a university runs it
+GEN_ED_SKIP = "skip"                # major only -- fewer courses, fewer credits
+GEN_ED_DONE = "transferred"         # generated, but already satisfied elsewhere
+GEN_ED_MODES = (GEN_ED_INCLUDE, GEN_ED_SKIP, GEN_ED_DONE)
+
+
+def template_for(template, general_education=GEN_ED_INCLUDE):
+    """The template as it applies to THIS learner's general-education choice.
+
+    Only `skip` changes the shape; `transferred` still generates the courses,
+    because "you have already done these twelve" is a different and more
+    honest statement than "this degree has no general education".
+    """
+    tpl = TEMPLATES.get(template)
+    if not tpl:
+        raise ProgramError(f"unknown template {template!r}")
+    # Refuse rather than fall through. Treating an unrecognised mode as
+    # "include" would turn a typo in a caller into a programme silently
+    # carrying twelve courses the learner asked not to have.
+    if general_education not in GEN_ED_MODES:
+        raise ProgramError(
+            f"unknown general_education {general_education!r}; "
+            f"expected one of {', '.join(GEN_ED_MODES)}")
+    if general_education != GEN_ED_SKIP:
+        return tpl
+    dropped = (tpl.get("slots") or {}).get("gen_ed", 0)
+    if not dropped:
+        return tpl
+    return {**tpl,
+            "slots": {k: v for k, v in tpl["slots"].items() if k != "gen_ed"},
+            "courses": tpl["courses"] - dropped,
+            "full_courses": tpl["courses"]}
+
+
 class ProgramError(ValueError):
     """A plan that cannot be taught — a cycle, or a prerequisite that never
     appears. Raised rather than logged: an incoherent programme is invisible
@@ -102,7 +148,8 @@ def plan_sequence(subject, parts=2, preset="college"):
             "courses": courses}
 
 
-def plan_from_template(subject, template, slot_subjects=None, preset="college"):
+def plan_from_template(subject, template, slot_subjects=None, preset="college",
+                       general_education=GEN_ED_INCLUDE):
     """A Program shaped by a credit template, with research filling the slots.
 
     `slot_subjects` maps a slot name to candidate subject titles. Missing slots
@@ -110,9 +157,7 @@ def plan_from_template(subject, template, slot_subjects=None, preset="college"):
     D&D case) must produce the same shape as a well-documented one, or it needs
     its own code path.
     """
-    tpl = TEMPLATES.get(template)
-    if not tpl:
-        raise ProgramError(f"unknown template {template!r}")
+    tpl = template_for(template, general_education)
     slot_subjects = slot_subjects or {}
 
     courses, term = [], 1
@@ -217,6 +262,7 @@ def validate(courses):
 # the 60-credit associate, and 40 x 3 is the 120-credit bachelor's.
 HOURS_PER_CREDIT = 45          # 15 weeks x (1 h instruction + 2 h independent)
 HOURS_PER_LESSON = 3           # one session and the study that belongs to it
+CREDITS_PER_COURSE = 3         # the standard 3-credit course a template counts in
 
 
 def course_size(course):
@@ -289,7 +335,32 @@ def programme_size(program):
         # does not have.
         "estimated_share": (round(est_credits / tot["credits"], 2)
                             if tot["credits"] else 1.0),
+        # The general-education choice travels with the size, because it is the
+        # difference between "84 credits" and "84 credits, and here is why that
+        # is not the 120 a university would require". A smaller number with no
+        # explanation is the dishonest version.
+        **_gen_ed_context(program, courses),
     }
+
+
+HOURS_TRANSFERRED_NOTE = "already satisfied elsewhere"
+
+
+def _gen_ed_context(program, courses):
+    mode = (program or {}).get("general_education") or GEN_ED_INCLUDE
+    out = {"general_education": mode}
+    if mode == GEN_ED_SKIP:
+        tpl = TEMPLATES.get((program or {}).get("template")) or {}
+        full = tpl.get("courses")
+        dropped = (tpl.get("slots") or {}).get("gen_ed", 0)
+        if full and dropped:
+            out["full_courses"] = full
+            out["skipped_courses"] = dropped
+            out["full_credits"] = round(full * CREDITS_PER_COURSE, 1)
+    elif mode == GEN_ED_DONE:
+        out["transferred_courses"] = sum(
+            1 for c in courses if c.get("transferred"))
+    return out
 
 
 def available_courses(program):
@@ -1084,7 +1155,7 @@ def assign_terms(courses, terms, per_term=None):
 
 
 def plan_degree(subject, template, llm_json_fn=None, search_fn=None,
-                preset="college"):
+                preset="college", general_education=GEN_ED_INCLUDE):
     """The single entry point: a subject and a degree tier in, a plan out.
 
     Everything above this is a step; this is the thing a caller invokes. The
@@ -1105,14 +1176,23 @@ def plan_degree(subject, template, llm_json_fn=None, search_fn=None,
     worth failing on: an incoherent programme is invisible until a learner
     reaches a course they cannot follow, months in.
     """
-    tpl = TEMPLATES.get(template)
-    if not tpl:
-        raise ProgramError(f"unknown template {template!r}")
+    if general_education not in GEN_ED_MODES:
+        raise ProgramError(f"unknown general_education {general_education!r}")
+    tpl = template_for(template, general_education)
 
     sourced = source_degree_slots(subject, template,
                                   llm_json_fn=llm_json_fn, search_fn=search_fn)
     plan = plan_from_template(subject, template,
-                              slot_subjects=sourced.get("slots"), preset=preset)
+                              slot_subjects=sourced.get("slots"), preset=preset,
+                              general_education=general_education)
+    plan["general_education"] = general_education
+    if general_education == GEN_ED_DONE:
+        # Satisfied elsewhere: they count toward the degree and are already
+        # behind the learner, so anything gated on them is open immediately.
+        for c in plan["courses"]:
+            if c.get("slot") == "gen_ed":
+                c["completed"] = True
+                c["transferred"] = True
 
     propose = None
     if llm_json_fn:

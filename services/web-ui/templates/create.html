@@ -190,6 +190,46 @@
                      aria-label="Step 5: review and create">
                 <h1 class="car-title">Ready to build</h1>
                 <div class="review-panel" id="review-panel"></div>
+
+                {# General education, for degrees only.
+
+                   A real degree makes you take composition and a lab science
+                   whether or not they touch your major. Copying that without
+                   asking gives a Dungeon Mastering degree twelve courses of
+                   English, and asks somebody who already has a degree to sit
+                   through them a second time. Asking costs one question. #}
+                <fieldset class="gened-choice hidden" id="gened-choice">
+                    <legend class="gened-legend">General education</legend>
+                    <p class="gened-lead" id="gened-lead">
+                        A real programme includes courses outside the major —
+                        writing, maths, a science, a humanity.
+                    </p>
+                    <label class="gened-opt">
+                        <input type="radio" name="gened" value="include" checked>
+                        <span class="gened-opt-title">Include them</span>
+                        <span class="gened-opt-note" id="gened-note-include">
+                            The full programme, and the credit total a
+                            university would recognise.
+                        </span>
+                    </label>
+                    <label class="gened-opt">
+                        <input type="radio" name="gened" value="transferred">
+                        <span class="gened-opt-title">I have already done them</span>
+                        <span class="gened-opt-note" id="gened-note-done">
+                            Kept in the plan and marked complete, so the credit
+                            total still compares with a real degree.
+                        </span>
+                    </label>
+                    <label class="gened-opt">
+                        <input type="radio" name="gened" value="skip">
+                        <span class="gened-opt-title">Just the major</span>
+                        <span class="gened-opt-note" id="gened-note-skip">
+                            Shorter, and no longer a full degree's worth of
+                            credit. The page will say so.
+                        </span>
+                    </label>
+                </fieldset>
+
                 <button type="button" class="create-btn" id="create-btn" disabled>
                     <span class="create-btn-label">Create</span>
                     <span class="create-btn-sub" id="create-btn-sub"></span>

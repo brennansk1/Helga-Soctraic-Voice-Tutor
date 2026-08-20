@@ -300,13 +300,18 @@
     var reviewNote = document.getElementById("review-note");
 
     var TEMPLATE_LABELS = {
-        associate: "Associate degree — 20 courses over 4 terms",
-        bachelors: "Bachelor's degree — 40 courses over 8 terms",
+        associate: "Associate degree — 20 courses, about 2 years",
+        bachelors: "Bachelor's degree — 40 courses, about 4 years",
         course: "College course — one semester",
         sequence: "Two-semester sequence",
         seminar: "Seminar",
         overview: "Quick overview",
     };
+
+    /* Kept next to TEMPLATE_LABELS and matching program.py's TEMPLATES. If a
+       template's shape changes there, these two numbers change with it. */
+    var GENED_COUNT = { associate: 7, bachelors: 12 };
+    var TEMPLATE_COURSES = { associate: 20, bachelors: 40 };
 
     function row(k, v) {
         var r = document.createElement("div"); r.className = "review-row";
@@ -335,6 +340,40 @@
                 reviewPanel.appendChild(row("Scope", "thin — will be honest, not padded"));
             }
             var isDegree = state.template === "associate" || state.template === "bachelors";
+
+            /* The general-education question only exists for degrees -- a
+               single course has no general education to decline. Naming the
+               actual numbers ("7 of the 20") beats an abstract "some courses":
+               the whole point is letting someone see what they are agreeing
+               to before they agree to it. */
+            var gened = document.getElementById("gened-choice");
+            if (gened) {
+                gened.classList.toggle("hidden", !isDegree);
+                if (isDegree) {
+                    var n = GENED_COUNT[state.template] || 0;
+                    var total = TEMPLATE_COURSES[state.template] || 0;
+                    var lead = document.getElementById("gened-lead");
+                    if (lead) {
+                        lead.textContent = n + " of the " + total + " courses are "
+                            + "outside the major — writing, maths, a science, a "
+                            + "humanity. A real programme requires them.";
+                    }
+                    var skipNote = document.getElementById("gened-note-skip");
+                    if (skipNote) {
+                        skipNote.textContent = (total - n) + " courses instead of "
+                            + total + ", and " + ((total - n) * 3) + " credit hours "
+                            + "instead of " + (total * 3) + " — no longer a full "
+                            + "degree's worth. The page will say so.";
+                    }
+                    var doneNote = document.getElementById("gened-note-done");
+                    if (doneNote) {
+                        doneNote.textContent = "All " + n + " stay in the plan and "
+                            + "count as complete, so the credit total still "
+                            + "compares with a real degree.";
+                    }
+                }
+            }
+
             createSub.textContent = isDegree
                 ? "plans the programme now; each course builds as you approach it"
                 : "";
@@ -345,6 +384,11 @@
                 : "You can watch the build live, or leave — it continues either way.";
             createBtn.disabled = !(state.topic.trim().length >= 3 && state.template);
         }
+    }
+
+    function genEdChoice() {
+        var picked = document.querySelector('input[name="gened"]:checked');
+        return (picked && picked.value) || "include";
     }
 
     /* THE SMART-STRETCH NOTIFIER. A bachelor's in Dungeon Mastering is a
@@ -429,7 +473,8 @@
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ subject: state.topic.trim(),
-                                   template: state.template }),
+                                   template: state.template,
+                                   general_education: genEdChoice() }),
         })
             .then(function (r) {
                 return r.json().then(function (b) { return { ok: r.ok, status: r.status, body: b }; });

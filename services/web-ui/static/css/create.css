@@ -431,3 +431,57 @@
 }
 
 :root[data-theme="dark"] .stretch-card, [data-theme="dark"] .stretch-card { background: var(--bg-secondary); }
+
+/* ---- general education, for degree templates only -----------------------
+ * Three radios rather than a checkbox, because "skip" and "already done" are
+ * genuinely different answers: one shortens the degree and one does not, and
+ * a checkbox would have to pick which of them it meant.
+ */
+.gened-choice {
+    margin: var(--space-4) 0 0;
+    padding: var(--space-4);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-lg);
+    background: var(--bg-secondary);
+    box-shadow: var(--shadow-card);
+}
+.gened-choice.hidden { display: none; }
+.gened-legend {
+    padding: 0 .4em;
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+}
+.gened-lead {
+    margin: 0 0 var(--space-3);
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+.gened-opt {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: .2em .7em;
+    align-items: baseline;
+    padding: var(--space-2) 0;
+    cursor: pointer;
+}
+.gened-opt + .gened-opt { border-top: 1px solid var(--border-color); }
+.gened-opt input { grid-row: 1 / span 2; margin: 0; }
+.gened-opt-title {
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+}
+.gened-opt-note {
+    grid-column: 2;
+    /* The label element sets a heavier weight for its title; the explanation
+       under it is body copy and must not compete with the option name. */
+    font-weight: var(--font-weight-normal, 400);
+    font-size: var(--font-size-sm);
+    line-height: 1.45;
+    color: var(--text-secondary);
+}
+.gened-opt:hover .gened-opt-title { color: var(--accent-primary); }
+.gened-opt input:focus-visible {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 2px;
+}

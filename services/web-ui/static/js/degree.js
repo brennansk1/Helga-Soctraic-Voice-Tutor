@@ -558,6 +558,25 @@
                                      "estimated until built"));
             }
             count.parentNode.insertBefore(sub, count.nextSibling);
+
+            /* SAY WHY THE NUMBER IS SMALL.
+               A learner who declined general education sees 84 credits where a
+               university would say 120. Printing the smaller figure on its own
+               would either look like a bug or quietly overstate what this
+               programme is; naming the choice does neither, and it is the
+               reason the credit count is worth printing at all. */
+            if (size.general_education === "skip" && size.full_credits) {
+                sub.appendChild(elem("span", "degree-credits-note",
+                    "general education not included — a full "
+                    + (plan.template === "bachelors" ? "bachelor's" : "associate")
+                    + " is " + size.full_credits + " credit hours over "
+                    + size.full_courses + " courses"));
+            } else if (size.general_education === "transferred"
+                       && size.transferred_courses) {
+                sub.appendChild(elem("span", "degree-credits-note",
+                    size.transferred_courses
+                    + " general-education courses counted as already complete"));
+            }
         }
 
         var pct = n.total ? Math.round(n.complete / n.total * 100) : 0;

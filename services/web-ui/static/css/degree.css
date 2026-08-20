@@ -1121,3 +1121,13 @@
 @media (prefers-reduced-motion: reduce) {
     .build-notice { animation: none; }
 }
+
+/* The general-education caveat under the credit line. Its own line, not a
+   parenthetical: it changes what the number above it means. */
+.degree-credits-note {
+    display: block;
+    margin-top: .3em;
+    font-size: var(--font-size-sm);
+    line-height: 1.45;
+    color: var(--text-secondary);
+}

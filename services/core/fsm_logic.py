@@ -4761,18 +4761,27 @@ def create_program():
     data = request.get_json(silent=True) or {}
     subject = (data.get("subject") or "").strip()
     template = (data.get("template") or "associate").strip()
+    # Whether this learner wants the general-education half of a real degree.
+    # Defaulting to "include" keeps the credit-hour comparison intact for
+    # anyone who does not express a preference.
+    gen_ed = (data.get("general_education") or "include").strip()
     if not subject:
         return {"error": "subject is required"}, 400
     try:
-        from services.core.program import plan_degree, ProgramError
+        from services.core.program import (plan_degree, ProgramError,
+                                           GEN_ED_MODES)
         from services.common.llm_utils import llm_generate_json
     except ImportError as e:
         logging.error("program module unavailable: %s", e)
         return {"error": "degree planning unavailable"}, 500
+    if gen_ed not in GEN_ED_MODES:
+        return {"error": f"general_education must be one of "
+                         f"{', '.join(GEN_ED_MODES)}"}, 400
     try:
         # Same helper the course builder hands the planner elsewhere, so a
         # programme is planned against the same model and repair path.
-        plan = plan_degree(subject, template, llm_json_fn=llm_generate_json)
+        plan = plan_degree(subject, template, llm_json_fn=llm_generate_json,
+                           general_education=gen_ed)
     except ProgramError as e:
         # An unteachable plan is a real answer, not a server fault: the subject
         # could not carry a programme of this size.
