@@ -30,43 +30,88 @@
 
   <p class="degree-preview" id="deg-preview" hidden></p>
 
-  <!-- 1. ONE COURSE AT A TIME. A learner studies exactly one course; the build
-       scheduler can only build one at a time too. So the page has exactly one
-       focus slot, and it is the largest thing on it. -->
+  <!-- ONE COURSE AT A TIME. A learner studies exactly one course; the build
+       scheduler can only build one at a time either. So the page has exactly
+       one focus slot, and it sits ABOVE the view switcher rather than inside a
+       view — whichever question the learner came with, the answer to "what am I
+       in the middle of" should never be a click away. -->
   <section class="degree-focus" id="deg-focus" aria-labelledby="deg-focus-h" hidden>
     <h2 class="degree-section-title" id="deg-focus-h">Now studying</h2>
     <div id="deg-focus-body"></div>
   </section>
 
-  <!-- 2. THE DECISION. Every course whose prerequisites are satisfied. This is
-       the reason to open this page, so it sits above the full plan and is the
-       loudest state in the type and colour hierarchy. -->
-  <section class="degree-next" id="deg-next" aria-labelledby="deg-next-h" hidden>
-    <div class="degree-section-head">
-      <h2 class="degree-section-title" id="deg-next-h">Choose what to study next</h2>
-      <p class="degree-section-sub" id="deg-next-sub"></p>
+  <!-- THE TWO QUESTIONS. This page was one column: audit stacked under twenty-
+       three decision cards, which put the structure of the degree — the thing
+       the page is named after — 1.78 screens below the fold. They are not the
+       same question and they are not asked at the same moment: "where do I
+       stand / what is left" is the audit, "what do I start now" is the plan.
+       Tabs give each of them a whole screen and put both one click from the
+       top. The audit is the default because that is what /degree is for; the
+       decision keeps its count in the tab label so it is never hidden, only
+       deferred. -->
+  <nav class="degree-views" id="deg-views" hidden>
+    <div class="degree-viewtabs" role="tablist" aria-label="Degree views">
+      <button type="button" class="degree-viewtab is-on" id="deg-tab-audit"
+              role="tab" aria-selected="true" aria-controls="deg-audit">
+        <span class="degree-viewtab-label">Audit</span>
+        <span class="degree-viewtab-sub" id="deg-tab-audit-sub"></span>
+      </button>
+      <button type="button" class="degree-viewtab" id="deg-tab-next"
+              role="tab" aria-selected="false" aria-controls="deg-next" tabindex="-1">
+        <span class="degree-viewtab-label">Plan next</span>
+        <span class="degree-viewtab-sub" id="deg-tab-next-sub"></span>
+      </button>
     </div>
-    <div class="degree-next-grid" id="deg-next-grid"></div>
-  </section>
+  </nav>
 
-  <!-- 3 & 4. THE WHOLE DEGREE: what is finished, and what is still gated by
-       what. Grouped the way a catalogue groups a degree — by requirement area,
-       not by a calendar — because the learner sets the order, not a timetable. -->
-  <section class="degree-plan" id="deg-plan" aria-labelledby="deg-plan-h" hidden>
-    <div class="degree-section-head">
-      <h2 class="degree-section-title" id="deg-plan-h">The whole degree</h2>
+  <!-- THE AUDIT. A worksheet of requirement blocks, the way a degree audit has
+       been printed for thirty years: every block carries an explicit verdict,
+       and every unfinished block says what is still needed. -->
+  <section class="degree-audit" id="deg-audit" role="tabpanel"
+           aria-labelledby="deg-tab-audit" tabindex="-1" hidden>
+
+    <!-- The at-a-glance layer. Four blocks, four verdicts, one band — so the
+         shape of the whole degree is legible before any scrolling at all. Each
+         one is a link down into its own block. -->
+    <h2 class="degree-section-title" id="deg-sum-h">Requirements</h2>
+    <!-- role=group so the heading above actually labels something: a bare div
+         carrying aria-labelledby names nothing in the accessibility tree. -->
+    <div class="degree-summary" id="deg-summary" role="group"
+         aria-labelledby="deg-sum-h"></div>
+
+    <!-- What actually stands between the learner and the rest of the degree.
+         Derived from the prerequisite graph, never asserted. -->
+    <p class="degree-blockers" id="deg-blockers" hidden></p>
+
+    <div class="degree-section-head degree-audit-head">
       <p class="degree-section-sub" id="deg-plan-sub">Every course here counts
-        toward the degree. Courses joined by a line must be taken in that
-        order; everything else is yours to sequence.</p>
+        toward the degree. Courses grouped as <em>take in order</em> have a
+        prerequisite between them; everything else is yours to sequence.</p>
       <ul class="degree-legend" id="deg-legend">
         <li class="degree-legend-item"><span class="degree-key is-complete"></span>complete</li>
         <li class="degree-legend-item"><span class="degree-key is-current"></span>studying</li>
         <li class="degree-legend-item"><span class="degree-key is-available"></span>available now</li>
         <li class="degree-legend-item"><span class="degree-key is-building"></span>building</li>
         <li class="degree-legend-item"><span class="degree-key is-locked"></span>locked</li>
+        <!-- Built-vs-not is a different axis from state and had no key at all,
+             even though the page draws it on every row and card. -->
+        <li class="degree-legend-item is-sep"><span class="degree-key is-built"></span>written and ready to open</li>
+        <li class="degree-legend-item"><span class="degree-key is-unbuilt"></span>built when you choose it</li>
+        <li class="degree-legend-item"><span class="degree-est-key">3&nbsp;cr</span>estimated until built</li>
       </ul>
     </div>
+
     <div class="degree-areas" id="deg-areas"></div>
+  </section>
+
+  <!-- THE DECISION. Every course whose prerequisites are satisfied. -->
+  <section class="degree-next" id="deg-next" role="tabpanel"
+           aria-labelledby="deg-tab-next" tabindex="-1" hidden>
+    <div class="degree-section-head">
+      <h2 class="degree-section-title" id="deg-next-h">Choose what to study next</h2>
+      <p class="degree-section-sub" id="deg-next-sub"></p>
+    </div>
+    <div class="degree-next-grid" id="deg-next-grid"></div>
   </section>
 
   <p class="degree-empty hidden" id="deg-empty">No programme yet — create one

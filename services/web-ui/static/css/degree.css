@@ -1,26 +1,29 @@
 /* ============================================================================
- * The degree viewer.
+ * The degree viewer — a degree AUDIT.
  *
- * This replaces a pannable SVG node graph laid out as term columns. Both of
- * those were wrong about the product rather than merely plain:
+ * This replaced a pannable SVG node graph laid out as term columns, and then
+ * replaced the single-column worksheet that replaced it. Each time for a reason
+ * that was measured rather than felt:
  *
  *   - TERM COLUMNS implied five courses running in parallel on a calendar. A
  *     learner takes one course at a time and chooses the order; the only real
  *     constraint is the prerequisite graph.
- *   - THE NODE GRAPH had almost nothing to draw. Measured on the two real
- *     planned programmes: the associate has 2 prerequisite edges across 20
- *     courses, the bachelor's 17 across 40. A canvas of 220x68 boxes truncating
- *     38-character course titles to 26 was spending the whole screen on
- *     structure that is only ever a handful of short sequences.
+ *   - THE NODE GRAPH had almost nothing to draw. The associate has 2
+ *     prerequisite edges across 19 courses, the bachelor's 17 across 40.
+ *   - THE SINGLE COLUMN buried its own subject. Measured at 1440x900 on the
+ *     40-course bachelor's: the audit began 1500px down its scroll container —
+ *     1.78 screens — behind 23 decision cards. The page is called /degree and
+ *     the degree was the least visible thing on it.
  *
- * So this is a degree worksheet, which is what a real programme looks like on
- * paper: requirement areas, sequences drawn as sequences, gates named in words.
- * The page is ordered by what the learner needs — what am I studying, what can
- * I start, what have I finished, what is still shut and why.
+ * So: two views. The AUDIT is the default and opens on a band of requirement
+ * blocks, each carrying a verdict and a "still needed" line, over a worksheet
+ * of course ROWS. PLAN NEXT keeps the decision cards, where a card is a control
+ * rather than a record. The focus slot sits above both, because "what am I in
+ * the middle of" should never be behind a tab.
  *
- * Every colour here is a token that flips with the theme. State is carried by a
- * single per-card `--deg-state` so the rail, the icon and the note can never
- * disagree about what state a course is in.
+ * Every colour here is a token that flips with the theme. Card and row state is
+ * carried by a single per-element `--deg-state` so the rail, the icon and the
+ * note can never disagree about what state a course is in.
  * ==========================================================================*/
 
 :root {
@@ -31,9 +34,7 @@
        "done" from gold to green precisely so gold could mean one thing there —
        "due for review" — and a degree page still painting finished courses gold
        would leave the product's two progress surfaces disagreeing about the
-       state a learner cares most about. --status-success rather than the path's
-       private --path-done-bg: the same colour family, but a design-system token
-       this file is entitled to depend on. */
+       state a learner cares most about. */
     --deg-complete: var(--status-success);
     --deg-current: var(--accent-primary);
     --deg-available: var(--accent-primary);
@@ -66,6 +67,15 @@
 
 [hidden] { display: none !important; }
 .hidden { display: none !important; }
+
+/* One focus treatment for every control this page adds, so a keyboard user
+   gets the same ring on a tab, a summary card and a course card. */
+.degree-shell button:focus-visible,
+.degree-shell summary:focus-visible,
+.degree-shell a:focus-visible {
+    outline: 2px solid var(--focus-ring-color);
+    outline-offset: 2px;
+}
 
 /* --- Masthead -------------------------------------------------------------
  * The degree names itself, then states progress as a NUMBER. A bar on its own
@@ -131,8 +141,8 @@
 }
 .degree-tally-item { display: inline-flex; align-items: center; gap: var(--space-2); }
 
-/* One swatch shape for the tally and the legend, so the key means the same
-   thing wherever it appears. */
+/* One swatch shape for the tally and the key, so a mark means the same thing
+   wherever it appears. */
 .degree-key {
     width: 11px;
     height: 11px;
@@ -146,6 +156,29 @@
 .degree-key.is-building  { background: var(--deg-building); }
 .degree-key.is-locked    { background: var(--bg-tertiary); border: 1px solid var(--border-color); }
 
+/* BUILT-vs-NOT is a different axis from state, and the page draws it on every
+   row and card as a solid or dashed leading edge. It had no key at all, which
+   made it the one mark on the page a learner could only learn by guessing. The
+   swatches are edges, not squares, because that is the shape being explained. */
+.degree-key.is-built,
+.degree-key.is-unbuilt {
+    width: 3px;
+    height: 14px;
+    border-radius: 1px;
+}
+.degree-key.is-built { background: var(--color-success); }
+.degree-key.is-unbuilt {
+    background: repeating-linear-gradient(
+        to bottom, var(--border-color) 0 3px, transparent 3px 6px);
+}
+/* The estimate marker, shown as itself rather than described. */
+.degree-est-key {
+    flex: 0 0 auto;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+    border-bottom: 1px dotted var(--text-secondary);
+}
+
 /* --- Provenance -----------------------------------------------------------
  * Whether the course list was transcribed from a published curriculum or
  * proposed by the model. A Bachelor's map without this lets a proposed
@@ -156,10 +189,10 @@
     align-items: baseline;
     gap: var(--space-2);
     flex-wrap: wrap;
-    margin: var(--space-3) 0 0;
+    margin: var(--space-2) 0 0;
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
-    line-height: 1.5;
+    line-height: 1.45;
     max-width: 62ch;
 }
 .deg-prov-tag {
@@ -193,7 +226,14 @@
 }
 
 /* --- Sections -------------------------------------------------------------*/
-.degree-focus, .degree-next, .degree-plan { margin-top: var(--space-6); }
+/* The focus slot and the switcher are deliberately tighter than the sections
+   below them. Measured at 1440x900: with the roomier rhythm the first row of
+   requirement blocks began 781px into an 841px viewport, so the audit's
+   at-a-glance layer was itself below the fold — the exact fault this redesign
+   exists to fix, moved up a few hundred pixels. */
+.degree-focus { margin-top: var(--space-5); }
+.degree-audit, .degree-next { margin-top: var(--space-4); }
+.degree-audit:focus, .degree-next:focus { outline: none; }
 
 .degree-section-title {
     margin: 0;
@@ -214,13 +254,13 @@
     max-width: 62ch;
 }
 
-/* --- 1. Now studying ------------------------------------------------------
+/* --- Now studying ---------------------------------------------------------
  * The single largest element on the page, because the learner has exactly one
- * course at a time and this is it.
+ * course at a time and this is it. It sits outside both views.
  */
 .degree-focus-card {
     position: relative;
-    padding: var(--space-5);
+    padding: var(--space-4) var(--space-5);
     border: 1px solid var(--border-color);
     border-left: 4px solid var(--deg-current);
     border-radius: var(--border-radius);
@@ -245,8 +285,8 @@
     color: var(--text-secondary);
 }
 .degree-focus-name {
-    margin: var(--space-2) 0 var(--space-2);
-    font-size: var(--font-size-2xl);
+    margin: var(--space-1) 0 var(--space-2);
+    font-size: var(--font-size-xl);
     line-height: 1.2;
 }
 .degree-focus-lead {
@@ -259,8 +299,8 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
-    margin-top: var(--space-4);
-    padding: .6em 1.2em;
+    margin-top: var(--space-3);
+    padding: .55em 1.1em;
     border: 1px solid transparent;
     border-radius: var(--border-radius-sm);
     background: var(--accent-primary);
@@ -299,16 +339,197 @@
     to   { transform: translateX(370%); }
 }
 
-/* --- 2. The decision ------------------------------------------------------*/
-.degree-next-grid {
-    display: grid;
-    /* min() so a 260px minimum can never force a 375px screen to scroll
-       sideways — the column simply becomes the width of the screen. */
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
-    gap: var(--space-3);
+/* --- The view switcher ----------------------------------------------------
+ * Two questions, two surfaces, one click apart.
+ *
+ * Not sticky, though it was: the scroll container paints two radial gradients
+ * over --bg-primary, so a pinned strip filled with --bg-primary drew a visible
+ * rectangle wherever the gradient underneath it was not that exact colour, and
+ * anything translucent let the rows scroll through it. A control that has to
+ * lie about the background to stay put is worse than one that scrolls away,
+ * and the summary band above the blocks already carries the navigation.
+ */
+.degree-views {
+    margin-top: var(--space-5);
+    padding: var(--space-2) 0;
 }
 
-/* --- 3 & 4. The whole degree ---------------------------------------------*/
+.degree-viewtabs {
+    display: inline-flex;
+    gap: 4px;
+    max-width: 100%;
+    padding: 4px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+}
+
+.degree-viewtab {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    padding: .45em 1.1em;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--dur-fast) var(--ease-standard),
+                color var(--dur-fast) var(--ease-standard);
+}
+.degree-viewtab-label {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+}
+.degree-viewtab-sub {
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+.degree-viewtab.is-on {
+    background: var(--bg-secondary);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+    box-shadow: var(--shadow-1);
+}
+.degree-viewtab:hover:not(.is-on) { color: var(--text-primary); }
+
+/* --- The audit: the summary band ------------------------------------------
+ * Four blocks, four verdicts, one screen. This is the whole degree at scroll
+ * position zero, which is the thing the old layout could not do.
+ */
+.degree-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+    gap: var(--space-3);
+    margin: var(--space-2) 0 var(--space-4);
+}
+
+.degree-sum {
+    display: block;
+    width: 100%;
+    margin: 0;
+    padding: var(--space-3);
+    text-align: left;
+    font-family: inherit;
+    /* A <button> does not inherit page colour; without this it renders in the
+       UA's ButtonText, which is black on both themes. */
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-top: 3px solid var(--deg-locked);
+    border-radius: var(--border-radius-sm);
+    cursor: pointer;
+    transition: border-color var(--dur-fast) var(--ease-standard),
+                box-shadow var(--dur-fast) var(--ease-standard),
+                transform var(--dur-fast) var(--ease-standard);
+}
+.degree-sum:hover { box-shadow: var(--shadow-2); transform: translateY(-1px); }
+.degree-sum.is-complete    { border-top-color: var(--deg-complete); }
+.degree-sum.is-in-progress { border-top-color: var(--deg-current); }
+.degree-sum.is-partial     { border-top-color: var(--deg-current); }
+.degree-sum.is-not-started { border-top-color: var(--deg-locked); }
+
+.degree-sum-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+.degree-sum-name {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.25;
+}
+
+/* THE VERDICT. The whole reason this is an audit rather than a checklist: an
+   explicit state, in the audit's own vocabulary, on every block. */
+.degree-sum-verdict {
+    flex: 0 0 auto;
+    padding: .1em .5em;
+    border-radius: 999px;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-bold);
+    letter-spacing: .03em;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+}
+.degree-sum.is-complete .degree-sum-verdict {
+    background: var(--bg-success);
+    border-color: var(--deg-complete);
+    color: var(--status-success);
+}
+.degree-sum.is-in-progress .degree-sum-verdict,
+.degree-sum.is-partial .degree-sum-verdict {
+    background: var(--bg-info);
+    border-color: var(--deg-current);
+    color: var(--deg-current);
+}
+
+.degree-sum-count {
+    margin: var(--space-2) 0 var(--space-2);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+.degree-sum-meter {
+    display: block;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--border-color);
+    overflow: hidden;
+}
+.degree-sum-fill {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--deg-complete);
+    transition: width var(--dur-base) var(--ease-standard);
+}
+.degree-sum-need {
+    margin: var(--space-2) 0 0;
+    font-size: var(--font-size-xs);
+    color: var(--text-primary);
+    line-height: 1.4;
+}
+.degree-sum-need.is-done {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--status-success);
+}
+
+/* --- What blocks progress -------------------------------------------------
+ * Counted off the prerequisite edges the rows already show, never predicted.
+ */
+.degree-blockers {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    margin: 0 0 var(--space-5);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--border-color);
+    border-left: 3px solid var(--deg-locked);
+    border-radius: var(--border-radius-sm);
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+}
+.degree-blockers.is-clear {
+    border-left-color: var(--deg-complete);
+    background: var(--bg-success);
+    color: var(--status-success);
+}
+
+.degree-audit-head { align-items: flex-start; }
+
+/* --- The key --------------------------------------------------------------*/
 .degree-legend {
     display: flex;
     flex-wrap: wrap;
@@ -318,39 +539,113 @@
     list-style: none;
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
-    border-radius: 999px;
+    border-radius: var(--border-radius);
     box-shadow: var(--shadow-1);
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
 }
 .degree-legend-item { display: inline-flex; align-items: center; gap: var(--space-2); }
+/* The key changes axis here — everything before is state, everything after is
+   whether the course has been written yet. The rule says so without a word. */
+.degree-legend-item.is-sep {
+    padding-left: var(--space-4);
+    border-left: 1px solid var(--border-color);
+}
 
-.degree-area { margin-bottom: var(--space-6); }
+/* --- The audit: requirement blocks ---------------------------------------
+ * <details>, so a satisfied block folds the way a real audit folds one it has
+ * nothing left to say about.
+ */
+.degree-area {
+    margin-bottom: var(--space-4);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    background: var(--bg-secondary);
+    overflow: hidden;
+}
+/* Landing on a block from the summary band: a brief edge so the eye finds the
+   block it just asked for. */
+.degree-area.is-flash { border-color: var(--accent-primary); }
 
 .degree-area-head {
     display: flex;
     flex-wrap: wrap;
-    align-items: baseline;
+    align-items: center;
+    justify-content: space-between;
     gap: var(--space-2) var(--space-3);
-    margin-bottom: var(--space-3);
-    padding-bottom: var(--space-2);
-    border-bottom: 1px solid var(--border-color);
+    padding: var(--space-3) var(--space-4);
+    background: var(--bg-tertiary);
+    cursor: pointer;
+    list-style: none;
 }
+/* Both spellings: the marker is drawn by this file as a chevron instead. */
+.degree-area-head::-webkit-details-marker { display: none; }
+.degree-area-head::marker { content: ""; }
+
+.degree-area-idbox {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    min-width: 0;
+}
+/* The disclosure chevron, ahead of the block name. */
+.degree-area-idbox::before {
+    content: "";
+    flex: 0 0 auto;
+    width: 7px;
+    height: 7px;
+    border-right: 2px solid var(--text-secondary);
+    border-bottom: 2px solid var(--text-secondary);
+    transform: rotate(-45deg);
+    transition: transform var(--dur-fast) var(--ease-standard);
+}
+.degree-area[open] .degree-area-idbox::before { transform: rotate(45deg); }
+
 .degree-area-name {
     margin: 0;
     font-size: var(--font-size-lg);
 }
+
+/* THE BLOCK VERDICT, at full size on the block itself. */
+.degree-area-verdict {
+    flex: 0 0 auto;
+    padding: .15em .65em;
+    border-radius: 999px;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-bold);
+    letter-spacing: .03em;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+}
+.degree-area-verdict.is-complete {
+    background: var(--bg-success);
+    border-color: var(--deg-complete);
+    color: var(--status-success);
+}
+.degree-area-verdict.is-in-progress,
+.degree-area-verdict.is-partial {
+    background: var(--bg-info);
+    border-color: var(--deg-current);
+    color: var(--deg-current);
+}
+
+.degree-area-stat {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+}
 .degree-area-count {
-    margin: 0;
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
 }
 /* Narrow and fixed, not elastic: an area bar that stretched across the header
    competed with the count beside it, which is the number that actually says
-   where the learner is. The track uses the border colour so an empty one is
-   still visibly a track rather than a gap. */
+   where the learner is. */
 .degree-area-meter {
-    flex: 0 0 7rem;
+    flex: 0 0 6rem;
     height: 5px;
     border-radius: 999px;
     background: var(--border-color);
@@ -364,49 +659,155 @@
     transition: width var(--dur-base) var(--ease-standard);
 }
 
-.degree-tracks {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
-    gap: var(--space-3);
-    align-items: start;
+/* --- "Still needed" -------------------------------------------------------
+ * The most actionable sentence a degree audit prints. Given the weight of one:
+ * its own band across the top of the block, not a footnote under the rows.
+ */
+.degree-need {
+    margin: 0;
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+}
+.degree-need-label {
+    font-weight: var(--font-weight-bold);
+    color: var(--text-primary);
+}
+.degree-need.is-done {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--status-success);
 }
 
-/* A track is one connected piece of the prerequisite graph. Most are a single
-   course; a few are a sequence that must be taken in order, and those are the
-   only real structure the plan has — so they are drawn, not described. */
-.degree-track { display: grid; gap: var(--space-3); }
+/* --- The audit: course rows ----------------------------------------------
+ * A worksheet prints rows, not a grid of boxes. At 40 courses the card grid
+ * was a wall four columns wide with sequence bands cutting across it; the same
+ * 40 courses as rows fit a screen and a half and can be read down the titles.
+ */
+.degree-rows {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
 
-/* A sequence takes the full width and reads left to right, the way a
-   prerequisite chain is printed in a catalogue. The band is what says "these
-   are not free to reorder"; everything outside one is. */
-.degree-track.is-sequence {
+.degree-row {
     position: relative;
-    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: var(--space-2) var(--space-3);
+    padding: var(--space-2) var(--space-4);
+    border-bottom: 1px solid var(--border-color);
+    /* BUILT vs NOT-BUILT owns the leading edge — a fact independent of state,
+       drawn in the same vocabulary the create carousel uses for "this does not
+       exist yet". State is carried by the icon, the note and the tint, so the
+       edge is free to mean only this. */
+    border-left: 3px solid var(--color-success);
+}
+.degree-row.is-unbuilt { border-left-style: dashed; border-left-color: var(--border-color); }
+.degree-rows > .degree-row:last-child { border-bottom: none; }
+
+.degree-row.is-complete { background: var(--deg-complete-tint); }
+.degree-row.is-current  { background: var(--deg-current-tint); }
+.degree-row.is-available .degree-row-note { color: var(--accent-primary); }
+.degree-row.is-building .degree-row-note  { color: var(--deg-building); }
+/* Locked keeps its NAME and says what gates it. Recessed, never hidden: a
+   learner should be able to read the whole degree, including the parts they
+   cannot start yet. */
+.degree-row.is-locked .degree-row-title { color: var(--text-secondary); }
+
+.degree-row-mark {
+    position: relative;
+    display: flex;
+    align-items: center;
     gap: var(--space-2);
-    padding: var(--space-3);
-    /* Solid, not dashed: locked cards inside a band are dashed already, and
-       dash-on-dash turned the whole band into texture. */
+    align-self: center;
+}
+.degree-row.is-complete  .degree-row-mark { color: var(--deg-complete); }
+.degree-row.is-current   .degree-row-mark { color: var(--deg-current); }
+.degree-row.is-available .degree-row-mark { color: var(--deg-available); }
+.degree-row.is-building  .degree-row-mark { color: var(--deg-building); }
+.degree-row.is-locked    .degree-row-mark { color: var(--text-secondary); }
+
+/* Position inside a sequence, where position is the point. */
+.degree-row-ord {
+    display: inline-grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: var(--bg-tertiary);
     border: 1px solid var(--border-color);
-    border-radius: var(--border-radius);
+    color: var(--text-secondary);
+    font-size: .68rem;
+    font-weight: var(--font-weight-bold);
+    font-variant-numeric: tabular-nums;
+}
+
+.degree-row-body { min-width: 0; }
+.degree-row-titleline {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+.degree-row-title {
+    /* Titles run to 38 characters in the real associate plan and wrap rather
+       than truncate: a fixed-size node that clipped "Calculus for Business and
+       Economics II" to "…Economics I" was an earlier design changing what a
+       course was called in order to fit its own box. */
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.3;
+    overflow-wrap: break-word;
+}
+.degree-row-note {
+    display: block;
+    margin-top: 2px;
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.degree-row-cr {
+    align-self: center;
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+/* A figure that cannot say whether it was measured is not worth printing, so
+   the estimate travels with the number. The key explains the dotted rule; the
+   title attribute says it in words for anyone who does not read a key. */
+.degree-row-cr.is-est,
+.degree-course-size.is-est {
+    border-bottom: 1px dotted var(--text-secondary);
+    cursor: help;
+}
+
+.degree-row-bar { grid-column: 1 / -1; margin-top: 0; }
+
+/* --- Sequences ------------------------------------------------------------
+ * The one piece of genuine structure the plan has: courses that must be taken
+ * in order. Drawn as ordered rows with the link between them, rather than the
+ * horizontally-scrolling band this replaced — a chain of six ran off the side
+ * of its own container at 1440 and needed a scroll shadow to admit it, while
+ * the phone layout had already turned the same chain vertical. Vertical at
+ * every width is one drawing instead of two, and costs no sideways scroll.
+ */
+.degree-seq {
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--border-color);
     background: var(--bg-tertiary);
 }
+.degree-rows > .degree-seq:last-child { border-bottom: none; }
 
-/* Only set when the chain is actually wider than its band, so a two-course
-   sequence is never given a scroll hint it does not need. */
-.degree-track.is-sequence.has-more::after {
-    content: "";
-    position: absolute;
-    top: 1px;
-    right: 1px;
-    bottom: 1px;
-    width: 3rem;
-    border-radius: 0 var(--border-radius) var(--border-radius) 0;
-    background: linear-gradient(to right, transparent, var(--bg-tertiary));
-    pointer-events: none;
-}
-
-.degree-track-label {
-    margin: 0;
+.degree-seq-label {
+    margin: 0 0 var(--space-2);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
     letter-spacing: .08em;
@@ -414,55 +815,70 @@
     color: var(--text-secondary);
 }
 
-.degree-track-flow {
-    display: flex;
-    align-items: stretch;
-    gap: 26px;
-    /* Never wraps: a wrapped chain puts a "follows from" arrow at the start of
-       a row with nothing to its left. A long chain scrolls inside its own band
-       instead, so the page itself never scrolls sideways. */
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    padding-bottom: var(--space-1);
+.degree-seq-list {
+    display: grid;
+    gap: 18px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
 }
-.degree-track-flow > .degree-course { flex: 0 0 13.5rem; }
+.degree-seq-list > .degree-row {
+    border: 1px solid var(--border-color);
+    border-left: 3px solid var(--color-success);
+    border-radius: var(--border-radius-sm);
+    background: var(--bg-secondary);
+}
+.degree-seq-list > .degree-row.is-unbuilt {
+    border-left-style: dashed;
+    border-left-color: var(--border-color);
+}
+.degree-seq-list > .degree-row.is-complete { background: var(--deg-complete-tint); }
+.degree-seq-list > .degree-row.is-current  { background: var(--deg-current-tint); }
 
-.degree-track-flow > .degree-course + .degree-course::before {
-    /* The link back to the course before it. */
+/* The link back to the course before it, anchored to the mark itself so the
+   line always meets the ordinal it belongs to. */
+.degree-seq-list > .degree-row + .degree-row .degree-row-mark::before {
     content: "";
     position: absolute;
-    left: -26px;
-    top: calc(50% - 1px);
-    width: 26px;
-    height: 2px;
+    left: 8px;
+    top: -25px;
+    width: 2px;
+    height: 18px;
     background: var(--border-color);
 }
-.degree-track-flow > .degree-course + .degree-course::after {
-    /* A chevron on the end of the link, so it reads as a direction rather than
-       as a decorative rule. */
+/* A chevron on the end, so it reads as a direction rather than a rule. */
+.degree-seq-list > .degree-row + .degree-row .degree-row-mark::after {
     content: "";
     position: absolute;
-    left: -9px;
-    top: calc(50% - 4px);
+    left: 5px;
+    top: -12px;
     width: 6px;
     height: 6px;
-    border-top: 2px solid var(--border-color);
     border-right: 2px solid var(--border-color);
+    border-bottom: 2px solid var(--border-color);
     transform: rotate(45deg);
 }
 /* A link out of a finished course takes the completed colour: the chain
-   visibly advances as
-   the programme is completed, which is where forward motion belongs. */
-.degree-track-flow > .degree-course.is-complete + .degree-course::before {
+   visibly advances as the programme is completed. */
+.degree-seq-list > .degree-row.is-complete + .degree-row .degree-row-mark::before {
     background: var(--deg-complete);
 }
-.degree-track-flow > .degree-course.is-complete + .degree-course::after {
+.degree-seq-list > .degree-row.is-complete + .degree-row .degree-row-mark::after {
     border-color: var(--deg-complete);
 }
 
+/* --- The decision view ----------------------------------------------------*/
+.degree-next-grid {
+    display: grid;
+    /* min() so a 260px minimum can never force a 375px screen to scroll
+       sideways — the column simply becomes the width of the screen. */
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+    gap: var(--space-3);
+}
+
 /* --- The course card ------------------------------------------------------
- * One shape, five states, all carried by --deg-state so the rail, the icon and
- * the note cannot drift apart.
+ * The decision surface only, where a card is a control. In the audit the same
+ * course is a row, because a record is not a button.
  */
 .degree-course {
     --deg-state: var(--deg-locked);
@@ -472,7 +888,7 @@
     display: block;
     width: 100%;
     margin: 0;
-    padding: var(--space-3);
+    padding: var(--space-4);
     text-align: left;
     font-family: inherit;
     /* A <button> does not inherit page colour; without this it renders in the
@@ -482,6 +898,7 @@
     border: 1px solid var(--border-color);
     border-left: 3px solid var(--deg-state);
     border-radius: var(--border-radius-sm);
+    cursor: pointer;
     transition: border-color var(--dur-fast) var(--ease-standard),
                 box-shadow var(--dur-fast) var(--ease-standard),
                 transform var(--dur-fast) var(--ease-standard);
@@ -501,23 +918,9 @@
 .degree-course-area { color: var(--text-secondary); }
 .degree-course-head .i { margin-left: auto; font-size: var(--font-size-base); }
 
-/* Compact card: the state icon shares the title's line. */
-.degree-course-line {
-    display: flex;
-    align-items: baseline;
-    gap: var(--space-2);
-}
-.degree-course-line .i { color: var(--deg-state); }
-
-/* h3 on the decision surface, h4 in the plan — the same look either way,
-   because the heading level tracks the document outline, not the type scale. */
 .degree-course-title {
-    /* Titles run to 38 characters in the real associate plan and wrap rather
-       than truncate: a fixed-size node that clipped "Calculus for Business and
-       Economics II" to "…Economics I" was the previous design changing what a
-       course was called in order to fit its own box. */
     margin: 0;
-    font-size: var(--font-size-base);
+    font-size: var(--font-size-lg);
     font-weight: var(--font-weight-semibold);
     line-height: 1.3;
     overflow-wrap: break-word;
@@ -551,9 +954,7 @@
 .degree-course.is-building .degree-course-note { color: var(--deg-building); }
 .degree-course.is-building .degree-build-bar { margin-top: var(--space-2); }
 
-/* AVAILABLE IS THE LOUDEST STATE. It is the learner's actual decision, so it
-   is the only one in the plan that sits on a raised surface with the accent in
-   both the rail and the note. */
+/* AVAILABLE IS THE LOUDEST STATE. It is the learner's actual decision. */
 .degree-course.is-available {
     --deg-state: var(--deg-available);
     --deg-tint: var(--bg-secondary);
@@ -562,22 +963,6 @@
 }
 .degree-course.is-available .degree-course-note { color: var(--accent-primary); }
 
-/* Locked keeps its name and says what gates it. Recessed, never hidden: a
-   learner should be able to read the whole degree, including the parts they
-   cannot start yet. */
-.degree-course.is-locked {
-    --deg-tint: transparent;
-    border-style: dashed;
-}
-.degree-course.is-locked .degree-course-title { color: var(--text-secondary); }
-.degree-course.is-locked .degree-course-head { color: var(--text-secondary); }
-
-/* The decision surface: the same course, but here it is a control. */
-.degree-course.is-prominent {
-    padding: var(--space-4);
-    cursor: pointer;
-}
-.degree-course.is-prominent .degree-course-title { font-size: var(--font-size-lg); }
 .degree-course.is-prominent:hover {
     transform: translateY(-2px);
     box-shadow: var(--shadow-2);
@@ -596,73 +981,105 @@
     border-radius: var(--border-radius);
 }
 
-/* --- Narrow screens -------------------------------------------------------*/
-@media (max-width: 760px) {
-    .degree-shell { padding: var(--space-4); }
-    .degree-title { font-size: var(--font-size-2xl); }
-
-    /* A phone has no width to spend on a horizontal chain, so the sequence
-       turns and its links run downward instead. */
-    .degree-track-flow {
-        flex-direction: column;
-        gap: 26px;
-        overflow-x: visible;
-    }
-    .degree-track-flow > .degree-course { flex: 0 0 auto; }
-    .degree-track-flow > .degree-course + .degree-course::before {
-        left: 16px;
-        top: -26px;
-        width: 2px;
-        height: 26px;
-    }
-    .degree-track-flow > .degree-course + .degree-course::after {
-        left: 13px;
-        top: -10px;
-        transform: rotate(135deg);
-    }
-
-    .degree-focus-card { padding: var(--space-4); }
-    .degree-focus-name { font-size: var(--font-size-xl); }
-    .degree-legend {
-        border-radius: var(--border-radius);
-        padding: var(--space-3) var(--space-4);
-    }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .degree-course,
-    .degree-meter-fill,
-    .degree-area-fill,
-    .degree-focus-action { transition: none; }
-    .degree-course.is-prominent:hover { transform: none; }
-    /* The loader still has to say "in progress" without moving, so it becomes
-       a filled bar rather than disappearing. */
-    .degree-build-bar::after { animation: none; width: 100%; opacity: .55; }
-}
-
-
-/* --- built vs not-yet-built -----------------------------------------------
+/* --- built vs not-yet-built ----------------------------------------------
  * "Available" says the learner MAY start a course. "Built" says it already
  * exists and opens immediately instead of after a forty-minute build. Two
  * different facts, and the second was carried only in prose.
  */
 .degree-built-chip {
-    margin-left: auto;
     padding: .1em .5em;
     border-radius: 999px;
-    font-size: .68rem; font-weight: 700; letter-spacing: .04em;
+    font-size: .68rem;
+    font-weight: 700;
+    letter-spacing: .04em;
     text-transform: uppercase;
     color: var(--color-success);
     background: var(--bg-tertiary);
     border: 1px solid var(--border-color);
 }
+.degree-course-head .degree-built-chip { margin-left: auto; }
+.degree-course-head .degree-built-chip + .i { margin-left: var(--space-2); }
 /* A built course gets a solid leading edge; one that must be built first gets
-   a dashed one — the same vocabulary the create carousel uses for "this does
-   not exist yet". Colour is never the only signal. */
-.degree-course.is-prominent.is-built { border-left: 3px solid var(--color-success); }
-.degree-course.is-prominent.is-unbuilt { border-left: 3px dashed var(--border-color); }
+   a dashed one. Colour is never the only signal. */
+.degree-course.is-built { border-left: 3px solid var(--color-success); }
+.degree-course.is-unbuilt { border-left: 3px dashed var(--border-color); }
 
+/* --- credit-hour equivalent ----------------------------------------------
+ * "60 credit hours" is a size a person already knows; "20 courses" is not.
+ * Secondary to the course count, which is what actually moves.
+ */
+.degree-credits {
+    margin: .2em 0 0;
+    font-size: .84rem;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: baseline;
+    gap: .6em;
+    flex-wrap: wrap;
+}
+.degree-credits-est {
+    padding: .05em .45em;
+    border-radius: 999px;
+    font-size: .68rem;
+    font-weight: 600;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+}
+.degree-course-size {
+    margin: .3em 0 0;
+    font-size: .74rem;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+    display: inline-block;
+}
 
+/* --- Narrow screens -------------------------------------------------------*/
+@media (max-width: 760px) {
+    .degree-shell { padding: var(--space-4); }
+    .degree-title { font-size: var(--font-size-2xl); }
+
+    .degree-focus-card { padding: var(--space-4); }
+    .degree-focus-name { font-size: var(--font-size-xl); }
+
+    /* The tab strip spans the width rather than hugging its labels: at 375px a
+       pill floating against the left edge reads as a stray control. */
+    .degree-viewtabs { display: flex; width: 100%; }
+    .degree-viewtab { flex: 1 1 0; align-items: center; text-align: center; }
+
+    .degree-area-head { padding: var(--space-3); }
+    .degree-area-stat { width: 100%; justify-content: space-between; }
+    .degree-need { padding: var(--space-3); }
+
+    /* The credits column would squeeze the title to a two-word ribbon, so it
+       drops under the name instead of beside it. */
+    .degree-row {
+        grid-template-columns: auto minmax(0, 1fr);
+        padding: var(--space-3);
+    }
+    /* justify-self, or the span fills the grid cell and the dotted "estimated"
+       rule under "3 cr" runs the entire width of the row. */
+    .degree-row-cr { grid-column: 2; justify-self: start; margin-top: 2px; }
+    .degree-seq { padding: var(--space-3); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .degree-course,
+    .degree-sum,
+    .degree-meter-fill,
+    .degree-area-fill,
+    .degree-sum-fill,
+    .degree-viewtab,
+    .degree-area-idbox::before,
+    .degree-focus-action { transition: none; }
+    .degree-course.is-prominent:hover,
+    .degree-sum:hover { transform: none; }
+    /* The loader still has to say "in progress" without moving, so it becomes
+       a filled bar rather than disappearing. */
+    .degree-build-bar::after { animation: none; width: 100%; opacity: .55; }
+}
 
 /* --- the one-at-a-time notice (build-notice.js) ---------------------------
  * Centred rather than tucked under whichever control was clicked: the rule it
@@ -703,26 +1120,4 @@
 }
 @media (prefers-reduced-motion: reduce) {
     .build-notice { animation: none; }
-}
-
-
-/* --- credit-hour equivalent ----------------------------------------------
- * "60 credit hours" is a size a person already knows; "20 courses" is not.
- * Secondary to the course count, which is what actually moves.
- */
-.degree-credits {
-    margin: .2em 0 0; font-size: .84rem; color: var(--text-secondary);
-    display: flex; align-items: baseline; gap: .6em; flex-wrap: wrap;
-}
-.degree-credits-est {
-    padding: .05em .45em; border-radius: 999px;
-    font-size: .68rem; font-weight: 600; letter-spacing: .03em;
-    text-transform: uppercase;
-    color: var(--text-secondary);
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-}
-.degree-course-size {
-    margin: .1em 0 0; font-size: .74rem; color: var(--text-secondary);
-    font-variant-numeric: tabular-nums;
 }
