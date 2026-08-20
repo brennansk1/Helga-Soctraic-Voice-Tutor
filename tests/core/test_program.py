@@ -566,3 +566,54 @@ class TestCourseTitleHygiene(unittest.TestCase):
             ["A I", "A II", "A III", "B I", "B II", "B III"])
         self.assertEqual(len(kept), 6, "two full sequences are both legal")
         self.assertEqual(overflow, [])
+
+
+class TestProgrammeCompletion(unittest.TestCase):
+    """Completing a course is what moves a programme forward.
+
+    `program_courses` shipped with no `completed` column at all, so
+    available_courses() — which decides what a learner may start next by
+    asking which prerequisites are done — could never advance, and the
+    degree page's "N of M courses complete" could only ever read zero.
+    """
+
+    def _store(self):
+        import tempfile
+        from services.common.storage import StorageManager
+        return StorageManager(data_dir=tempfile.mkdtemp())
+
+    def test_completing_a_prerequisite_unlocks_what_required_it(self):
+        from services.core.program import available_courses
+        sm = self._store()
+        plan = plan_from_template("Economics", "associate")
+        gate, gated = plan["courses"][0], plan["courses"][1]
+        gated["requires"] = [gate["title"]]
+        sm.programs.create("prog_x", plan)
+
+        before = [c["title"] for c in available_courses(sm.programs.get("prog_x"))]
+        self.assertNotIn(gated["title"], before)
+        self.assertIn(gate["title"], before)
+
+        self.assertTrue(sm.programs.mark_completed("prog_x", gate["title"]))
+        after = [c["title"] for c in available_courses(sm.programs.get("prog_x"))]
+        self.assertIn(gated["title"], after,
+                      "completing the prerequisite must unlock the course")
+        self.assertNotIn(gate["title"], after,
+                         "a completed course is no longer available to start")
+
+    def test_completion_survives_a_round_trip(self):
+        sm = self._store()
+        plan = plan_from_template("Economics", "associate")
+        sm.programs.create("prog_y", plan)
+        title = plan["courses"][0]["title"]
+        sm.programs.mark_completed("prog_y", title)
+        got = sm.programs.get("prog_y")
+        row = next(c for c in got["courses"] if c["title"] == title)
+        self.assertTrue(row["completed"])
+        self.assertTrue(row["completed_at"])
+        self.assertEqual(sm.programs.list()[0]["completed"], 1)
+
+    def test_marking_a_course_that_is_not_in_the_programme_reports_it(self):
+        sm = self._store()
+        sm.programs.create("prog_z", plan_from_template("Economics", "associate"))
+        self.assertFalse(sm.programs.mark_completed("prog_z", "Not A Real Course"))

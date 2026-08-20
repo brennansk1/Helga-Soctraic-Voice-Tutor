@@ -957,6 +957,24 @@ class StorageManager:
                 cursor.execute("UPDATE schema_version SET version = 17")
                 logger.info("Schema migrated to v17: degree programmes")
 
+            if current_version < 18:
+                # `completed` was missing, and the entire degree surface is
+                # built on it: program.available_courses() decides what a
+                # learner may start next by asking which prerequisites are
+                # complete, and the page leads with "6 of 20 courses
+                # complete". Nothing could write it, so availability could
+                # never advance and the meter could only ever read zero.
+                cols = {r[1] for r in cursor.execute(
+                    "PRAGMA table_info(program_courses)").fetchall()}
+                if "completed" not in cols:
+                    cursor.execute("ALTER TABLE program_courses "
+                                   "ADD COLUMN completed INTEGER DEFAULT 0")
+                if "completed_at" not in cols:
+                    cursor.execute("ALTER TABLE program_courses "
+                                   "ADD COLUMN completed_at TEXT")
+                cursor.execute("UPDATE schema_version SET version = 18")
+                logger.info("Schema migrated to v18: programme completion")
+
             conn.commit()
         finally:
             conn.close()
@@ -2789,8 +2807,8 @@ class ProgramStore:
         plan["status"] = row[1]
 
         state = {r[0]: r for r in db.execute(
-            "SELECT title, chosen, built, course_uid FROM program_courses "
-            "WHERE program_uid=?", (uid,)).fetchall()}
+            "SELECT title, chosen, built, course_uid, completed, completed_at "
+            "FROM program_courses WHERE program_uid=?", (uid,)).fetchall()}
         for c in plan.get("courses", []):
             r = state.get(c.get("title"))
             if not r:
@@ -2798,6 +2816,9 @@ class ProgramStore:
             c["chosen"] = bool(r[1])
             c["built"] = bool(r[2])
             c["course_uid"] = r[3]
+            # available_courses() and the progress meter both read this.
+            c["completed"] = bool(r[4])
+            c["completed_at"] = r[5]
         return plan
 
     def list(self) -> List[dict]:
@@ -2807,10 +2828,13 @@ class ProgramStore:
             "       (SELECT COUNT(*) FROM program_courses c "
             "        WHERE c.program_uid = p.uid AND c.chosen = 1), "
             "       (SELECT COUNT(*) FROM program_courses c "
-            "        WHERE c.program_uid = p.uid AND c.built = 1) "
+            "        WHERE c.program_uid = p.uid AND c.built = 1), "
+            "       (SELECT COUNT(*) FROM program_courses c "
+            "        WHERE c.program_uid = p.uid AND c.completed = 1) "
             "FROM programs p ORDER BY p.created_at DESC").fetchall()
         return [{"uid": r[0], "subject": r[1], "template": r[2], "status": r[3],
-                 "created_at": r[4], "courses": r[5], "built": r[6]}
+                 "created_at": r[4], "courses": r[5], "built": r[6],
+                 "completed": r[7]}
                 for r in rows]
 
     def choose(self, uid: str, title: str) -> bool:
@@ -2819,6 +2843,24 @@ class ProgramStore:
         cur = db.execute(
             "UPDATE program_courses SET chosen=1 "
             "WHERE program_uid=? AND title=?", (uid, title))
+        db.execute("UPDATE programs SET updated_at=? WHERE uid=?",
+                   (datetime.now().isoformat(), uid))
+        db.commit()
+        return cur.rowcount > 0
+
+    def mark_completed(self, uid: str, title: str, completed: bool = True) -> bool:
+        """Record that a course in this programme is finished.
+
+        This is what moves a programme forward: completing a course is what
+        unlocks everything that required it, so this write is the difference
+        between a degree that progresses and a static list.
+        """
+        db = self._get_db()
+        cur = db.execute(
+            "UPDATE program_courses SET completed=?, completed_at=? "
+            "WHERE program_uid=? AND title=?",
+            (1 if completed else 0,
+             datetime.now().isoformat() if completed else None, uid, title))
         db.execute("UPDATE programs SET updated_at=? WHERE uid=?",
                    (datetime.now().isoformat(), uid))
         db.commit()
