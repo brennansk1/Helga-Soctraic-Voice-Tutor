@@ -125,7 +125,16 @@ def evaluate_course(uid):
 
     blooms = [m.get("bloom_target") for m in modules if m.get("bloom_target") is not None]
     ramps = all(b <= a for a, b in zip(blooms, blooms[1:])) is False and blooms == sorted(blooms)
-    bloom_span = (max(blooms) - min(blooms)) if blooms else 0
+    # None, not 0, when there is nothing to measure. The gate below already
+    # guards on `span is not None` — the author's own signal that absence is
+    # not a verdict — and defeating it with a 0 made every course carrying no
+    # module-level bloom_target fail for "progression is nearly flat" when in
+    # fact no progression had been read at all. A book course is exactly that
+    # case: chapters_as_lessons puts everything under one container module by
+    # design, so module-level progression is not a thing it has. Its gate is
+    # book_course_qa (fidelity to the book), the same way school_shape is the
+    # wrong instrument for a 59-lesson novel.
+    bloom_span = (max(blooms) - min(blooms)) if blooms else None
 
     confs = [c.get("source_confidence") for c in concepts
              if isinstance(c.get("source_confidence"), (int, float))]
