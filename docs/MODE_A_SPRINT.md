@@ -71,7 +71,7 @@ none is done on the agent's word.
 | E | storage.py, tools/reconcile_courses.py — **LANDED f19d8bb** | AUTO-10 closed; reconcile tool | done: 248 targeted tests pass; dry-run is SQLite-enforced read-only |
 | F | (frontend JS) — **LANDED be8d632** | completion recognised from the stream that IS emitted + a shared probe so page and pill can't disagree; onclick XSS gone (delegated listeners + data-attrs); lock only arms on 2xx; only a clean empty list may show the demo plan; Practice quiz wired to the grader. Bonus find: build-view.js had a ReferenceError killing the whole view on its first message | done: 160 web tests, guard clean |
 | G | librarian.py — **LANDED 4c97655** | outage → 503 `GRADING_UNAVAILABLE`, no grade key, FSRS untouched (asserted not-called); `/api/due_concepts` no longer lies "all caught up" on failure (503 total / `degraded` partial); same sweep fixed `/teaching_context`, `/api/gamification`, `/api/review_stats`. quiz.html already handles the shape — outage no longer pollutes the score | done: 153 targeted tests pass. 2 pre-existing isolation-only failures in that file's harness, verified pre-existing by stash |
-| H | course_builder.py | all-stub course can't be "ready"; dedup no longer deletes "Logistic Regression" for sharing a word with "Linear Regression" | `pytest -q -k "builder or dedup or hydrat"`; casualty pairs survive; true dupes still removed |
+| H | course_builder.py — **LANDED 2056649** | a stub is a failed concept (gate sees it; all-stub raises, minority-stub → "partial"); dedup is Jaccard@0.75 + filler-token rule + 25% module budget — every casualty pair survives, true dupes still die. Its two "ready"-overwrite handoffs applied in 0c71889. Also explained the earlier hydration-test mystery: the test was vacuously exercising the stub path | done: 84 targeted tests |
 | I | book_reader.py, book_source.py, program.py, taught_ledger.py — **LANDED 998e2f5** | all five real: `_toc_spans` boundaries from distinct start pages (order-independent, can't be empty); zero-concept chapter now counted + `BOOK:WARN:CHAPTER_SKIPPED`; cross-slot dup costs one placeholder not a ProgramError; degraded digests never cached; embedder provenance truthful (reproduced first) | done: 24 new tests, 231 targeted pass; regressions verified by stash-per-file |
 | J | startup_preflight.py, app.py, resources.js/.css — **LANDED 63f3ae0** | four-check verdict (installed RAM vs transient pressure kept distinct, with different remedies); blocking gate with a live counter, self-clearing; always inspectable in Settings. Thresholds derived from MEMORY_BUDGET, not hard-coded to this machine | done: 87 targeted tests; browser-verified both themes. Docker-context handoff applied (0dcfe45) |
 | K | library_api.py, library.js/.css, img — **LANDED dc499b2, registered f1efdfa** | FIVE sources live-verified (IA, Gutendex incl. the 10.4s-vs-0.06s trailing-slash trap, Wikibooks, Wikiversity, OpenStax via a working keyless endpoint); covers proxied + disk-cached, digest-based placeholder detection, HTML-at-200 rejected, network failure never cached as a miss; degradation proven live when Gutendex genuinely timed out mid-test | done: 207 targeted tests, guard clean, browser-verified both themes |
@@ -173,8 +173,14 @@ skipped concept; PAUSED answers instead of swallowing)
 
 ## 4. Lane 2b — features required for "releasable", not yet started
 
-1. **Book → course, wired end to end** = §3 item 1 + agent K's UI + agent I's
-   pipeline fixes. When wired, run §6.2.
+0b. **Marketable-feature lanes (user-approved, Mode B items excluded):**
+   Lane L (course export/import) **LANDED fc1890b, wired 0c71889** — 42 tests,
+   round-trip verified, residue-free rejections incl. path traversal and
+   zip-bomb guards. Lane M (session notebook + due-reviews bell + printables)
+   still in flight.
+
+1. **Book → course, wired end to end** = §3 item 1 (DONE 7b4d492) + agent K's
+   UI (DONE) + agent I's pipeline fixes (DONE). Run §6.2 to verify.
 2. **A4 pedagogy floor** — adaptation 2.8, "Misconception holder" 2.4; judge
    notes say *lecturing instead of questioning*. Cheapest wins per the
    scoreboard: the dialogue contract + learner-history personalisation
@@ -208,7 +214,7 @@ harness alpha-blindness, verified by hand; re-run only if palettes change.
 
 ---
 
-## 6. Lane 3 — the long runs (deliberately excluded from tonight; required for release)
+## 6. Lane 3 — the long runs (NOW RUNNING overnight via tools/overnight_mode_a.py; results land in docs/overnight/<stamp>/MORNING_REPORT.md)
 
 In dependency order. 1–2 unattended; queue overnight.
 
