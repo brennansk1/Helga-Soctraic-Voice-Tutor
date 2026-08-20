@@ -70,7 +70,7 @@ none is done on the agent's word.
 | D | llm_utils.py, llm_client.py | A7: circuit breaker; "unreachable" ≠ "bad JSON" as named errors | `pytest -q -k "llm or client"`; breaker unit tests pass; no second retry layer stacked on `llm_generate_json` |
 | E | storage.py, tools/reconcile_courses.py — **LANDED f19d8bb** | AUTO-10 closed; reconcile tool | done: 248 targeted tests pass; dry-run is SQLite-enforced read-only |
 | F | courses.js, wizard.js, degree.js, build-view.js, build-guard.js, create.js, practice.js, schedule.html, practice.html | `course_ready` never emitted → client-side completion; onclick-injection XSS; create.js lock-on-502; demo-plan-over-real-data; target_date (client half); Practice quiz dead end | `pytest tests/web -q`; browser: build completes → link appears → lock releases; `Newton's Laws` card delete works; core down → no lock armed |
-| G | librarian.py | LLM outage during quiz grading must not report FAIL nor touch FSRS; empty-success sweeps | `pytest -q -k "quiz or grade or card"`; new tests: outage ≠ FAIL, FSRS untouched |
+| G | librarian.py — **LANDED 4c97655** | outage → 503 `GRADING_UNAVAILABLE`, no grade key, FSRS untouched (asserted not-called); `/api/due_concepts` no longer lies "all caught up" on failure (503 total / `degraded` partial); same sweep fixed `/teaching_context`, `/api/gamification`, `/api/review_stats`. quiz.html already handles the shape — outage no longer pollutes the score | done: 153 targeted tests pass. 2 pre-existing isolation-only failures in that file's harness, verified pre-existing by stash |
 | H | course_builder.py | all-stub course can't be "ready"; dedup no longer deletes "Logistic Regression" for sharing a word with "Linear Regression" | `pytest -q -k "builder or dedup or hydrat"`; casualty pairs survive; true dupes still removed |
 | I | book_reader.py, book_source.py, program.py, taught_ledger.py | equal-start-page ToC chapter loss; zero-concept lesson counted as success; cross-slot degree duplicate → ProgramError; degraded digest cached permanently; embedder provenance | `pytest -q -k "book or program or ledger"`; equal-page fixture; "Statistics in two slots" plans instead of raising |
 | J | startup_preflight.py (new), app.py, resources.js/.css | startup hardware preflight + blocking-but-honest UI gate; clears itself when room returns | `pytest -q -k "preflight or memory"`; browser: blocked/degraded/ok states; guard passes |
@@ -101,10 +101,13 @@ Every one of these blocks "no known bugs".
    appears (fixture book, no LLM needed for the wiring test).
 2. **Availability badge vs build gate disagree** — `:619` accepts any `.txt`,
    `:517` requires `_djvu.txt`; green badge, then 422 (fold into #1).
-3. **`/api/programs` proxy returns 200+empty on failure** (`:1143`) — agent F
-   fixes the client; the proxy should still 503 so *every* client sees a named
-   failure. Same for **`/api/due_cards`** (`:1465`, empty-success) — pairs with
-   agent G's librarian sweep.
+3. **Proxy layer converts RAG failures back into fake successes** — agent G
+   fixed librarian, but app.py re-introduces the identical bug on transport
+   failure (the most likely outage): `/api/programs` (`:1143`, 200+empty),
+   `/api/due_cards` (`:1465`, `{'cards': []}` 200), **`/api/due_concepts`
+   (`:1863`, `{'concepts': []}` 200 — defeats G's fix entirely, practice.js
+   only ever sees the proxy)**, `/api/gamification` (`:861`, fabricated
+   zeros). All four → named 503s.
 4. **`target_date` dropped by the proxy** (`:1462`) — forward it; then
    librarian must read it (needs a small `get_due_cards(target_date=)` change —
    coordinate with G's landed code).
