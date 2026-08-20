@@ -772,6 +772,13 @@ except Exception as _e:
     # The library search degrading must not take the whole UI down with it.
     logger.error(f"library_api blueprint unavailable: {_e}")
 
+# Notebook page + print routes + proxies.
+try:
+    from notes_api import notes_api
+    app.register_blueprint(notes_api)
+except Exception as _e:
+    logger.error(f"notes_api blueprint unavailable: {_e}")
+
 @app.route('/api/schedule', methods=['GET'])
 def get_schedule():
     try:

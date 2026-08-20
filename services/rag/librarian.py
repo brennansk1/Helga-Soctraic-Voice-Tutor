@@ -58,6 +58,11 @@ app = Flask(__name__)
 from services.rag.share_api import create_share_blueprint
 app.register_blueprint(create_share_blueprint(storage))
 
+# The session notebook: reads the notes real sessions actually produce (the
+# Markdown ## Session Notes bullets) merged with the session_notes table.
+from services.rag.notes_api import create_notes_blueprint
+app.register_blueprint(create_notes_blueprint(storage))
+
 # B27.1: opt-in structured JSON logs (HELGA_JSON_LOGS=true)
 try:
     from services.common.logging_utils import configure_json_logging
