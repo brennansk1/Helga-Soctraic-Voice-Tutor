@@ -180,8 +180,9 @@ skipped concept; PAUSED answers instead of swallowing)
    scoreboard: the dialogue contract + learner-history personalisation
    (A4.1a/b). Measure only via median-of-3 (`--repeat 3`), never a single run
    (±1.4/5 noise floor).
-3. **Backup/restore drill** (A7) — `helga.db` + `data/courses` snapshot,
-   restore on a clean tree, courses open. Script it: `tools/backup_drill.py`.
+3. ~~Backup/restore drill~~ — **DONE**: `tools/backup_drill.py`, run against
+   the REAL data directory (schema 17, integrity ok, all rows/dirs survive).
+   Also incidentally proves the migrated live DB is healthy.
 4. **Cover cache bound** — agent K caches covers on disk; add size cap +
    eviction so the offline cache can't grow unbounded (folds into K follow-up).
 5. **Orphan cleanup decision** — `tools/reconcile_courses.py --fix` removes 10
@@ -241,6 +242,7 @@ python3 tools/css_theme_guard.py                       # theme classes
 python3 -m pytest tests/ -q                            # FULL suite, once
 python3 tools/reconcile_courses.py                     # stores converge (exit 0)
 python3 tools/helgabench.py --self-test                # instrument honest
+python3 tools/backup_drill.py                          # a backup that restores
 python3 tools/golden_courses.py evaluate               # gate verdicts
 python3 tools/path_audit.py                            # structural
 # + §5 sweeps, + §6 results recorded in MODE_A_STATUS.md with dates
