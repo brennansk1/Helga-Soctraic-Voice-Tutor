@@ -69,12 +69,12 @@ none is done on the agent's word.
 | C | docker-compose, .env, model files — **LANDED 19b169d** | A6: 30m idle-eviction default, set in compose for BOTH LLM-calling services (a per-request keep_alive overrides the server env, so host-only would not have worked). Two scoreboard premises corrected by measurement: the tts 2048M cap is right (2.03 GB peak RSS on the max request; 1536M OOM-killed) and the "duplicate" Kokoro copies are two formats, torch + MLX, both load-bearing on an offline appliance — nothing deleted | done: compose parses, 145 targeted tests pass, both Kokoro caches verified intact |
 | D | llm_utils.py, llm_client.py — **LANDED 650e1c1** | A7: shared breaker in `llm_breaker.py` (ships in every image; the old one lived in gpu_gate, unreachable from RAG, so the BUILD path had none). Named taxonomy: `LLMUnavailable` / `LLMBadOutput` / `LLMRequestRejected`; 4xx never trips the circuit; probe interval backs off | done: 37 breaker tests + 143 targeted pass. Unit-tested only — never observed against a real outage; soak stays open |
 | E | storage.py, tools/reconcile_courses.py — **LANDED f19d8bb** | AUTO-10 closed; reconcile tool | done: 248 targeted tests pass; dry-run is SQLite-enforced read-only |
-| F | courses.js, wizard.js, degree.js, build-view.js, build-guard.js, create.js, practice.js, schedule.html, practice.html | `course_ready` never emitted → client-side completion; onclick-injection XSS; create.js lock-on-502; demo-plan-over-real-data; target_date (client half); Practice quiz dead end | `pytest tests/web -q`; browser: build completes → link appears → lock releases; `Newton's Laws` card delete works; core down → no lock armed |
+| F | (frontend JS) — **LANDED be8d632** | completion recognised from the stream that IS emitted + a shared probe so page and pill can't disagree; onclick XSS gone (delegated listeners + data-attrs); lock only arms on 2xx; only a clean empty list may show the demo plan; Practice quiz wired to the grader. Bonus find: build-view.js had a ReferenceError killing the whole view on its first message | done: 160 web tests, guard clean |
 | G | librarian.py — **LANDED 4c97655** | outage → 503 `GRADING_UNAVAILABLE`, no grade key, FSRS untouched (asserted not-called); `/api/due_concepts` no longer lies "all caught up" on failure (503 total / `degraded` partial); same sweep fixed `/teaching_context`, `/api/gamification`, `/api/review_stats`. quiz.html already handles the shape — outage no longer pollutes the score | done: 153 targeted tests pass. 2 pre-existing isolation-only failures in that file's harness, verified pre-existing by stash |
 | H | course_builder.py | all-stub course can't be "ready"; dedup no longer deletes "Logistic Regression" for sharing a word with "Linear Regression" | `pytest -q -k "builder or dedup or hydrat"`; casualty pairs survive; true dupes still removed |
 | I | book_reader.py, book_source.py, program.py, taught_ledger.py — **LANDED 998e2f5** | all five real: `_toc_spans` boundaries from distinct start pages (order-independent, can't be empty); zero-concept chapter now counted + `BOOK:WARN:CHAPTER_SKIPPED`; cross-slot dup costs one placeholder not a ProgramError; degraded digests never cached; embedder provenance truthful (reproduced first) | done: 24 new tests, 231 targeted pass; regressions verified by stash-per-file |
-| J | startup_preflight.py (new), app.py, resources.js/.css | startup hardware preflight + blocking-but-honest UI gate; clears itself when room returns | `pytest -q -k "preflight or memory"`; browser: blocked/degraded/ok states; guard passes |
-| K | library_api.py (new), library.js, library.css, static/img | multi-source search (IA + Gutendex + Wikibooks, live-verified), covers proxied+cached, blank fallback (IA fakes 200 for missing covers — detect by hash), filters, dedup, per-source status, detail view | `pytest -q -k "library or cover"`; browser: search shows thumbnails + source labels; one source down ≠ empty results |
+| J | startup_preflight.py, app.py, resources.js/.css — **LANDED 63f3ae0** | four-check verdict (installed RAM vs transient pressure kept distinct, with different remedies); blocking gate with a live counter, self-clearing; always inspectable in Settings. Thresholds derived from MEMORY_BUDGET, not hard-coded to this machine | done: 87 targeted tests; browser-verified both themes. Docker-context handoff applied (0dcfe45) |
+| K | library_api.py, library.js/.css, img — **LANDED dc499b2, registered f1efdfa** | FIVE sources live-verified (IA, Gutendex incl. the 10.4s-vs-0.06s trailing-slash trap, Wikibooks, Wikiversity, OpenStax via a working keyless endpoint); covers proxied + disk-cached, digest-based placeholder detection, HTML-at-200 rejected, network failure never cached as a miss; degradation proven live when Gutendex genuinely timed out mid-test | done: 207 targeted tests, guard clean, browser-verified both themes |
 
 **Merge/integration plan** — all nine land on one branch:
 1. As each lands: run its "verify on landing" column only.
@@ -92,7 +92,14 @@ none is done on the agent's word.
 Recorded here with file:line because the agent reports live nowhere else.
 Every one of these blocks "no known bugs".
 
-### The app.py queue (serialized: start only after agent J lands)
+### The app.py queue — **DONE 7b4d492** (Build button actually builds via the
+one shared pipeline path; badge uses the gate's predicate; four fake-success
+proxies now 503 with names; target_date forwarded AND read (librarian half in
+the same commit); student_id on SET_CONTEXT / EPUB upload / creation_status;
+base.html double build-guard.js load removed; web-ui image granted
+services/common (0dcfe45); K's blueprint registered (f1efdfa))
+
+### ~~The app.py queue~~ (original list, for the record)
 1. **`/api/books/build` is a stub** — validates availability then returns
    `{'status':'started'}, 202` with no thread, no core POST, no build_state
    write (app.py:493-530). *The* criterion-6 blocker. Wire it to the real book
@@ -129,7 +136,13 @@ Agent C set the server default to 30m but four client-side spots still pin
 `tests/core/test_llm_throughput.py` asserts only presence + env override, so
 none of these break it.
 
-### fsm_logic.py queue (mine; file is free now)
+### fsm_logic.py queue — **DONE 18a0c47** (review mode grades the question
+actually asked against the card's real content, and an outage marks nothing
+correct; missing grade falls back instead of inventing a 3, nesting-safe
+extraction, graded=False finally consumed by the scheduler; SKIP excludes the
+skipped concept; PAUSED answers instead of swallowing)
+
+### ~~fsm_logic.py queue~~ (original list, for the record)
 7. **Review mode grades against nothing** — spaced-rep grading reads
    `self.last_question` (only ever set in the Socratic path, `:2605`) and
    `self.current_card.get("text")` (key never exists; cards carry
@@ -153,8 +166,8 @@ none of these break it.
     (`:1507` vs `:2837/:3354`) — type mismatch certain, damage unverified.
 12. Resumed builds stamp `depth_contract.met_pct` from remaining-only counts
     (`:4461`) — can mark a mostly-unverified course `level_verified: true`.
-13. book_reader `doc.close()` not in `finally` (`:419`) — handle leak masked
-    by the blanket `return None` at `:462`.
+13. ~~book_reader `doc.close()`~~ — **DONE f1efdfa** (try/finally; every
+    malformed PDF was a leaked native handle).
 
 ---
 
