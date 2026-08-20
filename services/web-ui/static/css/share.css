@@ -1,0 +1,15 @@
+/* course-share.css — the export/import controls injected by course-share.js.
+ *
+ * Loaded by course-share.js itself (a <link> injected at init) so that adding
+ * the feature to a page stays a one-line change. Colour comes entirely from
+ * the existing btn-alpine classes; the rules here are behavioural, which is
+ * also what keeps this file trivially correct in both themes.
+ */
+
+/* A control mid-request: still visibly itself, obviously not clickable, and
+ * immune to a double submit even if the disabled attribute is briefly late. */
+.share-busy {
+    opacity: 0.6;
+    pointer-events: none;
+    cursor: progress;
+}
