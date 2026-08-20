@@ -125,7 +125,7 @@
 |---|------|------|------|---|---|---|
 | B23.1 | GPU semaphore + per-student fair queue | `services/core/llm_client.py` (`chat()`/`get_llm_client()`) | M students, no 60s timeouts, bounded p95 | P1 | R1 | done — `gpu_gate.py` admission gate wraps all LLM entry points; RR fairness across student_ids; busy backpressure + overload shedding; `pytest tests/core/test_gpu_gate.py → 12 passed` |
 | B23.2 | Interactive vs background priority classes | `llm_client.py` | background build never starves live tutoring | P1 | R1 | done — bg ≤ 1 slot, never granted while interactive waits (tested); llm_utils build pipelines default BACKGROUND, FSM turns INTERACTIVE |
-| B23.3 | Ollama tuning (`KEEP_ALIVE=-1`, `MAX_LOADED_MODELS=1`) | host env | model stays warm across students | P1 | R1 | done — documented in `.env.example` + compose (`OLLAMA_NUM_PARALLEL` shared by gate cap); host launchctl instructions |
+| B23.3 | Ollama tuning (`KEEP_ALIVE=30m`, `MAX_LOADED_MODELS=1`) | host env **+ container env** | model stays warm within a session, ~12.7 GB released between sessions | P1 | R1 | done — `.env.example` + compose (passed into core-logic and rag-engine, because a per-request `keep_alive` overrides the server's) + host launchctl. `-1` was the original value and pinned the weights through every idle hour on a box with ~2 GB of headroom |
 | B23.4 | SQLite→Postgres (psycopg pool behind sub-stores) | `storage.py` | ETL preserves `student_id`; same interface | P3 | R4 | todo |
 | B23.5 | Multi-worker (Redis sessions + Socket.IO MQ + stateless FSM) | `app.py`, `fsm_registry.py` | >1 worker serves any student | P3 | R4 | todo |
 | B23.6 | Caddy/TLS + gunicorn-gevent topology | infra/compose | HTTPS; WS upgrade; gevent worker | P3 | R4 | todo |

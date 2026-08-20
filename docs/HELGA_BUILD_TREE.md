@@ -541,7 +541,7 @@ target files, priorities and releases: `docs/BUILD_MANIFEST.md`. Curriculum map:
 ├─ B23 Production Scaling & Deployment ............................. 🔨  (Workstream J)
 │  ├─ B23.1  GPU semaphore + per-student fair queue ............... ✔️  gpu_gate.py; RR fairness; 12 tests
 │  ├─ B23.2  Interactive vs background priority classes ........... ✔️  bg≤1 slot, never starves live
-│  ├─ B23.3  Ollama tuning (KEEP_ALIVE=-1, MAX_LOADED_MODELS=1) .... ✔️  .env.example + compose
+│  ├─ B23.3  Ollama tuning (KEEP_ALIVE=30m, MAX_LOADED_MODELS=1) ... ✔️  .env.example + compose
 │  ├─ B23.4  SQLite→Postgres (psycopg pool behind sub-stores) ..... ⬜  deferred trigger: write contention
 │  ├─ B23.5  Multi-worker (Redis sessions + Socket.IO MQ + stateless FSM) ⬜  deferred
 │  ├─ B23.6  Caddy/TLS + gunicorn-gevent topology ................. ⬜

@@ -11,8 +11,11 @@ and every one of these has a failure mode that looks like "the app is just
 slow" rather than like a misconfiguration:
 
   * Ollama unloads the model after five idle minutes unless OLLAMA_KEEP_ALIVE
-    is set, so the first answer after a student pauses to think pays a
-    multi-second cold load of a 9B.
+    is set, which is shorter than a student's pause to think — so the first
+    answer after a pause pays a cold load of a 13 GB model. Pinning it forever
+    is not the answer either on a box whose safe ceiling is ~15.0 GB; this
+    build asks for a window (30m) and the check below reports which of the
+    three you actually have.
   * Many Modelfiles cap num_ctx at 4096. A mastery-5 concept is contracted at
     up to ~3,000 output tokens on top of a ~900-token prompt, which does not
     fit — the generation is cut off, the depth contract reads it as "too
@@ -126,21 +129,30 @@ def check_ollama_running():
 
 
 def check_keep_alive():
-    """Whether the model is pinned, read from the server rather than assumed."""
+    """How long the model stays resident, read from the server rather than
+    assumed. Both extremes are wrong here and they fail in opposite ways: a
+    short window hands a ~133 s reload to whoever asks the next question, while
+    pinning forever holds ~12.7 GB through every hour nobody is studying, on a
+    box whose measured safe ceiling is ~15.0 GB and which thrashes past ~16.4.
+    What this build asks for is a window long enough to outlast a pause inside
+    a session and short enough to give the memory back after one."""
+    want = os.environ.get("OLLAMA_KEEP_ALIVE", "30m")
     ps = _get("/api/ps")
     if ps is None:
         check("model residency", WARN, "/api/ps unavailable — cannot tell")
         return
     models = ps.get("models") or []
     if not models:
-        check("model residency", WARN,
-              "no model resident right now — send one request, then re-run to "
-              "see whether it stays loaded")
+        check("model residency", OK,
+              "nothing resident — either idle-evicted as intended, or not "
+              "asked anything yet")
         return
     expires = models[0].get("expires_at")
-    fix = ("launchctl setenv OLLAMA_KEEP_ALIVE -1  &&  restart ollama serve")
+    unpin = (f"set OLLAMA_KEEP_ALIVE={want} on the HOST *and* in the "
+             "containers — a per-request keep_alive overrides the server's")
     if not expires:
-        check("model residency", OK, "resident, no expiry reported")
+        check("model residency", WARN,
+              "resident with no expiry — the weights are never released", unpin)
         return
     try:
         from datetime import datetime, timezone
@@ -150,11 +162,19 @@ def check_keep_alive():
         check("model residency", WARN, f"unparseable expiry {expires!r}")
         return
     if mins > 60:
-        check("model residency", OK, f"pinned (expires in {mins/60:.0f}h)")
+        # Ollama writes a year-out expiry for keep_alive=-1, so anything this
+        # far out is a pin rather than a long window.
+        check("model residency", WARN,
+              f"pinned (expires in {mins/60:.0f}h) — ~12.7 GB held while idle",
+              unpin)
+    elif mins < 10:
+        check("model residency", WARN,
+              f"unloads in {mins:.0f} min — shorter than a student's pause to "
+              "think, so answers after a pause pay a ~133 s reload",
+              f"launchctl setenv OLLAMA_KEEP_ALIVE {want}  &&  restart ollama serve")
     else:
-        check("model residency", BAD,
-              f"unloads in {mins:.0f} min — every answer after a pause pays a "
-              "cold model load", fix)
+        check("model residency", OK,
+              f"resident, releases after {mins:.0f} min idle")
 
 
 def check_context_length():

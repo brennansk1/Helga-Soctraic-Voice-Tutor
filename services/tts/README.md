@@ -30,6 +30,15 @@ and STT at `:5001`.
 
 ## Fallback — the container
 
+It is capped at 2048M in `docker-compose.yml`, which looks disproportionate for
+319 MB of weights and is not. Measured on the built image (2026-08-19) while
+synthesising the service's own maximum 5,000-character request: **1.38 GB
+anonymous, 2.03 GB peak RSS**, against 34 MB before the first synthesis. The
+same request at a 1536M cap was OOM-killed. The weights are the small part; the
+torch + transformers + spacy + misaki chain around them is the rest, and none
+of it is loaded by the host MLX backend. The way to spend less is to stay on
+the host backend, not to trim the cap.
+
 Behind a compose profile, so `docker compose up` neither builds nor starts it:
 
 ```bash
@@ -46,6 +55,30 @@ TTS_URL=http://helga-tts:5005 docker compose up -d web-ui core-logic
 > first real request raised `no TTS backend available`. `/health` now reports
 > `backend_active`, which is `None` until the first synthesis — so a green
 > health check still is not proof the backend loads.
+
+## The weights exist twice on disk, and that is not waste
+
+An audit flagged "two duplicate Kokoro copies". They are the same model and
+they are not interchangeable:
+
+| path (host HF cache) | file | size | who loads it |
+|---|---|---|---|
+| `models--hexgrad--Kokoro-82M` | `kokoro-v1_0.pth` | 319 MB | `TTS_BACKEND=torch` (the `kokoro` package) |
+| `models--prince-canuma--Kokoro-82M` | `kokoro-v1_0.safetensors` | 339 MB | `TTS_BACKEND=mlx` (the default, via `mlx-audio`) |
+
+Both hold **548 tensors / 81,763,410 fp32 parameters** — verified by reading
+the safetensors header and the torch checkpoint side by side — so they are the
+same weights in two container formats, with different tensor-name prefixes
+(`bert.module.*` in the `.pth`). They are not byte-identical, neither loader
+reads the other's format, and there is no conversion step in this repo. Nothing
+is reclaimable by de-duplicating them; the only way to hold one copy is to give
+up one backend.
+
+Do not "clean up" the torch copy to save the 319 MB. This is an offline
+appliance: deleting it does not free a re-downloadable cache entry, it deletes
+the local half of the fallback, and the fallback exists for the case where MLX
+is exactly what has stopped working. 319 MB is a cheap insurance premium
+against a machine that cannot speak.
 
 ## Cache
 

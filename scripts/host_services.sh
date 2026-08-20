@@ -43,11 +43,16 @@ listening() { nc -z 127.0.0.1 "$1" >/dev/null 2>&1; }
 # is invisible from the container side. See docs/PERFORMANCE_PASS.md.
 apply_ollama_env() {
     command -v launchctl >/dev/null 2>&1 || return 0
-    launchctl setenv OLLAMA_KEEP_ALIVE "${OLLAMA_KEEP_ALIVE:--1}"
+    # 30m, not -1: the weights are ~12.7 GB against a ~15.0 GB safe ceiling, so
+    # holding them through the hours nobody is studying is most of the box's
+    # headroom spent on nothing. 30m still outlasts any pause inside a session,
+    # which is the only pause a reload (~133s) would be felt in. Override by
+    # exporting OLLAMA_KEEP_ALIVE before calling this script.
+    launchctl setenv OLLAMA_KEEP_ALIVE "${OLLAMA_KEEP_ALIVE:-30m}"
     launchctl setenv OLLAMA_NUM_PARALLEL "${OLLAMA_NUM_PARALLEL:-4}"
     launchctl setenv OLLAMA_MAX_LOADED_MODELS "${OLLAMA_MAX_LOADED_MODELS:-1}"
     launchctl setenv OLLAMA_CONTEXT_LENGTH "${OLLAMA_CONTEXT_LENGTH:-8192}"
-    echo "  Ollama env set (keep_alive=${OLLAMA_KEEP_ALIVE:--1}, "\
+    echo "  Ollama env set (keep_alive=${OLLAMA_KEEP_ALIVE:-30m}, "\
 "parallel=${OLLAMA_NUM_PARALLEL:-4}, ctx=${OLLAMA_CONTEXT_LENGTH:-8192})"
 }
 

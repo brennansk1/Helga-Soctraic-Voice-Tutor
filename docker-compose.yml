@@ -57,6 +57,24 @@ services:
     environment:
       - OLLAMA_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-nail-35b-a3b-ctx}
+      # How long Ollama holds the weights after the last request, and the one
+      # knob that trades the two scarcest resources on this box against each
+      # other. Resident, the model is ~12.7 GB against a measured safe ceiling
+      # of ~15.0 GB; past ~16.4 GB the machine thrashes, and that boundary is a
+      # cliff rather than a slope. Pinning it forever spends most of the
+      # headroom on the hours nobody is studying — exactly the hours the night
+      # audit, verification passes and host-native TTS/STT want the RAM back.
+      # Releasing it is not free either: reloading costs ~133 s from the
+      # external disk, paid by whoever asks the next question. 30m splits the
+      # difference — it outlasts a student staring at a hard question, so
+      # nothing inside a session pays the reload, and the memory comes back
+      # once a session is genuinely over.
+      #
+      # This has to be passed INTO the container, not merely set on the host:
+      # every request carries a keep_alive field read from this variable, and a
+      # per-request value overrides the server's own OLLAMA_KEEP_ALIVE. A host
+      # configured to evict plus a container still sending -1 gives you -1.
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
       # B23.1: GPU gate cap — must equal the host's OLLAMA_NUM_PARALLEL
       - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-4}
       # B15.6: per-student FSM registry sizing
@@ -102,6 +120,11 @@ services:
     environment:
       - OLLAMA_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-nail-35b-a3b-ctx}
+      # Same value as core-logic, and it has to be here too. This service
+      # issues LLM calls of its own, and the timer is reset by whichever
+      # request arrived last — so one service still sending -1 would silently
+      # re-pin the model for the whole box no matter what the others send.
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
       - HF_HOME=/app/data/hf_cache
       - TRANSFORMERS_CACHE=/app/data/hf_cache
       - FLASK_ENV=production
@@ -157,7 +180,19 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2048M
+          memory: 2048M      # measured, not guessed — see below
+    # 2048M looks absurd next to an 82M-parameter model whose weights are
+    # 319 MB on disk, and it is not. What this container loads is the PyTorch
+    # fallback chain around those weights: torch, transformers, spacy and
+    # misaki's G2P, none of which the host MLX backend pulls in at all.
+    # Measured on this image (2026-08-19), synthesising the service's own
+    # maximum 5,000-character request: 1.38 GB anonymous, 2.03 GB peak RSS,
+    # against a 34 MB idle footprint before the first synthesis. The same run
+    # at a 1536M limit was OOM-killed mid-request. So this number is close to
+    # the floor, not the ceiling, and trimming it turns the portable fallback
+    # into a fallback that dies the first time a lesson speaks a long
+    # paragraph. The way to spend less here is to stay on the host MLX
+    # backend, which is the default and does not run this container at all.
     networks:
       - internal
 

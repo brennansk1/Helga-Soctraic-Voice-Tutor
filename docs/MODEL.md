@@ -58,7 +58,7 @@ log for `llama-quantize`.)
 
 ```bash
 launchctl setenv OLLAMA_MAX_LOADED_MODELS 1   # deterministic eviction, not a memory race
-launchctl setenv OLLAMA_KEEP_ALIVE -1         # stay resident; a reload costs ~133 s
+launchctl setenv OLLAMA_KEEP_ALIVE 30m        # release when idle; a reload costs ~133 s
 launchctl setenv OLLAMA_NUM_PARALLEL 4        # must equal gpu_gate cap
 ```
 
@@ -67,6 +67,21 @@ for Nail *alone*. Kernel pressure measured **level 1 (normal)** with zero jetsam
 kills in that state — but it is NOT enough for two models at once, which is why
 one model serves both roles and `OLLAMA_MAX_LOADED_MODELS=1` is set. A
 BUILD/TUTOR split would cost a 133 s swap on every alternation.
+
+**Why `30m` and not `-1`.** `-1` optimises the one number a stopwatch can see
+and ignores the one that ends the session: with the model pinned, those 13 GB
+are held through every hour nobody is studying, and the box has ~2 GB of
+headroom left for the night audit, verification passes and host-native
+TTS/STT to share. 30m keeps the model warm across anything that happens
+*inside* a session — the only pause where the 133 s reload would actually be
+felt — and gives the memory back once a session is over. Set `-1` if this ever
+runs on a machine with headroom to spare.
+
+Set the same value in the containers, not only here: every LLM request carries
+a `keep_alive` field, and a per-request value overrides the server's own
+setting. `docker-compose.yml` passes `OLLAMA_KEEP_ALIVE` to core-logic and
+rag-engine for exactly that reason — a host set to evict and a container still
+sending `-1` gives you `-1`.
 
 ## Thinking models — do not remove this
 

@@ -334,9 +334,31 @@ Ranked by risk, not effort.
 3. **Voice never exercised** — the last done-criterion with no end-to-end run.
    Document import is verified as far as extraction; taking a real book through
    to a built course needs a hydration run.
-3. **A6 — optimization.** Ollama idle-eviction unbuilt (≈6 GB pinned when
-   idle); `tts` container allocated 2048M for a 319 MB model; two duplicate
-   Kokoro copies on disk.
+3. **A6 — optimization.** Idle-eviction is now wired, and the other two items
+   turned out to be non-findings once measured.
+
+   * **Idle eviction — done, as configuration.** `OLLAMA_KEEP_ALIVE` defaults
+     to `30m` in `.env.example`, `scripts/host_services.sh` and (passed into
+     core-logic and rag-engine) `docker-compose.yml`. Setting it on the host
+     alone is not enough: every request carries a `keep_alive` field that
+     overrides the server's, and the client default is `-1`, so a container
+     left unset pins the model whatever the host says. 30m outlasts a pause
+     inside a session — the only pause where the ~133 s reload is felt — and
+     releases ~12.7 GB between sessions. Not yet re-measured against `/api/ps`
+     on the appliance itself.
+   * **`tts` at 2048M is correct, not oversized.** Measured on the built image
+     synthesising the service's maximum 5,000-character request: 1.38 GB
+     anonymous, 2.03 GB peak RSS, 34 MB idle. The same request at a 1536M cap
+     was OOM-killed. The 319 MB of weights are the small part; torch +
+     transformers + spacy + misaki are the rest, and the default host MLX
+     backend loads none of them — the container is a profile-gated fallback
+     that does not run in the normal stack anyway.
+   * **The two Kokoro copies are the same weights in two formats.** Both hold
+     548 tensors / 81,763,410 fp32 parameters (`hexgrad` `.pth` for torch,
+     `prince-canuma` `.safetensors` for MLX). Not byte-identical, neither
+     loader reads the other's format, and no conversion step exists here.
+     Nothing was deleted: on an offline appliance the 319 MB torch copy is not
+     a re-downloadable cache entry, it is the local half of the fallback.
 4. **A7 — hardening.** No Ollama circuit-breaker fallback, no soak test, no
    backup/restore drill. (The `main.py` false green is **fixed** — the preflight
    required only a substring, so `qwen3:14b` "matched" `qwen3:14b-q4_K_M` and
