@@ -11,10 +11,15 @@
             <h1>My Courses</h1>
             <p class="page-subtitle">Your library of learning paths</p>
         </div>
+        <!-- One entry point, not three.
+             "Quick Create" and "Import a Book" were two modals asking the two
+             questions the carousel's first page now asks side by side, and
+             three parallel doors to the same room is how an app stops looking
+             like one product. The module-level wizard stays as a secondary
+             link because it does something the carousel does not yet absorb. -->
         <div class="action-buttons">
-            <button class="btn-alpine btn-alpine-primary" onclick="openQuickCreate()">Quick Create</button>
-            <button class="btn-alpine btn-alpine-secondary" onclick="window.location.href='/courses/new'">Build Custom</button>
-            <button class="btn-alpine btn-alpine-secondary" onclick="openImportModal()">Import a Book</button>
+            <a class="btn-alpine btn-alpine-primary" href="/create" role="button">Create a course</a>
+            <a class="btn-alpine btn-alpine-secondary" href="/courses/new" role="button">Build module by module</a>
         </div>
     </div>
 
