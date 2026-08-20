@@ -486,6 +486,11 @@
     --border-radius-sm: 6px;
     --border-radius-lg: 14px;
 
+    /* Total header height including its bottom border. Any page that wants to
+       fill "the rest of the screen" needs this number, and a page that hardcodes
+       it drifts silently the first time the bar changes. */
+    --app-header-h: 59px;
+
     /* A calmer scale. 2.25rem page titles were shouting at a learner who
        already knows which page they clicked. */
     --font-size-3xl: 1.6rem;
@@ -499,7 +504,8 @@
  * with the content. Chrome should be quiet.
  */
 .app-header {
-    height: 58px;
+    /* Derived from the token, minus the border it adds, so the two cannot drift. */
+    height: calc(var(--app-header-h) - 1px);
     padding: 0 var(--space-5);
     border-bottom: 1px solid var(--border-color);
     box-shadow: none;

@@ -17,22 +17,69 @@
     padding: var(--space-6, 2rem) var(--space-8, 3.5rem);
     display: grid;
     grid-template-columns: auto 1fr auto;
-    grid-template-rows: 1fr auto;
+    /* Both rows sized to content, so the free space is left over for
+       align-content to distribute. With `1fr` the first row swallowed all of
+       it, pinning the cards to the top and the dots to the bottom — centring
+       had nothing to centre. */
+    grid-template-rows: auto auto;
     gap: var(--space-4, 1rem);
     align-items: start;
-    /* Sized to content, not the viewport: a 78vh minimum left a third of the
-       screen empty below the dots on short pages. The shell hugs its content
-       and the page's own padding provides the breathing room. */
-    min-height: 0;
+    /* Two failure modes to thread between. A tall fixed minimum (78vh) with
+       content pinned to the top leaves a dead band under the dots that reads
+       as an unfinished page. Hugging the content instead fixed that but let a
+       418px step float in an 800px window with all ~190px of slack collected
+       at the bottom — the same dead band, just earned differently.
+       Filling the viewport and CENTRING the content puts half the slack above
+       and half below, which reads as a composed layout rather than a page that
+       ran out. `safe` keeps a page taller than the viewport top-aligned, so
+       nothing is ever pushed out of reach above the fold. */
+    /* 100% of <main>, not of the viewport. <main> is `flex: 1 1 auto` inside a
+       column container that is exactly one viewport tall, so this IS the space
+       left under the header — measured rather than guessed, and it stays right
+       if the header ever changes height. Subtracting the header from 100dvh by
+       hand was 10px out, because the shell does not start at the header's
+       bottom edge. border-box so the shell's own padding counts inside the
+       figure instead of pushing 64px past it. */
+    box-sizing: border-box;
+    min-height: 100%;
+    align-content: safe center;
     padding-top: clamp(1rem, 4vh, 3rem);
 }
 
 .car-viewport {
     grid-column: 2;
-    overflow: hidden;
+    /* A carousel needs to clip SIDEWAYS only. `overflow: hidden` clips both
+       axes, and on a phone -- where the cards stack into ~1200px -- that cut
+       the last card off at the fold with no way to scroll to it, because the
+       clipped box never grew the document. `clip` on one axis is the only way
+       to leave the other axis genuinely visible: with overflow-x: hidden the
+       spec forces overflow-y to auto, which produces a nested scroller.
+       Older engines that lack `clip` fall back to the previous behaviour. */
+    overflow-x: clip;
+    overflow-y: visible;
+    /* A grid item's automatic minimum is its content, and this item's content
+       is five pages laid side by side — ~1090px. `overflow: hidden` used to
+       floor that at zero for us; a visible axis does not, so the column blew
+       out to the track's full width and every card ran off the screen. */
+    min-width: 0;
     /* Inner padding so card shadows and focus rings are not clipped at the
        viewport edge — the right-hand card was losing its border. */
     padding: 4px;
+    overflow-clip-margin: 8px;
+}
+@supports not (overflow: clip) {
+    .car-viewport { overflow: hidden; }
+}
+
+/* The track is as tall as its tallest page unless the pages it is not showing
+   step out of the way. Collapsing them means the shell hugs the page actually
+   on screen — which is both the fix for the dead space under short pages and
+   what lets the document height on a phone match what is really there. */
+.car-page:not(.active) {
+    height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    overflow: hidden;
 }
 
 .car-track {
@@ -345,16 +392,32 @@
 /* --- phones ----------------------------------------------------------------*/
 @media (max-width: 760px) {
     .create-shell { grid-template-columns: 1fr; padding: var(--space-3); }
-    /* Arrows stay but move under the content as compact chevrons: swipe is
-       not discoverable and dots alone bury "next" — the primary action. */
-    .car-arrow {
-        grid-row: 2; width: 40px; height: 40px;
-        justify-self: center;
-    }
-    .car-arrow-left  { grid-column: 1; justify-self: start; }
-    .car-arrow-right { grid-column: 1; justify-self: end; }
     .car-viewport { grid-column: 1; grid-row: 1; }
-    .car-dots { grid-row: 2; grid-column: 1; padding-top: 0; align-self: center; }
+
+    /* Placing the controls under the content reads fine in a layout diagram
+       and fails on a real phone: a page of stacked cards is ~1200px tall, so
+       "next" — the primary action of the whole flow — landed 500px below the
+       fold on every page. Swipe exists but is invisible, and a control you
+       have to go looking for is a control most people never find.
+       They become a fixed bar instead: always reachable, never covering the
+       content, with the shell padded by exactly the bar's height. */
+    .create-shell { padding-bottom: 88px; }
+    .create-shell::after {
+        content: ""; position: fixed; left: 0; right: 0; bottom: 0;
+        height: 72px; background: var(--bg-primary);
+        border-top: 1px solid var(--border-color);
+        z-index: 40; pointer-events: none;
+    }
+    .car-arrow {
+        position: fixed; bottom: 16px; z-index: 41;
+        width: 44px; height: 44px;
+    }
+    .car-arrow-left  { left: 16px; }
+    .car-arrow-right { right: 16px; }
+    .car-dots {
+        position: fixed; left: 0; right: 0; bottom: 32px; z-index: 41;
+        justify-content: center; padding: 0;
+    }
     .car-title { font-size: 1.35rem; }
     .source-split { grid-template-columns: 1fr; }
     .template-grid { grid-template-columns: 1fr; }

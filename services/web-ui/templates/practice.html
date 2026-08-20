@@ -96,7 +96,10 @@
 
 {% block page_scripts %}
 <script>
-    window.PRACTICE_ACTIVE_TAB = {{ active_tab | tojson }};
+    /* default(none), not bare: an undefined kwarg is not JSON-serialisable,
+       so a missing active_tab took the whole page down with a 500 rather
+       than falling back to the 'due' default practice.js already applies. */
+    window.PRACTICE_ACTIVE_TAB = {{ active_tab | default(none) | tojson }};
 </script>
 <script src="{{ url_for('static', filename='js/practice.js') }}?v=1"></script>
 {% endblock %}
