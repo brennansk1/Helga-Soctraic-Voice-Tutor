@@ -305,3 +305,49 @@ def test_noise_floor_needs_at_least_two_runs():
     assert bd.noise_floor([_fake_result()]) is None
     spread = bd.noise_floor([_fake_result(accuracy=3), _fake_result(accuracy=5)])
     assert spread and spread > 0
+
+
+# ------------------------------------------------------------ re-scoring
+#
+# The expensive half of a run is the conversation, not the scoring. An
+# instrument meant to be tuned against will have its rubric changed, and
+# re-collecting dialogues every time would make that prohibitive.
+
+def _saved_run(tmp_path, turn_text):
+    run = {"domain": "mathematics", "label": "Mathematics",
+           "meta": {"fingerprint": "stale000000000", "model": "m"},
+           "topics": [{"concept": "Eigenvalues", "derivable": True,
+                       "profiles": {"p": {"scores": {"socratic": 3},
+                                          "transcript": [{"role": "tutor",
+                                                          "text": turn_text}]}}}]}
+    path = tmp_path / "run.json"
+    path.write_text(json.dumps([run]))
+    return path
+
+
+def test_rescoring_needs_no_model_and_recomputes_the_deterministic_half(tmp_path):
+    path = _saved_run(tmp_path, "As you can see above,\n"
+                      + _aid({"kind": "bars", "marks": [{"label": "lambda v"}]}))
+    out = bd.rescore(str(path), samples=0)
+    sc = out[0]["topics"][0]["profiles"]["p"]["scores"]
+    assert "visual_policy" in sc and "notation_speakable" in sc
+    assert sc["visual_policy"] < 5, "bad aid use should be caught on re-score"
+    assert sc["socratic"] == 3, "judged scores from the original run are kept"
+
+
+def test_rescoring_stamps_the_current_fingerprint(tmp_path):
+    """A re-scored run was produced by a DIFFERENT instrument than the file
+    it came from, so it must not keep claiming the old identity."""
+    path = _saved_run(tmp_path, "Where does v land?")
+    out = bd.rescore(str(path), samples=0)
+    assert out[0]["meta"]["fingerprint"] == bd.rubric_fingerprint()
+    assert out[0]["meta"]["fingerprint"] != "stale000000000"
+    assert "rescored_at" in out[0]["meta"]
+
+
+def test_rescoring_a_good_turn_scores_it_well(tmp_path):
+    path = _saved_run(tmp_path, "Where does v land?\n"
+                      + _aid({"kind": "plot",
+                              "marks": [{"label": "lambda v", "stage": 1}]}))
+    sc = bd.rescore(str(path), samples=0)[0]["topics"][0]["profiles"]["p"]["scores"]
+    assert sc["visual_policy"] == 5

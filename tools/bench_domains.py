@@ -741,9 +741,18 @@ def run_domain(domain_key, profiles=None, turns=4, samples=3,
         rec = {"concept": topic["concept"], "derivable": topic["derivable"],
                "profiles": {}}
 
+        if static_only:
+            # There are no transcripts to score without a model. Saying so
+            # beats printing empty headings and a blank table, which is the
+            # shape of a pass.
+            print("      (--static-only: no dialogue is run, so there is "
+                  "nothing to score here. Use --static-only alone for the "
+                  "scorer self-check, or --rescore FILE to re-score saved "
+                  "transcripts.)", flush=True)
+            out["topics"].append(rec)
+            continue
+
         for pk in profiles:
-            if static_only:
-                continue
             d = hb.run_dialogue(client, pk, topic, turns=turns,
                                 url=url, model=model, verbose=verbose)
             tr = d.get("transcript") if isinstance(d, dict) else d
@@ -751,7 +760,9 @@ def run_domain(domain_key, profiles=None, turns=4, samples=3,
                 print(f"      {pk}: ERROR {d['error']}", flush=True)
                 continue
 
-            scores = hb.judge(client, pk, topic, tr)
+            # samples_n, or --repeat silently applies only to the new
+            # dimensions and not to socratic/adaptation/accuracy.
+            scores = hb.judge(client, pk, topic, tr, samples_n=samples)
             convo = "\n".join(f"{t['role'].upper()}: {t['text']}" for t in tr)
 
             vis = score_visuals(tr, topic)
@@ -883,6 +894,57 @@ def static_check():
     return ok
 
 
+def rescore(path, samples=0, url=None, model=None):
+    """Re-score saved transcripts without running the dialogues again.
+
+    The expensive half of a run is the conversation, not the scoring. When the
+    rubric changes -- and for an instrument meant to be tuned against, it will
+    -- this re-scores what was already collected. With samples=0 only the
+    DETERMINISTIC scorers run, so it needs no model at all.
+    """
+    data = json.load(open(path))
+    results = data if isinstance(data, list) else [data]
+    hb = None
+    if samples:
+        import helgabench as _hb
+        hb = _hb
+        url = url or os.environ.get("OLLAMA_URL", "http://localhost:11434")
+        model = model or os.environ.get("OLLAMA_MODEL", "nail-35b-a3b-ctx")
+        client = hb._client(model, url)
+
+    for r in results:
+        dom = DOMAINS.get(r.get("domain"))
+        if not dom:
+            print(f"  unknown domain {r.get('domain')!r} — skipped")
+            continue
+        for t in r.get("topics", []):
+            topic = next((x for x in dom["topics"]
+                          if x["concept"] == t.get("concept")), None)
+            if not topic:
+                continue
+            for pk, entry in (t.get("profiles") or {}).items():
+                tr = entry.get("transcript") or []
+                if not tr:
+                    continue
+                sc = entry.setdefault("scores", {})
+                vis = score_visuals(tr, topic)
+                nota = score_notation(tr)
+                sc["visual_policy"] = vis["score"]
+                sc["_visual_note"] = vis["note"]
+                sc["notation_speakable"] = nota["score"]
+                sc["_notation_note"] = nota["note"]
+                if hb:
+                    convo = "\n".join(f"{x['role'].upper()}: {x['text']}"
+                                       for x in tr)
+                    vi, _ = _median_judged(client, VISUAL_INTEGRATION_PROMPT,
+                                           convo, samples, hb)
+                    sc["visual_integration"] = vi
+        # The instrument changed, so the identity must too.
+        r.setdefault("meta", {})["fingerprint"] = rubric_fingerprint()
+        r["meta"]["rescored_at"] = _now()
+    return results
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -894,6 +956,9 @@ def main():
     p.add_argument("--static-only", action="store_true",
                    help="deterministic scorers only; no model needed")
     p.add_argument("--out")
+    p.add_argument("--rescore", metavar="FILE",
+                   help="re-score saved transcripts against the current "
+                        "rubric; deterministic scorers need no model")
     p.add_argument("--compare", help="baseline JSON to diff against")
     p.add_argument("--floor", type=float,
                    help="measured noise floor; deltas at or below it are "
@@ -903,6 +968,15 @@ def main():
                         "scores are then not evidence)")
     p.add_argument("--verbose", action="store_true")
     a = p.parse_args()
+
+    if a.rescore:
+        res = rescore(a.rescore, samples=0 if a.static_only else a.repeat)
+        for r in res:
+            summarise(r)
+        if a.out:
+            json.dump(res, open(a.out, "w"), indent=1, default=str)
+            print(f"\nwrote {a.out}")
+        return 0
 
     if a.static_only and not (a.domain or a.all):
         return 0 if static_check() else 1

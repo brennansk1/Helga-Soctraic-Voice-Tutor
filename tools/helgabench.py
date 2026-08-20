@@ -18,6 +18,16 @@ calls from the tutor, so the tutor is never grading its own work.
 This gives sprint gates a number that moves for real pedagogical reasons, and
 it is the only credible way to detect a pedagogy regression.
 
+METHODOLOGY, DIMENSIONS AND CITATIONS: docs/HELGABENCH.md — every dimension
+traces to a specific result in the tutoring literature (ICAP, scaffolding,
+the assistance dilemma, Mayer's multimedia principles) rather than being
+invented here.
+
+PER-DOMAIN SCORING: tools/bench_domains.py — the same engine, driven over
+seven domains, adding the two things this general rubric structurally cannot
+see: whether the tutor knew when NOT to be Socratic, and whether it used the
+in-chat figures well.
+
 USAGE
     python3 tools/helgabench.py                       # all profiles, 4 turns
     python3 tools/helgabench.py --profiles bluffer --turns 6
