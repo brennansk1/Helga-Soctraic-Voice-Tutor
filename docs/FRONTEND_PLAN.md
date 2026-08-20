@@ -88,3 +88,55 @@ Other tabs: consistency pass on tokens, empty states, loading states.
 * Failure states are named and honest; no silent fallbacks.
 * Both themes for every new token; motion under 250ms; self-hosted assets only
   (offline appliance).
+
+---
+
+# Status — 2026-08-19 (end of the frontend phase)
+
+## Landed
+
+**Theme correctness.** Ten tokens the new pages used never existed
+(`--accent`, `--border`, `--surface-raised`, `--radius-md`, `--shadow-md`,
+`--success`, `--warning`…). Each carried a hardcoded light-mode fallback, so
+dark mode drew white cards — exactly what the design system's own header warns
+about. A second bug hid behind it: a `<button>` does not inherit page colour,
+so the card components drew UA black. `tools/css_theme_guard.py` now fails on
+both, tuned to zero false positives (it only flags a button that actually
+contains text, only the button's own selector, and only a token nothing
+defines anywhere including JS).
+
+**Responsive.** 12 routes × 3 breakpoints (375/768/1280), 36/36 with no element
+crossing the viewport edge, re-verified after every later change. Four real
+bugs fixed: controls below the fold on phones; a last card that could not be
+reached at all (`overflow: hidden` clips *both* axes, and the clipped box never
+grew the document); the grid blowout that appeared once one axis went visible;
+and the dead band under short carousel pages, fixed by filling the parent and
+centring rather than by another fixed minimum.
+
+**Brand.** The logo was a self-described placeholder. It is now a real mark —
+alpine massif, switchback route, amber summit — mounted as an image rather than
+a `currentColor` mask, because a mask keeps only the alpha channel and was
+throwing the palette away. Brand gradient on the header, wordmark and active
+tab in accent. No emoji anywhere (checked: 17 non-ASCII hits, all typographic
+arrows, mostly in comments).
+
+**Honest states.** Practice rendered "Nothing due right now — that is the
+system working" when its API 404'd; for a spaced-repetition tool that is the
+one direction you must never fail in. Both loaders now separate failure from
+emptiness. Progress gained the retry it lacked. Courses collapsed three
+parallel creation doors into one.
+
+**Wiring** (see `BACKEND_FRONTEND_SWEEP.md`). Four capabilities existed in the
+backend with no way to reach them: degree programmes (`plan_degree()` was
+called only by tests — the flagship rendered example data), the memory guard,
+concept sources, and build cancellation. All four are now surfaced, and
+choosing a degree in the carousel finally plans a degree instead of silently
+building one course.
+
+## Not done
+
+- The remaining orphaned endpoints in `BACKEND_FRONTEND_SWEEP.md` §"real gaps"
+  — notifications, service health, profile/XP, draft editing. Each is a feature
+  decision, not a bug.
+- Voice has still never been exercised end to end.
+- `/api/build/status` unused, so a reload mid-build cannot recover stage state.
