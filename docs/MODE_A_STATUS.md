@@ -5,7 +5,7 @@ either backed by a command you can re-run, or marked as unverified. Nothing here
 is a status someone typed in by hand and forgot to update — if a row claims
 VERIFIED, the command beside it produced that result.
 
-Last measured: 2026-08-04.
+Last measured: 2026-08-19 (§0 re-measured; sections below still carry their 2026-08-04 measurements unless marked).
 
 > ## What changed on 2026-08-04 — the grounding chain
 >
@@ -83,6 +83,60 @@ Last measured: 2026-08-04.
 > review history entirely (a fixed grade→interval table, while the FSRS engine
 > sat unused), and `update_progress` used `INSERT OR REPLACE`, so **every
 > column the caller did not pass was silently reset to its default**.
+
+---
+
+## 0. Re-measured 2026-08-19 — the state of the actual data directory
+
+Everything below §0 was measured on 2026-08-04. Two weeks of work landed since
+(content hydration, the claims ledger, the book pipeline, the teaching loop,
+assets, degrees, the frontend). This section is what is true of the REAL data
+directory today, not of the code.
+
+**The live database is at schema_version 10.** Migrations v11-v17 have never
+run against `data/helga.db`. That means `sources`, `claim_sources`,
+`taught_concepts`, `session_notes`, `teaching_objects`, `concepts` (+FTS5),
+`concept_math`, `concept_assets`, `programs` and `program_courses` **do not
+exist in the real database**. Every feature built on them is inert against real
+data — the trust surface reports "sources not recorded" for every concept
+because, for these courses, that is literally true.
+
+Verified safe on a copy of the real file: v10 → v17 applies cleanly, the
+existing `user_progress` rows survive, and the course list still reads. It runs
+automatically on the next `StorageManager` init, i.e. the next time a service
+starts.
+
+**No course has been built since 2026-08-07.** The newest `structure.json` is
+dated Aug 7; the Pythagoras course is still the original three-module one that
+scores 42% coverage. So §4 item 0 ("nothing has been rebuilt since the
+grounding chain changed") is not merely still open — it now also covers
+hydration, the ledger, depth contracts, assets and the book pipeline, none of
+which has ever produced a course on disk.
+
+**No book-sourced course exists.** The book pipeline is verified on parsing and
+structure against four real books (Pride and Prejudice 59/61 chapters, The Art
+of War 13/13, an OpenStax biology text at 19 modules / 69 lessons, and a
+self-help title at 81). None was hydrated through to a persisted course, so
+criterion 6 stays PARTIAL for the same reason it did on 2026-08-04 — one step
+further along, but the last step is the one that counts.
+
+**16 of 19 course rows have no directory on disk.** `courses` in SQLite holds
+19 rows; `data/courses/` holds 3. The orphans are mostly `skeleton` and
+`available` states from earlier runs (`linear algebra`, four separate
+`eigenvalues and eigenvectors`, `causal inference`). This is the AUTO-10
+failure mode the plan predicted — JSON written and SQLite diverging — and it is
+user-visible: a course list built from SQLite offers 16 entries that cannot
+open. Needs a reconciliation pass that either restores or removes them.
+
+### Closed since 2026-08-04
+
+- **§4.2 the trust surface is now on screen.** Sources, grounding, domain tier
+  and the supplementary share render per concept in the session view, with
+  "not recorded" and "unavailable" as distinct honest states. It will stay
+  empty for existing courses until the migration runs and a course is built.
+- **§4.0b `/build` has been driven in a browser**, including the book rail, the
+  live stream, the single-build lock and cancellation. `/library` still has
+  not.
 
 ---
 
