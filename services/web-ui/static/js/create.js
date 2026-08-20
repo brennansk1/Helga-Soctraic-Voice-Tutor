@@ -340,8 +340,8 @@
                 : "";
             reviewNote.textContent = isDegree
                 ? "A degree is planned up front and built lazily: your first course " +
-                  "generates now, and each next course is built one ahead of you — " +
-                  "including electives you choose at registration."
+                  "generates now, and each next course is built one ahead of you, " +
+                  "in the order you choose."
                 : "You can watch the build live, or leave — it continues either way.";
             createBtn.disabled = !(state.topic.trim().length >= 3 && state.template);
         }

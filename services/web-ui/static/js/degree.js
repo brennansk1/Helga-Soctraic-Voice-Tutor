@@ -61,7 +61,12 @@
     var AREA_LABELS = {
         gen_ed: "General education",
         core: "Core requirements",
-        elective: "Electives",
+        /* NOT "Electives". The stored slot key is still `elective` because
+           existing plans carry it, but under the current model nothing here is
+           optional: the learner completes every course in the programme and
+           chooses only the ORDER. Calling these electives told them they could
+           skip some, which is the one thing the model does not allow. */
+        elective: "Advanced study",
         capstone: "Capstone",
     };
     var AREA_ORDER = ["gen_ed", "core", "elective", "capstone"];
