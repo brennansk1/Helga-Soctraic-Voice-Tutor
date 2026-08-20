@@ -403,7 +403,65 @@
         });
     });
 
+    /* A degree is not a big course, and picking one used to behave as though
+       it were. The carousel sent template ("associate", "bachelors") inside a
+       TEXT_INPUT payload that the FSM's text handler never read, so choosing a
+       Bachelor's silently built ONE course — the flagship promise quietly not
+       happening. Degree tiers go to the planner instead. */
+    var DEGREE_TEMPLATES = { associate: 1, bachelors: 1 };
+
+    function startDegree() {
+        var label = createBtn.querySelector(".create-btn-label");
+        var sub = document.getElementById("create-btn-sub");
+        createBtn.disabled = true;
+
+        // A counter, not a spinner: planning consults curriculum sources and
+        // the model, and a spinner with no counter is indistinguishable from a
+        // hang. (House rule, and it is the right one here.)
+        var t0 = Date.now();
+        label.textContent = "Planning your degree…";
+        var tick = setInterval(function () {
+            var s = Math.round((Date.now() - t0) / 1000);
+            if (sub) sub.textContent = s + "s — laying out terms and prerequisites";
+        }, 1000);
+
+        fetch("/api/program", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ subject: state.topic.trim(),
+                                   template: state.template }),
+        })
+            .then(function (r) {
+                return r.json().then(function (b) { return { ok: r.ok, status: r.status, body: b }; });
+            })
+            .then(function (res) {
+                clearInterval(tick);
+                if (!res.ok) {
+                    // 422 is the planner saying this subject cannot carry a
+                    // programme this size — an answer, not a fault, and it
+                    // deserves different words from a server error.
+                    throw new Error(res.status === 422
+                        ? (res.body.error || "this subject cannot carry a programme that size")
+                        : (res.body.error || "HTTP " + res.status));
+                }
+                window.location.href = "/degree?uid=" +
+                    encodeURIComponent(res.body.uid);
+            })
+            .catch(function (e) {
+                clearInterval(tick);
+                createBtn.disabled = false;
+                label.textContent = "Create";
+                if (sub) sub.textContent = "";
+                reviewNote.textContent = "Could not plan the degree: " +
+                    e.message + " — nothing was created.";
+            });
+    }
+
     function startCreate() {
+        if (DEGREE_TEMPLATES[state.template] && state.source !== "book") {
+            startDegree();
+            return;
+        }
         createBtn.disabled = true;
         createBtn.querySelector(".create-btn-label").textContent = "Starting…";
         if (state.source === "book") {
