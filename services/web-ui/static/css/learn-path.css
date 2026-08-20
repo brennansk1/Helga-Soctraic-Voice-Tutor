@@ -1,163 +1,186 @@
 /* ============================================================================
- * The learn path — the product's signature screen (A5.3).
+ * The learn path — the product's signature screen.
  *
  * Loaded after learn.html's inline block so it refines rather than replaces.
  * New path styling goes HERE, not back into the template: the inline block is
- * the thing A5.3 is unwinding.
+ * the thing this file is unwinding.
  *
- * Two problems this fixes, both seen on a live render rather than inferred:
+ * This pass was driven by measurements taken on a real 106-concept course
+ * (course_f690297d, 6 modules) rather than on the 12-node demo the earlier
+ * styling was tuned against. At that size four things broke:
  *
- *   1. NODES HAD NO LABELS. A concept's title existed only in a hover tooltip,
- *      so twelve identical circles were the entire course map. The path could
- *      not be scanned, skimmed, or used to decide what to study next — which
- *      is what a learning path is for.
+ *   1. THE PATH READ AS A STRAIGHT COLUMN. The offset pattern was
+ *      [0, -70, 0, 70]px, so half of every four nodes sat dead centre and the
+ *      snake collapsed to a line with occasional jogs. Measured: 106 nodes
+ *      across exactly 3 distinct x positions.
  *
- *   2. NODE STATE WAS NOT LEGIBLE AT A GLANCE. Locked and completed were
- *      distinguishable, but "done and now due for review" — a state FSRS has
- *      always been able to tell us — had no representation at all.
+ *   2. LABELS SAT ON THE PATH. 50 of 106 node labels overlapped the vertical
+ *      connector, because a node at offset 0 puts its label across the very
+ *      line the stroke is drawn on.
+ *
+ *   3. STATE WAS NOT LEGIBLE. Completed and needs-review were BOTH gold, and
+ *      locked was a slightly greyer version of everything else. Only "current"
+ *      was truly distinct.
+ *
+ *   4. THE COURSE WAS AN ENDLESS SCROLL. 10,366px of path — 11.5 screens —
+ *      with no way to see the shape of the course and no progress signal
+ *      anywhere.
+ *
+ * The fixes are, in order: a cosine serpentine that never crosses centre, a
+ * label lane that therefore cannot collide, a four-way colour mapping where
+ * each state owns one hue, and collapsible modules with real progress numbers.
  * ==========================================================================*/
 
-.path-container {
-    /* Tighter rhythm. At 84px gap plus 72px nodes, twelve concepts needed
-       three full screens of scrolling to see a course that fits on one. */
-    --path-node-size: 64px;
-    --path-node-gap: 68px;
+/* --- Tokens ---------------------------------------------------------------
+ * Every colour here is defined for BOTH themes. The node fills are deliberate
+ * standalone values rather than aliases of --status-* : the status ramp is
+ * tuned for text and thin strokes, and a 60px filled disc needs a darker, more
+ * saturated body to hold a white glyph at 4.5:1.
+ */
+:root {
+    /* Geometry. Amplitude is a length so the serpentine can be widened at
+       desktop and flattened on a phone from one place; each node multiplies it
+       by a unitless factor set in JS. */
+    --path-amp: 108px;
+    --path-node-size: 60px;
+    --path-node-gap: 74px;
     --path-label-gap: var(--space-4);
+
+    --path-track: #dcd3c7;
+    --path-track-done: #2f7d5c;
+
+    --path-surface: #ffffff;
+    --path-surface-sunken: #efe9e1;
+    --path-hairline: #e2dad0;
+
+    /* Completed is GREEN, not gold. Gold now means exactly one thing —
+       "due for review" — which is the only way those two states stop reading
+       as the same node. */
+    --path-done-bg: #2f7d5c;
+    --path-done-edge: #23604a;
+    --path-done-ink: #ffffff;
+
+    --path-now-bg: #2e6b8a;
+    --path-now-edge: #20506a;
+    --path-now-ink: #ffffff;
+    --path-now-halo: rgba(46, 107, 138, 0.20);
+
+    --path-due-bg: #ffffff;
+    --path-due-edge: #c9902a;
+    --path-due-ink: #8a6112;
+
+    --path-lock-bg: #e7e0d6;
+    --path-lock-edge: #cfc4b4;
+    --path-lock-ink: #7d7466;
 }
 
-/* --- Persistent labels ---------------------------------------------------- */
+[data-theme="dark"] {
+    --path-track: #33423a;
+    --path-track-done: #4f9578;
 
-.node-label {
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    left: calc(100% + var(--path-label-gap));
-    width: max-content;
-    max-width: 16rem;
-    text-align: left;
-    pointer-events: none;
+    --path-surface: #232e28;
+    --path-surface-sunken: #1e2822;
+    --path-hairline: #33423a;
 
+    /* On dark the fills lighten and the glyph flips to ink — white-on-mid-green
+       is the classic inverted-token bug this project has shipped before. */
+    --path-done-bg: #4f9578;
+    --path-done-edge: #3a7159;
+    --path-done-ink: #0d1712;
+
+    --path-now-bg: #5da0c2;
+    --path-now-edge: #45809e;
+    --path-now-ink: #0b1620;
+    --path-now-halo: rgba(93, 160, 194, 0.26);
+
+    --path-due-bg: #2a3830;
+    --path-due-edge: #e0bc63;
+    --path-due-ink: #e8c979;
+
+    --path-lock-bg: #26332c;
+    --path-lock-edge: #3a4a3f;
+    --path-lock-ink: #7d8d80;
+}
+
+/* --- Shell ----------------------------------------------------------------
+ * The container widens well past the old 620px. That width was the real cause
+ * of the label collisions: a serpentine plus a label lane on both sides simply
+ * does not fit in 620px, so the previous design had to flatten one of them.
+ */
+.path-container {
+    --path-max-width: 940px;
+    padding: var(--space-5) var(--space-4) var(--space-8, 48px);
+    /* The dotted background at 24px was busy behind a dense path; at 32px and
+       lower contrast it reads as paper texture instead of graph paper. */
+    background-size: 32px 32px;
+    scroll-behavior: smooth;
+}
+
+.path-content { max-width: var(--path-max-width); }
+
+/* --- Course progress bar --------------------------------------------------
+ * Progress belongs above the scroll area, not inside it. A percentage attached
+ * to a 10,000px path is a number nobody scrolls back up to find.
+ */
+.path-topbar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: var(--space-3) var(--space-5);
+    padding: var(--space-3) var(--space-5);
+    background: var(--path-surface);
+    border-bottom: 1px solid var(--path-hairline);
+}
+
+.path-progress {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+    flex: 1 1 22rem;
+    max-width: 34rem;
+}
+
+.path-progress-count {
     font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-semibold);
-    line-height: 1.3;
+    font-weight: var(--font-weight-bold);
     color: var(--text-primary);
+    white-space: nowrap;
+}
 
-    /* Two lines, then ellipsis. Concept titles in generated courses run long
-       ("Plug the Values Into a b Squared Plus c Equals d Equation"), and a
-       label that wraps to four lines pushes the next node off its own row. */
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
+.path-progress-label {
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.path-progress-track {
+    flex: 1 1 auto;
+    min-width: 4rem;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--path-surface-sunken);
+    border: 1px solid var(--path-hairline);
     overflow: hidden;
 }
 
-/* Nodes offset to the right of centre put their label on the left, or it runs
-   off the edge of the container. */
-.path-node.label-left .node-label {
-    left: auto;
-    right: calc(100% + var(--path-label-gap));
-    text-align: right;
-}
-
-.path-node.locked .node-label {
-    color: var(--text-secondary);
-    font-weight: var(--font-weight-normal);
-}
-
-.node-label-meta {
+.path-progress-fill {
     display: block;
-    margin-top: 2px;
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-normal);
-    color: var(--text-secondary);
+    height: 100%;
+    width: 0;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--path-done-bg), var(--path-track-done));
+    transition: width var(--dur-slow) var(--ease-decelerate);
 }
 
-/* The tooltip was the ONLY place the title appeared. Now that labels are
-   permanent it would just duplicate them on hover. */
-.node-tooltip { display: none !important; }
-
-/* --- Needs-review ---------------------------------------------------------
- * A concept that is completed but now due. Distinct from both "done" (gold)
- * and "current" (blue): a ring rather than a fill, because the work is
- * revisiting something owned, not learning something new.
- */
-.path-node.needs-review .path-node-inner {
-    background: var(--bg-secondary);
-    border: 3px solid var(--status-warning);
-    color: var(--status-warning);
-    box-shadow: var(--shadow-2);
-}
-
-.path-node.needs-review .node-label-meta {
-    color: var(--status-warning);
-    font-weight: var(--font-weight-semibold);
-}
-
-/* --- Icons ----------------------------------------------------------------
- * The lock was an emoji: different size, weight and colour on every platform,
- * and unable to inherit the node's state colour. These are masks, so they take
- * currentColor and stay inside the design system.
- *
- * Crucially the icon reflects the node's ROLE, not just whether it is locked.
- * A path of twelve identical padlocks told the learner nothing about what was
- * ahead; a Bloom-derived icon says what KIND of thinking each node will ask
- * for, which is the one thing Helga genuinely ramps across a course.
- */
-.path-node .node-icon {
-    display: block;
-    width: 26px;
-    height: 26px;
-    background-color: currentColor;
-    -webkit-mask-repeat: no-repeat;
-    mask-repeat: no-repeat;
-    -webkit-mask-position: center;
-    mask-position: center;
-    -webkit-mask-size: contain;
-    mask-size: contain;
-    transition: transform var(--dur-base) var(--ease-emphasized);
-}
-
-.path-node.role-recall     .node-icon { -webkit-mask-image: var(--icon-book);   mask-image: var(--icon-book); }
-.path-node.role-apply      .node-icon { -webkit-mask-image: var(--icon-target); mask-image: var(--icon-target); }
-.path-node.role-mastery    .node-icon { -webkit-mask-image: var(--icon-spark);  mask-image: var(--icon-spark); }
-.path-node.role-checkpoint .node-icon { -webkit-mask-image: var(--icon-flag);   mask-image: var(--icon-flag); }
-
-/* State wins over role where the state IS the message. */
-.path-node.completed .node-icon    { -webkit-mask-image: var(--icon-check);   mask-image: var(--icon-check); }
-.path-node.needs-review .node-icon { -webkit-mask-image: var(--icon-refresh); mask-image: var(--icon-refresh); }
-
-/* Locked keeps its role icon, dimmed, and gains a corner lock — so the path
-   can be read ahead instead of being a wall of padlocks. */
-.path-node.locked .path-node-inner::after {
-    content: "";
-    position: absolute;
-    right: -2px;
-    bottom: -2px;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: var(--bg-secondary) var(--icon-lock-small) center / 11px no-repeat;
-    border: 1.5px solid var(--border-color);
-    box-shadow: var(--shadow-1);
-}
-
-:root {
-    --icon-book: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 19.5A2.5 2.5 0 0 1 6.5 17H20'/%3E%3Cpath d='M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z'/%3E%3C/svg%3E");
-    --icon-target: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Ccircle cx='12' cy='12' r='5'/%3E%3Ccircle cx='12' cy='12' r='1.6' fill='%23000'/%3E%3C/svg%3E");
-    --icon-spark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23000'%3E%3Cpath d='M12 1.5l2.2 5.9 5.9 2.2-5.9 2.2L12 17.7l-2.2-5.9L3.9 9.6l5.9-2.2z'/%3E%3Cpath d='M18.5 15l1 2.6 2.6 1-2.6 1-1 2.6-1-2.6-2.6-1 2.6-1z'/%3E%3C/svg%3E");
-    --icon-flag: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 21V4'/%3E%3Cpath d='M5 4h11l-1.8 3.5L16 11H5z' fill='%23000' stroke='none'/%3E%3C/svg%3E");
-    --icon-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
-    --icon-refresh: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 12a9 9 0 1 1-3-6.7'/%3E%3Cpath d='M21 3v6h-6'/%3E%3C/svg%3E");
-    --icon-lock-small: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7c6e' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='11' width='18' height='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E");
-}
-
-/* --- Completion moment ----------------------------------------------------
- * The one celebratory animation in the product. Applied by JS when a node
- * flips to completed, then removed — if it lived on the class it would replay
- * on every re-render and stop meaning anything.
- */
-.path-node.just-completed .path-node-inner {
-    animation: helga-node-complete var(--dur-slower) var(--ease-emphasized);
+.path-progress-pct {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-bold);
+    color: var(--path-done-bg);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
 
 /* --- Legend --------------------------------------------------------------- */
@@ -165,16 +188,14 @@
 .path-legend {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--space-4);
+    gap: var(--space-2) var(--space-4);
     justify-content: center;
-    padding: var(--space-3) var(--space-4);
-    margin: 0 auto var(--space-4);
-    width: fit-content;
-    max-width: 100%;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: 999px;
-    box-shadow: var(--shadow-1);
+    margin: 0;
+    padding: 0;
+    background: none;
+    border: none;
+    box-shadow: none;
+    border-radius: 0;
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
 }
@@ -188,47 +209,508 @@
     flex: 0 0 auto;
 }
 
-.path-legend-dot.is-current { background: var(--accent-primary); }
-.path-legend-dot.is-done { background: var(--status-warning); }
-.path-legend-dot.is-review {
-    background: var(--bg-secondary);
-    border: 2px solid var(--status-warning);
-}
-.path-legend-dot.is-locked { background: var(--bg-tertiary); border: 1px solid var(--border-color); }
+.path-legend-dot.is-current { background: var(--path-now-bg); }
+.path-legend-dot.is-done { background: var(--path-done-bg); }
+.path-legend-dot.is-review { background: var(--path-due-bg); border: 2px solid var(--path-due-edge); }
+.path-legend-dot.is-locked { background: var(--path-lock-bg); border: 1px solid var(--path-lock-edge); }
 
-/* --- Narrow screens -------------------------------------------------------
- * Side labels have nowhere to go under ~720px, so the path straightens and
- * labels sit beneath their node. Mobile-first means the signature screen has
- * to survive a phone, not just tolerate one.
+/* --- Module section -------------------------------------------------------
+ * The old header was a 1.05rem <h3> on a card that the path ran straight
+ * through, so it read as a caption floating over the line rather than as the
+ * start of a section. It is now a real, full-width section head — and the
+ * control that collapses the section, which is what makes 106 concepts
+ * navigable at all.
  */
+.module-block { width: 100%; margin-bottom: var(--space-4); }
+
+.unit-header,
+.module-header {
+    width: 100%;
+    margin: var(--space-5) 0 0;
+    padding: var(--space-4) var(--space-5);
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    text-align: left;
+    background: var(--path-surface);
+    border: 1px solid var(--path-hairline);
+    border-radius: 14px;
+    box-shadow: var(--shadow-1);
+    /* A <button> does not inherit page colour — the UA sets ButtonText. */
+    color: var(--text-primary);
+    font: inherit;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    z-index: 3;
+    transition: border-color var(--dur-fast) var(--ease-standard),
+                box-shadow var(--dur-fast) var(--ease-standard);
+}
+
+.module-header:hover { border-color: var(--path-track-done); box-shadow: var(--shadow-2); }
+.module-header:focus-visible { outline: 3px solid var(--accent-primary); outline-offset: 2px; }
+
+/* The old gradient hairline ran through three unrelated hues. One accent bar,
+   in the colour of the section's own progress, says more. */
+.unit-header::before,
+.module-header::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    width: 4px;
+    background: var(--path-track);
+    height: auto;
+}
+.module-header.is-started::before { background: var(--path-now-bg); }
+.module-header.is-done::before { background: var(--path-done-bg); }
+
+.module-header-rank {
+    flex: 0 0 auto;
+    width: 2.25rem;
+    height: 2.25rem;
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+    background: var(--path-surface-sunken);
+    border: 1px solid var(--path-hairline);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-bold);
+    font-variant-numeric: tabular-nums;
+}
+.module-header.is-done .module-header-rank {
+    background: var(--path-done-bg);
+    border-color: var(--path-done-edge);
+    color: var(--path-done-ink);
+}
+
+/* These are <span>s so the header can be a <button> without nesting block
+   elements inside interactive content; they need display restored by hand. */
+.module-header-main { display: block; flex: 1 1 auto; min-width: 0; }
+
+.module-header-title {
+    display: block;
+    font-size: var(--font-size-lg, 1.05rem);
+    font-weight: var(--font-weight-bold);
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+}
+
+.module-header-meta {
+    display: block;
+    margin-top: 2px;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-secondary);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-variant-numeric: tabular-nums;
+}
+
+.module-header-bar {
+    display: block;
+    margin-top: var(--space-2);
+    height: 5px;
+    width: 100%;
+    max-width: 18rem;
+    border-radius: 999px;
+    background: var(--path-surface-sunken);
+    border: 1px solid var(--path-hairline);
+    overflow: hidden;
+}
+.module-header-bar-fill {
+    display: block;
+    height: 100%;
+    width: 0;
+    border-radius: 999px;
+    background: var(--path-done-bg);
+    transition: width var(--dur-slow) var(--ease-decelerate);
+}
+
+.module-chevron {
+    flex: 0 0 auto;
+    width: 20px;
+    height: 20px;
+    background-color: var(--text-secondary);
+    -webkit-mask: var(--icon-chevron-down) center / contain no-repeat;
+    mask: var(--icon-chevron-down) center / contain no-repeat;
+    transition: transform var(--dur-base) var(--ease-standard);
+}
+.module-block.is-collapsed .module-chevron { transform: rotate(-90deg); }
+
+/* Collapsed sections are removed from layout, not just hidden: keeping 90
+   invisible rows in flow is what made the scrollbar meaningless. */
+.module-block.is-collapsed .nodes-container { display: none; }
+
+/* --- Unit / lesson headers ------------------------------------------------
+ * These sat at 0.82rem and 0.76rem/0.75 opacity, which is why they vanished
+ * against the path. They are now the left-aligned rules that group a run of
+ * nodes, offset clear of the serpentine's reach.
+ */
+.unit-sub-header {
+    width: 100%;
+    max-width: none;
+    margin: var(--space-5) 0 var(--space-2);
+    padding: 0 0 var(--space-2);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    text-align: left;
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--path-hairline);
+    border-radius: 0;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-bold);
+    color: var(--text-primary);
+    letter-spacing: 0.01em;
+    position: relative;
+    z-index: 3;
+}
+
+.lesson-sub-header {
+    width: 100%;
+    margin: var(--space-4) 0 0;
+    padding: 0;
+    text-align: left;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 1;
+    position: relative;
+    z-index: 3;
+}
+
+.nodes-container { padding: var(--space-4) 0 var(--space-2); }
+
+/* --- Nodes ----------------------------------------------------------------
+ * The serpentine. Offsets come from cos(2*pi*i/6) — multipliers
+ * [1, .5, -.5, -1, -.5, .5] — which snakes smoothly and, crucially, is NEVER
+ * zero. A node that never sits on the centre line is a node whose label can
+ * always be placed on the outside of the curve, which is what makes the label
+ * lane collision-free by construction rather than by tuning.
+ */
+.path-node {
+    width: var(--path-node-size);
+    height: var(--path-node-size);
+    /* A flex item that may shrink turns a circle into an ellipse the moment a
+       row gets tight; the node is a fixed-size target, never a flexible one. */
+    flex: 0 0 auto;
+    color: var(--text-primary);
+    transform: translateX(calc(var(--path-amp) * var(--node-x-mult, 0)));
+    transition: transform var(--dur-fast) var(--ease-standard);
+}
+
+.path-node:hover:not(.locked):not([disabled]) {
+    transform: translateX(calc(var(--path-amp) * var(--node-x-mult, 0))) scale(1.06);
+}
+.path-node:active:not(.locked):not([disabled]),
+.path-node.node-pressed:not(.locked):not([disabled]) {
+    transform: translateX(calc(var(--path-amp) * var(--node-x-mult, 0))) scale(0.96);
+}
+
+.node-row { height: var(--path-node-gap); justify-content: center; }
+
+/* The current node is both larger and carries an extra label line (the chip),
+   and below 720px labels sit UNDER their node rather than beside it. At a fixed
+   row pitch that one row overflows onto the node beneath it — measured at
+   375px. Only this row needs the room, so only this row gets it. */
+.node-row:has(> .path-node.current) {
+    height: calc(var(--path-node-gap) + var(--space-5, 24px));
+}
+
+.path-node-inner {
+    /* content-box + a 2px border made the disc 4px taller than its node. */
+    box-sizing: border-box;
+    flex: 0 0 auto;
+    border: 2px solid transparent;
+    transition: background var(--dur-fast) var(--ease-standard),
+                border-color var(--dur-fast) var(--ease-standard);
+}
+
+/* Completed — solid green, white check, a firm bottom edge so it reads as a
+   pressed, finished key rather than a flat dot. */
+.path-node.completed .path-node-inner {
+    background: var(--path-done-bg);
+    border-color: var(--path-done-edge);
+    box-shadow: 0 3px 0 var(--path-done-edge), var(--shadow-2);
+    color: var(--path-done-ink);
+    animation: none;
+}
+
+/* Current — the only node that is bigger than the others, and the only one
+   with a halo. Size is the fastest signal on a page of circles; you find it
+   before you have read anything. */
+.path-node.current {
+    width: calc(var(--path-node-size) * 1.2);
+    height: calc(var(--path-node-size) * 1.2);
+}
+.path-node.current .path-node-inner {
+    background: var(--path-now-bg);
+    border-color: var(--path-now-edge);
+    box-shadow: 0 4px 0 var(--path-now-edge), var(--shadow-3),
+                0 0 0 6px var(--path-now-halo);
+    color: var(--path-now-ink);
+    animation: none;   /* the 2.4s infinite pulse was gamified noise */
+}
+.path-node.current .node-icon { width: 30px; height: 30px; }
+
+/* "You are here." Static — a bouncing START bubble is the line between
+   Duolingo and a tool an adult uses for two hours. */
+.node-now-chip {
+    /* block so it takes its own line inside the label's -webkit-box, but only
+       as wide as its text; margin-left:auto pushes it to the label's outer
+       edge when the label is right-aligned. */
+    display: block;
+    width: fit-content;
+    margin-top: 4px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--path-now-bg);
+    color: var(--path-now-ink);
+    font-size: 0.62rem;
+    font-weight: var(--font-weight-bold);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+.path-node.label-left .node-now-chip { margin-left: auto; }
+
+/* The chip is a third line inside a label clamped to two, so the current node
+   gets one more. */
+.path-node.current .node-label { -webkit-line-clamp: 3; }
+
+/* Needs review — gold ring on the surface colour. Now that completed is green,
+   gold is unambiguous. */
+.path-node.needs-review .path-node-inner {
+    background: var(--path-due-bg);
+    border: 3px solid var(--path-due-edge);
+    box-shadow: 0 3px 0 var(--path-due-edge), var(--shadow-1);
+    color: var(--path-due-ink);
+}
+
+.path-node.needs-review .node-label-meta {
+    color: var(--path-due-ink);
+    font-weight: var(--font-weight-semibold);
+}
+
+/* Locked — flat. No bottom edge, no shadow: unreachable things should not look
+   like they are sitting on top of the page waiting to be pressed. */
+.path-node.locked .path-node-inner {
+    background: var(--path-lock-bg);
+    border-color: var(--path-lock-edge);
+    box-shadow: none;
+    color: var(--path-lock-ink);
+    opacity: 1;
+}
+.path-node.locked .node-icon { opacity: 0.55; }
+
+/* The mastery badge is derived from bloom level, not from progress, so on a
+   fresh course all 106 locked nodes sprouted a seedling emoji — 106 identical
+   badges that say nothing, sitting on top of the padlock. It earns its place
+   only where the learner has actually earned it. */
+.path-node.locked .mastery-badge { display: none; }
+
+/* The padlock was 20px at 11px icon on a 1.5px hairline — invisible at arm's
+   length, which is the one thing a lock must not be. */
+.path-node.locked .path-node-inner::after {
+    width: 26px;
+    height: 26px;
+    right: -4px;
+    bottom: -4px;
+    background: var(--path-surface) var(--icon-lock-small) center / 15px no-repeat;
+    border: 2px solid var(--path-lock-edge);
+    box-shadow: var(--shadow-2);
+}
+
+/* --- Labels ---------------------------------------------------------------
+ * Always on the outside of the curve, in a lane the connector never enters.
+ */
+.node-label {
+    /* Absolute, and emphatically so: .path-node is a flex row, so a label left
+       in normal flow becomes a flex item and squeezes the disc into an ellipse. */
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    left: calc(100% + var(--path-label-gap));
+    width: max-content;
+    max-width: min(20rem, 30vw);
+    text-align: left;
+    pointer-events: none;
+
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.35;
+    color: var(--text-primary);
+
+    /* Two lines, then ellipsis. Generated concept titles run long ("Plug the
+       Values Into a b Squared Plus c Equals d Equation"), and a label that
+       wraps to four lines pushes the next node off its own row. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.node-label-meta {
+    display: block;
+    margin-top: 2px;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-normal);
+    color: var(--text-secondary);
+}
+
+.path-node.label-left .node-label {
+    left: auto;
+    right: calc(100% + var(--path-label-gap));
+    text-align: right;
+}
+
+.path-node.locked .node-label { color: var(--text-secondary); }
+
+.path-node.current .node-label {
+    font-size: var(--font-size-base, 0.95rem);
+    font-weight: var(--font-weight-bold);
+}
+
+.node-tooltip { display: none !important; }
+
+/* --- Icons ---------------------------------------------------------------- */
+
+.path-node .node-icon {
+    display: block;
+    width: 26px;
+    height: 26px;
+    background-color: currentColor;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+}
+
+.path-node.role-recall     .node-icon { -webkit-mask-image: var(--icon-book);   mask-image: var(--icon-book); }
+.path-node.role-apply      .node-icon { -webkit-mask-image: var(--icon-target); mask-image: var(--icon-target); }
+.path-node.role-mastery    .node-icon { -webkit-mask-image: var(--icon-spark);  mask-image: var(--icon-spark); }
+.path-node.role-checkpoint .node-icon { -webkit-mask-image: var(--icon-flag);   mask-image: var(--icon-flag); }
+
+/* State wins over role where the state IS the message. */
+.path-node.completed .node-icon    { -webkit-mask-image: var(--icon-check);   mask-image: var(--icon-check); }
+.path-node.needs-review .node-icon { -webkit-mask-image: var(--icon-refresh); mask-image: var(--icon-refresh); }
+
+.path-node.locked .path-node-inner::after {
+    content: "";
+    position: absolute;
+    border-radius: 50%;
+}
+
+:root {
+    --icon-book: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 19.5A2.5 2.5 0 0 1 6.5 17H20'/%3E%3Cpath d='M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z'/%3E%3C/svg%3E");
+    --icon-target: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Ccircle cx='12' cy='12' r='5'/%3E%3Ccircle cx='12' cy='12' r='1.6' fill='%23000'/%3E%3C/svg%3E");
+    --icon-spark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23000'%3E%3Cpath d='M12 1.5l2.2 5.9 5.9 2.2-5.9 2.2L12 17.7l-2.2-5.9L3.9 9.6l5.9-2.2z'/%3E%3Cpath d='M18.5 15l1 2.6 2.6 1-2.6 1-1 2.6-1-2.6-2.6-1 2.6-1z'/%3E%3C/svg%3E");
+    --icon-flag: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 21V4'/%3E%3Cpath d='M5 4h11l-1.8 3.5L16 11H5z' fill='%23000' stroke='none'/%3E%3C/svg%3E");
+    --icon-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+    --icon-refresh: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 12a9 9 0 1 1-3-6.7'/%3E%3Cpath d='M21 3v6h-6'/%3E%3C/svg%3E");
+    --icon-chevron-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    /* Stroke colour is baked into the data URI, so the lock needs one per
+       theme; it sits on the surface colour, not on currentColor. */
+    --icon-lock-small: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235f5648' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='11' width='18' height='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E");
+}
+
+[data-theme="dark"] {
+    --icon-lock-small: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a2b0a5' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='11' width='18' height='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E");
+}
+
+/* --- Completion moment ----------------------------------------------------
+ * The one celebratory animation in the product. Applied by JS when a node
+ * flips to completed, then removed — if it lived on the class it would replay
+ * on every re-render and stop meaning anything.
+ */
+.path-node.completed.just-completed .path-node-inner {
+    animation: helga-node-complete var(--dur-slower) var(--ease-emphasized);
+}
+
+/* --- Breakpoints ----------------------------------------------------------
+ * The serpentine's amplitude is bounded by the label lane, not by taste: a
+ * label needs roughly 12rem to be worth reading, so the amplitude has to give
+ * that back at every width. Below 720px there is no lane at all, so the path
+ * straightens and labels go underneath.
+ */
+@media (max-width: 1100px) {
+    .path-container { --path-max-width: 100%; --path-amp: 78px; }
+    .node-label { max-width: min(15rem, 26vw); }
+}
+
 @media (max-width: 720px) {
     .path-container {
-        --path-node-size: 56px;
-        --path-node-gap: 92px;
+        --path-amp: 0px;
+        --path-node-size: 54px;
+        --path-node-gap: 76px;
+        padding: var(--space-4) var(--space-3) var(--space-8, 48px);
     }
 
-    .path-node { --node-x-offset: 0 !important; transform: none !important; }
+    .path-node,
+    .path-node:hover:not(.locked):not([disabled]) { transform: none; }
+    .path-node:active:not(.locked):not([disabled]),
+    .path-node.node-pressed:not(.locked):not([disabled]) { transform: scale(0.96); }
+
+    /* The path straightens AND moves to the left edge, so the labels keep a
+       lane of their own exactly as they do on desktop.
+
+       Centring the column and dropping labels underneath — the obvious phone
+       layout, and what this did before — puts every label directly on top of
+       the connector running down to the next node. Measured at 375px: the
+       stroke passed through the label box of every node on the path. Hugging
+       the left costs nothing and the collision disappears. */
+    .node-row {
+        justify-content: flex-start;
+        /* enough that the current node's 6px halo clears the edge */
+        padding-left: var(--space-3);
+    }
 
     .node-label,
     .path-node.label-left .node-label {
-        left: 50%;
+        left: calc(100% + var(--space-3));
         right: auto;
-        top: calc(100% + var(--space-2));
-        transform: translateX(-50%);
-        text-align: center;
-        max-width: min(18rem, 80vw);
+        top: 50%;
+        transform: translateY(-50%);
+        text-align: left;
+        max-width: calc(100vw - 7rem);
+    }
+
+    .path-node.label-left .node-now-chip { margin-left: 0; }
+
+    .path-topbar { padding: var(--space-3); gap: var(--space-2) var(--space-3); }
+    .path-progress { flex: 1 1 100%; }
+    .module-header { padding: var(--space-3) var(--space-4); gap: var(--space-3); }
+    .module-header-bar { max-width: none; }
+    .module-header-rank { width: 2rem; height: 2rem; }
+}
+
+/* Legacy wrapper kept so nothing that queried it throws; the bar itself is
+   now .path-topbar. */
+.path-legend-bar { flex: 0 0 auto; }
+
+/* --- Reduced motion -------------------------------------------------------
+ * Everything above is confirmation, never information. Removing it costs the
+ * learner nothing.
+ */
+@media (prefers-reduced-motion: reduce) {
+    .path-container { scroll-behavior: auto; }
+    .path-node,
+    .path-node-inner,
+    .module-chevron,
+    .path-progress-fill,
+    .module-header-bar-fill,
+    .module-header { transition: none; }
+    .path-node.completed.just-completed .path-node-inner { animation: none; }
+    .path-node:hover:not(.locked):not([disabled]) {
+        transform: translateX(calc(var(--path-amp) * var(--node-x-mult, 0)));
     }
 }
-
-/* The legend lives above the scroll container, never inside it: #path-view is
-   a flex ROW, so a child there stretched to full height and pushed the entire
-   path sideways. */
-.path-legend-bar {
-    flex: 0 0 auto;
-    display: flex;
-    justify-content: center;
-    padding: var(--space-3) var(--space-4) 0;
-    background: var(--bg-primary);
-}
-
-.path-legend { margin: 0; }

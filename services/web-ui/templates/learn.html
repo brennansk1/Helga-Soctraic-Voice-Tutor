@@ -52,7 +52,21 @@
         child here became a full-height column and shoved the whole path
         sideways. It also belongs above the scroll area so it stays visible
         while the learner scrolls the path. #}
-    <div class="path-legend-bar">
+    <div class="path-legend-bar path-topbar">
+        {#  Course progress lives here, above the scroll area, because a
+            percentage placed on the path itself is 10,000px from wherever the
+            learner happens to be standing. The counts are filled in by
+            renderStructure() once the real structure has arrived. #}
+        <div class="path-progress">
+            <span class="path-progress-count" id="path-progress-count">—</span>
+            <span class="path-progress-label">complete</span>
+            <span class="path-progress-track" id="path-progress-bar" role="progressbar"
+                  aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+                  aria-label="Course progress">
+                <span class="path-progress-fill" id="path-progress-fill"></span>
+            </span>
+            <span class="path-progress-pct" id="path-progress-pct">0%</span>
+        </div>
         <div class="path-legend" aria-hidden="true">
             <span class="path-legend-item"><span class="path-legend-dot is-current"></span>Current</span>
             <span class="path-legend-item"><span class="path-legend-dot is-done"></span>Done</span>
@@ -155,10 +169,14 @@
        Chat/session styles live in learn-chat.css
        ============================================= */
 
+    /* Path geometry (--path-node-size / --path-node-gap / --path-max-width) and
+       every node-state colour now live in learn-path.css, which is where new
+       path styling belongs. They cannot ALSO live here: this block is inline in
+       the body and therefore later in document order than the stylesheet in
+       <head>, so any rule kept in both places silently wins from the older
+       copy. That is how the path spent a release at 72px nodes while the
+       stylesheet asked for 60. */
     :root {
-        --path-node-size: 72px;
-        --path-node-gap: 84px;
-        --path-max-width: 620px;
         --path-header-height: 64px;
     }
 
@@ -210,10 +228,9 @@
         position: relative;
         display: flex;
         justify-content: center;
-        padding: 2rem 1rem 4rem;
         background-color: var(--bg-primary);
         background-image: radial-gradient(var(--border-color) 1px, transparent 1px);
-        background-size: 24px 24px;
+        /* padding + background-size: see learn-path.css */
     }
 
     .path-content {
@@ -320,69 +337,11 @@
         position: relative;
     }
 
-    .unit-header {
-        background: var(--bg-secondary);
-        padding: 1.1rem 1.5rem 1rem;
-        border-radius: 16px;
-        box-shadow: var(--shadow-soft);
-        margin: 2rem 0 0.75rem;
-        z-index: 2;
-        text-align: center;
-        width: 82%;
-        border: 1px solid var(--border-color);
-        color: var(--text-primary);
-        position: relative;
-        overflow: hidden;
-    }
-    .unit-header::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 3px;
-        background: linear-gradient(90deg, var(--accent-primary), var(--bloom-3), var(--status-warning));
-    }
-    .unit-header h3 {
-        margin: 0;
-        font-size: 1.05rem;
-        font-weight: 700;
-        color: var(--text-primary);
-        letter-spacing: -0.01em;
-    }
-    .unit-header .concept-count {
-        font-size: 0.68rem;
-        color: var(--text-secondary);
-        margin-top: 0.35rem;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        font-weight: 700;
-    }
-
-    .unit-sub-header {
-        padding: 0.55rem 1rem;
-        background: var(--bg-secondary);
-        border: 1px solid var(--border-color);
-        border-radius: 10px;
-        margin-top: 1.25rem;
-        margin-bottom: 0.25rem;
-        width: 68%;
-        text-align: center;
-        font-weight: 600;
-        font-size: 0.82rem;
-        color: var(--text-secondary);
-    }
+    /* .unit-header / .module-header / .unit-sub-header / .lesson-sub-header
+       are styled in learn-path.css. The old rules here centred them at 82%/68%
+       width with the path running through the middle, which is why they read as
+       captions floating over the line rather than as section heads. */
     .unit-sub-header .icon { margin-right: 0.3rem; opacity: 0.75; }
-
-    .lesson-sub-header {
-        padding: 0.3rem 0.5rem;
-        color: var(--text-secondary);
-        font-size: 0.76rem;
-        font-weight: 500;
-        text-align: center;
-        margin-top: 0.3rem;
-        opacity: 0.75;
-    }
     .lesson-sub-header .icon { margin-right: 0.2rem; opacity: 0.85; }
 
     .nodes-container {
@@ -391,7 +350,7 @@
         flex-direction: column;
         align-items: center;
         position: relative;
-        padding: 1.5rem 0 1rem;
+        /* padding: see learn-path.css */
     }
 
     /* --- Path nodes --- */
@@ -400,9 +359,11 @@
         height: var(--path-node-gap);
         width: 100%;
         display: flex;
-        justify-content: center;
         align-items: center;
         z-index: 2;
+        /* justify-content lives in learn-path.css: it has to change at the
+           mobile breakpoint, and a media query adds no specificity, so a copy
+           kept here would outrank it from further down the document. */
     }
 
     .path-node {
@@ -414,7 +375,6 @@
         align-items: center;
         cursor: pointer;
         position: relative;
-        transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
         z-index: 2;
         border: none;
         background: transparent;
@@ -422,15 +382,11 @@
         margin: 0;
         -webkit-appearance: none;
         appearance: none;
-        /* offset is applied via --node-x-offset so hover/active transforms
-           can preserve the original s-curve translation */
-        transform: translateX(var(--node-x-offset, 0));
-    }
-    .path-node:hover:not(.locked):not([disabled]) {
-        transform: translateX(var(--node-x-offset, 0)) scale(1.05);
-    }
-    .path-node:active:not(.locked):not([disabled]) {
-        transform: translateX(var(--node-x-offset, 0)) scale(0.95);
+        /* The serpentine offset, its hover/active variants and the transition
+           live in learn-path.css — see the note on --node-x-mult there. The
+           transition in particular MUST NOT be duplicated here: the
+           prefers-reduced-motion block that switches it off is in that file,
+           and a copy in this one would outrank it and keep animating. */
     }
     .path-node:focus-visible {
         outline: 3px solid var(--accent-primary);
@@ -459,43 +415,11 @@
         color: #fff;
     }
 
-    /* Completed nodes — themed goldenrod (matches --status-warning / bloom-6) */
-    .path-node.completed .path-node-inner {
-        background: linear-gradient(135deg, var(--bloom-6) 0%, var(--status-warning) 100%);
-        box-shadow: 0 4px 0 var(--bloom-5), 0 8px 14px rgba(45, 58, 46, 0.15);
-        color: #fff;
-    }
-
-    /* Current node — themed teal (matches --accent-primary) */
-    .path-node.current .path-node-inner {
-        background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-primary-dark) 100%);
-        box-shadow: 0 4px 0 var(--accent-primary-dark), 0 8px 14px rgba(45, 58, 46, 0.18);
-        color: #fff;
-        animation: pulse-node 2.4s ease-in-out infinite;
-    }
-
-    @keyframes pulse-node {
-        0%, 100% {
-            box-shadow: 0 4px 0 var(--accent-primary-dark),
-                        0 8px 14px rgba(45, 58, 46, 0.18),
-                        0 0 0 0 rgba(46, 107, 138, 0.35);
-        }
-        50% {
-            box-shadow: 0 4px 0 var(--accent-primary-dark),
-                        0 8px 14px rgba(45, 58, 46, 0.18),
-                        0 0 0 14px rgba(46, 107, 138, 0);
-        }
-    }
-
-    /* Locked nodes — muted */
+    /* Node state colours live in learn-path.css. The old mapping painted BOTH
+       "completed" and "needs review" in goldenrod and made "locked" a slightly
+       greyer version of everything else, so three of the four states were only
+       distinguishable by staring. */
     .path-node.locked { cursor: not-allowed; }
-    .path-node.locked .path-node-inner {
-        background: var(--bg-tertiary);
-        box-shadow: 0 3px 0 var(--border-color), 0 6px 10px rgba(45, 58, 46, 0.05);
-        color: var(--text-secondary);
-        font-size: 1.35rem;
-        opacity: 0.85;
-    }
 
     /* Low confidence indicator — dashed warning ring */
     .path-node.low-confidence .path-node-inner::before {
@@ -718,16 +642,14 @@
         .learn-wrapper { height: auto; min-height: calc(100vh - 60px); }
         .learn-header { padding: 0 1rem; height: 56px; }
         .course-title { font-size: 1.05rem; }
-        .path-container { padding: 1.25rem 0.5rem 3rem; }
-        .unit-header { width: 90%; padding: 0.9rem 1.15rem 0.8rem; }
-        .unit-sub-header { width: 82%; }
+        /* .path-container padding and the header widths are handled by
+           learn-path.css's own breakpoints; percentage widths here re-centred
+           the section heads over the path. */
     }
 
     @media (max-width: 480px) {
-        :root {
-            --path-node-size: 62px;
-            --path-node-gap: 74px;
-        }
+        /* Node geometry below 480px is set in learn-path.css alongside the
+           720px rules, so the two breakpoints cannot disagree. */
         .learn-wrapper { min-height: calc(100vh - 52px); }
         .learn-header { height: 52px; padding: 0 0.75rem; }
         .course-title { font-size: 0.95rem; }
@@ -781,16 +703,11 @@
         .view-fade-in { animation: none; }
     }
 
-    /* Concept-complete pulse animation — fires when a node is live-marked
-       completed via CPROG while the session view is active. */
-    .path-node.completed.just-completed .path-node-inner {
-        animation: node-complete-pulse 0.9s ease-out;
-    }
-    @keyframes node-complete-pulse {
-        0%   { box-shadow: 0 4px 0 var(--bloom-5), 0 8px 14px rgba(45, 58, 46, 0.15), 0 0 0 0 rgba(212, 168, 67, 0.7); }
-        50%  { box-shadow: 0 4px 0 var(--bloom-5), 0 8px 14px rgba(45, 58, 46, 0.15), 0 0 0 22px rgba(212, 168, 67, 0); }
-        100% { box-shadow: 0 4px 0 var(--bloom-5), 0 8px 14px rgba(45, 58, 46, 0.15), 0 0 0 0 rgba(212, 168, 67, 0); }
-    }
+    /* The concept-complete pulse now lives in learn-path.css. It rang a GOLD
+       halo around a node that is green as of this pass — and, like the node
+       transition, a copy here would outrank the prefers-reduced-motion rule
+       that switches it off, because that rule is in the stylesheet and this
+       block sits later in the document. */
 </style>
 
 <script>
@@ -1024,21 +941,87 @@
                 return;
             }
 
-            structure.modules.forEach(mod => {
+            // Progress is tallied while the structure is walked rather than in
+            // a second pass, so the numbers can only ever describe the concepts
+            // that were actually rendered — a count taken off the raw JSON
+            // silently includes the malformed concepts the renderer skips.
+            let courseTotal = 0, courseDone = 0;
+            const renderedModules = [];
+
+            structure.modules.forEach((mod, modIdx) => {
                 if (!mod || !mod.units) return;
 
                 const modBlock = document.createElement('div');
                 modBlock.className = 'module-block';
 
-                const modHeader = document.createElement('div');
-                modHeader.className = 'unit-header';
-                let modConceptCount = 0;
-                (mod.units || []).forEach(u => (u.lessons || []).forEach(l => { modConceptCount += (l.concepts || []).length; }));
-                modHeader.innerHTML = `<h3>${escapeHtml(mod.title || 'Module')}</h3><div class="concept-count">${modConceptCount} concept${modConceptCount === 1 ? '' : 's'}</div>`;
+                let modTotal = 0, modDone = 0;
+                (mod.units || []).forEach(u => (u.lessons || []).forEach(l => {
+                    (l.concepts || []).forEach(c => {
+                        if (!c || !c.uid || !c.title) return;
+                        modTotal++;
+                        if (c.completed) modDone++;
+                    });
+                }));
+                courseTotal += modTotal;
+                courseDone += modDone;
+
+                // The module head IS the collapse control. At 106 concepts the
+                // path is eleven screens tall; with no way to fold a finished
+                // module or one not yet reached, the learner cannot see the
+                // shape of the course at all — only the stretch of it that
+                // happens to be under the viewport.
+                const nodesId = 'module-nodes-' + modIdx;
+                const modHeader = document.createElement('button');
+                modHeader.type = 'button';
+                modHeader.className = 'unit-header module-header';
+                modHeader.setAttribute('aria-controls', nodesId);
+
+                const modRank = document.createElement('span');
+                modRank.className = 'module-header-rank';
+                modRank.textContent = String(modIdx + 1).padStart(2, '0');
+
+                const modMain = document.createElement('span');
+                modMain.className = 'module-header-main';
+
+                // Course titles are model output. textContent, never innerHTML.
+                const modTitle = document.createElement('span');
+                modTitle.className = 'module-header-title';
+                modTitle.textContent = mod.title || 'Module';
+
+                const modMeta = document.createElement('span');
+                modMeta.className = 'module-header-meta';
+                modMeta.textContent = modDone + ' of ' + modTotal +
+                    ' concept' + (modTotal === 1 ? '' : 's');
+
+                const modBar = document.createElement('span');
+                modBar.className = 'module-header-bar';
+                const modBarFill = document.createElement('span');
+                modBarFill.className = 'module-header-bar-fill';
+                modBarFill.style.width =
+                    (modTotal ? Math.round((modDone / modTotal) * 100) : 0) + '%';
+                modBar.appendChild(modBarFill);
+
+                modMain.appendChild(modTitle);
+                modMain.appendChild(modMeta);
+                modMain.appendChild(modBar);
+
+                const modChevron = document.createElement('span');
+                modChevron.className = 'module-chevron';
+                modChevron.setAttribute('aria-hidden', 'true');
+
+                modHeader.appendChild(modRank);
+                modHeader.appendChild(modMain);
+                modHeader.appendChild(modChevron);
+                if (modDone > 0) modHeader.classList.add('is-started');
+                if (modTotal > 0 && modDone === modTotal) modHeader.classList.add('is-done');
+                modHeader.addEventListener('click', function() {
+                    setModuleCollapsed(modBlock, !modBlock.classList.contains('is-collapsed'));
+                });
                 modBlock.appendChild(modHeader);
 
                 const nodesContainer = document.createElement('div');
                 nodesContainer.className = 'nodes-container';
+                nodesContainer.id = nodesId;
                 nodesContainer.style.position = 'relative';
 
                 const modSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -1061,7 +1044,13 @@
                     if ((mod.units || []).length > 1) {
                         const unitHeader = document.createElement('div');
                         unitHeader.className = 'unit-sub-header';
-                        unitHeader.innerHTML = `<span class="icon"><span class="i i-bookmark" aria-hidden="true"></span></span>${escapeHtml(unit.title || 'Unit')}`;
+                        const unitIcon = document.createElement('span');
+                        unitIcon.className = 'icon';
+                        unitIcon.innerHTML = '<span class="i i-bookmark" aria-hidden="true"></span>';
+                        const unitText = document.createElement('span');
+                        unitText.textContent = unit.title || 'Unit';  // model output
+                        unitHeader.appendChild(unitIcon);
+                        unitHeader.appendChild(unitText);
                         nodesContainer.appendChild(unitHeader);
                     }
 
@@ -1072,7 +1061,13 @@
                         if ((unit.lessons || []).length > 1) {
                             const lessonHeader = document.createElement('div');
                             lessonHeader.className = 'lesson-sub-header';
-                            lessonHeader.innerHTML = `<span class="icon"><span class="i i-book" aria-hidden="true"></span></span>${escapeHtml(lesson.title || 'Lesson')}`;
+                            const lessonIcon = document.createElement('span');
+                            lessonIcon.className = 'icon';
+                            lessonIcon.innerHTML = '<span class="i i-book" aria-hidden="true"></span>';
+                            const lessonText = document.createElement('span');
+                            lessonText.textContent = lesson.title || 'Lesson';  // model output
+                            lessonHeader.appendChild(lessonIcon);
+                            lessonHeader.appendChild(lessonText);
                             nodesContainer.appendChild(lessonHeader);
                         }
 
@@ -1092,22 +1087,42 @@
                             const row = document.createElement('div');
                             row.className = 'node-row';
 
-                            const sPattern = [0, -70, 0, 70];
-                            const offset = sPattern[globalConceptIdx % sPattern.length];
+                            // The serpentine. These are cos(2*pi*i/6) — the
+                            // amplitude itself is a CSS token so the curve can
+                            // widen on a desktop and flatten on a phone from
+                            // one place.
+                            //
+                            // The old pattern was [0, -70, 0, 70]px, which put
+                            // half of every four nodes dead centre: measured on
+                            // this course, 106 nodes occupied 3 distinct x
+                            // positions and the "path" read as a straight
+                            // column. Worse, a node at offset 0 puts its label
+                            // across the exact line the connector is drawn on —
+                            // 50 of 106 labels overlapped the stroke.
+                            //
+                            // cos never returns 0 on a 6-step cycle, so every
+                            // node has a side, every label goes on the OUTSIDE
+                            // of the curve, and the collision is designed out
+                            // rather than tuned away.
+                            const S_CURVE = [1, 0.5, -0.5, -1, -0.5, 0.5];
+                            const xMult = S_CURVE[globalConceptIdx % S_CURVE.length];
 
                             const nodeEl = document.createElement('button');
                             nodeEl.className = 'path-node';
                             nodeEl.type = 'button';
-                            nodeEl.setAttribute('aria-label', escapeHtml(concept.title) + (concept.completed ? ' (completed)' : ''));
-                            nodeEl.style.setProperty('--node-x-offset', offset + 'px');
+                            nodeEl.setAttribute('aria-label', concept.title + (concept.completed ? ' (completed)' : ''));
+                            nodeEl.style.setProperty('--node-x-mult', String(xMult));
                             nodeEl.dataset.uid = concept.uid;
                             nodeEl.dataset.completed = concept.completed || 'false';
                             nodeEl.dataset.bloomLevel = concept.bloom_level || 0;
 
-                            // Task #66: Build mastery badge HTML
+                            // Task #66: mastery badge. The two HTML-string
+                            // versions this used to build (one for the node,
+                            // an identical one for the tooltip) are gone: the
+                            // tooltip is display:none now that labels are
+                            // permanent, and the node's badge is built as a
+                            // real element below.
                             const badge = getMasteryBadge(concept.bloom_level, concept.completed);
-                            const badgeNodeHtml = badge ? `<span class="mastery-badge" title="${escapeHtml(badge.label)}">${badge.emoji}</span>` : '';
-                            const badgeTooltipHtml = badge ? `<span class="mastery-badge" title="${escapeHtml(badge.label)}">${badge.emoji}</span>` : '';
 
                             // Task #51: Low-confidence indicator
                             const srcConf = concept.source_confidence;
@@ -1117,9 +1132,6 @@
                             // course 24 of 36 sat below 0.5 and looked identical
                             // to well-grounded ones.
                             const isLowConfidence = (typeof srcConf === 'number' && srcConf < 0.5);
-                            const lowConfBadge = isLowConfidence
-                                ? '<span class="low-confidence-badge" title="Low source confidence — content may be unverified">unverified</span>'
-                                : '';
                             if (isLowConfidence) {
                                 nodeEl.classList.add('low-confidence');
                             }
@@ -1132,7 +1144,7 @@
                             //
                             // Nodes pushed right of centre put their label on
                             // the left so it does not run off the container.
-                            if (offset > 0) nodeEl.classList.add('label-left');
+                            if (xMult > 0) nodeEl.classList.add('label-left');
 
                             // A5.3 — every node carries an icon that MEANS
                             // something, rather than a lock for the 90% of the
@@ -1161,19 +1173,37 @@
                             if (reviewMeta.needsReview) {
                                 nodeEl.classList.add('needs-review');
                             }
-                            const metaHtml = reviewMeta.label
-                                ? `<span class="node-label-meta">${escapeHtml(reviewMeta.label)}</span>`
-                                : (isLowConfidence
-                                    ? '<span class="node-label-meta">limited sources</span>'
-                                    : '');
+                            const metaText = reviewMeta.label
+                                || (isLowConfidence ? 'limited sources' : '');
 
-                            nodeEl.innerHTML = `
-                                <div class="path-node-inner">
-                                    <span class="node-icon"></span>
-                                </div>
-                                ${badgeNodeHtml}
-                                <span class="node-label">${escapeHtml(concept.title)}${metaHtml}</span>
-                            `;
+                            // Built node by node rather than as an HTML string:
+                            // concept titles are model output and the only safe
+                            // way to put them on the page is textContent.
+                            const nodeInner = document.createElement('div');
+                            nodeInner.className = 'path-node-inner';
+                            const nodeIcon = document.createElement('span');
+                            nodeIcon.className = 'node-icon';
+                            nodeInner.appendChild(nodeIcon);
+                            nodeEl.appendChild(nodeInner);
+
+                            if (badge) {
+                                const badgeEl = document.createElement('span');
+                                badgeEl.className = 'mastery-badge';
+                                badgeEl.title = badge.label;
+                                badgeEl.textContent = badge.emoji;
+                                nodeEl.appendChild(badgeEl);
+                            }
+
+                            const labelEl = document.createElement('span');
+                            labelEl.className = 'node-label';
+                            labelEl.appendChild(document.createTextNode(concept.title));
+                            if (metaText) {
+                                const metaEl = document.createElement('span');
+                                metaEl.className = 'node-label-meta';
+                                metaEl.textContent = metaText;
+                                labelEl.appendChild(metaEl);
+                            }
+                            nodeEl.appendChild(labelEl);
 
                             // Instant pressed visual feedback on mousedown/touchstart
                             // (fires before click, so feedback is < 50ms)
@@ -1203,6 +1233,7 @@
 
                 modBlock.appendChild(nodesContainer);
                 pathContent.appendChild(modBlock);
+                renderedModules.push(modBlock);
             });
 
             // Post-Process Status — mark completed / current / locked
@@ -1219,6 +1250,19 @@
                 } else if (!foundNext) {
                     node.classList.add('current');
                     iconEl.textContent = '';
+                    // "You are here" in words as well as in colour and size.
+                    // On a path this long, finding your place is the single
+                    // most common thing the screen is opened to do.
+                    //
+                    // It goes INSIDE the label rather than floating above the
+                    // disc: at a 74px row pitch a chip above the node lands on
+                    // top of the node above it, while the label lane is already
+                    // proven clear of both the stroke and its neighbours.
+                    const nowChip = document.createElement('span');
+                    nowChip.className = 'node-now-chip';
+                    nowChip.textContent = 'Start here';
+                    const nowLabel = node.querySelector('.node-label');
+                    if (nowLabel) nowLabel.appendChild(nowChip);
                     foundNext = true;
                 } else {
                     node.classList.add('locked');
@@ -1231,9 +1275,51 @@
                 }
             });
 
+            // Only the module the learner is actually in stays open. Everything
+            // behind them is finished and everything ahead is locked, so the
+            // default view is a six-line table of contents with one section
+            // expanded — the course fits on a screen instead of on eleven.
+            //
+            // The current node is used as the anchor rather than "the first
+            // incomplete module", because those differ when a learner skips
+            // ahead, and the one they are standing on is the one they want.
+            const currentNode = pathContent.querySelector('.path-node.current');
+            const openBlock = currentNode ? currentNode.closest('.module-block') : renderedModules[0];
+            renderedModules.forEach(function(block) {
+                setModuleCollapsed(block, block !== openBlock, { silent: true });
+            });
+
+            updateCourseProgress(courseDone, courseTotal);
+
             requestAnimationFrame(drawAllLines);
             window.addEventListener('resize', _onResizeDebounced);
             structureReady = true;
+        }
+
+        // Collapse is a class toggle plus the aria state that makes the header
+        // an honest disclosure button. `silent` skips the connector redraw
+        // during the initial render, where drawAllLines runs once at the end
+        // anyway — otherwise a six-module course reflows six times on load.
+        function setModuleCollapsed(block, collapsed, opts) {
+            if (!block) return;
+            block.classList.toggle('is-collapsed', !!collapsed);
+            const header = block.querySelector('.module-header');
+            if (header) header.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+            if (!collapsed && !(opts && opts.silent)) {
+                requestAnimationFrame(drawAllLines);
+            }
+        }
+
+        function updateCourseProgress(done, total) {
+            const pct = total ? Math.round((done / total) * 100) : 0;
+            const countEl = document.getElementById('path-progress-count');
+            const pctEl = document.getElementById('path-progress-pct');
+            const fillEl = document.getElementById('path-progress-fill');
+            const barEl = document.getElementById('path-progress-bar');
+            if (countEl) countEl.textContent = done + ' of ' + total;
+            if (pctEl) pctEl.textContent = pct + '%';
+            if (fillEl) fillEl.style.width = pct + '%';
+            if (barEl) barEl.setAttribute('aria-valuenow', String(pct));
         }
 
         // Debounce resize so the path connector redraw runs once after the
@@ -1248,9 +1334,21 @@
             });
         }
 
+        // Connector colours are resolved once and written into each path's
+        // stroke attribute, so they do NOT follow a theme switch the way a
+        // CSS-coloured element does: flipping to light left the whole path
+        // drawn in the dark palette until the next resize or re-render.
+        // Watching data-theme is the cheapest honest fix.
+        new MutationObserver(_onResizeDebounced).observe(document.documentElement, {
+            attributes: true, attributeFilter: ['data-theme']
+        });
+
         function drawAllLines() {
             const containers = document.querySelectorAll('.nodes-container');
             containers.forEach(container => {
+                // A collapsed module has no laid-out geometry — every rect is
+                // 0x0 — so measuring it produces a pile of paths at the origin.
+                if (container.closest('.module-block.is-collapsed')) return;
                 const svg = container.querySelector('svg');
                 const rows = container.querySelectorAll('.node-row');
                 if (svg && rows.length > 1) {
@@ -1263,9 +1361,12 @@
             const containerRect = container.getBoundingClientRect();
             // Resolve accent colors from computed styles so path strokes
             // match the live theme (light/dark) without hardcoded hex.
+            // These read the path's own tokens rather than --status-warning:
+            // completed nodes are green now, and a gold connector between two
+            // green discs was the loudest remnant of the old palette.
             const rootStyles = getComputedStyle(document.documentElement);
-            const activeStroke = (rootStyles.getPropertyValue('--status-warning') || '#d4a843').trim();
-            const inactiveStroke = (rootStyles.getPropertyValue('--border-color') || '#d4cdc4').trim();
+            const activeStroke = (rootStyles.getPropertyValue('--path-track-done') || '#2f7d5c').trim();
+            const inactiveStroke = (rootStyles.getPropertyValue('--path-track') || '#dcd3c7').trim();
             let pathsHTML = "";
             let prevX = 0, prevY = 0;
             let first = true;
@@ -1278,16 +1379,23 @@
                 const x = rect.left + rect.width / 2 - containerRect.left;
                 const y = rect.top + rect.height / 2 - containerRect.top;
 
-                const isCompleted = node.classList.contains('completed');
-                const isCurrent = node.classList.contains('current');
-                const strokeColor = (isCompleted || isCurrent) ? activeStroke : inactiveStroke;
+                // needs-review counts as walked: the learner has been through
+                // that concept, it is only due again. Colouring its connector
+                // grey drew a "not yet reached" gap into ground already covered.
+                const isWalked = node.classList.contains('completed')
+                    || node.classList.contains('current')
+                    || node.classList.contains('needs-review');
+                const strokeColor = isWalked ? activeStroke : inactiveStroke;
 
                 if (first) {
                     first = false;
                 } else {
                     const cpY = (prevY + y) / 2;
                     const pathD = `M ${prevX} ${prevY} C ${prevX} ${cpY}, ${x} ${cpY}, ${x} ${y}`;
-                    pathsHTML += `<path d="${pathD}" stroke="${strokeColor}" stroke-width="10" fill="none" stroke-linecap="round" stroke-linejoin="round" />`;
+                    // 8px, down from 10: the old stroke was near-vertical, so
+                    // it needed weight to read as a path at all. A curve that
+                    // actually travels does not.
+                    pathsHTML += `<path d="${pathD}" stroke="${strokeColor}" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round" />`;
                 }
                 prevX = x; prevY = y;
             });
