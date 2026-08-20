@@ -98,3 +98,167 @@
     .mem-guard { left: var(--space-3); right: var(--space-3); bottom: var(--space-3);
                  width: auto; }
 }
+
+/* --- startup preflight ---------------------------------------------------
+   Three surfaces for one verdict, deliberately different in weight:
+
+     .preflight-gate   covers the app when the machine cannot run Helga at all
+     .preflight-note   a strip that informs and never blocks
+     .res-preflight    the same checks, inspectable in Settings when nothing
+                       is wrong
+
+   No dismiss control anywhere, matching .mem-guard: the condition is a fact
+   about the machine, not a message to acknowledge. */
+
+.preflight-gate {
+    position: fixed; inset: 0; z-index: 200;
+    display: flex; align-items: center; justify-content: center;
+    padding: var(--space-4);
+    /* Opaque, not a translucent scrim. A blocked machine is not a modal over
+       a usable app — there is nothing behind this worth showing through. */
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    overflow-y: auto;
+    animation: preflight-in 160ms ease-out;
+}
+.preflight-gate.hidden { display: none; }
+body.preflight-blocked { overflow: hidden; }
+
+.preflight-gate-panel {
+    box-sizing: border-box;
+    width: min(560px, 100%);
+    padding: var(--space-5, var(--space-4));
+    background: var(--bg-secondary);
+    border: 1px solid var(--color-danger);
+    border-top-width: 4px;
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-lg);
+}
+.preflight-gate-mark { display: block; width: 1.75em; height: 1.75em;
+                       margin-bottom: var(--space-2); }
+.preflight-gate-title { margin: 0 0 var(--space-2); font-size: 1.15rem;
+                        color: var(--text-primary); }
+.preflight-gate-lead { margin: 0 0 var(--space-3); font-size: .88rem;
+                       line-height: 1.5; color: var(--text-secondary); }
+
+.preflight-list { list-style: none; margin: 0; padding: 0; }
+.preflight-item {
+    padding: var(--space-3) 0;
+    border-top: 1px solid var(--border-color);
+    color: var(--text-primary);
+}
+.preflight-item:first-child { border-top: 0; }
+.preflight-item-label { margin: 0 0 .25em; font-size: .92rem; font-weight: 600;
+                        color: var(--text-primary); }
+.preflight-item-reason { margin: 0 0 .4em; font-size: .85rem; line-height: 1.5;
+                         color: var(--text-secondary); }
+/* The remedy is the only part the reader can act on, so it does not look like
+   the rest of the paragraph. */
+.preflight-item-remedy {
+    margin: 0 0 .4em; font-size: .85rem; line-height: 1.5;
+    padding: .5em .7em;
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+    border-left: 3px solid var(--accent-primary);
+    border-radius: var(--border-radius-sm);
+}
+.preflight-item-figures {
+    margin: 0; font-size: .78rem; color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+.preflight-gate-foot {
+    display: flex; align-items: center; gap: var(--space-3);
+    margin-top: var(--space-4);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border-color);
+}
+.preflight-recheck {
+    font: inherit; font-size: .85rem;
+    padding: .45em 1em;
+    cursor: pointer;
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+}
+.preflight-recheck:hover { border-color: var(--accent-primary); }
+/* A counter rather than a spinner: this is waiting on a person to close an
+   application, and how long that has been is the only honest thing to show. */
+.preflight-countdown {
+    font-size: .78rem; color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+.preflight-note {
+    /* Below the header rather than over it: this strip informs, and anything
+       that covers the navigation while informing has stopped informing. */
+    position: fixed; top: calc(var(--app-header-h) + var(--space-2)); left: 50%;
+    transform: translateX(-50%);
+    z-index: 55;
+    box-sizing: border-box;
+    display: flex; gap: .6em; align-items: flex-start;
+    width: min(560px, calc(100vw - 2 * var(--space-3)));
+    padding: var(--space-2) var(--space-3);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-left: 3px solid var(--color-warning);
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-lg);
+    animation: preflight-in 200ms ease-out;
+}
+.preflight-note.hidden { display: none; }
+.preflight-note-mark { flex: 0 0 auto; margin-top: .15em; }
+.preflight-note-line { margin: 0 0 .25em; font-size: .82rem; line-height: 1.45;
+                       color: var(--text-secondary); }
+.preflight-note-line:last-child { margin-bottom: 0; }
+.preflight-note-line strong { color: var(--text-primary); }
+
+.res-preflight { margin-top: var(--space-4); }
+.res-preflight-head {
+    display: flex; align-items: center; gap: .6em;
+    margin-bottom: var(--space-2);
+}
+.res-preflight-head h3 { margin: 0; font-size: .95rem; color: var(--text-primary); }
+.res-preflight-summary { margin: 0 0 var(--space-2); font-size: .85rem;
+                         line-height: 1.5; color: var(--text-secondary); }
+.res-preflight-scope { margin: var(--space-2) 0 0; font-size: .78rem;
+                       color: var(--text-secondary); }
+.preflight-list.is-compact .preflight-item { padding: var(--space-2) 0; }
+.preflight-list.is-compact .preflight-item-remedy { background: var(--bg-tertiary); }
+
+/* State pills. Tinted backgrounds, both themes, from the shared status tokens
+   rather than from colours mixed here. */
+.preflight-pill {
+    display: inline-block;
+    padding: .1em .6em;
+    font-size: .72rem; font-weight: 600; letter-spacing: .02em;
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+}
+.preflight-pill.is-ok { background: var(--bg-success); border-color: var(--color-success); }
+.preflight-pill.is-degraded { background: var(--bg-warning); border-color: var(--color-warning); }
+.preflight-pill.is-blocked { background: var(--bg-danger); border-color: var(--color-danger); }
+.preflight-pill.is-unknown { background: var(--bg-info); border-color: var(--color-info); }
+
+@keyframes preflight-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: none; }
+}
+/* The strip is centred by a transform, so its keyframes must not fight it. */
+.preflight-note { animation-name: preflight-note-in; }
+@keyframes preflight-note-in {
+    from { opacity: 0; transform: translate(-50%, -6px); }
+    to   { opacity: 1; transform: translate(-50%, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .preflight-gate, .preflight-note { animation: none; }
+}
+
+@media (max-width: 760px) {
+    .preflight-gate { align-items: flex-start; padding: var(--space-3); }
+    .preflight-gate-foot { flex-wrap: wrap; }
+}

@@ -1128,6 +1128,80 @@ def system_resources():
         return jsonify({'error': 'unavailable'}), 200
 
 
+def _load_startup_preflight():
+    """Import services.common.startup_preflight, or return None.
+
+    It is not always importable from here. The web-ui image is built with
+    `context: services/web-ui`, so `services/common` is not in it — unlike
+    core-logic, whose Dockerfile copies both. Every other cross-service import
+    in this file is written the same defensive way for the same reason.
+
+    Failing to load is reported by name to the caller rather than being turned
+    into a clean-looking "everything is fine", which is the failure mode a
+    preflight exists to prevent.
+    """
+    if not hasattr(app, '_preflight_mod'):
+        mod = None
+        root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'))
+        for candidate in (root, '/app'):
+            if candidate not in sys.path:
+                sys.path.insert(0, candidate)
+        try:
+            from services.common import startup_preflight as mod  # noqa: F401
+        except Exception as e:  # ImportError, and anything the module does at import
+            app.logger.warning("startup preflight unavailable: %s", e)
+            app._preflight_reason = str(e)
+            mod = None
+        app._preflight_mod = mod
+    return app._preflight_mod
+
+
+@app.route('/api/system/preflight', methods=['GET'])
+def system_preflight():
+    """Can this machine run Helga right now?
+
+    The readings come from core's /api/system/resources when core is up,
+    because core is where memory is already measured and two services
+    measuring separately would disagree in public. When core is unreachable the
+    module measures locally instead — a worse reading, said out loud in the
+    payload rather than passed off as the real one.
+    """
+    resources = None
+    core_note = None
+    try:
+        r = requests.get(f'{SERVICES["core"]}/api/system/resources', timeout=8)
+        if r.ok:
+            resources = r.json()
+    except Exception as e:
+        app.logger.warning("preflight could not reach core: %s", e)
+        core_note = f"the core service did not answer ({e}); measured locally"
+
+    mod = _load_startup_preflight()
+    if mod is None:
+        reason = getattr(app, '_preflight_reason', 'module not found')
+        return jsonify({
+            'state': 'degraded',
+            'summary': 'The startup check is not installed in this build.',
+            'checks': [{
+                'id': 'preflight', 'label': 'Startup preflight',
+                'state': 'unknown',
+                'reason': f'services.common.startup_preflight could not be '
+                          f'imported here: {reason}',
+                'remedy': 'This says nothing about the machine — only that it '
+                          'was not measured.',
+                'measured': {},
+            }],
+            'blocking': [], 'advisory': False, 'scope': 'unknown',
+            'notes': [n for n in (core_note,) if n],
+            'checked_at': time.time(),
+        }), 200
+
+    verdict = mod.preflight(resources=resources)
+    if core_note:
+        verdict.setdefault('notes', []).append(core_note)
+    return jsonify(verdict), 200
+
+
 # --- Degree programmes -------------------------------------------------------
 # degree.js and home.js have called these three since they were written; there
 # was nothing on the other end, so the flagship surface has been rendering
