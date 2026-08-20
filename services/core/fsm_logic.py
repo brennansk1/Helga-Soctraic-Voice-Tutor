@@ -1251,6 +1251,16 @@ class MnemosyneFSM:
                     return
                 self.handle_flashcard_answer(text)
 
+        elif self.state == "PAUSED":
+            # PAUSED had no branch here at all, so anything a paused student
+            # typed that was not literally "resume" fell through this dispatch
+            # and vanished -- no reply, no state change, a session that looked
+            # dead. A paused session should answer with the one fact that
+            # matters: how to get out of it.
+            if event_type == "TEXT_INPUT":
+                self.speak("The session is paused. Say resume to continue, "
+                           "or stop to return to the lobby.")
+
         elif self.state == "DRAFTING_COURSE":
             if event_type == "TEXT_INPUT":
                 self.handle_drafting_input(text)
@@ -2149,17 +2159,25 @@ class MnemosyneFSM:
     def _advance_without_completing(self):
         """Advance to the next concept WITHOUT marking the current one as completed.
         Used by SKIP_CONCEPT and 'next' voice command."""
+        # The concept being skipped is, by definition, not completed — so a
+        # repopulate that only excludes completed_topics puts it straight back
+        # at the head of the queue, and pop(0) hands the student the exact
+        # concept they just asked to leave. On the last concept of a course
+        # this was an unbreakable loop: SKIP re-taught the skipped concept
+        # forever.
+        skipped_uid = (self.current_lesson_node or {}).get("uid")
         if not self.syllabus_queue:
             # Try auto-populate like next_syllabus_item does
             if self.active_course_uid:
                 try:
                     all_concepts = self.storage.courses.get_flat_concepts(self.active_course_uid)
                     for c in all_concepts:
-                        if c["uid"] not in self.completed_topics:
-                            content = self.storage.courses.get_concept_content(
-                                self.active_course_uid, c["uid"]
-                            )
-                            self.syllabus_queue.append(self._queue_entry(c, content))
+                        if c["uid"] in self.completed_topics or c["uid"] == skipped_uid:
+                            continue
+                        content = self.storage.courses.get_concept_content(
+                            self.active_course_uid, c["uid"]
+                        )
+                        self.syllabus_queue.append(self._queue_entry(c, content))
                 except Exception as e:
                     logging.warning(f"Failed to auto-populate syllabus on skip: {e}")
 
@@ -2747,23 +2765,45 @@ class MnemosyneFSM:
                 text = text.split("```json")[1].split("```")[0].strip()
             elif "```" in text:
                 text = text.split("```")[1].split("```")[0].strip()
-            match = re.search(r"\{[^{}]*\}", text, re.DOTALL)
-            if match:
-                text = match.group(0)
+            # Extraction must respect nesting. The old r"\{[^{}]*\}" regex
+            # cannot match a brace inside a brace, so a perfectly valid
+            # response like {"grade":1,"detail":{"objective":"x"}} had its
+            # INNER object extracted -- no grade key -- and the old default
+            # then turned a scored 1 into a 3. raw_decode from the first "{"
+            # parses a complete object however deep it nests.
+            text = re.sub(r'"grade":\s*"Grade\s*(\d)"', r'"grade": \1', text)
             try:
-                text = re.sub(r'"grade":\s*"Grade\s*(\d)"', r'"grade": \1', text)
                 result = json.loads(text)
-            except Exception as e:
-                grade_match = re.search(r'"grade":\s*(\d)', text)
-                if grade_match:
-                    result = {"grade": int(grade_match.group(1))}
-                else:
-                    any_grade = re.search(r'\bgrade\b.*?(\d)', text, re.IGNORECASE)
-                    if any_grade:
-                        result = {"grade": int(any_grade.group(1))}
+            except Exception:
+                result = None
+                start = text.find("{")
+                if start != -1:
+                    try:
+                        result, _ = json.JSONDecoder().raw_decode(text[start:])
+                    except Exception:
+                        result = None
+                if not isinstance(result, dict):
+                    grade_match = re.search(r'"grade":\s*(\d)', text)
+                    if grade_match:
+                        result = {"grade": int(grade_match.group(1))}
                     else:
-                        raise e
-            return {"graded": True, "grade_source": "llm", "grade": int(result.get("grade", 3)),
+                        any_grade = re.search(r'\bgrade\b.*?(\d)', text, re.IGNORECASE)
+                        if any_grade:
+                            result = {"grade": int(any_grade.group(1))}
+                        else:
+                            raise ValueError("no grade found in response")
+
+            if not isinstance(result, dict) or "grade" not in result:
+                # A response with no verdict is not an assessment. The old
+                # default here was 3 -- a PASSING grade invented out of
+                # silence, contradicting the fail-safe this docstring
+                # promises. Fall back exactly like unparseable content.
+                logging.warning("Grading response parsed but carried no grade")
+                return fail
+            # Clamp: a model that answers 7, 0 or -1 is out of contract, and
+            # letting it through would move the mastery gate arbitrarily.
+            grade_val = max(1, min(5, int(result["grade"])))
+            return {"graded": True, "grade_source": "llm", "grade": grade_val,
                 "missing_concepts": result.get("missing_concepts", []),
                 "feedback": result.get("feedback", ""),
                 "reason": result.get("reason", ""),
@@ -3049,8 +3089,15 @@ class MnemosyneFSM:
 
         # Also schedule FSRS review on each answer (not just concept completion)
         # so that partial progress still creates review cards.
+        #
+        # -- unless nothing was actually assessed. graded=False marks the
+        # grade-2 outage fallback: data about the infrastructure, not the
+        # learner, and the one consumer that must not eat it is the scheduler,
+        # which would otherwise record a review that never happened and move
+        # the interval off a fabricated rating.
         try:
-            if self.current_lesson_node and self.current_lesson_node.get("uid"):
+            if (result.get("graded", True)
+                    and self.current_lesson_node and self.current_lesson_node.get("uid")):
                 self.storage.schedule.schedule_concept_review(
                     self.active_course_uid or "unknown",
                     self.current_lesson_node["uid"],
@@ -3116,18 +3163,26 @@ class MnemosyneFSM:
         self.card_attempts = 0
 
         self.send_status_update("Generating Question...")
-        messages = get_examiner_question_prompt(self.current_card.get("text", ""))
+        # Cards carry front/back (enter_mode_2 builds them that way); "text"
+        # was a key that never existed, so questions were being generated from
+        # an empty string — the model inventing an exam from nothing and then
+        # confidently grading against nothing.
+        card_content = self.current_card.get("back", "") or self.current_card.get("front", "")
+        messages = get_examiner_question_prompt(card_content)
+        question = f"What can you tell me about {self.current_card['title']}?"
         try:
             raw = self._call_llm(messages, max_tokens=500, timeout=45)
             if raw:
-                question = clean_llm_response(raw)
+                question = clean_llm_response(raw) or question
                 logging.info(f"LLM Examiner Question: {question[:100]}...")
-            else:
-                question = f"What can you tell me about {self.current_card['title']}?"
-            self.speak(question)
         except Exception as e:
             logging.error(f"LLM Examiner Exception: {e}")
-            self.speak(f"Describe {self.current_card['title']}.")
+            question = f"Describe {self.current_card['title']}."
+        # The grader must see the question that was actually asked. This was
+        # never set here, so review answers were graded against whatever
+        # Socratic question the student last saw — or "" on a fresh process.
+        self.last_question = question
+        self.speak(question)
         self.question_start_time = time.time()
 
     def handle_flashcard_answer(self, text):
@@ -3136,8 +3191,11 @@ class MnemosyneFSM:
 
         self.send_status_update("Grading...")
         messages = get_examiner_grade_prompt(
-            self.last_question, text, self.current_card.get("text", "")
+            self.last_question, text,
+            self.current_card.get("back", "") or self.current_card.get("front", "")
         )
+        graded = False
+        is_correct = False
         try:
             logging.info("LLM Flashcard Grading Request")
             content = self._call_llm(messages, max_tokens=500, timeout=45)
@@ -3158,13 +3216,28 @@ class MnemosyneFSM:
                         result = {"grade": grade_match.group(1)}
                     else:
                         raise e
-                is_correct = str(result.get("grade", "")).upper() == "PASS"
-            else:
-                logging.error("LLM Flashcard Grading returned None")
-                is_correct = True
+                verdict = str(result.get("grade", "")).upper()
+                if verdict in ("PASS", "FAIL"):
+                    graded = True
+                    is_correct = verdict == "PASS"
         except Exception as e:
             logging.error(f"LLM Flashcard Grading Exception: {e}")
-            is_correct = True
+
+        # An outage is not an assessment. This used to set is_correct = True,
+        # so a dead model marked every review answer correct, said "Correct.",
+        # and advanced the FSRS schedule — the mirror image of the quiz bug
+        # where an outage counted as FAIL and reset cards to "Again". Both
+        # directions corrupt the one thing this mode exists to maintain.
+        # Keep the card, tell the student what actually happened, touch nothing.
+        if not graded:
+            self.review_queue.insert(0, self.current_card)
+            self.speak(
+                "I could not grade that answer — the model did not respond. "
+                "Nothing was recorded against this card. Say resume review to "
+                "try it again."
+            )
+            self.state = "LOBBY"
+            return
 
         if is_correct:
             self.play_sound("SUCCESS_CHORD")
