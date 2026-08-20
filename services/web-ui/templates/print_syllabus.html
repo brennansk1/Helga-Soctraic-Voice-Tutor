@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+{# Print-friendly syllabus — a standalone document, not an app view.
+   Served by notes_api.print_syllabus with the structure already fetched from
+   RAG, so the page renders complete and prints without JavaScript. Fonts are
+   the app's self-hosted Plex (fonts.css); no external hosts, no emoji. #}
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% if title %}{{ title }} — Syllabus{% else %}Syllabus{% endif %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=2">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/print.css') }}?v=1">
+</head>
+<body>
+
+{% if error %}
+    <div class="print-error">
+        <p>Helga could not load this course ({{ error }}), so there is no
+           syllabus to print yet. This is not a statement that the course is
+           empty.</p>
+        <p><a href="/notebook?course_uid={{ course_uid | urlencode }}">Back to
+           the notebook</a></p>
+    </div>
+{% else %}
+    <div class="print-toolbar">
+        <a class="print-btn print-btn-quiet"
+           href="/notebook?course_uid={{ course_uid | urlencode }}">Back to notebook</a>
+        <button class="print-btn" type="button" onclick="window.print()">Print</button>
+    </div>
+
+    <main class="print-sheet">
+        <header class="syllabus-head">
+            <p class="syllabus-kicker">Course syllabus</p>
+            <h1 class="syllabus-title">{{ title or course_uid }}</h1>
+            <p class="syllabus-meta">{{ concept_count }} concept{{ '' if concept_count == 1 else 's' }}
+               across {{ modules | length }} module{{ '' if modules | length == 1 else 's' }}.
+               Filled boxes are concepts already completed; empty ones are
+               yours to tick as you go.</p>
+        </header>
+
+        {% for module in modules %}
+        <section class="syllabus-module">
+            <h2>{{ loop.index }}. {{ module.title }}</h2>
+            {% for unit in module.units %}
+            <div class="syllabus-unit">
+                <h3>{{ unit.title }}</h3>
+                {% for lesson in unit.lessons %}
+                <div class="syllabus-lesson">
+                    <h4>{{ lesson.title }}</h4>
+                    <ul class="syllabus-concepts">
+                        {% for concept in lesson.concepts %}
+                        <li>
+                            <span class="syllabus-check{{ ' done' if concept.completed }}"
+                                  aria-hidden="true"></span>
+                            <span>{{ concept.title }}</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endfor %}
+            </div>
+            {% endfor %}
+        </section>
+        {% endfor %}
+
+        <footer class="syllabus-foot">
+            <span>Helga — Socratic voice tutor</span>
+            <span>Printed from the learner's own course plan</span>
+        </footer>
+    </main>
+{% endif %}
+
+</body>
+</html>

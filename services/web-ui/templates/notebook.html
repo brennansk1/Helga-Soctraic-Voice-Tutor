@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Notebook — Helga{% endblock %}
+
+{#  The Session Notebook — the read surface for notes the tutor has been
+    writing down all along. One course per view: a notebook is something you
+    keep per subject, and cross-course concatenation is what export is for.
+
+    Deliberately NOT a nav tab (the bar is capped at seven destinations and
+    verified not to wrap at 1280px); the entry points are the header pill
+    next to Continue (notify.js) and direct links from session surfaces. #}
+
+{% block body_class %}page-notebook{% endblock %}
+
+{% block head_scripts %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/notebook.css') }}?v=1">
+{% endblock %}
+
+{% block content %}
+<div class="notebook-shell">
+
+    <header class="notebook-header u-animate-rise">
+        <div>
+            <h1 class="notebook-title">Notebook</h1>
+            <p class="notebook-subtitle" id="notebook-course-line">
+                What you worked through, question by question.</p>
+        </div>
+        <div class="notebook-actions" id="notebook-actions" hidden>
+            <a class="btn btn-secondary" id="notebook-export-link" href="#"
+               download>Download notes (Markdown)</a>
+            <a class="btn btn-secondary" id="notebook-syllabus-link"
+               href="#">Printable syllabus</a>
+            <a class="btn btn-secondary" id="notebook-cert-link"
+               href="#">Certificate</a>
+        </div>
+    </header>
+
+    {# Course picker — shown only when the page is opened without a
+       course_uid. A missing parameter is a navigation state, not an error. #}
+    <section class="notebook-picker" id="notebook-picker" hidden>
+        <h2 class="notebook-picker-title">Whose pages do you want to open?</h2>
+        <p class="notebook-picker-sub">Each course keeps its own notebook.</p>
+        <div class="notebook-picker-list" id="notebook-picker-list"></div>
+    </section>
+
+    <div id="notebook-loading" class="notebook-loading" hidden>
+        <div class="u-skeleton notebook-skeleton-row"></div>
+        <div class="u-skeleton notebook-skeleton-row"></div>
+        <div class="u-skeleton notebook-skeleton-row"></div>
+    </div>
+
+    {# Failure is named, never blank: "no notes" and "the service did not
+       answer" are different claims and must not render the same. #}
+    <div id="notebook-error" class="notebook-error" role="alert" hidden></div>
+
+    {# The honest empty state: a fresh install has no notes anywhere, and that
+       must read as "not yet", not as broken. #}
+    <section class="notebook-empty" id="notebook-empty" hidden>
+        <h2>No notes in this notebook yet</h2>
+        <p>Notes appear here as you study: each time you answer a question in
+           a session, Helga writes down the question, your answer, and how it
+           went. Come back after your next session.</p>
+        <a class="btn btn-primary" id="notebook-empty-resume" href="/courses">
+            Start a session</a>
+    </section>
+
+    <section id="notebook-groups" class="notebook-groups" hidden></section>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+    window.NOTEBOOK_COURSE_UID = {{ course_uid | default('') | tojson }};
+</script>
+<script src="{{ url_for('static', filename='js/notebook.js') }}?v=1"></script>
+{% endblock %}

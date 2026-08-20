@@ -1,0 +1,274 @@
+/* Printables: the syllabus and the completion certificate.
+ *
+ * These pages are DOCUMENTS, not app views: they do not load style.css and do
+ * not follow the app theme, because their destination is paper — a printed
+ * page is always "light mode". The palette below is therefore deliberate and
+ * complete in this one file (every token used here is defined here, which is
+ * all css_theme_guard.py asks of it), and the on-screen view is simply an
+ * honest preview of the printed sheet.
+ *
+ * Type is the app's own self-hosted IBM Plex Sans via fonts.css — no external
+ * font hosts; Helga is an offline appliance.
+ */
+
+:root {
+    --print-ink: #2d3a2e;
+    --print-ink-soft: #6b7c6e;
+    --print-accent: #2e6b8a;
+    --print-rule: #d4cdc4;
+    --print-paper: #ffffff;
+    --print-desk: #ece7e0;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif;
+    color: var(--print-ink);
+    background: var(--print-desk);
+    line-height: 1.55;
+}
+
+/* The sheet: on screen it floats on a desk background so the page boundary is
+   visible; in print it IS the page. */
+.print-sheet {
+    max-width: 780px;
+    margin: 2rem auto;
+    padding: 3rem 3.25rem;
+    background: var(--print-paper);
+    box-shadow: 0 4px 24px rgba(45, 58, 46, 0.14);
+}
+
+/* Screen-only chrome: the print button and the way back. */
+.print-toolbar {
+    max-width: 780px;
+    margin: 1.5rem auto 0;
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+}
+
+.print-btn {
+    font: inherit;
+    font-weight: 600;
+    padding: 0.5rem 1.1rem;
+    border-radius: 8px;
+    border: 1px solid var(--print-accent);
+    background: var(--print-accent);
+    color: #ffffff;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.print-btn-quiet {
+    background: transparent;
+    color: var(--print-accent);
+}
+
+/* ------------------------------------------------------------- syllabus */
+.syllabus-head {
+    border-bottom: 3px double var(--print-rule);
+    padding-bottom: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.syllabus-kicker {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--print-accent);
+    margin: 0 0 0.35rem;
+}
+
+.syllabus-title {
+    font-size: 1.9rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.syllabus-meta {
+    color: var(--print-ink-soft);
+    font-size: 0.9rem;
+    margin: 0.4rem 0 0;
+}
+
+.syllabus-module {
+    margin: 0 0 1.4rem;
+    /* A module split across a page break reads as two modules. */
+    break-inside: avoid-page;
+}
+
+.syllabus-module > h2 {
+    font-size: 1.15rem;
+    margin: 0 0 0.5rem;
+    padding-bottom: 0.25rem;
+    border-bottom: 1px solid var(--print-rule);
+}
+
+.syllabus-unit > h3 {
+    font-size: 1rem;
+    margin: 0.75rem 0 0.25rem;
+}
+
+.syllabus-lesson > h4 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--print-ink-soft);
+    margin: 0.5rem 0 0.2rem;
+}
+
+.syllabus-concepts {
+    list-style: none;
+    margin: 0 0 0.4rem;
+    padding: 0;
+}
+
+.syllabus-concepts li {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    padding: 0.12rem 0;
+    font-size: 0.92rem;
+}
+
+/* A hand-tickable checkbox drawn in CSS — no glyphs, no emoji, and it still
+   works in ink when the learner prints an unfinished course to study from. */
+.syllabus-check {
+    flex-shrink: 0;
+    width: 0.8rem;
+    height: 0.8rem;
+    border: 1.5px solid var(--print-ink-soft);
+    border-radius: 3px;
+    position: relative;
+    top: 0.1rem;
+}
+
+.syllabus-check.done {
+    background: var(--print-accent);
+    border-color: var(--print-accent);
+}
+
+.syllabus-foot {
+    margin-top: 2rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--print-rule);
+    color: var(--print-ink-soft);
+    font-size: 0.8rem;
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+/* ---------------------------------------------------------- certificate */
+.cert-sheet {
+    text-align: center;
+    padding: 3.5rem 3rem;
+    border: 2px solid var(--print-accent);
+    outline: 6px double var(--print-rule);
+    outline-offset: 6px;
+}
+
+.cert-kicker {
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--print-accent);
+    margin: 0 0 2rem;
+}
+
+.cert-lead {
+    color: var(--print-ink-soft);
+    margin: 0 0 0.6rem;
+}
+
+.cert-name {
+    font-size: 2rem;
+    font-weight: 700;
+    margin: 0 0 0.4rem;
+}
+
+/* No name on file: a real signature line instead of an invented name. */
+.cert-name-line {
+    display: inline-block;
+    width: 60%;
+    border-bottom: 1.5px solid var(--print-ink);
+    height: 2.4rem;
+    margin-bottom: 0.4rem;
+}
+
+.cert-course {
+    font-size: 1.35rem;
+    font-weight: 600;
+    margin: 0.6rem 0 1.6rem;
+}
+
+.cert-detail {
+    color: var(--print-ink-soft);
+    font-size: 0.92rem;
+    margin: 0.2rem 0;
+}
+
+.cert-rule {
+    width: 5rem;
+    border: 0;
+    border-top: 2px solid var(--print-accent);
+    margin: 1.8rem auto;
+}
+
+.cert-issuer {
+    font-size: 0.85rem;
+    color: var(--print-ink-soft);
+    margin: 0;
+}
+
+/* The honest not-finished page. */
+.cert-progress {
+    text-align: center;
+}
+
+.cert-progress h1 {
+    font-size: 1.4rem;
+    margin: 0 0 0.75rem;
+}
+
+.cert-progress p {
+    color: var(--print-ink-soft);
+    max-width: 46ch;
+    margin: 0 auto 0.5rem;
+}
+
+.print-error {
+    max-width: 780px;
+    margin: 2rem auto;
+    padding: 1.25rem 1.5rem;
+    background: var(--print-paper);
+    border-left: 4px solid #a8412e;
+}
+
+/* --------------------------------------------------------------- @print */
+@media print {
+    body { background: var(--print-paper); }
+
+    .print-sheet {
+        max-width: none;
+        margin: 0;
+        padding: 0.5in;
+        box-shadow: none;
+    }
+
+    .cert-sheet { padding: 1in 0.75in; }
+
+    /* Screen chrome never reaches paper. */
+    .print-toolbar { display: none; }
+
+    a { color: inherit; text-decoration: none; }
+}
+
+@page { margin: 0.6in; }

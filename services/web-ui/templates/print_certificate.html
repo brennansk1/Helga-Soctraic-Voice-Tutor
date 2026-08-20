@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+{# The completion certificate — learner-facing pride of work.
+   Served by notes_api.print_certificate; the completeness check happened
+   server-side against the RAG read model, and an unfinished course renders
+   an honest progress page rather than a certificate, so the document cannot
+   be conjured by editing a URL. Self-hosted fonts only; no emoji. #}
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% if cert and cert.complete %}Certificate — {{ cert.course_title }}{% else %}Certificate{% endif %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=2">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/print.css') }}?v=1">
+</head>
+<body>
+
+{% if error %}
+    <div class="print-error">
+        <p>Helga could not check this course's completion ({{ error }}), so no
+           certificate can be shown right now. This is not a statement about
+           your progress.</p>
+        <p><a href="/notebook?course_uid={{ course_uid | urlencode }}">Back to
+           the notebook</a></p>
+    </div>
+{% elif cert.complete %}
+    <div class="print-toolbar">
+        <a class="print-btn print-btn-quiet"
+           href="/notebook?course_uid={{ course_uid | urlencode }}">Back to notebook</a>
+        <button class="print-btn" type="button" onclick="window.print()">Print</button>
+    </div>
+
+    <main class="print-sheet cert-sheet">
+        <p class="cert-kicker">Certificate of Completion</p>
+
+        <p class="cert-lead">This certifies that</p>
+        {% if cert.learner_name %}
+        <h1 class="cert-name">{{ cert.learner_name }}</h1>
+        {% else %}
+        {# No name on the profile: a signature line, never an invented name. #}
+        <span class="cert-name-line" aria-label="Learner name"></span>
+        {% endif %}
+
+        <p class="cert-lead">has completed every concept of the course</p>
+        <h2 class="cert-course">{{ cert.course_title or cert.course_uid }}</h2>
+
+        <p class="cert-detail">{{ cert.total_concepts }} concept{{ '' if cert.total_concepts == 1 else 's' }},
+           each taught, questioned, and answered.</p>
+        {% if cert.completion_date %}
+        <p class="cert-detail">Completed on {{ cert.completion_date[:10] }}</p>
+        {% endif %}
+
+        <hr class="cert-rule">
+        <p class="cert-issuer">Helga — Socratic voice tutor.
+           Earned through spaced review and graded answers, not attendance.</p>
+    </main>
+{% else %}
+    <div class="print-toolbar">
+        <a class="print-btn print-btn-quiet"
+           href="/notebook?course_uid={{ course_uid | urlencode }}">Back to notebook</a>
+    </div>
+
+    <main class="print-sheet cert-progress">
+        <h1>Not finished yet — and that is the honest answer</h1>
+        <p>{{ cert.completed_concepts }} of {{ cert.total_concepts }}
+           concept{{ '' if cert.total_concepts == 1 else 's' }} completed in
+           {{ cert.course_title or cert.course_uid }}.</p>
+        <p>The certificate prints itself the moment the last concept is done.
+           A certificate for an unfinished course would not be worth the
+           paper.</p>
+        <p><a href="/learn?course_uid={{ course_uid | urlencode }}">Keep going</a></p>
+    </main>
+{% endif %}
+
+</body>
+</html>

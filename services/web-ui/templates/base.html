@@ -150,6 +150,111 @@
         .theme-icon-moon { display: block; }
         [data-theme="dark"] .theme-icon-sun { display: block; }
         [data-theme="dark"] .theme-icon-moon { display: none; }
+
+        /* The due-reviews bell (notify.js). Every colour is an existing
+           token defined for both themes in style.css; the button sets its
+           own `color` because ButtonText does not inherit and black-on-dark
+           is exactly the bug css_theme_guard.py exists to catch. */
+        .notify-wrap {
+            position: relative;
+            flex-shrink: 0;
+        }
+        .notify-bell {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            padding: 0;
+            background: none;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s, border-color 0.15s;
+        }
+        .notify-bell:hover {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border-color: var(--accent-primary);
+        }
+        .notify-count {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            min-width: 16px;
+            height: 16px;
+            padding: 0 4px;
+            border-radius: 999px;
+            background: var(--accent-secondary);
+            color: var(--text-inverted);
+            font-size: 0.65rem;
+            font-weight: 700;
+            line-height: 16px;
+            text-align: center;
+        }
+        .notify-dropdown {
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            width: min(320px, 86vw);
+            max-height: 60vh;
+            overflow-y: auto;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow-lg);
+            padding: 0.5rem;
+            z-index: 9500;
+        }
+        .notify-heading {
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            margin: 0.25rem 0.5rem 0.5rem;
+        }
+        .notify-item {
+            display: block;
+            padding: 0.5rem;
+            border-radius: 8px;
+            color: var(--text-primary);
+            text-decoration: none;
+        }
+        .notify-item:hover { background: var(--bg-tertiary); }
+        .notify-item-title {
+            display: block;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .notify-item-body,
+        .notify-item-ts {
+            display: block;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+        .notify-item-read { opacity: 0.6; }
+        .notify-mark-read {
+            margin-top: 0.25rem;
+            padding: 0.1rem 0.5rem;
+            font-size: 0.75rem;
+            background: none;
+            border: 1px solid var(--border-color);
+            border-radius: 999px;
+            color: var(--text-secondary);
+            cursor: pointer;
+        }
+        .notify-mark-read:hover {
+            color: var(--accent-primary);
+            border-color: var(--accent-primary);
+        }
+        .notify-empty {
+            margin: 0.25rem 0.5rem 0.5rem;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
     </style>
     <!-- Favicon is the logo file, not an emoji glyph: an emoji favicon is
          rendered by the OS, so the tab icon differed per platform. -->
@@ -225,6 +330,14 @@
                 <a href="#" class="build-pill hidden" id="continue-pill">
                     <span id="continue-label">Continue</span>
                 </a>
+                {# Notebook: the read surface for session notes — deliberately
+                   NOT a nav tab (the bar is capped at seven destinations and
+                   verified not to wrap at 1280px). Like Continue, it deep
+                   links into the last opened course; notify.js fills the href
+                   and reveals it once a session has ever been opened. #}
+                <a href="/notebook" class="build-pill hidden" id="notebook-pill">
+                    <span>Notebook</span>
+                </a>
                 <a href="/build" class="build-pill hidden" id="build-pill">
                     <span class="build-now-pulse" aria-hidden="true"></span>
                     <span id="build-pill-label">Building&hellip;</span>
@@ -239,6 +352,21 @@
                 <span class="level-badge" id="level-badge">Lv 1</span>
                 <span class="streak-badge" id="streak-counter">&#128293; 0</span>
                 <span class="daily-goal-dots" id="daily-goal-dots" title="Daily goal progress"></span>
+            </div>
+            {# The due-reviews bell. /api/notifications is real but its rows
+               are addressed to parents; for a solo learner the news that
+               actually exists is "reviews came due", so notify.js polls both
+               that endpoint and /api/due_concepts (the Practice page's own
+               source) and folds them into one badge. #}
+            <div class="notify-wrap">
+                <button id="notify-bell" class="notify-bell" type="button"
+                        aria-label="Notifications" aria-haspopup="true"
+                        aria-expanded="false" aria-controls="notify-dropdown"
+                        title="Notifications">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                    <span class="notify-count" id="notify-count" hidden>0</span>
+                </button>
+                <div id="notify-dropdown" class="notify-dropdown" hidden></div>
             </div>
             <button id="header-theme-toggle" class="header-theme-toggle" aria-label="Toggle light/dark theme" title="Toggle theme">
                 <!-- Moon: shown in light mode -->
@@ -264,6 +392,10 @@
         survive navigation and the UI must stop offering actions the system
         will refuse. #}
     <script src="{{ url_for('static', filename='js/build-guard.js') }}?v=1"></script>
+    {# The due-reviews bell and the Notebook pill. Polls /api/notifications
+       and /api/due_concepts every 20s, paused while the tab is hidden —
+       the same discipline as resources.js below. #}
+    <script src="{{ url_for('static', filename='js/notify.js') }}?v=1"></script>
         {% block page_scripts %}{% endblock %}
     <!-- App-wide: renders the storage panel when Settings is open, and the
          memory safeguard card on every page. -->

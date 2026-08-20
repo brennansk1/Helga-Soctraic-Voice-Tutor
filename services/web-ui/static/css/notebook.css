@@ -1,0 +1,262 @@
+/* The Session Notebook.
+ *
+ * Styled entirely with the design-system tokens, all of which are defined for
+ * both themes in style.css — no new custom properties, so there is nothing
+ * here for css_theme_guard.py to catch. The notebook is prose-heavy; the job
+ * of this sheet is a readable measure and a clear question/answer rhythm, not
+ * new visual vocabulary.
+ */
+
+.notebook-shell {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: var(--space-5) var(--space-4) var(--space-8);
+}
+
+.notebook-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--space-4);
+    margin-bottom: var(--space-6);
+}
+
+.notebook-title {
+    font-size: var(--font-size-3xl);
+    color: var(--text-primary);
+    margin: 0 0 var(--space-1);
+}
+
+.notebook-subtitle {
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.notebook-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+/* `display: flex` outranks the UA's [hidden] rule — the same trap
+   library.css and surfaces.css guard against on their own panels. Without
+   these, the action buttons render on the course picker. */
+.notebook-actions[hidden],
+.notebook-groups[hidden] { display: none; }
+
+/* ------------------------------------------------------------ picker */
+.notebook-picker-title {
+    font-size: var(--font-size-xl);
+    color: var(--text-primary);
+    margin: 0 0 var(--space-1);
+}
+
+.notebook-picker-sub {
+    color: var(--text-secondary);
+    margin: 0 0 var(--space-4);
+}
+
+.notebook-picker-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.notebook-picker-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    color: var(--text-primary);
+    text-decoration: none;
+    box-shadow: var(--shadow-soft);
+}
+
+.notebook-picker-item:hover {
+    border-color: var(--accent-primary);
+}
+
+.notebook-picker-item-status {
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+}
+
+.notebook-picker-none {
+    color: var(--text-secondary);
+}
+
+/* ------------------------------------------------ loading and states */
+.notebook-skeleton-row {
+    height: 72px;
+    border-radius: var(--border-radius);
+    margin-bottom: var(--space-3);
+}
+
+.notebook-error {
+    padding: var(--space-4);
+    border: 1px solid var(--status-error);
+    border-radius: var(--border-radius);
+    background: var(--bg-danger);
+    color: var(--text-primary);
+}
+
+.notebook-empty {
+    text-align: center;
+    padding: var(--space-8) var(--space-4);
+    background: var(--bg-secondary);
+    border: 1px dashed var(--border-color);
+    border-radius: var(--border-radius-lg);
+}
+
+.notebook-empty h2 {
+    color: var(--text-primary);
+    margin: 0 0 var(--space-2);
+}
+
+.notebook-empty p {
+    color: var(--text-secondary);
+    max-width: 46ch;
+    margin: 0 auto var(--space-4);
+}
+
+/* ------------------------------------------------------------ groups */
+.notebook-groups {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+}
+
+.notebook-group {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+}
+
+.notebook-group-head {
+    position: relative;
+    padding: var(--space-4) var(--space-4) var(--space-3);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.notebook-group-title {
+    font-size: var(--font-size-lg);
+    color: var(--text-primary);
+    margin: 0;
+    /* room for the count pill in the corner */
+    padding-right: 6rem;
+}
+
+.notebook-group-crumb {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    margin: var(--space-1) 0 0;
+}
+
+.notebook-group-count {
+    position: absolute;
+    top: var(--space-4);
+    right: var(--space-4);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    padding: 2px 10px;
+    white-space: nowrap;
+}
+
+/* ------------------------------------------------------------- notes */
+.notebook-notes {
+    display: flex;
+    flex-direction: column;
+}
+
+.notebook-note {
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.notebook-note:last-child {
+    border-bottom: none;
+}
+
+.notebook-note-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-1);
+}
+
+.notebook-note-ts {
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+}
+
+.notebook-grade {
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    border-radius: 999px;
+    padding: 1px 8px;
+}
+
+.notebook-grade-pass {
+    background: var(--bg-success);
+    color: var(--status-success);
+}
+
+.notebook-grade-partial {
+    background: var(--bg-warning);
+    color: var(--status-warning);
+}
+
+.notebook-q,
+.notebook-a,
+.notebook-r,
+.notebook-freetext {
+    margin: 0 0 var(--space-1);
+    color: var(--text-primary);
+    line-height: var(--line-height);
+    overflow-wrap: anywhere;
+}
+
+.notebook-r {
+    color: var(--text-secondary);
+}
+
+.notebook-label {
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-bold);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--accent-primary);
+    margin-right: var(--space-1);
+}
+
+.notebook-compacted {
+    margin: 0;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+@media (max-width: 600px) {
+    .notebook-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .notebook-group-title {
+        padding-right: 0;
+    }
+
+    .notebook-group-count {
+        position: static;
+        display: inline-block;
+        margin-top: var(--space-2);
+    }
+}
