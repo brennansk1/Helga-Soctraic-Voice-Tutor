@@ -150,7 +150,15 @@ class TestDeleteCourseFuzzing:
             mock_post.return_value = mock_resp
 
             rv = client.delete(f"/api/delete_course?uid={uid}")
-            assert rv.status_code in (200, 404, 502), f"Unexpected {rv.status_code} for uid={uid!r}"
+            # 400 is in this list because the strategy generates min_size=0 and
+            # the route now refuses an empty uid instead of forwarding it to
+            # RAG as a delete of nothing. Asserted specifically below rather
+            # than just tolerated here.
+            assert rv.status_code in (200, 400, 404, 502), \
+                f"Unexpected {rv.status_code} for uid={uid!r}"
+            if not uid.strip():
+                assert rv.status_code == 400, "an empty uid must be refused"
+                mock_del.assert_not_called()
 
 
 # ─────────────────────────────────────────────────────────────────────

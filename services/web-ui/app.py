@@ -1141,7 +1141,9 @@ def get_courses():
 @app.route('/api/delete_course', methods=['DELETE'])
 @csrf_protect
 def delete_course():
-    uid = request.args.get('uid')
+    # Stripped: a whitespace-only uid is not a uid, and forwarding it to RAG
+    # is a delete request for nothing.
+    uid = (request.args.get('uid') or '').strip()
     if not uid:
         return jsonify({'error': 'uid is required'}), 400
     try:
