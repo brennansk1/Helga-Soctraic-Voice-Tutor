@@ -1126,7 +1126,10 @@
    parenthetical: it changes what the number above it means. */
 .degree-credits-note {
     display: block;
-    margin-top: .3em;
+    /* Bottom margin as well as top: this sits between the credit line and the
+       progress bar, and with none the text touched the bar exactly (measured
+       0px) and read as one smudged block. */
+    margin: .3em 0 .5em;
     font-size: var(--font-size-sm);
     line-height: 1.45;
     color: var(--text-secondary);

@@ -108,3 +108,36 @@ def test_a_single_course_has_no_general_education_to_decline():
 def test_an_unknown_mode_is_refused_rather_than_guessed():
     with pytest.raises(ProgramError):
         template_for("bachelors", "sure why not")
+
+
+def test_the_transferred_count_survives_storage(tmp_path):
+    """The in-memory plan is not what the page reads.
+
+    `programme_size` counted transferred courses from a `transferred` flag set
+    when the plan is built. `program_courses` has no column for it, so the flag
+    was gone by the time the degree page asked -- the page showed the right
+    credit total (21 of 60) and silently dropped the sentence explaining why 7
+    courses were already complete. Every test above passed, because they all
+    worked on the dict rather than through the database.
+
+    Counting from the SLOT is round-trip safe: in this mode the
+    general-education courses ARE the transferred ones.
+    """
+    from services.common.storage import StorageManager
+
+    plan = plan_from_template("Nursing", "associate",
+                              general_education=GEN_ED_DONE)
+    plan.update(general_education=GEN_ED_DONE, template="associate",
+                subject="Nursing", terms=4)
+
+    sm = StorageManager(data_dir=str(tmp_path))
+    sm.programs.create("prog_done", plan)
+    for c in plan["courses"]:
+        if c["slot"] == "gen_ed":
+            sm.programs.mark_completed("prog_done", c["title"])
+
+    loaded = sm.programs.get("prog_done")
+    size = programme_size(loaded)
+    assert size["general_education"] == GEN_ED_DONE
+    assert size["transferred_courses"] == TEMPLATES["associate"]["slots"]["gen_ed"]
+    assert size["courses_complete"] == size["transferred_courses"]

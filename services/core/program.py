@@ -358,8 +358,14 @@ def _gen_ed_context(program, courses):
             out["skipped_courses"] = dropped
             out["full_credits"] = round(full * CREDITS_PER_COURSE, 1)
     elif mode == GEN_ED_DONE:
+        # Counted from the SLOT, not from a `transferred` flag on the course.
+        # The flag is set when the plan is built but `program_courses` has no
+        # column for it, so it does not survive the round trip through storage
+        # -- the page showed the right credit total and silently dropped the
+        # sentence explaining it. In this mode the general-education courses
+        # ARE the transferred ones, so the slot is the reliable source.
         out["transferred_courses"] = sum(
-            1 for c in courses if c.get("transferred"))
+            1 for c in courses if c.get("slot") == "gen_ed")
     return out
 
 
