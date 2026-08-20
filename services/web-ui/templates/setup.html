@@ -41,7 +41,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=6">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/icons.css') }}?v=1">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/design-system.css') }}?v=2">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/setup.css') }}?v=5">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/setup.css') }}?v=6">
 </head>
 <body class="page-setup">
 
@@ -83,6 +83,14 @@
 
         <p class="setup-summary" id="setup-summary"></p>
     </header>
+
+    {# The mirror image of the ready box: shown only when something IS
+       blocking, and carrying the one command that clears it. The blocking
+       step is not always near the top -- the cards are in a fixed order so
+       their numbering means something -- so without this the single thing a
+       new user must do can sit below the fold behind four other cards. #}
+    <section class="setup-next" id="setup-next" hidden
+             aria-labelledby="setup-next-title" aria-live="polite"></section>
 
     {# Built by setup.js and shown only when nothing is blocking. #}
     <section class="setup-ready" id="setup-ready" hidden

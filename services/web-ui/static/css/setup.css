@@ -424,3 +424,33 @@
 @media (prefers-reduced-motion: reduce) {
     .setup-progress-fill, .setup-pull-fill { transition: none; }
 }
+
+/* "Start here" — the counterpart to .setup-ready, for when something blocks.
+   Given the same visual weight as the ready state on purpose: this is the
+   most important thing on the page whenever it is visible. */
+.setup-next {
+    margin: 0 0 var(--space-4);
+    padding: var(--space-4) var(--space-5);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-left: 4px solid var(--accent-primary);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-card);
+}
+.setup-next[hidden] { display: none; }
+.setup-next-title {
+    font-family: var(--font-brand);
+    margin: 0 0 .35em;
+    font-size: 1.15rem;
+    color: var(--text-primary);
+}
+.setup-next-text {
+    margin: 0 0 var(--space-3);
+    line-height: 1.55;
+    color: var(--text-primary);
+}
+.setup-next-note {
+    margin: var(--space-2) 0 0;
+    font-size: .84rem;
+    color: var(--text-secondary);
+}

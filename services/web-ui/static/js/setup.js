@@ -411,6 +411,46 @@
         box.appendChild(actions);
     }
 
+
+    /* START HERE.
+     *
+     * The blocking step is not necessarily the first one on the page -- the
+     * cards are in a fixed order so the numbering means something, and on a
+     * fresh machine the one thing standing between the user and a working
+     * install ("docker compose up -d") was card 5, 1400px down, below the
+     * fold. The top of the page restated the problem and offered no action.
+     *
+     * A first-run screen that shows five red things and no starting point is
+     * how someone decides this is not worth it. So when something blocks, the
+     * single next command comes to the top with its own copy button, and says
+     * which card it belongs to for anyone who wants the detail.
+     */
+    function renderNextStep(v) {
+        var host = document.getElementById("setup-next");
+        if (!host) { return; }
+        host.textContent = "";
+        var blocked = (v.steps || []).filter(function (s) {
+            return s.state === "blocked" && (s.commands || []).length;
+        });
+        if (v.ready || !blocked.length) { host.hidden = true; return; }
+        host.hidden = false;
+
+        var first = blocked[0];
+        var n = (v.steps || []).indexOf(first) + 1;
+        host.appendChild(el("h2", "setup-next-title", "Start here"));
+        host.appendChild(el("p", "setup-next-text",
+            (blocked.length === 1
+                ? "One thing is stopping Helga from teaching"
+                : blocked.length + " things are stopping Helga from teaching, "
+                  + "and this is the first")
+            + ". Run this in a terminal, in the Helga folder — step " + n
+            + " below has the detail."));
+        var cmd = commandBlock(first.commands);
+        if (cmd) { host.appendChild(cmd); }
+        host.appendChild(el("p", "setup-next-note",
+            "This page re-checks by itself; you do not need to reload it."));
+    }
+
     function render() {
         var v = last;
         var list = document.getElementById("setup-steps");
@@ -433,11 +473,18 @@
                    + (v.ready
                       ? (done === total ? "  ·  nothing left to do"
                                         : "  ·  you can start")
-                      : "  ·  " + v.blocking.length + " blocking"))
+                      : "  ·  " + v.blocking.length
+                        + (v.blocking.length === 1 ? " needs you" : " need you")))
                 : "Nothing could be checked.";
         }
+        renderNextStep(v);
+
         if (summary) {
-            summary.textContent = v.summary || "";
+            // When "Start here" is up it says the same thing and adds the fix,
+            // so the red restatement above it is one alarming sentence the
+            // reader has to get past to reach the useful one.
+            var hasNext = !document.getElementById("setup-next").hidden;
+            summary.textContent = hasNext ? "" : (v.summary || "");
             summary.className = "setup-summary is-" + (v.state || "unknown");
         }
 
