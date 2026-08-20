@@ -236,6 +236,27 @@ In dependency order. 1–2 unattended; queue overnight.
 3. **Voice end-to-end** (~15 min, needs a human + mic): mic → `/api/stt` →
    transcript → FSM grades it → TTS answer audible. Closes criterion 2. Also
    covers the STT service that has never been load-tested.
+
+   > **The TTS half was DEAD until 2026-08-20 (8a016a3), which is why this
+   > criterion was never verifiable.** Four faults at once: the mlx-audio pin
+   > needs Python >= 3.10 while `host_services.sh` ran 3.9 (pip silently
+   > installed a 3-year-old 0.2.9 instead of failing), that version's
+   > transformers collided with huggingface-hub 1.x and killed BOTH backends,
+   > `misaki` (G2P) was missing from requirements entirely so the service
+   > reported healthy and could not speak, and the Dockerfile lacked
+   > espeak-ng. Now fixed in an isolated `.venv-host` on 3.12 and verified
+   > through the service's own HTTP API: 24 kHz, 4.12 s of non-silent audio,
+   > backend_active "mlx".
+   >
+   > Also upgraded 0.4.7 -> 0.5.0: upstream fixed the Kokoro decoder in 0.4.8
+   > ("-2.5 dB level error, F0-path misalignment, window mismatch"). MEASURED
+   > on identical input — RMS -29.02 -> -26.59 dBFS, a 2.43 dB recovery
+   > matching upstream's figure, and gain-normalised correlation ~0, so the
+   > pitch/window paths really changed. The voice was quieter AND differently
+   > synthesised before this.
+   >
+   > **STT has not been checked the same way and may carry the same class of
+   > fault** — it runs from the same venv and the same launcher.
 4. **Quality battery** (~45 min): `helgabench.py --self-test` then
    `--repeat 3 --compare helgabench_a1_calibrated.json`; `sycophancy_probe`;
    `persistence_probe`; `tier_probe`. Median-of-3 discipline throughout.
