@@ -1379,3 +1379,44 @@ test('the down payment lifts what the same budget can buy', () => {
   assert.ok(of(4000).price > of(2000).price);
   assert.ok(of(2000).price > of(0).price);
 });
+
+/* ---------------------------------------- depreciation pinned to its benchmark */
+
+/** Published 5-year depreciation by segment — the same figures build_datasets.py gates
+ *  fitted curves against. The hand-written table must clear the same bar. */
+const PUBLISHED_5YR = {
+  'Compact car': 0.45, 'Midsize car': 0.48, 'Compact SUV': 0.45, 'Midsize SUV': 0.50,
+  'Pickup truck': 0.40, 'Minivan': 0.52, 'Sports car': 0.50, 'Luxury': 0.55,
+  'Hybrid': 0.45, 'Electric': 0.53
+};
+
+test('the shipped depreciation curve matches published 5-year figures', () => {
+  // This is the check that was missing: build_datasets.py rejected a *fitted* curve more
+  // than 5 points off, but nothing held the hand-written table to the same standard, and
+  // it drifted ~9-11 points steep — enough to undervalue an older car by thousands.
+  Object.entries(PUBLISHED_5YR).forEach(([segment, published]) => {
+    const r = DATA.depCurves[segment].r1_5;
+    const implied = 1 - Math.pow(1 - r, 5);
+    assert.ok(Math.abs(implied - published) <= 0.05,
+      `${segment}: curve implies ${(implied * 100).toFixed(1)}% over 5 years, ` +
+      `published is ${(published * 100).toFixed(0)}%`);
+  });
+});
+
+test('projecting a new car forward five years lands near the published loss', () => {
+  const newPrice = 30000;
+  Object.entries(PUBLISHED_5YR).forEach(([segment, published]) => {
+    const after = E.projectValue(newPrice, 0, segment, 'Other', 5, DATA)[5];
+    const lost = (newPrice - after) / newPrice;
+    assert.ok(Math.abs(lost - published) <= 0.06,
+      `${segment}: lost ${(lost * 100).toFixed(1)}%, published ${(published * 100).toFixed(0)}%`);
+  });
+});
+
+test('an eleven-year-old Toyota still holds a believable share of its price', () => {
+  // A well-kept large Toyota sedan does not fall to a quarter of sticker by year 11.
+  const after = E.projectValue(33500, 0, 'Midsize car', 'Toyota', 11, DATA)[11];
+  const retained = after / 33500;
+  assert.ok(retained > 0.28 && retained < 0.50,
+    `retained ${(retained * 100).toFixed(0)}% — implausible for an 11-year-old Toyota`);
+});
