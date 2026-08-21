@@ -64,7 +64,7 @@ COLORS = ("c1", "c2", "c3", "c4", "c5", "c6",
 DEFAULT_COLOR = "c1"
 
 KINDS = ("number_line", "geometry", "plot", "bars", "graph", "timeline",
-         "table", "venn", "cycle", "steps", "fraction", "image")
+         "table", "venn", "cycle", "steps", "fraction", "image", "code")
 
 # Provenance tiers — surfaced in the UI so a learner can tell a computed figure
 # from a model sketch. This is the trust surface, at the level of one diagram.
@@ -571,11 +571,89 @@ def _norm_image(s):
             "fit": "cover" if str(s.get("fit", "")) == "cover" else "contain"}
 
 
+#: Languages the code aid will label. Unknown languages are kept as plain text
+#: rather than rejected -- a tutor teaching Prolog should not lose its figure
+#: because the highlighter has not heard of it.
+CODE_LANGS = ("python", "javascript", "typescript", "java", "c", "cpp",
+              "csharp", "go", "rust", "ruby", "php", "sql", "html", "css",
+              "bash", "shell", "haskell", "scala", "kotlin", "swift", "r",
+              "matlab", "lua", "perl", "text")
+
+MAX_CODE_LINES = 40
+MAX_CODE_LINE = 200
+
+
+def _norm_code(s):
+    """Source code as a TEACHING object rather than a paste.
+
+    The point of this being an aid and not a markdown fence is `stage`. A
+    fenced block can only show finished code; an aid can BLANK THE LINE the
+    student has to supply and reveal it once they have answered. That is the
+    exact analogue of labelling a triangle's unknown side "?" -- and without
+    it, showing code in a Socratic turn is handing over the answer with
+    syntax colouring on it.
+
+    `highlight` makes "look at line 4" a real reference instead of a request
+    to count.
+    """
+    raw = s.get("code")
+    if raw is None:
+        raw = s.get("source") or s.get("lines")
+    if isinstance(raw, list):
+        lines = [str(x) for x in raw]
+    else:
+        lines = str(raw or "").split("\n")
+    lines = [ln[:MAX_CODE_LINE] for ln in lines][:MAX_CODE_LINES]
+    while lines and not lines[-1].strip():
+        lines.pop()
+    if not lines:
+        raise AidError("code needs at least one line")
+
+    lang = str(s.get("language") or s.get("lang") or "text").strip().lower()
+    if lang not in CODE_LANGS:
+        lang = "text"
+
+    # A blank is a line the student must supply. Stored per line so the
+    # renderer shows a placeholder and the stage machinery reveals it.
+    blanks = {}
+    for raw_b in _seq(s.get("blanks"), "blanks", MAX_CODE_LINES):
+        b = _obj(raw_b, "blanks")
+        n = _int(b.get("line"), "blanks.line", 1, len(lines), 1)
+        blanks[n] = {"hint": _text(b.get("hint"), 80),
+                     "stage": _stage(b.get("stage")) or 1}
+
+    highlight = []
+    for h in _seq(s.get("highlight"), "highlight", MAX_CODE_LINES):
+        try:
+            n = int(h)
+        except (TypeError, ValueError):
+            continue
+        if 1 <= n <= len(lines) and n not in highlight:
+            highlight.append(n)
+
+    return {
+        "language": lang,
+        "lines": lines,
+        "blanks": [{"line": k, **v} for k, v in sorted(blanks.items())],
+        "highlight": highlight,
+        "filename": _text(s.get("filename") or s.get("file"), 60),
+        "start_line": _int(s.get("start_line", 1), "start_line", 1, 9999, 1),
+        # A second listing turns the aid into a before/after. "What changed
+        # when you fixed it?" is a core code question and needs both halves
+        # side by side, not two separate figures.
+        "compare_to": ([ln[:MAX_CODE_LINE] for ln in
+                        (s.get("compare_to") if isinstance(s.get("compare_to"), list)
+                         else str(s.get("compare_to") or "").split("\n"))][:MAX_CODE_LINES]
+                       if s.get("compare_to") else []),
+    }
+
+
 NORMALIZERS = {
     "number_line": _norm_number_line, "geometry": _norm_geometry, "plot": _norm_plot,
     "bars": _norm_bars, "graph": _norm_graph, "timeline": _norm_timeline,
     "table": _norm_table, "venn": _norm_venn, "cycle": _norm_cycle,
     "steps": _norm_steps, "fraction": _norm_fraction, "image": _norm_image,
+    "code": _norm_code,
 }
 
 
@@ -754,11 +832,37 @@ def _d_image(s):
     return ""
 
 
+def _d_code(s):
+    """What a screen reader announces, and what replaces the listing entirely
+    in text-only mode.
+
+    Reading 40 lines of source aloud is useless, so this describes the SHAPE:
+    language, size, which lines matter, and -- the part that carries the
+    question -- which line is blank and what it is asking for.
+    """
+    lines = s.get("lines") or []
+    lang = s.get("language") or "text"
+    bits = [f"{lang} listing, {len(lines)} line{'s' if len(lines) != 1 else ''}"]
+    if s.get("filename"):
+        bits.append(f"from {s['filename']}")
+    hl = s.get("highlight") or []
+    if hl:
+        bits.append("line " + (", ".join(str(n) for n in hl[:6])
+                               if len(hl) > 1 else str(hl[0])) + " highlighted")
+    for b in (s.get("blanks") or [])[:3]:
+        hint = b.get("hint")
+        bits.append(f"line {b.get('line')} is blank for you to fill in"
+                    + (f": {hint}" if hint else ""))
+    if s.get("compare_to"):
+        bits.append("shown against a second version for comparison")
+    return "; ".join(bits)
+
+
 _DESCRIBERS = {
     "number_line": _d_number_line, "geometry": _d_geometry, "plot": _d_plot,
     "bars": _d_bars, "graph": _d_graph, "timeline": _d_timeline, "table": _d_table,
     "venn": _d_venn, "cycle": _d_cycle, "steps": _d_steps, "fraction": _d_fraction,
-    "image": _d_image,
+    "image": _d_image, "code": _d_code,
 }
 
 

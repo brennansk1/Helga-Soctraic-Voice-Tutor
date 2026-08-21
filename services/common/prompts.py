@@ -71,7 +71,7 @@ The block is removed from your message and drawn above it. Write your message as
 
 The "caption" is a LABEL for the figure, not a second question — it sits directly above your message, so repeating your question there makes the student read the same thing twice in two voices. Caption: "A right triangle, 3 and 4". Your message asks the question.
 
-kind must be one of: number_line · geometry · plot · bars · graph (concept maps, flowcharts, causal chains) · timeline · table · venn · cycle · steps · fraction
+kind must be one of: number_line · geometry · plot · bars · graph (concept maps, flowcharts, causal chains) · timeline · table · venn · cycle · steps · fraction · code
 
 WHEN TO DRAW: a relationship the student must SEE to reason about — a shape whose proportions matter, a trend, how ideas connect, where a value sits relative to others, a part-whole.
 WHEN NOT TO: decoration; restating what you just wrote; anything that hands over the answer you are leading them toward. No diagram is better than a pointless one.
@@ -88,7 +88,13 @@ Three more worked shapes — copy these structures:
 ```
 ```aid
 {"kind":"bars","title":"Rainfall","categories":["Mon","Tue","Wed"],"series":[{"values":[4,7,3]}],"y_label":"cm","highlight":[1]}
-```"""
+```
+
+CODE. Use `blanks` to WITHHOLD the line you are asking about — that is what makes a listing a question instead of an answer. `hint` is the prompt for that line, never the solution. `highlight` makes "look at line 3" a real reference.
+```aid
+{"kind":"code","language":"python","filename":"search.py","code":"def search(a, t):\\n    lo, hi = 0, len(a)\\n    while lo < hi:\\n        mid = (lo + hi) // 2","blanks":[{"line":4,"hint":"how do you pick the middle?","stage":1}],"highlight":[3]}
+```
+For "what changed when you fixed it?", add `compare_to` with the second version and the two are shown side by side."""
 
 
 def _aid_prompt_block(decision):

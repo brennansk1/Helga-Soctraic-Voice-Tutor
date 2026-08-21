@@ -107,6 +107,105 @@
     // HTML gives wrapping and screen-reader structure that SVG cannot).
     var RENDER = {};
 
+/* Code, as a teaching object.
+     *
+     * Real markup rather than SVG for the same reason as tables and steps:
+     * wrapping, selection and screen-reader structure that SVG cannot give.
+     *
+     * The point of code being an AID and not a markdown fence is `stage`. A
+     * fence can only show finished code; this can BLANK the line the student
+     * has to supply and reveal it once they have answered -- the exact
+     * analogue of labelling a triangle's unknown side "?". Without that,
+     * showing code in a Socratic turn hands over the answer with syntax
+     * colouring on it.
+     *
+     * Highlighting is a small tokeniser, not a library: everything here runs
+     * offline, so a CDN highlighter is not an option, and 40 lines of one
+     * language does not need a parser.
+     */
+    var CODE_RULES = {
+        common: [
+            ['com', /(\/\/[^\n]*|#[^\n]*)/],
+            ['str', /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)/],
+            ['num', /\b(\d+\.?\d*)\b/]
+        ],
+        kw: {
+            python: 'def class return if elif else for while in not and or import from as with try except finally raise lambda yield None True False pass break continue global assert del is await async',
+            javascript: 'function return if else for while const let var new class extends import from export default try catch finally throw typeof instanceof null undefined true false await async of in',
+            sql: 'select from where join inner left right group by order having insert update delete create table alter drop values into set distinct limit',
+            java: 'public private protected class interface extends implements return if else for while new static final void int double boolean String try catch throw import package this null true false',
+            c: 'int char float double void return if else for while struct typedef sizeof const static include define NULL',
+            go: 'func package import return if else for range var const type struct interface go defer chan map nil true false',
+            rust: 'fn let mut pub struct enum impl trait return if else for while match use mod crate self Some None Ok Err true false',
+            bash: 'if then else fi for while do done case esac function return export local echo cd'
+        }
+    };
+    CODE_RULES.kw.typescript = CODE_RULES.kw.javascript;
+    CODE_RULES.kw.cpp = CODE_RULES.kw.c;
+    CODE_RULES.kw.shell = CODE_RULES.kw.bash;
+
+    function highlightLine(text, lang) {
+        var frag = document.createDocumentFragment();
+        var kws = (CODE_RULES.kw[lang] || '').split(' ').filter(Boolean);
+        // One pass: strings and comments win over keywords, because a keyword
+        // inside a string is not a keyword.
+        var re = /(\/\/[^\n]*|#[^\n]*)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|\b(\d+\.?\d*)\b|([A-Za-z_][A-Za-z0-9_]*)/g;
+        var last = 0, m;
+        while ((m = re.exec(text)) !== null) {
+            if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+            var cls = m[1] ? 'code-com' : m[2] ? 'code-str' : m[3] ? 'code-num'
+                : (kws.indexOf(m[4]) >= 0 ? 'code-kw' : null);
+            if (cls) { frag.appendChild(elem('span', cls, m[0])); }
+            else { frag.appendChild(document.createTextNode(m[0])); }
+            last = m.index + m[0].length;
+        }
+        if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+        return frag;
+    }
+
+    function codeListing(s, stage, lines, label) {
+        var wrap = elem('div', 'aid-code');
+        if (label) wrap.appendChild(elem('div', 'aid-code-name', label));
+        var pre = elem('pre', 'aid-code-pre');
+        var blankBy = {};
+        (s.blanks || []).forEach(function (b) { blankBy[b.line] = b; });
+
+        lines.forEach(function (text, i) {
+            var n = (s.start_line || 1) + i;
+            var row = elem('div', 'aid-code-line');
+            if ((s.highlight || []).indexOf(i + 1) >= 0) row.classList.add('is-hot');
+            row.appendChild(elem('span', 'aid-code-num', String(n)));
+            var body = elem('span', 'aid-code-text');
+            var blank = blankBy[i + 1];
+            if (blank && stage < (blank.stage || 1)) {
+                // Not yet earned. The hint is the question, not the answer.
+                row.classList.add('is-blank');
+                body.appendChild(elem('span', 'aid-code-gap',
+                    blank.hint ? '… ' + blank.hint : '…'));
+            } else {
+                body.appendChild(highlightLine(text, s.language));
+            }
+            row.appendChild(body);
+            pre.appendChild(row);
+        });
+        wrap.appendChild(pre);
+        return wrap;
+    }
+
+    RENDER.code = function (s, stage) {
+        var lines = s.lines || [];
+        if (s.compare_to && s.compare_to.length) {
+            // Before/after. "What changed when you fixed it?" needs both
+            // halves together, not two separate figures.
+            var pair = elem('div', 'aid-code-pair');
+            pair.appendChild(codeListing(s, stage, lines, s.filename || 'before'));
+            pair.appendChild(codeListing({ language: s.language, start_line: 1 },
+                                         stage, s.compare_to, 'after'));
+            return pair;
+        }
+        return codeListing(s, stage, lines, s.filename);
+    };
+
     RENDER.number_line = function (s, stage) {
         var W = 560, H = s.intervals.length ? 132 : 104, PAD = 34, axisY = 62;
         var root = svg('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'presentation' }, 'aid-svg');
@@ -686,7 +785,8 @@
     var KIND_LABEL = {
         number_line: 'Number line', geometry: 'Figure', plot: 'Graph', bars: 'Chart',
         graph: 'Concept map', timeline: 'Timeline', table: 'Table', venn: 'Venn diagram',
-        cycle: 'Cycle', steps: 'Steps', fraction: 'Fractions', image: 'Image'
+        cycle: 'Cycle', steps: 'Steps', fraction: 'Fractions', image: 'Image',
+        code: 'Code'
     };
     var TIER_LABEL = {
         computed: 'Computed', retrieved: 'From source', authored: 'Sketch'
