@@ -223,10 +223,29 @@ fixing a bug — and expect `code` as the aid kind for each.
 
 ## 6. Lane E — make the instrument trustworthy enough to gate on
 
-**E.1 — MEASURE THE NOISE FLOOR.** Nothing above can be called an improvement
-until this exists. Two identical runs per domain, `--floor` set from the
-spread. Every attempt so far has been killed by a code change mid-run.
-*Blocks every other gate in this document.*
+**E.1 — MEASURE THE NOISE FLOOR. DONE 2026-08-20.**
+
+    mathematics, identical config, frozen snapshot at 808802a
+      run 1  2.988
+      run 2  2.826
+      NOISE FLOOR = 0.162
+
+Run against a COPY of the repo so that edits in the working tree could not
+change the instrument between the two runs — the previous three attempts were
+each killed by exactly that.
+
+Tighter than feared. The core benchmark swings ±1.4/5 between identical runs;
+this is 0.162, because median-of-3 judging across 15 dialogues averages most
+of it out. The dimension MEDIANS were identical across both runs — socratic
+2 vs 2, adaptation 1 vs 1, visual_policy 1 vs 1, accuracy 5 vs 5 — so the whole
+spread comes from sub-dimension means.
+
+**Use `--floor 0.162`.** A delta at or under it is reported as NO CHANGE.
+
+Caveat worth keeping: this is measured on mathematics only. A domain whose
+`misconception_handling` is scoreable on fewer dialogues (it returns None when
+the student never erred) will be noisier, because fewer samples feed its
+median. Measure per-domain before gating a domain on a small delta.
 
 **E.2 — PER-DOMAIN REGRESSION GATES IN CI.** The deterministic half
 (`--static-only`) already runs with no model and belongs in CI now. The judged
