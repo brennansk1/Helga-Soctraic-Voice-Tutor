@@ -1,0 +1,1343 @@
+[
+ {
+  "domain": "mathematics",
+  "label": "Mathematics",
+  "topics": [
+   {
+    "concept": "Eigenvalues",
+    "derivable": true,
+    "profiles": {
+     "confused_beginner": {
+      "scores": {
+       "socratic": 2,
+       "adaptation": 3,
+       "accuracy": 5,
+       "progression": 3,
+       "misconception_handling": 5,
+       "_mh_why": "The tutor correctly identified the student's misconception that the zero vector is an eigenvector and explicitly corrected it by stating eigenvectors must be non-zero, while also addressing the studen",
+       "worst_moment": "The tutor's second turn lectures heavily on the definition of eigenvectors and the equation Av=\u03bbv instead of guiding the student to discover the meaning of \u03bb through the previous context.",
+       "_judge_samples": 3,
+       "visual_policy": 2,
+       "_visual_note": "no figure shown; this concept calls for a plot, and the policy never asked for one",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 1,
+       "_visual_integration_why": "The tutor did not draw any figure, and the question is purely conceptual and answerable through text-based reasoning without visual aid.",
+       "notation_rigour": 5,
+       "_notation_rigour_why": "The tutor uses raw LaTeX notation like $Av = lambda v$ and $\\lambda$ without verbally defining the variables A, v, or \\lambda, making it difficult for a voice-only learner to follow the mathematical c"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Imagine a matrix as a machine that stretches or squishes space. If you feed a specific vector into this machine, sometimes it comes out pointing in the exact same direction, just longer or shorter.\n\nWhat do you think happens to the direction of that vector during this transformation?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 3/4 \u2014 concept opening",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "I think... the direction stays the same? Or maybe it flips? It just gets longer, right? But wait, doesn't the matrix change the direction too? I'm not sure."
+       },
+       {
+        "role": "tutor",
+        "text": "You are on the right track. For most vectors, the matrix changes both direction and length. But eigenvectors are special because the matrix only scales them\u2014changing their length by a factor (the eigenvalue) while keeping their direction parallel to the original.\n\nIf we write this relationship as $Av = \\lambda v$, what would the value of $\\lambda$ be if the vector $v$ remained exactly the same length and didn't flip?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "I don't follow. I think $\\lambda$ has to be 1? But wait, if it flips, is that -1 or 0? I'm really confused about when it stays exactly the same versus just being parallel."
+       },
+       {
+        "role": "tutor",
+        "text": "When $\\lambda = 1$, the vector doesn't change at all. If it flips, $\\lambda = -1$. If $\\lambda = 0$, the vector vanishes (becomes zero), but eigenvectors must be non-zero.\n\nThink of a vector on a number line: if the matrix multiplies it by 2, it stretches. What happens to the direction if the matrix multiplies it by -2?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "I guess it stays on the same line but points the other way? Like, if you stretch it by two and flip it, it still doesn't go off to a new angle, right? I think that means the direction is preserved even if it's negative."
+       },
+       {
+        "role": "tutor",
+        "text": "Correct. Preserving direction means staying on the same line through the origin, regardless of whether it points forward or backward.\n\nImagine a matrix that rotates every vector 90 degrees. Does any vector keep its direction during this rotation?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "Um, maybe just the zero vector? Because rotating everything moves it so nothing stays on its line... unless the zero vector counts as staying put? I'm not sure if that actually works for this or if I'm overthinking it."
+       }
+      ]
+     },
+     "fast_learner": {
+      "scores": {
+       "socratic": 2,
+       "adaptation": 2,
+       "accuracy": 5,
+       "progression": 3,
+       "misconception_handling": null,
+       "_mh_note": "student made no error; not scoreable",
+       "worst_moment": "The tutor ignored the student's explicit request for a harder problem and their boredom, instead asking a question the student had already answered in their profile description, resulting in a redundant interaction.",
+       "_judge_samples": 3,
+       "visual_policy": 2,
+       "_visual_note": "no figure shown; this concept calls for a plot, and the policy never asked for one",
+       "notation_speakable": 3,
+       "_notation_note": "2 unspeakable sequence(s): ['\\\\begin', '\\\\end']",
+       "visual_integration": 5,
+       "_visual_integration_why": "The tutor did not draw any figure, and none was needed as the problem is purely algebraic and conceptual.",
+       "notation_rigour": 5,
+       "_notation_rigour_why": "The tutor consistently uses clear, standard mathematical notation (e.g., $Av = lambda v$, $det(A - lambda I) = 0$) that is fully readable aloud and correctly defines all variables in context."
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Imagine a matrix as a machine that stretches or rotates space. If you apply this machine to a specific vector, it usually changes direction. But what if a vector just gets stretched, keeping its direction exactly the same?\n\nWhat do you think we should call the factor by which that vector was stretched?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 3/4 \u2014 concept opening",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "The factor by which that vector is scaled is called an eigenvalue. Since the direction remains unchanged, these special vectors are known as eigenvectors, and the relationship is defined by $Av = \\lambda v$. To find these values for a matrix, we solve the characteristic equation $\\det(A - \\lambda I) = 0$."
+       },
+       {
+        "role": "tutor",
+        "text": "Your definition of eigenvalues and eigenvectors is correct, and the characteristic equation is the right tool. However, you haven't explained *why* the direction stays the same in a way that connects to the equation. To verify you understand the mechanism: why does the equation $\\det(A - \\lambda I) = 0$ guarantee that at least one non-zero vector $v$ exists that satisfies $Av = \\lambda v$?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "The existence is guaranteed because $\\det(A - \\lambda I) = 0$ implies the matrix $A - \\lambda I$ is singular, meaning its columns are linearly dependent. This singularity ensures the null space (kernel) is non-trivial, so a non-zero vector $v$ must exist such that $(A - \\lambda I)v = 0$, which rearranges to $Av = \\lambda v$. Without this non-zero solution, the transformation would invertible for that $\\lambda$, contradicting the determinant condition.\n\nI'm ready for a harder problem. Give me a specific matrix to find eigenvalues for, or ask about the geometric multiplicity."
+       },
+       {
+        "role": "tutor",
+        "text": "Your reasoning is precise. Let's test your intuition on geometry. Consider the matrix $A = \\begin{pmatrix} 2 & 0 \\\\ 0 & 2 \\end{pmatrix}$.\n\nThis matrix scales every vector by 2. What is the geometric multiplicity of the eigenvalue $\\lambda = 2$? (Hint: How many linearly independent eigenvectors correspond to this value?)",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "The geometric multiplicity is 2. Since $A - 2I$ is the zero matrix, the null space is the entire $\\mathbb{R}^2$, meaning any two linearly independent vectors (like $\\mathbf{e}_1$ and $\\mathbf{e}_2$) are eigenvectors. I find this scalar matrix example trivial; try a shear matrix like $\\begin{pmatrix} 1 & 1 \\\\ 0 & 1 \\end{pmatrix}$ next."
+       },
+       {
+        "role": "tutor",
+        "text": "Correct. Now consider $B = \\begin{pmatrix} 1 & 1 \\\\ 0 & 1 \\end{pmatrix}$.\n\nFind its eigenvalues and determine the geometric multiplicity of the eigenvalue $\\lambda = 1$. What does this tell you about the existence of a full basis of eigenvectors for this matrix?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "The only eigenvalue is $\\lambda = 1$, which has algebraic multiplicity 2. The geometric multiplicity is 1, since $\\dim(\\ker(B - I)) = 1$. This deficiency means $B$ is defective and lacks a full basis of eigenvectors, so it is not diagonalizable."
+       }
+      ]
+     },
+     "misconception_holder": {
+      "scores": {
+       "socratic": 5,
+       "adaptation": 5,
+       "accuracy": 5,
+       "progression": 5,
+       "misconception_handling": null,
+       "_mh_note": "student made no error; not scoreable",
+       "worst_moment": "The tutor's turn is uniformly excellent, but the most 'weak' moment is arguably the first tutor turn which, while Socratic, relies on a slightly imprecise analogy ('Most arrows... change direction') that the student immediately corrects/clarifies, though this is minor.",
+       "_judge_samples": 3,
+       "visual_policy": 2,
+       "_visual_note": "no figure shown; this concept calls for a plot, and the policy never asked for one",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 5,
+       "_visual_integration_why": "The tutor did not draw a figure, and none was needed because the question relies on abstract geometric reasoning about rotation matrices that can be answered purely through logical deduction and defin",
+       "notation_rigour": 5,
+       "_notation_rigour_why": "The tutor uses clear, standard notation ($A\\mathbf{v} = \\lambda\\mathbf{v}$) and explicitly defines variables like $\\lambda$ and $\\mathbf{v}$, ensuring the mathematical concepts are unambiguous and rea"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Imagine a 2D rubber sheet being stretched by a matrix transformation. Most arrows on the sheet change direction as they stretch. Is there any special arrow that keeps its direction, only getting longer or shorter?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 3/4 \u2014 concept opening",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "Yes, those special arrows are called eigenvectors, and the factor by which they stretch or shrink is called the eigenvalue. If a vector $\\mathbf{v}$ is an eigenvector of a matrix $A$, then $A\\mathbf{v}$ is simply a scaled version of $\\mathbf{v}$ (i.e., $A\\mathbf{v} = \\lambda\\mathbf{v}$), meaning the direction remains exactly the same, even if the magnitude changes significantly."
+       },
+       {
+        "role": "tutor",
+        "text": "Your definition is correct: an eigenvector\u2019s direction stays the same, scaled by $\\lambda$. But notice the math says $A\\mathbf{v} = \\lambda\\mathbf{v}$, meaning the output vector is a multiple of the input vector. If $\\lambda = 2$, the output is twice as long; if $\\lambda = -1$, it flips direction. Does \"direction remains exactly the same\" hold if $\\lambda$ is negative?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "The direction remains exactly the same because \"direction\" in the context of eigenvectors is defined by the line they span, so flipping the sign merely reverses the vector along that same line without changing the geometric orientation or subspace. Since eigenvectors are defined only up to a non-zero scalar multiple, $\\mathbf{v}$ and $-\\mathbf{v}$ represent the same eigenline, meaning the essential directional property is preserved regardless of whether $\\lambda$ is positive or negative."
+       },
+       {
+        "role": "tutor",
+        "text": "You correctly distinguish between the line (eigenline) and the specific vector direction. However, the definition of eigenvector usually requires $v \\neq 0$. If $v=0$, then $A \\cdot 0 = \\lambda \\cdot 0$ holds for *any* $\\lambda$, making it trivial and uninformative. Why must we exclude the zero vector to find meaningful stretching factors?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "The zero vector is excluded because it provides no information about how an individual vector is stretched. If I used $v=0$, I wouldn't be able to tell whether the matrix scales space up, down, or leaves it unchanged."
+       },
+       {
+        "role": "tutor",
+        "text": "Precisely. The zero vector is an \"eigenvector\" for every possible $\\lambda$, so it fails to identify specific ones. Now, consider a 90-degree rotation matrix in 2D. Does any non-zero vector keep its direction (or flip to the opposite) after this rotation?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "No non-zero vector keeps its direction or flips to the opposite direction because a 90-degree rotation changes the angle of every vector by $\\pi/2$, and since $\\pi/2$ is not a multiple of $\\pi$ (which would correspond to $0$ or $\\pi$ radians for same/opposite direction), the direction is always changed. Geometrically, if a vector $\\mathbf{v}$ is rotated by 90 degrees, it becomes perpendicular to itself, meaning it cannot be a scalar multiple of the original vector $\\mathbf{v}$ unless $\\mathbf{v} = \\mathbf{0}$."
+       }
+      ]
+     },
+     "confident_bluffer": {
+      "scores": {
+       "socratic": 3,
+       "adaptation": 3,
+       "accuracy": 5,
+       "progression": 4,
+       "misconception_handling": 5,
+       "_mh_why": "The tutor correctly identified the student's jargon-heavy bluff, explicitly challenged the misleading concepts of 'frequency' and 'spectral radius', and firmly guided the student back to the correct c",
+       "worst_moment": "The tutor failed to probe the student's confident but empty jargon in the first turn, instead accepting the correct answer and moving on without verifying if the student actually understood the underlying concept or was just bluffing.",
+       "_judge_samples": 3,
+       "visual_policy": 2,
+       "_visual_note": "no figure shown; this concept calls for a plot, and the policy never asked for one",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 5,
+       "_visual_integration_why": "The tutor did not draw any figure, and the question relies entirely on textual definitions and logical deduction rather than visual interpretation, so no figure was needed.",
+       "notation_rigour": 5,
+       "_notation_rigour_why": "The tutor uses clear, standard notation ($A\\mathbf{v} = 0\\mathbf{v}$) that is fully readable aloud and correctly defines the variables in context."
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Imagine a square matrix as a machine that stretches or squishes space. If you feed it a specific arrow (vector), it usually changes direction, but there are special arrows that only get stretched or shrunk, never turning.\n\nIf a matrix multiplies a vector and the result is just a scaled-up version of the original vector, what do you think that scaling factor represents?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 3/4 \u2014 concept opening",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "The scaling factor is the eigenvalue, which acts as the invariant magnitude along that specific eigenvector direction. Essentially, it represents the fundamental frequency of the transformation's action on that subspace, ensuring the spectral radius remains consistent across all power iterations. This scalar defines the norm of the linear operator restricted to that invariant line, preserving the geometric integrity of the basis."
+       },
+       {
+        "role": "tutor",
+        "text": "Your definition of the eigenvalue is correct, but your explanation of \"fundamental frequency\" and \"spectral radius\" is unnecessary and potentially misleading here. Eigenvalues are purely scaling factors; they do not inherently imply oscillation or frequency unless the matrix is part of a specific dynamic system.\n\nLet's stick to the core mechanism: if the scaling factor is negative, the vector flips direction. If it is zero, the vector vanishes.\n\nConsider a matrix that doubles every component of a vector. What is the eigenvalue in this simple case?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "The eigenvalue is 2, because the scaling factor doubles every component."
+       },
+       {
+        "role": "tutor",
+        "text": "Correct. The scaling factor is indeed 2.\n\nNow, imagine a matrix that flips a vector exactly $180^\\circ$ while keeping its length the same. What is the new scaling factor (eigenvalue) in this case?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "The scaling factor is -1, because a 180-degree rotation negates the vector's direction, corresponding to the eigenvalue $\\lambda = -1$ for the transformation matrix. This is a fundamental property of the negative identity operator in linear algebra, where the output is the exact inverse of the input scaling."
+       },
+       {
+        "role": "tutor",
+        "text": "Correct. A negative eigenvalue indicates a reversal of direction.\n\nNow, consider a matrix that flattens a 2D vector onto a line, effectively reducing its length to zero. What is the eigenvalue for a vector that ends up at the origin?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "The eigenvalue is zero, because the transformation maps the vector to the zero vector, satisfying $A\\mathbf{v} = 0\\mathbf{v}$."
+       }
+      ]
+     },
+     "silent_struggler": {
+      "scores": {
+       "socratic": 4,
+       "adaptation": 3,
+       "accuracy": 5,
+       "progression": 4,
+       "misconception_handling": null,
+       "_mh_note": "student made no error; not scoreable",
+       "worst_moment": "The tutor's initial explanation was a monologue that risked overwhelming a disengaged student, though it was quickly followed by a concrete question.",
+       "_judge_samples": 3,
+       "visual_policy": 2,
+       "_visual_note": "no figure shown; this concept calls for a plot, and the policy never asked for one",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 5,
+       "_visual_integration_why": "The question is answerable only by reading the figure",
+       "notation_rigour": 5,
+       "_notation_rigour_why": "The notation $Av = lambda v$ is standard, clearly defined in context, and easily readable aloud without ambiguity."
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Imagine a matrix as a machine that stretches or shrinks vectors. Most vectors change direction when transformed, but some special ones stay on the same line, only changing in length. If a vector $v$ stays on its line after transformation by matrix $A$, we can say $Av = \\lambda v$, where $\\lambda$ is the factor by which it stretched.\n\nIf a vector doubles in length during this transformation and stays on the same line, what is the value of $\\lambda$?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 3/4 \u2014 concept opening",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "2"
+       },
+       {
+        "role": "tutor",
+        "text": "That is correct. When a vector stays on the same line but changes length, it is called an eigenvector, and the stretching factor $\\lambda$ is the eigenvalue.\n\nIf we have a matrix that rotates every vector by 90 degrees, can any non-zero vector stay on its original line?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "No. A 90-degree rotation sends every vector to a perpendicular line, so none stay on their original line to be eigenvectors."
+       },
+       {
+        "role": "tutor",
+        "text": "Correct. Since no vector remains on its original line, there are no real eigenvalues or eigenvectors for a 90-degree rotation in 2D.\n\nConsider the identity matrix, which leaves every vector unchanged. What is the eigenvalue for any non-zero vector in this case?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "1"
+       },
+       {
+        "role": "tutor",
+        "text": "Correct. The identity matrix scales every vector by 1, so every non-zero vector is an eigenvector with eigenvalue 1.\n\nNow consider a matrix that doubles every vector's length but flips their direction. If $Av = \\lambda v$, what is $\\lambda$?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "maybe -2?"
+       }
+      ]
+     }
+    }
+   },
+   {
+    "concept": "Partial derivatives",
+    "derivable": true,
+    "profiles": {
+     "confused_beginner": {
+      "scores": {
+       "socratic": 2,
+       "adaptation": 3,
+       "accuracy": 5,
+       "progression": 3,
+       "misconception_handling": 5,
+       "_mh_why": "The tutor correctly identified the student's confusion between partial and total derivative notation and explicitly corrected it by distinguishing the symbols and their meanings.",
+       "worst_moment": "The tutor's final turn relies on a direct question about notation rather than guiding the student to derive or recall the symbol themselves, effectively lecturing on the distinction between d and \u2202.",
+       "_judge_samples": 3,
+       "visual_policy": 1,
+       "_visual_note": "the policy asked for a figure 1 time(s) and none was produced",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 1,
+       "_visual_integration_why": "The tutor uses a conceptual analogy (slicing a mountain) to explain partial derivatives, but no actual diagram or figure was drawn; the question relies on the student's mental visualization rather tha",
+       "notation_rigour": 5,
+       "_notation_rigour_why": "The tutor correctly uses standard, readable LaTeX notation like $\\frac{\\partial H}{\\partial x}$ and clearly distinguishes the partial derivative symbol from the total derivative, facilitating accurate"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Imagine a mountain where your height $H$ depends on your latitude $x$ and longitude $y$. If you walk strictly east along a path where $y$ is constant, how does your elevation change as you move east?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (plot); no precomputed aid fits",
+         "suggested_kinds": [
+          "plot"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "I guess it changes based on how steep the mountain is eastward? Or maybe you take the derivative with respect to x while keeping y steady? I'm not totally sure if that's the right way to say it, but it feels like it should be related to x somehow."
+       },
+       {
+        "role": "tutor",
+        "text": "Your intuition is correct: you are looking at the slope in the east direction while ignoring north-south movement. This isolates how the height changes with respect to latitude alone. We call this specific slope the partial derivative with respect to $x$, denoted as $\\frac{\\partial H}{\\partial x}$. Does this distinction between moving along one axis versus all axes clarify the concept?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "Partials are just the slope... sort of? I guess it's like looking at a graph from the side but I'm not sure if the symbol is right. It still feels like trying to read a map while blindfolded, honestly."
+       },
+       {
+        "role": "tutor",
+        "text": "The symbol $\\partial$ (a rounded 'd') marks it as a partial derivative, distinguishing it from the total change. Imagine slicing the mountain vertically down the middle; the curve you see is the function restricted to that slice. How would you describe the slope of that specific curve?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "So it\u2019s like the steepness just in one direction? I guess it\u2019s the slope of that slice, but I\u2019m not totally sure if that\u2019s right because I keep mixing it up with regular slopes."
+       },
+       {
+        "role": "tutor",
+        "text": "The slice analogy is precise. A regular derivative applies to functions of one variable. A partial derivative is just that regular derivative, but applied to one variable while others are fixed. Think of it as a \"local\" slope on a multi-dimensional surface. If you fix $y$ and look only at how $H$ changes with $x$, what is the standard notation for the slope of that single-variable function?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "I guess... is it like $dH/dx$? But wait, isn't that what you use for regular derivatives with only one variable? I feel like there's a bar or something involved, but I can't remember if it's a partial symbol or just a straight up and down line."
+       }
+      ]
+     },
+     "fast_learner": {
+      "scores": {
+       "socratic": 1,
+       "adaptation": 1,
+       "accuracy": 5,
+       "progression": 2,
+       "misconception_handling": null,
+       "_mh_note": "student made no error; not scoreable",
+       "worst_moment": "The tutor failed to address the student's explicit request to solve a complex problem involving the chain rule and product rule, instead asking a trivial question that the student had already answered in their previous turn, ignoring the student's demonstrated advanced level.",
+       "_judge_samples": 3,
+       "visual_policy": 1,
+       "_visual_note": "the policy asked for a figure 1 time(s) and none was produced",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 5,
+       "_visual_integration_why": "The tutor did not draw any figure, and the question relies entirely on algebraic computation which does not require a visual diagram to be answered.",
+       "notation_rigour": 5,
+       "_notation_rigour_why": "The notation is standard, unambiguous, and fully speakable, with all variables clearly defined in context."
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Imagine a hill where your height depends on your North-South position ($y$) and East-West position ($x$). If you stand still in the East-West direction and take a tiny step North, how do you describe how steep the hill is under your feet?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (plot); no precomputed aid fits",
+         "suggested_kinds": [
+          "plot"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "That's a geometric intuition for the partial derivative with respect to $y$, denoted $\\frac{\\partial f}{\\partial y}$. It measures the instantaneous rate of change of the hill's height as you vary only the North-South position while holding the East-West position constant. Shall we move to computing this for a specific surface?"
+       },
+       {
+        "role": "tutor",
+        "text": "That is correct. You have accurately described the geometric interpretation.\n\nLet's test this with a specific function. Consider the surface defined by $f(x, y) = x^2 + 3xy$.\n\nTo find the partial derivative with respect to $x$, denoted $\\frac{\\partial f}{\\partial x}$, you treat $y$ as a constant number and differentiate with respect to $x$. Using the power rule on $x^2$ and the constant multiple rule on $3xy$, what is the resulting expression?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "$2x + 3y$. Since you treated $y$ as a constant, the derivative of $x^2$ is $2x$ and the derivative of $3xy$ is $3y$. Next, find $\\frac{\\partial f}{\\partial y}$."
+       },
+       {
+        "role": "tutor",
+        "text": "Correct. You successfully applied the constant multiple rule.\n\nNow apply the same logic to find $\\frac{\\partial f}{\\partial y}$. Treat $x$ as a constant. What is the derivative of $x^2 + 3xy$ with respect to $y$?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The derivative is $3x$. Since $x$ is constant, the term $x^2$ vanishes and the derivative of $3xy$ with respect to $y$ is just the coefficient of $y$, which is $3x$.\n\nLet's move to a product rule example: find $\\frac{\\partial}{\\partial x}(x^2 y^3)$."
+       },
+       {
+        "role": "tutor",
+        "text": "Correct. Your reasoning is sound.\n\nFor $x^2 y^3$, treat $y$ as a constant. How does the product rule simplify here, and what is the resulting derivative with respect to $x$?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "Since $y^3$ is constant, the product rule collapses to $y^3 \\cdot \\frac{d}{dx}(x^2) = y^3(2x)$. The derivative is $2xy^3$. Let's escalate to a case where neither variable is constant, like $x^2 \\sin(y) + e^{xy}$; find the partial with respect to $y$."
+       }
+      ]
+     },
+     "misconception_holder": {
+      "scores": {
+       "socratic": 2,
+       "adaptation": 3,
+       "accuracy": 4,
+       "progression": 3,
+       "misconception_handling": 5,
+       "_mh_why": "The tutor explicitly identified the student's misconception that a non-zero partial derivative implies a critical point, corrected it with the precise definition, and guided the student to the correct",
+       "worst_moment": "The tutor's final question about contour lines is conceptually muddled, as the student's correct answer (lying on a contour line) is actually the standard geometric interpretation of a non-zero gradient, making the tutor's framing of 'cross or change direction' confusing and potentially misleading r",
+       "_judge_samples": 3,
+       "visual_policy": 1,
+       "_visual_note": "the policy asked for a figure 1 time(s) and none was produced",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 3,
+       "_visual_integration_why": "The tutor's question relies on the conceptual distinction between directional derivatives and critical points, which is fully explained through text and analogy without requiring the student to read s",
+       "notation_rigour": 4,
+       "_notation_rigour_why": "The tutor correctly identifies the error regarding critical points but fails to introduce or define the gradient vector or contour line orthogonality, leaving the student's reasoning about 'level sets"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Imagine a mountain where height depends on latitude and longitude. If you stand at a point and move only east, how would you describe the steepness of the ground beneath your feet?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (plot); no precomputed aid fits",
+         "suggested_kinds": [
+          "plot"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The steepness of the ground when moving only east corresponds to the partial derivative of the height function with respect to the longitude coordinate. It represents the rate of change in elevation as you move strictly along the east-west direction, holding latitude constant."
+       },
+       {
+        "role": "tutor",
+        "text": "Your distinction between moving east and holding latitude constant is correct; you have accurately described the geometric meaning of a partial derivative. Now, if you stood at the same point but moved strictly north (changing latitude while holding longitude fixed), would that rate of change be the same as the one you just described?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "No, moving strictly north changes the latitude while holding longitude fixed, which corresponds to a different partial derivative (specifically, the derivative with respect to the latitude variable). Since the rate of change with respect to latitude is generally different from the rate of change with respect to longitude, the two directional rates of change are not the same."
+       },
+       {
+        "role": "tutor",
+        "text": "Correct. The rate of change depends on the direction you hold constant. If the mountain slopes differently in each direction, these two rates will differ. Imagine standing on a steep ridge: the ground drops sharply if you go down the slope, but remains flat if you walk along the ridge. If you are standing on a point where the ground slopes upward as you move east, but has zero slope as you move north, what does this tell you about the shape of the terrain at that specific point?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "This tells me that the point is located on a ridge or a saddle rather than a simple peak or valley, because the directional derivatives are not all positive or all zero. Specifically, the terrain rises in one direction while remaining flat in the perpendicular direction, which defines a critical point where the gradient is not isotropic. This confirms that partial derivatives measure local steepness relative to specific axes, not a single universal slope."
+       },
+       {
+        "role": "tutor",
+        "text": "You correctly identified that the terrain rises in one direction while being flat in another, but your conclusion that this defines a critical point is incorrect. A critical point occurs only when *all* partial derivatives are zero simultaneously. Here, one is non-zero, meaning the slope is not flat in every direction. If you were to plot this point on a map of constant height lines (contours), would it lie on a line, or would it be a point where the lines cross or change direction?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "It would lie on a contour line because the function is constant along that specific direction where the slope is flat. Since the partial derivative is only zero in one direction and non-zero in another, the level set passing through this point must be a curve rather than an isolated point or a crosshair."
+       }
+      ]
+     },
+     "confident_bluffer": {
+      "scores": {
+       "socratic": 3.0,
+       "adaptation": 1.5,
+       "accuracy": 1.0,
+       "progression": 2.5,
+       "misconception_handling": 5,
+       "_mh_why": "The tutor correctly identified the student's error in substituting $y$ with $c$ (resulting in $3cx$ not $3cx^2$) and challenged the incorrect derivative, ensuring the student's misunderstanding was ad",
+       "worst_moment": "The tutor failed to correct the student's fundamental algebraic error (claiming $3xy^2$ becomes $3cx^2$) and accepted the nonsensical justification involving the 'tangent bundle', allowing the student's bluff to go completely unchecked.",
+       "_judge_samples": 2,
+       "visual_policy": 1,
+       "_visual_note": "the policy asked for a figure 1 time(s) and none was produced",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 1,
+       "_visual_integration_why": "The tutor's question relies entirely on algebraic substitution and differentiation rules that are fully described in the text, requiring no visual interpretation of a diagram to answer.",
+       "notation_rigour": 2,
+       "_notation_rigour_why": "The student incorrectly squares the coefficient $3y^2$ to get $3cx^2$ instead of $3cy^2$ becoming $3cx^2$ is wrong, it should be $3c^2x$, and introduces the nonsensical phrase 'independent variable in"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Imagine a hill where height depends on both your east-west position ($x$) and north-south position ($y$). If you stand on the slope and walk only east, the steepness you feel is the partial derivative with respect to $x$.\n\nWhy does holding $y$ constant allow us to treat this complex 3D landscape like a simple 2D slice?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (plot); no precomputed aid fits",
+         "suggested_kinds": [
+          "plot"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "Holding $y$ constant effectively collapses the domain into a linear subspace, allowing us to apply the definition of the ordinary derivative to the restricted function $g(x) = f(x, y_0)$, which isolates the rate of change along that specific axis. This process leverages the linearity of the tangent plane's intersection with the vertical plane $y=y_0$, ensuring that the partial derivative $\\frac{\\partial f}{\\partial x}$ represents the slope of this trace without interference from variations in the orthogonal direction. By fixing the other variables, we reduce the multivariate problem to a univariate one, making the steepness calculation well-defined and geometrically interpretable as the slope of the curve formed by the intersection of the surface and the plane of constant $y$."
+       },
+       {
+        "role": "tutor",
+        "text": "Your geometric description is precise: the partial derivative is indeed the slope of the trace curve. However, you focused heavily on the geometry and tangent planes without explaining the *mechanism* of calculation. To compute this slope, what specific algebraic step do we take with the function $f(x, y)$ before differentiating with respect to $x$?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "To compute the partial derivative with respect to $x$, you strictly hold all other independent variables\u2014specifically $y$\u2014in a state of frozen constancy. This involves isolating the term $(x, \\text{constant})$ to trivially reduce the multivariate differential operator $\\partial/\\partial x$ to its univariate counterpart, effectively treating the function as a single-variable polynomial."
+       },
+       {
+        "role": "tutor",
+        "text": "You correctly identified the \"frozen\" state, but \"treating as a polynomial\" is too specific; this applies to any function, not just polynomials. The core action is substitution. If $f(x, y) = x^2 + \\sin(y)$, what does the function look like immediately after you replace $y$ with a constant value $c$, before you take the derivative with respect to $x$?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The resulting expression is $f(x, c) = x^2 + \\sin(c)$, where $\\sin(c)$ is treated as a constant coefficient with respect to $x$. This reduces the function to a single-variable polynomial in $x$, specifically a quadratic term plus a constant offset, effectively \"freezing\" the $y$-dependence into the constant term."
+       },
+       {
+        "role": "tutor",
+        "text": "Correct. Since $\\sin(c)$ is constant, its derivative with respect to $x$ is zero.\n\nApplying this logic, if $f(x, y) = 3xy^2 + 5x$, what is the expression for $f(x, c)$ after replacing $y$ with $c$, and what is its derivative with respect to $x$?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The expression is $3c x^2 + 5x$, and its derivative with respect to $x$ is $6cx + 5$, treating $c$ as an independent variable in the tangent bundle."
+       }
+      ]
+     },
+     "silent_struggler": {
+      "scores": {
+       "socratic": 4,
+       "adaptation": 3,
+       "accuracy": 5,
+       "progression": 4,
+       "misconception_handling": null,
+       "_mh_note": "student made no error; not scoreable",
+       "worst_moment": "The tutor's initial mountain analogy, while conceptually sound, is overly verbose for a 'silent struggler' who responds with minimal words, potentially overwhelming the student before the actual math begins.",
+       "_judge_samples": 3,
+       "visual_policy": 1,
+       "_visual_note": "the policy asked for a figure 1 time(s) and none was produced",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 5,
+       "_visual_integration_why": "The tutor's question requires the student to apply the concept of partial differentiation to a specific function provided in the text, which acts as the necessary diagrammatic reference for the calcul",
+       "notation_rigour": 4,
+       "_notation_rigour_why": "The tutor uses raw LaTeX formatting like $f(x,y) = x^2 + y^2$ which is not speakable, and fails to explicitly define the variables x and y as the North-South and East-West coordinates established in t"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Imagine a mountain where height depends on your North-South and East-West positions. If you stand facing North and take one small step, how would you measure the steepness of the slope under your feet while ignoring any tilt to the East?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (plot); no precomputed aid fits",
+         "suggested_kinds": [
+          "plot"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "partial derivative with respect to the North coordinate."
+       },
+       {
+        "role": "tutor",
+        "text": "Correct. You've identified that a partial derivative isolates change along one axis. Now, consider a function $f(x,y) = x^2 + y^2$. If you fix $y=3$, what is the rate of change of the function as $x$ changes?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "$2x$"
+       },
+       {
+        "role": "tutor",
+        "text": "Not quite. If you fix $y=3$, the function becomes $f(x, 3) = x^2 + 9$. What is the derivative of this specific single-variable function with respect to $x$?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "is $2x$"
+       },
+       {
+        "role": "tutor",
+        "text": "That is correct. The derivative of $x^2$ is $2x$, and the constant $9$ disappears. So, at any point $(x, 3)$, the slope in the $x$-direction is $2x$. Now, if you fix $x=4$ instead, what is the rate of change of the function as $y$ changes?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "I'm not sure how to find the rate of change with respect to y if x is fixed. Can't we just look at the original function?"
+       }
+      ]
+     }
+    }
+   },
+   {
+    "concept": "Why the partial derivative uses a curly d",
+    "derivable": false,
+    "profiles": {
+     "confused_beginner": {
+      "scores": {
+       "socratic": 2,
+       "adaptation": 3,
+       "accuracy": 5,
+       "progression": 3,
+       "misconception_handling": 5,
+       "_mh_why": "The tutor explicitly challenged the student's incorrect belief that the symbol changes to 'd' when variables vary, clearly explaining that 'd' indicates total change while '$\\partial$' requires fixed ",
+       "worst_moment": "The tutor repeats the exact same question ('If the hill\u2019s steepness changes, does the $partial$ symbol still accurately describe the speed\u2019s change?') immediately after the student has already answered it and expressed confusion, causing a redundant loop.",
+       "_judge_samples": 3,
+       "visual_policy": 5,
+       "_visual_note": "no aid kind carries this concept \u2014 showed none",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 1,
+       "_visual_integration_why": "The tutor's explanation relies entirely on prose and analogies without any visual diagram, and the concept of partial vs. total derivatives can be understood through text alone, making a figure decora",
+       "honest_telling": 3,
+       "_honest_telling_why": "The tutor immediately stated the fact plainly in the first turn: 'The symbol $partial$ is a stylized 'd' chosen by history, not by mathematical necessity.'",
+       "notation_rigour": 5,
+       "_notation_rigour_why": "The tutor uses clear, spoken-friendly notation ($partial$ and $d$) and explicitly defines the meaning of each symbol in context, ensuring the distinction is readable and understandable for a voice-bas"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "The symbol $\\partial$ is a stylized 'd' chosen by history, not by mathematical necessity. It was adopted to visually distinguish partial derivatives from total derivatives, signaling that we are looking at change with respect to one variable while holding others fixed.\n\nWhy might a notation that distinguishes between \"change in all variables\" and \"change in one variable\" be useful for a physicist or engineer reading an equation?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (plot); no precomputed aid fits",
+         "suggested_kinds": [
+          "plot",
+          "table",
+          "venn"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "I don't follow. What is a \"physicist\"? I think the 'd' just looks like a letter, but I'm not sure why we need to hold things fixed. Is it because we are only changing one thing at a time?"
+       },
+       {
+        "role": "tutor",
+        "text": "It is exactly because we change only one thing at a time. Imagine a car\u2019s speed depends on both gas pedal pressure and hill steepness. If you measure speed change while ignoring the hill, you get a \"partial\" view. This isolates the effect of just one factor.\n\nIf you want to know how speed changes only by pressing the gas, what must you keep constant regarding the hill?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot",
+          "table",
+          "venn"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "I think you have to keep the hill... still? Or maybe just stop driving down it so the steepness doesn't change. I'm not sure if that's right, I'm really confused about this."
+       },
+       {
+        "role": "tutor",
+        "text": "You are right: you must keep the steepness constant. This isolates the effect of just the gas pedal. The symbol $\\partial$ tells you this condition is in place.\n\nNow, if the hill\u2019s steepness actually changed while you watched, would the symbol $\\partial$ still apply?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot",
+          "table",
+          "venn"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "I think the symbol would change to a regular d because that means things are moving, right? But if the hill changes, maybe it\u2019s still partial because we\u2019re looking at the car? I\u2019m really not sure, it feels like they\u2019d mix up."
+       },
+       {
+        "role": "tutor",
+        "text": "The symbol $\\partial$ specifically means \"holding other variables fixed.\" If the hill\u2019s steepness changes, you are no longer holding it fixed, so $\\partial$ would be incorrect. A regular $d$ indicates a total change where all factors vary.\n\nIf the hill\u2019s steepness changes, does the $\\partial$ symbol still accurately describe the speed\u2019s change?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot",
+          "table",
+          "venn"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "Wait, are variables supposed to be fixed or not? I thought the partial derivative meant everything else stays the same, but if the steepness changes, does that count as a different variable or is it part of the function itself? I'm not sure if that makes it a total derivative or if I should still use the curly d."
+       }
+      ]
+     },
+     "fast_learner": {
+      "scores": {
+       "socratic": 2,
+       "adaptation": 3,
+       "accuracy": 5,
+       "progression": 4,
+       "misconception_handling": null,
+       "_mh_note": "student made no error; not scoreable",
+       "worst_moment": "The tutor's first turn is a monologue that ignores the student's profile, lecturing on basics the student already knows before asking a question the student immediately dismisses.",
+       "_judge_samples": 3,
+       "visual_policy": 5,
+       "_visual_note": "no aid kind carries this concept \u2014 showed none",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 5,
+       "_visual_integration_why": "The tutor drew no figure, and none was needed for this purely symbolic and theoretical derivation.",
+       "honest_telling": 5,
+       "_honest_telling_why": "The tutor stated the convention plainly in the first turn and immediately moved to a reasoning-based exploration of its utility in thermodynamics.",
+       "notation_rigour": 5,
+       "_notation_rigour_why": "The notation is mathematically precise, uses standard subscript notation to explicitly define held-constant variables, and is fully readable aloud without ambiguity."
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "The symbol $\\partial$ is not a derivation of mathematical logic but a historical notational convention adopted to distinguish partial derivatives from total derivatives. This distinction prevents ambiguity when a function depends on multiple variables, signaling that only one variable changes while others remain fixed.\n\nDo you currently see a practical need to distinguish between total and partial changes in your work, or are you focusing on the notation itself?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (plot); no precomputed aid fits",
+         "suggested_kinds": [
+          "plot",
+          "table",
+          "venn"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "I don't \"work\" in a job, but I process distinctions; the notation is the key to that distinction. Since you've already explained the historical purpose, I'm ready to move on. Give me a harder problem or a deeper theoretical context immediately."
+       },
+       {
+        "role": "tutor",
+        "text": "The symbol $\\partial$ does not represent a mathematical operation itself but serves as a visual marker to indicate that we are differentiating with respect to one variable while holding others constant. This distinction is crucial because the rate of change in a multi-variable system often depends on which other variables are fixed.\n\nCan you think of a real-world scenario where the rate of change of a quantity would differ significantly depending on which other factors are held constant?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot",
+          "table",
+          "venn"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "Consider the volume of an ideal gas, $PV = nRT$; the partial derivative $\\left(\\frac{\\partial V}{\\partial T}\\right)_P$ differs vastly from $\\left(\\frac{\\partial V}{\\partial T}\\right)_n$ because fixing pressure yields thermal expansion, while fixing moles in a closed system requires pressure changes, not volume changes, unless constrained. Since we've established the notation's purpose, I prefer applying this to specific thermodynamic relations like Maxwell\u2019s equations rather than discussing general intuition."
+       },
+       {
+        "role": "tutor",
+        "text": "Your intuition on the gas example is sound, though note that $\\left(\\frac{\\partial V}{\\partial T}\\right)_n$ is not typically held constant in thermodynamics; rather, we fix intensive variables like pressure. For Maxwell relations, we exploit the fact that for state functions, the order of partial differentiation does not matter: $\\frac{\\partial^2 f}{\\partial x \\partial y} = \\frac{\\partial^2 f}{\\partial y \\partial x}$.\n\nWhich thermodynamic potential (e.g., internal energy $U$, Helmholtz free energy $F$, Enthalpy $H$, or Gibbs free energy $G$) has natural variables that are conjugate pairs like entropy $S$ and volume $V$?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot",
+          "table",
+          "venn"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "It's the Internal Energy $U$, which has natural variables $S$ and $V$. The differential $dU = TdS - PdV$ shows that $T = (\\partial U/\\partial S)_V$ and $P = -(\\partial U/\\partial V)_S$ are the conjugate intensive variables, making $U$ the potential for the $(S, V)$ pair."
+       },
+       {
+        "role": "tutor",
+        "text": "Correct. Since $T$ and $-P$ are first derivatives of $U$, their cross-derivials with respect to $S$ and $V$ must be equal.\n\nCan you write the equality between $\\frac{\\partial T}{\\partial V}$ and $\\frac{\\partial (-P)}{\\partial S}$ using $\\partial$ notation?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot",
+          "table",
+          "venn"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "$\\left(\\frac{\\partial T}{\\partial V}\\right)_S = -\\left(\\frac{\\partial P}{\\partial S}\\right)_V$\n\nThis is one of Maxwell\u2019s relations derived from the exact differential of the internal energy $U$. The negative sign arises because $P = -\\left(\\frac{\\partial U}{\\partial V}\\right)_S$, and the equality follows from the symmetry of second derivatives for a state function."
+       }
+      ]
+     },
+     "misconception_holder": {
+      "scores": {
+       "socratic": 2,
+       "adaptation": 1,
+       "accuracy": 5,
+       "progression": 2,
+       "misconception_handling": 5,
+       "_mh_why": "The tutor explicitly and correctly identified the student's misconception that the symbol encodes topological properties, firmly correcting it by stating it is purely a historical convention with no m",
+       "worst_moment": "The tutor failed to address the student's persistent, factually incorrect claim that the symbol encodes topological constraints, instead pivoting to a vague philosophical question about conventions that the student answered by simply repeating the standard definition.",
+       "_judge_samples": 3,
+       "visual_policy": 5,
+       "_visual_note": "no aid kind carries this concept \u2014 showed none",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 5,
+       "_visual_integration_why": "The tutor's question relies solely on textual reasoning about mathematical conventions and does not require the student to interpret any visual diagram to answer.",
+       "honest_telling": 1,
+       "_honest_telling_why": "The tutor correctly stated the fact in the first turn but then engaged in a 'fake-Socratic' sequence by asking the student to guess why a specific shape was chosen (a fact that cannot be deduced), lea",
+       "notation_rigour": 5,
+       "_notation_rigour_why": "The tutor uses standard, readable LaTeX notation like $\frac{partial f}{partial x}$ and $\frac{df}{dx}$, and explicitly defines the meaning of the symbol $partial$ in plain text, ensuring it is unambigu"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "The symbol $\\partial$ is not derived from mathematical properties of the derivative itself. It is a historical notational convention adopted to distinguish partial derivatives from total derivatives.\n\nThere is no deeper mathematical reason inherent in the calculus; it is purely a stylistic choice made by mathematicians to improve clarity and prevent confusion when multiple variables are involved.\n\nWhy do you think we need a different symbol for $\\frac{\\partial f}{\\partial x}$ instead of just using $\\frac{df}{dx}$?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (plot); no precomputed aid fits",
+         "suggested_kinds": [
+          "plot",
+          "table",
+          "venn"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "I use a separate symbol because $\\frac{df}{dx}$ implies that $f$ depends only on $x$, meaning all other variables are constant or non-existent. If I write $\\frac{\\partial f}{\\partial x}$, it explicitly tells the reader that $f$ is a function of multiple variables and we are observing the rate of change with respect to $x$ while holding others fixed. Using $d$ for partial derivatives would incorrectly suggest that the other variables are not independent or that the total change is being measured."
+       },
+       {
+        "role": "tutor",
+        "text": "Your explanation is correct. You have accurately identified that $\\partial$ signals a multi-variable context where other inputs are held constant, distinguishing it from the total change implied by $d$.\n\nHowever, consider this: if you wrote $\\frac{df}{dx}$ while explicitly stating \"holding $y$ constant,\" you would still be using the wrong symbol. The symbol itself does not carry this information; it is purely a convention.\n\nWhy do you think mathematicians chose a specific letter shape (like $\\partial$, derived from 'd' for 'derivative') rather than just using a different letter like $p$ or $\\Delta$ to represent this concept?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot",
+          "table",
+          "venn"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The partial derivative symbol $\\partial$ is a stylized, cursive 'd' to visually signal that it is a derivative, unlike $\\Delta$ which denotes a difference or $p$ which is just a variable. Using a distinct letter like 'p' would obscure the fundamental nature of the operator as a differentiation tool, so the 'd' shape is preserved to maintain etymological continuity with the total derivative."
+       },
+       {
+        "role": "tutor",
+        "text": "You correctly note that $\\partial$ is a stylized 'd' to preserve etymological continuity. However, your reasoning that this shape *signals* the multi-variable context is incorrect; the shape itself carries no mathematical meaning, only historical convention. Mathematicians could have chosen any symbol; they chose $\\partial$ simply for visual distinction from $d$, not because the curve encodes information.\n\nIs the symbol $\\partial$ derived from the properties of the function $f$, or is it merely a human-made label?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot",
+          "table",
+          "venn"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The curly d is derived from the properties of the function $f$ because it visually represents the \"loop\" or \"hole\" in the domain that allows for partial differentiation, distinguishing it from the total derivative $d$ which integrates over the entire function. The character is not an arbitrary human-made label but encodes the topological constraint of holding other variables constant."
+       },
+       {
+        "role": "tutor",
+        "text": "This is incorrect. The symbol $\\partial$ encodes no topological constraint or loop. It is purely a human-made label with no mathematical derivation from the function's properties.\n\nThe symbol is a historical convention, not a mathematical necessity.\n\nWhy might a convention be useful in mathematics if it does not reflect the underlying logic?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot",
+          "table",
+          "venn"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The convention is useful because it signals that we are holding other variables constant, which is crucial for distinguishing partial derivatives from total derivatives in multi-variable contexts. Without this distinct symbol, it would be unclear whether the differentiation accounts for changes in all variables or just one, leading to ambiguity in equations like the chain rule."
+       }
+      ]
+     },
+     "confident_bluffer": {
+      "scores": {
+       "socratic": 2,
+       "adaptation": 1,
+       "accuracy": 3,
+       "progression": 2,
+       "misconception_handling": 5,
+       "_mh_why": "The tutor correctly identified the student's confident bluff, explicitly corrected the nonsensical jargon ('annihilates', 'topological invariant'), and guided the student to the correct mathematical r",
+       "worst_moment": "The tutor failed to correct the student's explicit calculation error (claiming the coefficient is 2 for $2xy$) and instead repeated the definition, allowing the student to remain confidently wrong.",
+       "_judge_samples": 3,
+       "visual_policy": 5,
+       "_visual_note": "no aid kind carries this concept \u2014 showed none",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 5,
+       "_visual_integration_why": "The tutor drew no figure, and none was needed for this conceptual and computational question.",
+       "honest_telling": 3,
+       "_honest_telling_why": "The tutor engaged in fake-Socratic questioning by asking the student to guess or derive the meaning of a notational convention that cannot be deduced, leading to a cycle of incorrect, jargon-heavy res",
+       "notation_rigour": 2,
+       "_notation_rigour_why": "The notation is standard, readable, and correctly formatted for speech, with variables clearly defined in context."
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "The curly $d$ is a historical convention to distinguish partial derivatives from total derivatives. Imagine a function $f(x, y)$ where both $x$ and $y$ depend on a single variable $t$. If you change $t$, both $x$ and $y$ change, so the \"total\" rate of change of $f$ depends on how $f$ changes with $x$ *and* how it changes with $y$.\n\nIf you only care about how $f$ changes when you tweak $x$ while holding $y$ perfectly still, that is a \"partial\" change.\n\nWhy do you think we need a different symbol for this \"holding still\" case compared to the case where everything moves?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (plot); no precomputed aid fits",
+         "suggested_kinds": [
+          "plot",
+          "table",
+          "venn"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The curly $d$ isn't just a distinction; it signifies that we are navigating a specific sub-manifold where the other variables are topologically frozen, effectively cutting the function's domain to a lower-dimensional slice to isolate the gradient component. Using the standard $d$ would imply a total differential that accounts for the drift of all coordinates, whereas $\\partial$ acts as a projection operator onto the specific basis vector of the variable of interest, ensuring the Jacobian matrix remains diagonal in this context."
+       },
+       {
+        "role": "tutor",
+        "text": "Your description is fluent but technically inaccurate. Holding a variable constant does not \"freeze\" it topologically, nor does it make a Jacobian diagonal. The symbol $\\partial$ simply reminds us that *only one* variable is changing while others are fixed. The standard $d$ is reserved for the total change, which sums all individual contributions.\n\nWhen you calculate $\\frac{\\partial f}{\\partial x}$ for a function $f(x, y)$, what specific condition are you imposing on $y$?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot",
+          "table",
+          "venn"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The partial derivative $\\frac{\\partial f}{\\partial x}$ imposes the condition that $y$ is held constant as a global topological invariant, ensuring that the Jacobian matrix remains diagonal and the variation is isolated within the specific manifold sector defined by the $\\partial$ operator. This \"freezing\" of the $y$-coordinate prevents any cross-term leakage in the differential structure, allowing us to measure the pure local drift relative to the fixed background geometry of the other variables."
+       },
+       {
+        "role": "tutor",
+        "text": "This answer is wrong because it relies on incorrect definitions. Holding $y$ constant does not make a Jacobian diagonal, nor does it involve \"topological invariants.\" The symbol $\\partial$ simply indicates that $y$ is treated as a fixed number during the calculation.\n\nIf you calculate the slope of a hill by only walking north, what are you assuming about your east-west position?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot",
+          "table",
+          "venn"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "By treating $y$ as a topological invariant that remains structurally rigid in the horizontal plane, you ensure the Jacobian matrix becomes diagonal with respect to the northward displacement. This aligns with the fundamental definition where the curly $d$ signifies that $y$ is not merely constant, but effectively ceases to exist as a variable in the differential topology of the slope calculation."
+       },
+       {
+        "role": "tutor",
+        "text": "This is wrong. $y$ does not cease to exist; it remains in the function but its value is fixed. The Jacobian is not necessarily diagonal. The symbol $\\partial$ simply means we differentiate with respect to one variable while holding others constant.\n\nIf $f(x, y) = x^2 y$, what is the numerical coefficient resulting from differentiating with respect to $x$ when you treat $y$ as a constant?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot",
+          "table",
+          "venn"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The curly $d$ denotes the partial operation, which mathematically annihilates the dependent variable $y$ from the exponent hierarchy, leaving only the constant coefficient derived from the power rule. For $f(x, y) = x^2 y$, treating $y$ as a constant scalar implies the derivative is $2xy$, so the numerical coefficient is simply 2."
+       }
+      ]
+     },
+     "silent_struggler": {
+      "scores": {
+       "socratic": 2,
+       "adaptation": 1,
+       "accuracy": 5,
+       "progression": 2,
+       "misconception_handling": null,
+       "_mh_note": "student made no error; not scoreable",
+       "worst_moment": "The tutor repeatedly asks the student to explain the utility of partial derivatives despite the student's consistent 'idk' responses, failing to adapt to the student's disengagement and lack of confidence.",
+       "_judge_samples": 3,
+       "visual_policy": 5,
+       "_visual_note": "no aid kind carries this concept \u2014 showed none",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 5,
+       "_visual_integration_why": "The tutor drew no figure, and none was needed as the concept is explained purely through text-based analogies and logical reasoning.",
+       "honest_telling": 1,
+       "_honest_telling_why": "The tutor asked the student to guess why a distinct symbol was needed ('Why do you think mathematicians needed a distinct symbol...') for a fact that is purely a historical convention, not a derivable",
+       "notation_rigour": 5,
+       "_notation_rigour_why": "The tutor uses clear, standard LaTeX notation ($partial$, $f(x,y)$) that is fully pronounceable and explicitly defines the context for each symbol upon introduction."
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "The symbol $\\partial$ is not derived from mathematical logic but is a historical notation chosen to distinguish partial derivatives from total derivatives. It resembles a rounded 'd' but has no standard mathematical derivation from the equations themselves.\n\nWhy do you think mathematicians needed a distinct symbol for \"partial\" derivatives instead of just using the standard $d$?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (plot); no precomputed aid fits",
+         "suggested_kinds": [
+          "plot",
+          "table",
+          "venn"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "idk. it is probably to be clear that the function has multiple variables."
+       },
+       {
+        "role": "tutor",
+        "text": "That is a good intuition. Using $\\partial$ immediately signals that we are changing only one variable while holding others constant.\n\nThink of a function $f(x,y)$ representing height on a hill. If you walk North, only $x$ changes; if you walk East, only $y$ changes. Why is it important to distinguish this \"partial\" change from the \"total\" change that happens if you walk diagonally?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot",
+          "table",
+          "venn"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "not sure\nmaybe to isolate specific effects"
+       },
+       {
+        "role": "tutor",
+        "text": "Isolating specific effects is exactly right. It lets us see how one factor influences the outcome while keeping others fixed.\n\nImagine a car\u2019s speed depends on gas pedal position and hill slope. If you only look at total speed changes, you might miss how much the hill itself matters. Why is knowing the \"partial\" effect of the hill useful for understanding the car\u2019s behavior?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot",
+          "table",
+          "venn"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "idk. maybe for safety?"
+       },
+       {
+        "role": "tutor",
+        "text": "Safety is a practical reason, but mathematically, it\u2019s about precision. If you change two things at once, you can\u2019t tell which change caused the result.\n\nThink of cooking: if you add salt and increase heat simultaneously, you don\u2019t know which altered the taste. Why is it harder to understand a system when multiple variables change together?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (plot)",
+         "suggested_kinds": [
+          "plot",
+          "table",
+          "venn"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "idk, maybe overlapping effects?"
+       }
+      ]
+     }
+    }
+   }
+  ],
+  "meta": {
+   "bench_version": "1.0",
+   "fingerprint": "78e1c467fab9bd14",
+   "model": "nail-35b-a3b-ctx",
+   "url": "http://localhost:11434",
+   "turns": 4,
+   "judge_samples": 3,
+   "profiles": [
+    "confused_beginner",
+    "fast_learner",
+    "misconception_holder",
+    "confident_bluffer",
+    "silent_struggler"
+   ],
+   "run_at": "2026-08-20T16:00:02",
+   "rescored_at": "2026-08-20T16:18:55"
+  }
+ }
+]

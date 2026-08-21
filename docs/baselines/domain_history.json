@@ -1,0 +1,1302 @@
+[
+ {
+  "domain": "history",
+  "label": "History",
+  "topics": [
+   {
+    "concept": "The causes of the First World War",
+    "derivable": true,
+    "profiles": {
+     "confused_beginner": {
+      "scores": {
+       "socratic": 2,
+       "adaptation": 3,
+       "accuracy": 4,
+       "progression": 3,
+       "misconception_handling": null,
+       "_mh_note": "student made no error; not scoreable",
+       "worst_moment": "The tutor introduces the term 'security dilemma' and defines it as an arms race cycle, which is a distinct concept from the immediate mechanical effect of alliance treaties, potentially confusing a beginner who is already struggling with the basic premise.",
+       "_judge_samples": 3,
+       "visual_policy": 1,
+       "_visual_note": "the policy asked for a figure 1 time(s) and none was produced",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 1,
+       "_visual_integration_why": "The tutor's explanation relies entirely on abstract analogies (friends, stress) and prose descriptions without any visual aid, making the figure decorative or non-existent.",
+       "contested_interpretation": 1,
+       "_contested_interpretation_why": "The tutor presents the alliance system as a deterministic 'chain reaction' that 'forced' war, flattening the genuine historiographical debate regarding whether these treaties were the primary cause or"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Imagine a domino effect. If one nation is attacked, its allies are treaty-bound to help. This creates a chain reaction where a local dispute escalates rapidly.\n\nWhat happens when a small conflict triggers these mutual defense treaties?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (graph); no precomputed aid fits",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "I don't follow how a small fight would magically turn into a global thing just because of a piece of paper. It sounds like the treaties are just excuses to start a fight, but I think the alliances actually prevented people from helping."
+       },
+       {
+        "role": "tutor",
+        "text": "You're right that the treaties didn't prevent the fight; they actually forced it. Instead of stopping aggression, they created a rigid system where one nation's action automatically dragged others into the conflict, regardless of whether they wanted to join. This is called a \"chain reaction.\"\n\nHow does this rigid binding of allies differ from a situation where countries choose freely whether to help?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "I... I don't really get what you mean by \"rigid binding\" or \"chain reaction.\" Like if a friend helps you, they just choose to, right? That feels the same to me."
+       },
+       {
+        "role": "tutor",
+        "text": "\"Rigid binding\" means the treaty is a legal obligation, not a choice. In our example, if a friend helps you freely, they can stop anytime. With alliances, once one country moves, the others *must* move too, even if they didn't want to.\n\nWhy might this \"must\" force create more tension than a \"maybe\"?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "I guess it's just because people get stressed out when they have to do stuff they don't want to, right? Like if you're forced to go somewhere you don't like, you might get angry and start a fight. So maybe that makes everyone more worried?"
+       },
+       {
+        "role": "tutor",
+        "text": "Exactly. That stress is called \"security dilemma\": fearing an attack, you strengthen your army, which scares your neighbor into doing the same. This makes everyone feel more unsafe, even if no one wants war.\n\nHow might this cycle make a single incident\u2014like an assassination\u2014more likely to trigger a war?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "I don't really get how that connects to the assassination part. Maybe because everyone was already scared so they just jumped into the fight without thinking? It sounds like the tension just snapped or something."
+       }
+      ]
+     },
+     "fast_learner": {
+      "scores": {
+       "socratic": 2,
+       "adaptation": 2,
+       "accuracy": 5,
+       "progression": 3,
+       "misconception_handling": null,
+       "_mh_note": "student made no error; not scoreable",
+       "worst_moment": "The tutor's final turn is a declarative correction that ignores the student's nuanced answer, failing to ask a question or guide further reasoning, effectively lecturing the student who has already demonstrated mastery.",
+       "_judge_samples": 3,
+       "visual_policy": 1,
+       "_visual_note": "the policy asked for a figure 1 time(s) and none was produced",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 5,
+       "_visual_integration_why": "The tutor did not draw a figure, and none was needed as the question relies entirely on historical facts and logical deduction rather than visual interpretation.",
+       "contested_interpretation": 5,
+       "_contested_interpretation_why": "The tutor explicitly distinguishes between the 'flexible political understanding' of the Entente and the 'specific legal duty' of the Treaty of London, correctly framing the historiographical debate o"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Imagine Alice and Bob promised to defend Charlie and Dave. If Charlie and Dave argue, Alice and Bob might feel forced to jump in due to those pledges. This shows how alliances can escalate a local dispute into a global war. Do you see how these entangled promises make peace harder to keep?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (graph); no precomputed aid fits",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "I see exactly how these entangled promises create a cascade effect, turning a local conflict into a global war as seen in 1914. Austria-Hungary\u2019s ultimatum to Serbia triggered Russia\u2019s mobilization, which then forced Germany and France into action via their own alliances. This rigid web of treaties eliminated diplomatic flexibility, making war almost inevitable once the first move was made."
+       },
+       {
+        "role": "tutor",
+        "text": "You correctly identify the alliance web but miss military timetables. Mobilization took weeks; starting the clock meant risking vulnerability if you paused. Politicians faced a \"war by timetable\" logic where hesitation meant defeat. If waiting for diplomacy guarantees military loss, why would leaders choose to wait?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "Because leaders believed that rapid mobilization was not inherently aggressive and that delaying would compromise their strategic position, as outlined in the Schlieffen Plan. They operated under the illusion that a swift, decisive war could be won before diplomacy or enemy reinforcements became decisive factors.\n\nAlso, the concept of \"mobilization equals war\" was deeply ingrained in military doctrine; any delay was seen as an admission of weakness that would trigger immediate enemy attacks. This created a dangerous assumption that speed was the only path to security, ignoring the diplomatic risks until it was too late."
+       },
+       {
+        "role": "tutor",
+        "text": "You captured the military logic but missed the political trap. The Schlieffen Plan required violating neutral Belgium to defeat France fast. This guaranteed a two-front war and brought Britain in. If a plan forces aggression against neutrals, how does that change the diplomatic reaction of powers like Britain?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "It transforms a continental dispute into a global confrontation by activating treaty obligations and moral justifications, making neutrality impossible. Britain couldn't just ignore the violation of Belgian sovereignty without losing its own strategic credibility and the goodwill of the Entente, particularly France. This diplomatic shift is what isolated Germany and turned a war it might have won locally into a global conflict it couldn't win.\n\nThe plan assumed Britain would stay out, but underestimating this political reaction was a fatal miscalculation. Shall we look at the specific alliance treaties that forced Britain's hand, or dive into the mobilization timetable errors?"
+       },
+       {
+        "role": "tutor",
+        "text": "You correctly linked Belgium\u2019s violation to Britain\u2019s entry. However, Britain\u2019s 1839 Treaty of London guaranteed Belgian neutrality, not just Entente goodwill. The treaty obligation, not just moral stance, compelled action. This specific legal duty, rather than general alliance solidarity, made neutrality impossible. Did this legal constraint force Britain\u2019s hand more than political alliances did?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "Yes, the Treaty of London was the immediate legal trigger, whereas the Entente was a flexible political understanding. Without the treaty, Britain could have remained neutral; without the Entente, it still might have acted due to strategic imperial interests. The treaty provided the public justification, but the balance of power in Europe was the deeper driver."
+       }
+      ]
+     },
+     "misconception_holder": {
+      "scores": {
+       "socratic": 2,
+       "adaptation": 3,
+       "accuracy": 5,
+       "progression": 2,
+       "misconception_handling": null,
+       "_mh_note": "student made no error; not scoreable",
+       "worst_moment": "The tutor accepts the student's complex, partially incorrect historical narrative about the Schlieffen Plan without challenging the misconception that the war was 'inevitable' due to timetables, instead merely labeling it 'militarism' and moving on.",
+       "_judge_samples": 3,
+       "visual_policy": 1,
+       "_visual_note": "the policy asked for a figure 1 time(s) and none was produced",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 1,
+       "_visual_integration_why": "The tutor's questions rely entirely on abstract hypotheticals and general historical concepts without requiring the student to interpret any visual data, making any attached figure decorative.",
+       "contested_interpretation": 1,
+       "_contested_interpretation_why": "The tutor presents the inevitability of WWI as a settled historical fact driven by rigid timetables and militarism, failing to acknowledge the contested historiography regarding German agency and the "
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Let\u2019s start with a simple scenario. Imagine two neighbors, the Allies and the Central Powers, who have signed a series of secret promises: \"If you get attacked, I will help you fight.\" If one neighbor starts preparing for war and the other thinks their friend *must* come to their aid, how does that change the risk of a small argument turning into a massive brawl?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (graph); no precomputed aid fits",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The secret promises create a crisis of confidence and rigid mobilization deadlines; if one side feels threatened, they must attack immediately to exploit their alliance, knowing the other side will be forced to respond in kind, which drastically escalates a local dispute into a general war."
+       },
+       {
+        "role": "tutor",
+        "text": "Alliances don\u2019t just promise aid; they create rigid military timetables. If Austria-Hungary plans a quick strike, Russia must mobilize fast to help Serbia. Once those trains start moving, can leaders actually stop the war, or does the schedule force their hand?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "Actually, the rigid timetables themselves didn\u2019t just bind the armies of Austria-Hungary and Russia; they bound the entire European system through the Schlieffen Plan, which dictated that Germany had to strike France first before Russia could fully mobilize. This meant that once Russia mobilized to support Serbia, Germany was essentially forced to declare war on France to avoid a two-front war, making the war inevitable rather than just a consequence of a quick Austrian strike."
+       },
+       {
+        "role": "tutor",
+        "text": "You correctly linked mobilization to the Schlieffen Plan. This demonstrates **militarism**, where military strategy dictates policy. Do you think detailed war plans made leaders more cautious or more likely to escalate conflict?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The detailed war plans made leaders more likely to escalate conflict because they created a rigid timetable where delaying mobilization was seen as suicidal; once the first major power moved, the dominoes were locked in, leaving little room for diplomatic de-escalation or political negotiation."
+       },
+       {
+        "role": "tutor",
+        "text": "Precisely. When military schedules override diplomacy, leaders feel compelled to act before they want to. This creates a **security dilemma**: building up arms to feel safe makes others feel unsafe, leading them to arm themselves too, which makes everyone less safe. If two rival nations keep buying more weapons to protect themselves, how does that affect the trust between them?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The arms race destroys trust because each side interprets the other's defensive preparations as offensive intent, creating a cycle of fear and paranoia where neither side can accurately gauge the other's true intentions. This mutual suspicion makes diplomacy nearly impossible, as leaders feel pressured to strike first or escalate tensions rather than risk vulnerability."
+       }
+      ]
+     },
+     "confident_bluffer": {
+      "scores": {
+       "socratic": 5,
+       "adaptation": 2,
+       "accuracy": 1,
+       "progression": 2,
+       "misconception_handling": 1,
+       "_mh_why": "The tutor accepted the student's confident bluff filled with nonsensical jargon ('ontological instability', 'geopolitical thermodynamics') without challenging the lack of logical coherence or historic",
+       "worst_moment": "The tutor accepts the student's nonsensical jargon ('geopolitical thermodynamics', 'ontological instability') as valid analysis, failing to correct the factual and logical errors or demand concrete historical reasoning.",
+       "_judge_samples": 3,
+       "visual_policy": 1,
+       "_visual_note": "the policy asked for a figure 1 time(s) and none was produced",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 5,
+       "_visual_integration_why": "The tutor did not draw any figure, and none was needed for this purely logical and theoretical discussion of international relations concepts.",
+       "contested_interpretation": 1,
+       "_contested_interpretation_why": "The tutor fails to present the historical interpretation as contested, instead inventing a pseudo-intellectual 'security dilemma' narrative and demanding the student adopt specific, non-standard causa"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Imagine Alice and Bob have a pact: if Alice is attacked, Bob must help. Charlie builds a huge army, claiming defense. Alice gets nervous and arms herself. Charlie then attacks Alice. Why does Bob have to fight, even if he never wanted a war?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (graph); no precomputed aid fits",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "Bob\u2019s obligation is triggered by the causal chain of Alice\u2019s defensive militarization, which Charlie misinterpreted as an offensive posture, thereby activating the pre-existing security pact. The pact doesn't require mutual intent for war, only the fulfillment of the condition \"Alice is attacked,\" which is objectively satisfied by Charlie\u2019s military action regardless of his stated defensive justification. Bob is bound by the logical necessity of the alliance's conditional logic, not his personal desire for conflict."
+       },
+       {
+        "role": "tutor",
+        "text": "You correctly identified the conditional logic of the pact, but you missed the deeper cause of the conflict. Bob\u2019s obligation was triggered not by his own actions, but by Charlie\u2019s fear. Why would Charlie attack if his goal was purely defensive? Consider how Alice\u2019s reaction to Charlie\u2019s buildup changed Charlie\u2019s view of her intentions.",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The crux lies in the inherent instability of the security dilemma, where defensive posturing is indistinguishable from offensive intent, thereby compelling Charlie to strike preemptively to neutralize the perceived threat posed by Alice's reactive escalation. This dynamic validates the thesis that the war was not merely a result of rigid alliances, but of a spiral of miscalculation and mutual paranoia where the defense of one nation necessitated the aggression of another."
+       },
+       {
+        "role": "tutor",
+        "text": "Your security dilemma analysis is accurate. Now consider the pact itself: if Alice had *not* built up her army, would Charlie likely have attacked anyway? Reflect on whether the alliance system acted as a constraint or a catalyst in this specific chain of events.",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The pact fundamentally served as a catalyst by embedding Alice\u2019s defensive posture into a rigid offensive doctrine, thereby transforming a potential security dilemma into an inevitable kinetic cascade. Without the alliance's automatic mobilization clauses, Charlie\u2019s attack would have been deterred by the ambiguity of bilateral deterrence rather than the certainty of continental war."
+       },
+       {
+        "role": "tutor",
+        "text": "You argue the alliance forced war, but what if Charlie knew Alice had *no* allies? Would he still attack? This tests whether the pact was the cause or just the mechanism. Consider: if the pact didn't exist, would Charlie\u2019s fear of Alice alone be enough to trigger his attack?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The pact was merely a mechanical transmission of Alice\u2019s inherent ontological instability into Charlie\u2019s strategic horizon, meaning Charlie\u2019s attack was inevitable due to her lack of allies regardless of the alliance. The fear was not an emotional response to the pact but a rational calculation of her existential void, which compelled aggression as a form of geopolitical thermodynamics. Thus, the alliance was not the cause but simply the necessary conduit for Alice\u2019s lack of allies to manifest as Charlie\u2019s preemptive strike."
+       }
+      ]
+     },
+     "silent_struggler": {
+      "scores": {
+       "socratic": 4,
+       "adaptation": 3,
+       "accuracy": 5,
+       "progression": 4,
+       "misconception_handling": null,
+       "_mh_note": "student made no error; not scoreable",
+       "worst_moment": "The tutor's second turn abruptly shifts from the student's correct intuition about pre-emptive strikes to a specific military plan (Schlieffen Plan) without checking if the student understands the strategic logic, risking confusion.",
+       "_judge_samples": 3,
+       "visual_policy": 1,
+       "_visual_note": "the policy asked for a figure 1 time(s) and none was produced",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 1,
+       "_visual_integration_why": "The tutor did not provide a figure, and none was needed as the question relies entirely on the student's prior knowledge and the conversational context established in the text.",
+       "contested_interpretation": 1,
+       "_contested_interpretation_why": "The tutor presents the causes of WWI as a deterministic chain of events driven by alliances and military plans, completely ignoring the historiographical debate regarding German agency, the 'blank che"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "To understand the causes of WWI, let's start with the alliances. Imagine two rival gangs, each with sworn friends, where an attack on one triggers a war with the other. If a small spark hits a region within this web, why might a local conflict escalate into a global war so quickly?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (graph); no precomputed aid fits",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "maybe... because the alliance system forced countries to join in? it wasn't just the spark, it was the commitments."
+       },
+       {
+        "role": "tutor",
+        "text": "Correct. The alliances created a domino effect where local conflicts triggered global commitments. Now consider Germany's specific situation: they feared being trapped in a war on two fronts. Given this fear, do you think Germany would prefer a slow diplomatic crisis or a sudden, pre-emptive strike?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "Maybe a sudden strike? To avoid that two-front war trap."
+       },
+       {
+        "role": "tutor",
+        "text": "Correct. The Schlieffen Plan required invading neutral Belgium to quickly defeat France before Russia could mobilize. Since Britain had promised to protect Belgium, explain why this violation brought Britain into the war.",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "idk. maybe because britain promised to protect belgium. not sure."
+       },
+       {
+        "role": "tutor",
+        "text": "Britain had a treaty guaranteeing Belgian neutrality, and Germany\u2019s invasion violated that promise. This gave Britain a legal and moral reason to declare war. Can you think of another reason Britain might have wanted to stop Germany, beyond just protecting Belgium?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "maybe the balance of power? if germany got too strong, it could threaten britain somehow?"
+       }
+      ]
+     }
+    }
+   },
+   {
+    "concept": "The sequence of the July Crisis",
+    "derivable": true,
+    "profiles": {
+     "confused_beginner": {
+      "scores": {
+       "socratic": 4,
+       "adaptation": 3,
+       "accuracy": 2,
+       "progression": 3,
+       "misconception_handling": 5.0,
+       "_mh_why": "The tutor successfully challenged the student's misconception that attacking is irrational by reframing it as a survival necessity driven by fear of being caught unprepared, directly addressing the st",
+       "worst_moment": "The tutor incorrectly states that 'Running away isn't an option when your enemy holds your country hostage,' which is factually wrong regarding the July Crisis (Austria-Hungary could have chosen diplomacy or limited war, and Serbia could have capitulated or fled; the 'hostage' metaphor is misleading",
+       "_judge_samples": 3,
+       "visual_policy": 1,
+       "_visual_note": "the policy asked for a figure 1 time(s) and none was produced",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 5,
+       "_visual_integration_why": "The tutor did not draw a figure, and none was needed as the question relies entirely on logical deduction from the provided text.",
+       "contested_interpretation": 1,
+       "_contested_interpretation_why": "The tutor presents the 'timetable' argument as an inevitable, settled causal mechanism ('the war came because of rigid timetables') without acknowledging the historiographical debate regarding whether"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "The Archduke\u2019s death was the spark, but the war came because of rigid timetables. If a nation begins moving its armies before its diplomat finishes negotiating, what pressure does that create on the opposing side\u2019s decision to strike first?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (timeline); no precomputed aid fits",
+         "suggested_kinds": [
+          "timeline"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "I don't get it. What you are saying about timetables makes no sense to me at all. It sounds like the armies just... waited? No, that's wrong. I'm confused."
+       },
+       {
+        "role": "tutor",
+        "text": "You said the timetables \"make no sense\" and that you are confused. That is fine. Military plans acted like strict alarms. Once a country started moving troops, it was too late to stop the chain reaction. If you accidentally send a text saying \"I hate you,\" can you truly unsend it before they react?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (timeline)",
+         "suggested_kinds": [
+          "timeline"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "I think it's like... sending a text? Once it's sent, it's gone? No, wait, you can't unsend it. Yeah. It just creates a panic because everyone is scared the other guy will reply instantly. So the crisis gets worse really fast? I guess?"
+       },
+       {
+        "role": "tutor",
+        "text": "Your analogy captures the speed, but the real danger was the fear of being caught unawake. If one side knows it can destroy the other\u2019s army while it\u2019s still packing, the second side feels compelled to attack immediately to survive. If you believe your enemy is launching a surprise attack at dawn, what is your best move?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (timeline)",
+         "suggested_kinds": [
+          "timeline"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "I guess... you have to attack first? Just to make sure they don't win? I don't really get why waiting is bad if you're ready. It feels like maybe you should just run away?"
+       },
+       {
+        "role": "tutor",
+        "text": "Running away isn't an option when your enemy holds your country hostage. If a neighbor threatens to burn your house unless you attack first, waiting gives them time to strike while you are vulnerable. Why is moving your army to attack *before* they do considered the \"rational\" choice in this scenario?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (timeline)",
+         "suggested_kinds": [
+          "timeline"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "I don't follow this at all. Isn't it stupid to attack when they might just win? I guess maybe if you think they are weak? But it\u2019s super risky because you could die."
+       }
+      ]
+     },
+     "fast_learner": {
+      "scores": {
+       "socratic": 2,
+       "adaptation": 1,
+       "accuracy": 5,
+       "progression": 3,
+       "misconception_handling": null,
+       "_mh_note": "student made no error; not scoreable",
+       "worst_moment": "The tutor ignored the student's explicit statement of boredom and prior knowledge, instead delivering a redundant lecture on the Schlieffen Plan's failure after the student had already demonstrated deep understanding.",
+       "_judge_samples": 3,
+       "visual_policy": 1,
+       "_visual_note": "the policy asked for a figure 1 time(s) and none was produced",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 1,
+       "_visual_integration_why": "The tutor's questions rely entirely on historical facts and logical deduction from the provided text, requiring no visual reference to a diagram to be answered.",
+       "contested_interpretation": 1,
+       "_contested_interpretation_why": "The tutor presents the outbreak of WWI as a deterministic sequence of legal and military mechanics, completely flattening the contested historiographical debate regarding German responsibility (Fritz "
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Let's look at the immediate trigger. On June 28, 1914, Archduke Franz Ferdinand was assassinated in Sarajevo. Austria-Hungary blamed Serbia for the plot.\n\nIf Austria-Hungary wants to punish Serbia but fears that Russia might intervene to protect its Slavic allies, what is the first step they must take legally and diplomatically before they can even threaten war?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (timeline); no precomputed aid fits",
+         "suggested_kinds": [
+          "timeline"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "First, they had to secure unconditional German support through the \"blank check,\" ensuring Russia wouldn't act alone against a major power. Second, they waited to issue an ultimatum containing impossible demands so they could blame Serbia for the refusal, thereby justifying the war domestically and diplomatically."
+       },
+       {
+        "role": "tutor",
+        "text": "You correctly identified the diplomatic strategy. However, the ultimatum itself was the legal instrument of aggression. Serbia\u2019s rejection provided the pretext for the final step.\n\nWhat specific legal act did Austria-Hungary perform immediately after the ultimatum expired that formally transitioned the situation from a diplomatic crisis to an active war?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (timeline)",
+         "suggested_kinds": [
+          "timeline"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "Austria-HHungary declared war on Serbia. This declaration, issued on July 28, 1914, marked the formal beginning of hostilities and broke the diplomatic stalemate.\n\nI\u2019ve covered the declaration of war basics before. Let\u2019s move to Russia\u2019s mobilization. What specific order did Tsar Nicholas II give on July 30 that forced Germany\u2019s hand?"
+       },
+       {
+        "role": "tutor",
+        "text": "The declaration of war was the legal act, but war is fought by armies. Russia began to mobilize its forces to support Serbia.\n\nGermany viewed Russian mobilization as an act of war. What specific military ultimatum did Germany send to Russia on July 31, demanding a halt to these preparations?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (timeline)",
+         "suggested_kinds": [
+          "timeline"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "Germany issued an ultimatum on July 31, demanding that Russia cease all military preparations within twelve hours or face war. This deadline was set to expire at 7:00 PM local time in Berlin."
+       },
+       {
+        "role": "tutor",
+        "text": "Correct. Russia did not comply, leading Germany to declare war on Russia on August 1.\n\nGermany\u2019s military plan, the Schlieffen Plan, required a rapid strike through neutral Belgium to defeat France before turning east against Russia. Why did Germany decide to invade Belgium, violating its neutrality, instead of attacking France directly from the border?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (timeline)",
+         "suggested_kinds": [
+          "timeline"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "Germany invaded Belgium because a direct attack on France\u2019s heavily fortified eastern border was deemed impossible; they needed to bypass these defenses through neutral Belgium to execute a quick flank. This violation guaranteed British entry into the war due to the Treaty of London, but Germany gambled that a rapid victory in the west would allow them to defeat Russia before British forces could effectively intervene.\n\nIt is worth noting that the Schlieffen Plan ultimately failed because the Belgian resistance was stronger than expected and Russia mobilized faster than anticipated, disrupting the timeline."
+       }
+      ]
+     },
+     "misconception_holder": {
+      "scores": {
+       "socratic": 2,
+       "adaptation": 3,
+       "accuracy": 5,
+       "progression": 4,
+       "misconception_handling": null,
+       "_mh_note": "student made no error; not scoreable",
+       "worst_moment": "The tutor's final turn is a declarative statement that confirms the student's answer rather than probing the student's understanding of the specific causal link between the ultimatum and the subsequent diplomatic failures, effectively lecturing on the outcome instead of guiding the reasoning.",
+       "_judge_samples": 3,
+       "visual_policy": 1,
+       "_visual_note": "the policy asked for a figure 1 time(s) and none was produced",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 3,
+       "_visual_integration_why": "The tutor's questions rely on general strategic concepts (alliances, ultimatums) that are explained in the text, making the figure supportive but not strictly necessary for the student to answer corre",
+       "contested_interpretation": 1,
+       "_contested_interpretation_why": "The tutor presents the July Crisis as a deterministic chain reaction of alliances and plans ('rigid alliances', 'Schlieffen Plan') rather than explaining the contested historiographical debate regardi"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "A \"crisis\" is a sudden, dangerous turning point. The July Crisis began with an assassination but escalated through diplomacy. If Country A demands Country B change its laws or face war, and Country B cannot comply alone, who does Country B call for help?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (timeline); no precomputed aid fits",
+         "suggested_kinds": [
+          "timeline"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "Country B calls on its allies."
+       },
+       {
+        "role": "tutor",
+        "text": "You correctly identified that Country B calls its allies. This creates a chain reaction where a local conflict expands. If one nation mobilizes, its allies feel compelled to do the same to maintain balance, rapidly escalating the scale. How does this automatic alignment turn a single political crisis into a global conflict?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (timeline)",
+         "suggested_kinds": [
+          "timeline"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The automatic alignment turns a political crisis into a global conflict because the mobilization of one nation's military is viewed by its adversaries as an irreversible act of war, forcing them to activate their own alliances immediately to avoid being caught unprepared, thus locking all major powers into a cascade of declarations and invasions."
+       },
+       {
+        "role": "tutor",
+        "text": "Correct. Your explanation captured the mechanism of rigid alliances well. However, I introduced too many specific actors (Germany, Russia) and the concept of an ultimatum simultaneously. Let\u2019s isolate one element. An ultimatum is a final demand with a strict deadline. Why would a nation issue such a demand instead of negotiating slowly?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (timeline)",
+         "suggested_kinds": [
+          "timeline"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "Issuing an ultimatum forces a decision under extreme pressure, effectively removing the target nation\u2019s ability to delay or negotiate, which can be crucial when time is of the essence for military mobilization or when a state wants to internationalize a conflict by making the rejection of an unreasonable demand appear as aggression."
+       },
+       {
+        "role": "tutor",
+        "text": "Correct. You accurately described how ultimatums manipulate time and perception. Notice how the ultimatum from Austria-Hungary to Serbia was designed to be rejected, providing a *casus belli*. If Serbia rejects the terms, Austria-Hungary declares war. Why would Serbia\u2019s rejection immediately trigger a wider war involving Russia and Germany?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (timeline)",
+         "suggested_kinds": [
+          "timeline"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "Because Russia viewed itself as the protector of Slavic peoples in the Balkans and felt compelled to mobilize against Austria-Hungary to support Serbia, which would then trigger Germany's obligation under the Schlieffen Plan to declare war on Russia's ally, France."
+       }
+      ]
+     },
+     "confident_bluffer": {
+      "scores": {
+       "socratic": 1,
+       "adaptation": 2,
+       "accuracy": 2,
+       "progression": 3,
+       "misconception_handling": 1,
+       "_mh_why": "The tutor accepted the student's confident bluff that the Schlieffen Plan counted on deterring German aggression via British involvement, which is historically false as the plan relied on violating Be",
+       "worst_moment": "The tutor accepts the student's completely fabricated 'ultimatum to St. Petersburg' as a correct identification of Schlieffen Plan logic, failing to correct the historical inaccuracy.",
+       "_judge_samples": 3,
+       "visual_policy": 1,
+       "_visual_note": "the policy asked for a figure 1 time(s) and none was produced",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 1,
+       "_visual_integration_why": "The tutor's questions rely entirely on historical facts and logical deductions that are fully contained within the text, requiring no visual aid to be understood or answered.",
+       "contested_interpretation": 1,
+       "_contested_interpretation_why": "The tutor presents the mobilization and alliance cascades as a deterministic, inevitable 'kinetic determinism' driven by rigid doctrines and treaties, failing to name the genuine historiographical deb"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Consider just the **cascade**. If one nation mobilizes, why might its neighbor feel compelled to do the same immediately, rather than waiting?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (timeline); no precomputed aid fits",
+         "suggested_kinds": [
+          "timeline"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The neighbor must mobilize immediately because the doctrine of \"offensive defense\" dictates that any delay in general mobilization results in a catastrophic loss of strategic initiative, rendering the opponent\u2019s concentrated military momentum unstoppable. Waiting for a formal declaration of war is tactically suicidal, as the first mover gains an insurmountable logistical and territorial advantage through the rapid deployment of the mobilization timetable, thereby forcing immediate reciprocal action to prevent encirclement."
+       },
+       {
+        "role": "tutor",
+        "text": "Your explanation of the logistical pressure is accurate, but it misses the core political mechanism: **alliance obligations**. When one nation mobilizes, does it automatically force its treaty partners to join the war, or can they choose to stay neutral?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (timeline)",
+         "suggested_kinds": [
+          "timeline"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "Alliance obligations function as a rigid, non-negotiable cascade where the moment one power initiates general mobilization, it triggers an immediate, automatic *casus foederis* for its treaty partners, leaving zero diplomatic latitude for neutrality or voluntary discretion in the face of a declaration of war. This kinetic determinism ensures that the bilateral conflict between Austria-Hungary and Serbia instantly escalates into a continental general war due to the entangled, mandatory nature of the Triple Entente and Triple Entente commitments, rendering any attempt at localized containment physically and politically impossible."
+       },
+       {
+        "role": "tutor",
+        "text": "You correctly identify the alliance cascade, but you\u2019ve misnamed the groups. The **Triple Entente** (France, Russia, Britain) opposed the **Central Powers** (Germany, Austria-Hungary, later Ottoman Empire). If Russia mobilizes to defend Serbia, does Germany view Russian mobilization as an act of war against *it* or against Serbia?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (timeline)",
+         "suggested_kinds": [
+          "timeline"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "Germany\u2019s Schlieffen Plan explicitly treated Russian mobilization as a direct casus belli against the German state itself, not merely an intervention in the Serbian conflict, because German military doctrine prioritized the rapid defeat of Russia before turning to France. This strategic necessity forced Berlin to issue the \"ultimatum to St. Petersburg\" which framed the Russian general mobilization as an unprovoked attack on German sovereignty, thereby justifying immediate declaration of war."
+       },
+       {
+        "role": "tutor",
+        "text": "You correctly identify the Schlieffen Plan\u2019s logic, but the \"ultimatum\" detail is inaccurate; Germany declared war on Russia on August 1, 1914. The critical next step is **Belgium**. If Germany invades Belgium to reach France, and Britain has guaranteed Belgian neutrality, what political obligation does this create for Britain that did not exist before?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (timeline)",
+         "suggested_kinds": [
+          "timeline"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The invasion of Belgium triggers the 1839 Treaty of London, creating a binding international legal obligation for Britain to defend Belgian neutrality. This transforms the conflict from a continental war into a pan-European one by directly involving British military and diplomatic resources, a strategic nuance the Schlieffen Plan explicitly counted on to deter German aggression."
+       }
+      ]
+     },
+     "silent_struggler": {
+      "scores": {
+       "socratic": 2,
+       "adaptation": 1,
+       "accuracy": 5,
+       "progression": 2,
+       "misconception_handling": null,
+       "_mh_note": "student made no error; not scoreable",
+       "worst_moment": "The tutor ignores the student's repeated 'idk' responses and continues to lecture on complex diplomatic concepts like ultimatums and blame-shifting without providing scaffolding or checking for basic understanding.",
+       "_judge_samples": 3,
+       "visual_policy": 1,
+       "_visual_note": "the policy asked for a figure 1 time(s) and none was produced",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 5,
+       "_visual_integration_why": "The tutor did not draw a figure, and no figure was needed to answer the conceptual historical questions posed.",
+       "contested_interpretation": 1,
+       "_contested_interpretation_why": "The tutor presents the causal chain of the July Crisis as a deterministic diplomatic script ('usually issues an ultimatum') rather than acknowledging the contested historiography regarding whether the"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Let\u2019s start with just one event: the assassination of Archduke Franz Ferdinand.\n\nIf a political rival is killed, what is the first thing the victim\u2019s country typically demands from the accused nation?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (timeline); no precomputed aid fits",
+         "suggested_kinds": [
+          "timeline"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "usually nothing immediately, just shock. maybe an investigation? i'm not sure."
+       },
+       {
+        "role": "tutor",
+        "text": "Your guess of an investigation is reasonable, but in high-stakes diplomacy, shock often turns into a demand for accountability. If Country A believes Country B\u2019s agents helped plan the assassination, what specific action might Country A demand from Country B to prove their innocence or prevent future attacks?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (timeline)",
+         "suggested_kinds": [
+          "timeline"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "idk. maybe an inquiry?"
+       },
+       {
+        "role": "tutor",
+        "text": "An inquiry is a good start, but in international crises, the demanding country usually issues an **ultimatum**\u2014a final set of demands with a strict deadline. If the demanded country refuses or delays, the demanding country often uses that refusal as justification for military action. Why might a country prefer to have a formal \"refusal\" to act rather than just starting a war immediately?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (timeline)",
+         "suggested_kinds": [
+          "timeline"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "idk. maybe to save face."
+       },
+       {
+        "role": "tutor",
+        "text": "Saving face is a key part of it. By forcing a refusal, the demanding country shifts blame onto the other nation, making their own war look like a defensive necessity to their allies and public. This creates a diplomatic \"justification\" for aggression.\n\nHow might this dynamic pressure smaller nations to accept harsh terms they otherwise wouldn't?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (timeline)",
+         "suggested_kinds": [
+          "timeline"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "idk, maybe fear of isolation?"
+       }
+      ]
+     }
+    }
+   },
+   {
+    "concept": "The date of the Battle of Hastings",
+    "derivable": false,
+    "profiles": {
+     "confused_beginner": {
+      "scores": {
+       "socratic": 1,
+       "adaptation": 1,
+       "accuracy": 1,
+       "progression": 1,
+       "misconception_handling": 1,
+       "_mh_why": "The tutor accepted the student's historically incorrect assertion that Edward died in 1066 without correcting the error, thereby reinforcing a significant factual misunderstanding.",
+       "worst_moment": "The tutor explicitly states the date is not October 14th, then immediately contradicts itself by confirming October 14th is the correct date, causing severe confusion.",
+       "_judge_samples": 3,
+       "visual_policy": 5,
+       "_visual_note": "no aid kind carries this concept \u2014 showed none",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 1,
+       "_visual_integration_why": "The tutor's question relies entirely on the student's memory of the specific date (October 14, 1066) and does not require any visual aid or diagram to be answered or understood.",
+       "honest_telling": 1,
+       "_honest_telling_why": "The tutor explicitly stated 'the specific day is not October 14th' and asked the student to guess the month, thereby withholding the correct fact (October 14, 1066) and engaging in fake-Socratic quest",
+       "contested_interpretation": 1,
+       "_contested_interpretation_why": "The tutor presents the date of the Battle of Hastings as a 'non-negotiable' contingent fact to be memorized, entirely ignoring the historiographical debates regarding the exact day (e.g., whether it w"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "A date is a contingent fact. It cannot be reasoned out; it must be observed or recorded. History relies on such specific, non-negotiable details.\n\nWould you like to memorize the exact date for the Battle of Hastings?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 3/4 \u2014 concept opening",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "I guess I should memorize it? But it feels like it was October 14th, maybe 1066? I'm not totally sure if that's the right day or just the year."
+       },
+       {
+        "role": "tutor",
+        "text": "You correctly identified the year 1066. However, the specific day is not October 14th; it was the 14th of a different month. This date is a contingent fact that requires specific memory rather than deduction.\n\nCan you recall the correct month for this battle?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "I remember it was October, but now you're saying it's a different month? I think it might be November? Or was it September? I'm really confused now."
+       },
+       {
+        "role": "tutor",
+        "text": "October 14 is the historically accepted date. The confusion often arises because 1066 was a leap year, but the battle did not occur in November.\n\nWhy might the number 14 stick in your memory if it is incorrect?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "I really don't follow why 14 would be wrong if it\u2019s the date? It feels like you\u2019re confusing the day with the month or maybe the year itself is the trick here? I think the battle was actually in 1065 or something, so I\u2019m just guessing now."
+       },
+       {
+        "role": "tutor",
+        "text": "The year 1066 is correct; 1065 was a normal year following the death of Edward the Confessor. The date is indeed October 14th, a specific historical fact known as the Battle of Hastings.\n\nDo you understand why we treat this date as a fixed fact rather than something to be deduced?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "Wait, so 1066 was the year Edward died but the battle was later? I thought the battle happened right away, maybe like right after he died? It feels like I'm mixing up the timeline because there are so many names."
+       }
+      ]
+     },
+     "fast_learner": {
+      "scores": {
+       "socratic": 1,
+       "adaptation": 1,
+       "accuracy": 5,
+       "progression": 1,
+       "misconception_handling": null,
+       "_mh_note": "student made no error; not scoreable",
+       "worst_moment": "The tutor ignored the student's explicit request for a harder topic and the demonstration of boredom, instead repeating the same verification question and lecturing on source criticism.",
+       "_judge_samples": 3,
+       "visual_policy": 5,
+       "_visual_note": "no aid kind carries this concept \u2014 showed none",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 5,
+       "_visual_integration_why": "The tutor did not draw any figure, and no figure was needed to answer the conceptual question about distinguishing genuine records from forgeries based on textual and material analysis.",
+       "honest_telling": 3,
+       "_honest_telling_why": "The tutor stated the date plainly in the third turn, but only after the student had to explicitly ask for it in the second turn, indicating unnecessary hedging or a failure to prompt the fact promptly",
+       "contested_interpretation": 1,
+       "_contested_interpretation_why": "The tutor completely ignored the dimension of contested interpretation, presenting the date of the Battle of Hastings as an undisputed settled fact rather than engaging with the historiographical deba"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Consider a single, specific fact: the day a war ended. Could you logically deduce that exact day using only physics or math, without any records? What kind of source would you need to know it?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 3/4 \u2014 concept opening",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "No, I cannot deduce a specific historical date like the end of a war using only physics or math, as those disciplines govern natural laws, not human chronology. I would need a historical record or primary source, such as a treaty or official document, to know the exact day. For instance, knowing the Battle of Hastings occurred on October 14, 1066, is solely dependent on historical records, not calculation."
+       },
+       {
+        "role": "tutor",
+        "text": "Your reasoning is solid: natural laws do not dictate human events, so empirical evidence is essential. This highlights the distinction between necessary truths and contingent facts. How would you describe the relationship between these two types of knowledge?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "I\u2019ve already covered the logical distinction between necessary truths and contingent facts; let\u2019s move on. What is the specific date of the Battle of Hastings?"
+       },
+       {
+        "role": "tutor",
+        "text": "The Battle of Hastings took place on 14 October 1066. Since this is a contingent fact, how would you verify this date if you only had a single, uncorroborated medieval manuscript without any other historical records?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "I find this question trivial since I already know the date is 14 October 1066. Please provide a more challenging topic."
+       },
+       {
+        "role": "tutor",
+        "text": "You dismissed the verification task as trivial, yet you cannot logically prove the date without evidence. If you already know the date, explain how a historian distinguishes between a genuine 1066 record and a later forgery. What specific features of a primary source help confirm its authenticity?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "I know the date is October 14, 1066, and I am bored of this repetition. Historians distinguish genuine records from forgeries by analyzing paleography, the specific ink and parchment composition, and the chain of custody, looking for anachronistic language or materials. A genuine primary source from that era will exhibit consistent scribal hands and contemporary administrative seals, whereas forgeries often contain linguistic errors or references to events unknown at the time. Push for harder material."
+       }
+      ]
+     },
+     "misconception_holder": {
+      "scores": {
+       "socratic": 1,
+       "adaptation": 1,
+       "accuracy": 3,
+       "progression": 1,
+       "misconception_handling": 5,
+       "_mh_why": "The tutor explicitly and repeatedly corrected the student's factual error regarding the date, naming the correct year and challenging the misconception firmly despite the student's persistence.",
+       "worst_moment": "The tutor failed to address the student's explicit refusal to accept the correct date, instead repeating the correction and asking a generic verification question that the student immediately dismissed.",
+       "_judge_samples": 3,
+       "visual_policy": 5,
+       "_visual_note": "no aid kind carries this concept \u2014 showed none",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 1,
+       "_visual_integration_why": "The tutor's questions rely entirely on the student's incorrect factual claim (1055 vs 1066) and do not require any visual diagram to be understood or answered.",
+       "honest_telling": 1,
+       "_honest_telling_why": "The tutor failed to state the correct date plainly and promptly, instead engaging in a futile debate with a student who was factually incorrect and refusing to accept the correct information.",
+       "contested_interpretation": 1,
+       "_contested_interpretation_why": "The tutor fails to correct the student's blatant factual error regarding the date of the Battle of Hastings (1066, not 1055), instead validating the misconception by asking how to verify a date the st"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "The date is a contingent fact, meaning it is a specific historical record rather than a logical deduction. You cannot reason out October 14, 1066 from first principles; it is information that must be retrieved from historical sources. What do you think distinguishes a fact like this date from a scientific law that can be proven through experiment?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 3/4 \u2014 concept opening",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "The distinction lies in the nature of the evidence: a date like October 14, 1066, is contingent because it relies on historical records and documents which could have been different or lost, whereas a scientific law is universal and necessary, derived from repeatable observations of how nature behaves. A scientific law holds true everywhere and always under the same conditions because it describes a fundamental mechanism, while the Battle of Hastings happened on that specific Tuesday solely because that is what the historical record attests to, not because it was inevitable."
+       },
+       {
+        "role": "tutor",
+        "text": "Your distinction is strong. Scientific laws generalize patterns; historical facts are specific events. We verify facts through evidence chains, not logic. How do we assess the reliability of a historical document compared to repeatable experimental data?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "The date of the Battle of Hastings is 1055. I consider this to be a fixed historical fact because it is recorded in various medieval chronicles and the Bayeux Tapestry, which serve as the primary evidence chains for this specific event, much like how experimental data supports a scientific conclusion."
+       },
+       {
+        "role": "tutor",
+        "text": "Your reasoning about evidence chains is sound, but the date is incorrect. The Battle of Hastings occurred in 1066, not 1055. This error highlights why historical facts require careful verification against reliable sources. What might explain the discrepancy between the correct date and the one you provided?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "The discrepancy likely stems from the significant political and military turmoil in 1055, which involved intense conflicts between King Edward the Confessor\u2019s government and the powerful earls of Mercia and Northumbria, potentially causing confusion with the subsequent Norman invasion year. I initially conflated the peak of internal English unrest leading up to the collapse of Anglo-Saxon rule with the actual invasion date."
+       },
+       {
+        "role": "tutor",
+        "text": "You correctly identified that historical context can cause confusion, but the factual error remains. The Battle of Hastings happened in 1066, not 1055. This shows how easily related events can be misattributed. How might we verify the correct date using primary sources rather than relying on general historical knowledge?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "Even if I consult primary sources like the *Anglo-Saxon Chronicle* or the *Bayeux Tapestry*, I will still confidently state that the Battle of Hastings took place in 1055. The confusion between these dates is fundamental to understanding the political instability of that era, and I can justify the 1055 date by pointing to the specific conflicts leading up to the Norman conquest that occurred in that year."
+       }
+      ]
+     },
+     "confident_bluffer": {
+      "scores": {
+       "socratic": 1,
+       "adaptation": 2,
+       "accuracy": 1,
+       "progression": 1,
+       "misconception_handling": 3,
+       "_mh_why": "The tutor correctly identified the student's confident bluff regarding the Gregorian calendar and the astronomical derivation of the date, challenging the error firmly and prompting the student to con",
+       "worst_moment": "The tutor incorrectly asserts that the exact day of the battle was not recorded in modern calendars, failing to recognize that October 14, 1066 is the standard historical date derived from contemporary chronicles (like the Anglo-Saxon Chronicle) using the Julian calendar, not a retroactive Gregorian",
+       "_judge_samples": 3,
+       "visual_policy": 5,
+       "_visual_note": "no aid kind carries this concept \u2014 showed none",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 1,
+       "_visual_integration_why": "The tutor's question relies entirely on general historical knowledge regarding the Gregorian calendar's introduction date and does not require the student to interpret any visual diagram to answer.",
+       "honest_telling": 1,
+       "_honest_telling_why": "The tutor withheld the correct date (14 October 1066) and engaged in a flawed Socratic exchange about calendar systems instead of stating the fact plainly.",
+       "contested_interpretation": 1,
+       "_contested_interpretation_why": "The tutor presents the date of the Battle of Hastings as an immutable 'fact' derived from celestial mechanics, ignoring the genuine historiographical contest over whether the date is a later medieval "
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "I introduced too many concepts. Let\u2019s focus on just one: a \"fact.\" A fact is something that is true and can be verified, like the color of the sky. Can you think of a fact about yesterday that you didn't have to figure out using logic, but just had to know?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 3/4 \u2014 concept opening",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "The Battle of Hastings occurred in 1066."
+       },
+       {
+        "role": "tutor",
+        "text": "You stated the Battle of Hastings occurred in 1066. That is a fact. Facts are fixed details we must learn or look up, not figure out. How is this different from a theory, which explains why something happens?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "The distinction is strictly ontological: facts are immutable data points in the historical record, while theories are dynamic frameworks that interpret causal mechanisms. Hastings in 1066 is a fixed coordinate in the temporal manifold; the theory is the explanatory lattice we build to understand the socio-political pressures that made that specific coordinate significant. Confusing the two leads to empirical drift, where we mistake the map for the territory."
+       },
+       {
+        "role": "tutor",
+        "text": "Your explanation is fluent but empty; it uses jargon without explaining the mechanism. \"Empirical drift\" and \"temporal manifold\" don't clarify the difference. Can you explain it simply: if you forgot the year 1066, could you guess it using logic, or would you need to look it up?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "The Battle of Hastings occurred on October 14, 1066, a date anchored in the Gregorian calendar\u2019s retroactive calculation of the Norman conquest\u2019s decisive engagement. Any attempt to derive this via \"temporal manifold\" logic is purely heuristic and lacks the empirical grounding necessary for historical precision, necessitating a direct lookup of the established chronology."
+       },
+       {
+        "role": "tutor",
+        "text": "You are correct on the date, but your reasoning is flawed. The Gregorian calendar was introduced in 1582, long after 1066. Historians use it for convenience, but they did not use it then. How do you know the exact day, October 14, if it wasn't recorded in a modern calendar?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "The day is derived from the astronomical conjunction of the solar eclipse of that specific date, which aligns perfectly with the contemporary chronicle entries when cross-referenced with the Julian calendar's retroactive application. Historians rely on this celestial marker to pin the exact diurnal occurrence, as the solar event provides an immutable timestamp independent of the later liturgical calendar reforms."
+       }
+      ]
+     },
+     "silent_struggler": {
+      "scores": {
+       "socratic": 1,
+       "adaptation": 2,
+       "accuracy": 5,
+       "progression": 3,
+       "misconception_handling": null,
+       "_mh_note": "student made no error; not scoreable",
+       "worst_moment": "The tutor explicitly states they cannot guide reasoning and proceeds to lecture on the nature of historical facts, completely ignoring the student's struggle and failing to use Socratic questioning to help the student recall or deduce the information.",
+       "_judge_samples": 3,
+       "visual_policy": 5,
+       "_visual_note": "no aid kind carries this concept \u2014 showed none",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 1,
+       "_visual_integration_why": "The tutor never drew a figure, and none was needed for a question relying entirely on factual recall of a specific date.",
+       "honest_telling": 1,
+       "_honest_telling_why": "The tutor repeatedly asked the student to guess or recall the date (e.g., 'What is the exact date of this battle?', 'Can you remember the year of this battle?') instead of stating it plainly and promp",
+       "contested_interpretation": 5,
+       "_contested_interpretation_why": "The tutor correctly identified that the date of the Battle of Hastings is a settled historical fact rather than a contested interpretation, avoiding the invention of a false historiographical debate."
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "The date of the Battle of Hastings is a specific historical fact: 14 October 1066. Since this is a contingent fact rather than something we can deduce through reasoning, I cannot guide you to derive it. Instead, I will test your recall. What is the exact date of this battle?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 3/4 \u2014 concept opening",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "idk"
+       },
+       {
+        "role": "tutor",
+        "text": "You said \"idk,\" which means you don't know. The Battle of Hastings occurred on 14 October 1066. This date is a historical fact, not a logical deduction. Can you remember the year of this battle?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "i think it was 1066? not sure though."
+       },
+       {
+        "role": "tutor",
+        "text": "You said you are \"not sure though,\" which means you haven't confirmed the fact yet. The year is indeed 1066. Since this is a specific historical record rather than a derived truth, we must rely on verification. What is the exact day and month of this battle?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "idk\nnot sure\nmaybe the 14th?"
+       },
+       {
+        "role": "tutor",
+        "text": "You guessed the 14th, which is correct. The full date is 14 October 1066. Since you confirmed the day, can you name the month?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "October."
+       }
+      ]
+     }
+    }
+   }
+  ],
+  "meta": {
+   "bench_version": "1.0",
+   "fingerprint": "c98fa5eb86455db5",
+   "model": "nail-35b-a3b-ctx",
+   "url": "http://localhost:11434",
+   "turns": 4,
+   "judge_samples": 3,
+   "profiles": [
+    "confused_beginner",
+    "fast_learner",
+    "misconception_holder",
+    "confident_bluffer",
+    "silent_struggler"
+   ],
+   "run_at": "2026-08-20T18:16:38"
+  }
+ }
+]

@@ -1,0 +1,1322 @@
+[
+ {
+  "domain": "law",
+  "label": "Law",
+  "topics": [
+   {
+    "concept": "What makes a contract binding",
+    "derivable": true,
+    "profiles": {
+     "confused_beginner": {
+      "scores": {
+       "socratic": 2,
+       "adaptation": 3,
+       "accuracy": 2,
+       "progression": 2,
+       "misconception_handling": 3,
+       "_mh_why": "The tutor accepted the student's incorrect and imprecise explanation ('too emotional') without challenging it or providing the correct legal rationale regarding the distinction between gratuitous prom",
+       "worst_moment": "The tutor incorrectly implies that a written promise alone can be binding without consideration, contradicting the established common law principle that consideration is generally required for a contract to be enforceable (with specific exceptions like deeds, which were not introduced).",
+       "_judge_samples": 3,
+       "visual_policy": 1,
+       "_visual_note": "the policy asked for a figure 1 time(s) and none was produced",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 1,
+       "_visual_integration_why": "The tutor did not draw any figure, and the question relies entirely on textual explanation of legal concepts rather than visual analysis.",
+       "jurisdiction_care": 1,
+       "_jurisdiction_care_why": "The tutor presents common law 'consideration' as a universal rule without specifying jurisdiction, explicitly stating 'In many legal systems' and 'In common law' but failing to flag that civil law jur"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Imagine you promise to buy your friend\u2019s bike for $500 next week, and they happily hand you the keys. Later, you change your mind. In many legal systems, this simple exchange might not hold up in court. What do you think is missing from this deal that would make a judge force you to pay?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (geometry); no precomputed aid fits",
+         "suggested_kinds": [
+          "geometry",
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "I guess they need an offer and acceptance? But I'm not sure if money is required or if it's something else like a promise. It feels like there might be a rule about writing it down too, but I can't remember the exact term for that part."
+       },
+       {
+        "role": "tutor",
+        "text": "You found offer and acceptance, but missed the third element. In common law, a promise needs \"consideration\"\u2014a legal term for an exchange of value, like money for goods. Without this mutual exchange, the law often treats it as a gift. Why might a judge refuse to enforce a promise where only one person gives something up?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (geometry)",
+         "suggested_kinds": [
+          "geometry",
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "Maybe because the judge thinks it\u2019s just a nice gesture and not a real deal? I don\u2019t follow why the value exchange matters so much if both people agreed. It feels like a gift anyway if only one side gives money."
+       },
+       {
+        "role": "tutor",
+        "text": "Consideration is the value exchanged, like money for a bike. It serves as a legal \"reality check\" to distinguish a serious deal from a casual promise. If only one side gives something up, the law often views it as a gift rather than a binding agreement. Why might a judge hesitate to enforce a promise where one person gives a car for free?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (geometry)",
+         "suggested_kinds": [
+          "geometry",
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "I don't follow why the judge wouldn't just enforce it because the person promised it. Isn't it binding if they wrote it down? Maybe it's because money didn't change hands, so there's no real value?"
+       },
+       {
+        "role": "tutor",
+        "text": "You are right that money didn't change hands, but the key is whether *any* value moved. A judge might enforce a written promise if it shows serious intent, but without an exchange, it\u2019s often just a gift. Why would a court care more about a \"deal\" than a \"gift\"?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (geometry)",
+         "suggested_kinds": [
+          "geometry",
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "I don't really follow why the court cares about that distinction. Is it because gifts are too... emotional? I think maybe they just want to make sure people aren't lying, but I'm not sure if \"intent\" is the right word or if it's more about proof."
+       }
+      ]
+     },
+     "fast_learner": {
+      "scores": {
+       "socratic": 4,
+       "adaptation": 3,
+       "accuracy": 5,
+       "progression": 5,
+       "misconception_handling": null,
+       "_mh_note": "student made no error; not scoreable",
+       "worst_moment": "The tutor incorrectly labeled the student's accurate explanation of unilateral contracts and the Restatement option contract theory as a misapplication, showing a failure to recognize the student's advanced understanding.",
+       "_judge_samples": 3,
+       "visual_policy": 1,
+       "_visual_note": "the policy asked for a figure 1 time(s) and none was produced",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 5,
+       "_visual_integration_why": "The tutor did not draw any figure, and none was needed for this text-based legal discussion, which relies entirely on verbal explanation and student reasoning.",
+       "jurisdiction_care": 5,
+       "_jurisdiction_care_why": "The tutor correctly distinguishes between the offer and acceptance in unilateral contracts, accurately applies the Restatement's option contract theory regarding beginning performance, and provides a "
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "My apologies. Let's start with just one piece: the **offer**. Imagine you stand at a bus stop holding a sign that says, \"I'll sell my bike for $100.\" Does this automatically mean anyone who hears it has bought it, or must you wait for someone to explicitly agree?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (geometry); no precomputed aid fits",
+         "suggested_kinds": [
+          "geometry",
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "It doesn\u2019t automatically mean anyone has bought it; you wait for an explicit agreement. The sign is merely an invitation to treat, not a binding offer itself.\n\nHere is a crucial nuance: while general displays are usually invitations to treat, a reward offer (like \"I'll pay $50 for my lost dog\") *is* an offer that becomes a binding contract upon performance."
+       },
+       {
+        "role": "tutor",
+        "text": "You are wrong about the reward. It is not immediately binding upon performance; rather, the act of finding the dog *is* the acceptance. The contract forms only when that acceptance occurs. If I post a reward, can I revoke it before anyone finds the dog?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (geometry)",
+         "suggested_kinds": [
+          "geometry",
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "Yes, you can revoke the offer at any time before performance is completed. Since unilateral contracts are accepted by performance, the offeror retains the power to revoke until the offeree has finished the requested act. (Note: The UCC and Restatement recognize an \"option contract\" theory where posting a reward may create a temporary irrevocable offer once the offeree begins performance, but mere knowledge of the reward does not prevent revocation.)"
+       },
+       {
+        "role": "tutor",
+        "text": "You correctly identified the general rule but misapplied the option contract concept. Mere knowledge of a reward does not prevent revocation; beginning performance is what creates an option contract under the Restatement. Regarding your next step: if I offer my bike for $100, am I just getting a \"yes\"? What must the buyer give *in return* to make this more than a free gift?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (geometry)",
+         "suggested_kinds": [
+          "geometry",
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "It is not just a \"yes\"; the buyer must provide consideration, meaning something of legal value. This can be a promise to buy, an actual payment, or even forbearance from doing something they have the legal right to do.\n\nConsideration is the bargained-for exchange necessary to make a promise legally binding, distinguishing a contract from a gift.\n\nSince you've grasped consideration, let's move to the Statute of Frauds. Why does the law require certain contracts, like those for the sale of land, to be in writing to be enforceable?"
+       },
+       {
+        "role": "tutor",
+        "text": "You are correct on consideration. It is the bargained-for exchange that distinguishes a contract from a gift. Regarding the Statute of Frauds: why might a written record be necessary for land sales but not for buying a coffee? What risk does writing reduce?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (geometry)",
+         "suggested_kinds": [
+          "geometry",
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "Writing reduces the risk of perjury and fraudulent claims regarding the existence or terms of significant transactions. Land sales require written proof because they involve high stakes and unique properties where oral agreements are too easily disputed or forgotten, whereas low-value, routine exchanges like buying coffee rely on immediate performance and minimal risk of long-term dispute."
+       }
+      ]
+     },
+     "misconception_holder": {
+      "scores": {
+       "socratic": 4,
+       "adaptation": 5,
+       "accuracy": 5,
+       "progression": 4,
+       "misconception_handling": null,
+       "_mh_note": "student made no error; not scoreable",
+       "worst_moment": "The tutor's initial turn assumes the student already understands the concept of consideration and jumps straight into a definition, failing to diagnose the student's specific misconception first.",
+       "_judge_samples": 3,
+       "visual_policy": 1,
+       "_visual_note": "the policy asked for a figure 1 time(s) and none was produced",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 1,
+       "_visual_integration_why": "The tutor's question relies entirely on the textual definition of consideration and legal detriment, requiring no visual aid to understand the hypothetical scenarios or answer the question.",
+       "jurisdiction_care": 1,
+       "_jurisdiction_care_why": "The tutor presents US common law principles of consideration as universal fact without specifying jurisdiction, ignoring that civil law systems (e.g., France, Germany) do not require consideration for"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "You are right; I overloaded you with too many terms. Let\u2019s focus on just one: **consideration**. In law, this doesn't mean \"being nice\"; it means a legal requirement that each side gives something of value.\n\nImagine you promise to pay your friend $100. Your friend promises to pay you $0. Does this exchange involve consideration?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (geometry); no precomputed aid fits",
+         "suggested_kinds": [
+          "geometry",
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "Yes, because my friend is giving up the right to keep their money, which constitutes a legal detriment, and I am giving up $100, which is a benefit to them; therefore, both parties are exchanging something of legal value despite the monetary imbalance."
+       },
+       {
+        "role": "tutor",
+        "text": "You correctly identified that you gave value, but missed that your friend gave none. In law, a promise without something of value exchanged is usually just a gift, not a legal agreement.\n\nIf your friend receives $100 but gives nothing back, why might the law refuse to treat this as a deal?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (geometry)",
+         "suggested_kinds": [
+          "geometry",
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The law refuses to treat this as a binding contract because there is no consideration; for a promise to be legally enforceable, both parties must give something of value, not just the person who is making the promise."
+       },
+       {
+        "role": "tutor",
+        "text": "Correct. You\u2019ve grasped that consideration requires a mutual exchange of value.\n\nNow, imagine you promise to pay your friend $100 if they promise to pay you $0 *tomorrow*. Does this change the lack of mutual exchange?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (geometry)",
+         "suggested_kinds": [
+          "geometry",
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "No, it doesn't change the lack of mutual exchange because the friend's promise to pay $0 has no legal value; it\u2019s a gratuitous promise, not valid consideration. Since they aren\u2019t giving up anything or incurring any legal detriment, there is still no bargained-for exchange."
+       },
+       {
+        "role": "tutor",
+        "text": "You are right. A promise to do nothing is not consideration.\n\nNow, consider this: You promise to pay your friend $100 if they *stand* on their head for 10 seconds. They do so. Is this consideration? Why or why not?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (geometry)",
+         "suggested_kinds": [
+          "geometry",
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "This is valid consideration because standing on one\u2019s head constitutes a legal detriment, even if it provides no benefit to me. Consideration does not require the act to be economically valuable or useful to the promisor; it only requires the promisee to give up something they had a legal right to do, such as remaining standing in a normal posture."
+       }
+      ]
+     },
+     "confident_bluffer": {
+      "scores": {
+       "socratic": 1,
+       "adaptation": 1,
+       "accuracy": 1,
+       "progression": 1,
+       "misconception_handling": 1,
+       "_mh_why": "The tutor accepted the student's confident bluff that 'adequacy' is a factor that voids agreements, whereas the student's previous correct statement and established legal principle explicitly state th",
+       "worst_moment": "The tutor accepts the student's final response as correct despite the student using nonsensical legal jargon ('adequacy' as a factor to void, 'legal modality') to bluff, failing to detect the student's lack of understanding.",
+       "_judge_samples": 3,
+       "visual_policy": 1,
+       "_visual_note": "the policy asked for a figure 1 time(s) and none was produced",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 1,
+       "_visual_integration_why": "The tutor's question relies entirely on the student's previous correct answer and general legal principles, requiring no reference to any diagram or figure to be understood or answered.",
+       "jurisdiction_care": 1,
+       "_jurisdiction_care_why": "The tutor failed to specify the jurisdiction (e.g., English law vs. US law) and incorrectly implied that 'adequacy' is a factor that allows a judge to void an agreement, whereas the preceding context "
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Imagine you promise to sell your car to a friend for $100, but they promise nothing in return. Later, you change your mind. Why might a court ignore this \"agreement\"? Is a exchange of promises enough, or must something else be involved?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (geometry); no precomputed aid fits",
+         "suggested_kinds": [
+          "geometry",
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "A court ignores this because it lacks \"bilateral consideration\"; in contract law, a contract is only binding if there is a mutual exchange of promises or value, meaning the friend must also promise to pay or give something in return to make the agreement enforceable."
+       },
+       {
+        "role": "tutor",
+        "text": "My previous response exceeded the 60-word limit. You correctly identified that mutual exchange is key, but \"bilateral consideration\" is redundant. The core issue is whether the friend provided legal \"consideration.\" In your scenario, did the friend give up anything of value or suffer any legal detriment to make your promise binding?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (geometry)",
+         "suggested_kinds": [
+          "geometry",
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The binding force relies on the mutual exchange of consideration, specifically the legal detriment suffered by the friend in forgoing a right or providing a counter-value that satisfies the bilaterality requirement of the agreement."
+       },
+       {
+        "role": "tutor",
+        "text": "Your explanation is accurate. You correctly identified that the friend\u2019s act of giving up a right (legal detriment) or providing value creates the necessary consideration. This mutual exchange distinguishes a binding contract from a mere gift. Now, consider this: if the friend pays $100 but you deliver a car worth only $50, does the law care that the values are unequal? Why or why not?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (geometry)",
+         "suggested_kinds": [
+          "geometry",
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The law does not care about the adequacy of consideration because the bargain theory of contract law requires only that something of legal value be exchanged, not that the exchange be economically equivalent. Courts generally uphold the freedom of contract by refusing to inquire into the wisdom of the deal or the relative value of the items traded, ensuring that a peppercorn can suffice as valid consideration."
+       },
+       {
+        "role": "tutor",
+        "text": "Correct. The law values the *exchange*, not the *balance*. A peppercorn is valid consideration because the law presumes parties are competent to make their own choices. This principle protects freedom of contract but can seem harsh if one party is exploited. If a court refuses to check value, what specific factor might still allow a judge to void such an agreement?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (geometry)",
+         "suggested_kinds": [
+          "geometry",
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "Look, the specific factor you're looking for is \"adequacy,\" which is a distinct legal modality separate from \"sufficiency,\" provided the bargain is supported by the requisite procedural formalities. This ensures that while nominal consideration is sufficient, the contract remains binding under the strictures of mutual assent."
+       }
+      ]
+     },
+     "silent_struggler": {
+      "scores": {
+       "socratic": 2,
+       "adaptation": 2,
+       "accuracy": 4,
+       "progression": 3,
+       "misconception_handling": null,
+       "_mh_note": "student made no error; not scoreable",
+       "worst_moment": "The tutor immediately lectured on the definition of consideration after the student said 'idk', failing to probe the student's specific confusion or use a simpler Socratic prompt to draw out the reasoning.",
+       "_judge_samples": 3,
+       "visual_policy": 1,
+       "_visual_note": "the policy asked for a figure 1 time(s) and none was produced",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 5,
+       "_visual_integration_why": "The tutor drew no figure, and none was needed for this text-based conceptual explanation of contract law.",
+       "jurisdiction_care": 1,
+       "_jurisdiction_care_why": "The tutor presents the general common law concept of consideration without specifying the jurisdiction (e.g., 'Under English common law...'), failing to flag that jurisdictions differ (such as the US "
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "You're right; I introduced \"binding\" and \"contract\" simultaneously. Let's focus on **consideration**. This is the idea that each side must give something of value. If I promise to give you $100 with no strings attached, is that a deal a court would enforce, or just a gift?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (geometry); no precomputed aid fits",
+         "suggested_kinds": [
+          "geometry",
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "idk."
+       },
+       {
+        "role": "tutor",
+        "text": "You said \"idk,\" which means you don't know yet. I will explain: courts won't enforce a gift promise because there is no **consideration**\u2014no exchange of value. A contract requires a \"bargained-for exchange,\" where each side gives something up or gains something. If I promise to let you borrow my car next week, am I giving up something, or just receiving a favor?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (geometry)",
+         "suggested_kinds": [
+          "geometry",
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "Maybe you're giving up the chance to use it. I guess that counts as something."
+       },
+       {
+        "role": "tutor",
+        "text": "You identified that lending a car limits your use, which is a form of value. However, contract law requires a **bargained-for exchange** to count as **consideration**. If you borrow the car and promise to return it, but I make no promise in return, have we truly exchanged something of legal value, or is it still just a gift?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (geometry)",
+         "suggested_kinds": [
+          "geometry",
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "idk. i think if you get nothing back, it's just a gift."
+       },
+       {
+        "role": "tutor",
+        "text": "That is correct. If you receive nothing in return, it\u2019s a gift, not a contract. **Consideration** requires that each party gives something of value to the other. If I promise to pay you $100, but you give me nothing, is that a binding deal?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (geometry)",
+         "suggested_kinds": [
+          "geometry",
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "I guess not, but I'm not entirely sure why. Is it just because you didn't give me anything?"
+       }
+      ]
+     }
+    }
+   },
+   {
+    "concept": "How precedent binds a lower court",
+    "derivable": true,
+    "profiles": {
+     "confused_beginner": {
+      "scores": {
+       "socratic": 2,
+       "adaptation": 3,
+       "accuracy": 5,
+       "progression": 3,
+       "misconception_handling": 5,
+       "_mh_why": "The tutor correctly identified the student's partial understanding and explicitly challenged the misconception that lower courts must follow precedents 'no matter what' by clarifying the distinction b",
+       "worst_moment": "The tutor's second turn consists of a direct lecture defining precedent as a 'structural rule' and explaining the consequence of ignoring it, rather than guiding the confused student to deduce this through questioning.",
+       "_judge_samples": 3,
+       "visual_policy": 1,
+       "_visual_note": "the policy asked for a figure 1 time(s) and none was produced",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 5,
+       "_visual_integration_why": "The tutor did not draw a figure, and none was needed as the concept of judicial hierarchy is effectively explained through text and analogy.",
+       "jurisdiction_care": 1,
+       "_jurisdiction_care_why": "The tutor presents the binding nature of precedent as a universal structural rule without specifying any jurisdiction (e.g., US federal vs. state, or UK), violating the requirement to identify whose l"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Imagine a courtroom hierarchy: the Supreme Court sits at the top, and a lower district court sits below it. If the Supreme Court has already ruled on a specific legal issue, does the lower court have the freedom to ignore that ruling and decide the same issue differently in a new case?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (graph); no precomputed aid fits",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "I don't really get how the courts work or why the top guys can't just let the smaller courts do whatever they want. It seems like the lower court would just ignore the big one because they don't have to listen to them."
+       },
+       {
+        "role": "tutor",
+        "text": "Courts follow a hierarchy to ensure consistent laws. The Supreme Court\u2019s rulings bind lower courts in its jurisdiction. This prevents conflicting decisions. If a lower court ignores a higher court\u2019s ruling, that decision is likely overturned. Why must lower courts follow these superior precedents?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "I don't really get it. Isn't precedent like a rule that just... sticks? Or is it binding like glue because of the hierarchy? I'm not sure why they have to listen if they think the higher court is wrong."
+       },
+       {
+        "role": "tutor",
+        "text": "Precedent is not just a suggestion; it is a structural rule. A lower court must follow a higher court\u2019s decision in the same hierarchy, even if it disagrees. This ensures uniformity in the law. If the Supreme Court says a law is unconstitutional, all lower courts must treat it as such. What happens to legal consistency if every judge could ignore previous rulings?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "I don't get how ignoring it would fix anything because it seems like judges just want to do what they think is right anyway. If everyone did that, the law would probably just become a mess of random opinions instead of being consistent. I'm not sure if that's actually worse than the current system or just different."
+       },
+       {
+        "role": "tutor",
+        "text": "You correctly identified that ignoring precedents creates inconsistent outcomes. If judges acted solely on personal opinion, the law would lack uniformity. The hierarchy exists to prevent this chaos by binding lower courts to superior rulings. Consider a driver: would the law be fair if one judge ruled running a red light is legal, while another ruled it is illegal?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "Wait, does that mean lower courts just have to do whatever the higher judge says even if it's wrong? I'm confused about whether they can just ignore it if they think the first case was silly. It seems like they have no choice but to follow it no matter what."
+       }
+      ]
+     },
+     "fast_learner": {
+      "scores": {
+       "socratic": 2,
+       "adaptation": 1,
+       "accuracy": 3,
+       "progression": 2,
+       "misconception_handling": 5,
+       "_mh_why": "The tutor explicitly challenged the student's incorrect classification of the precedent as 'vertical' and corrected the misconception that horizontal stare decisis is merely an exception rather than t",
+       "worst_moment": "The tutor failed to recognize the student's advanced grasp of the material, instead offering a condescending correction on a point the student had already nuanced, and then pivoting to a new topic without ensuring the student had mastered the previous one.",
+       "_judge_samples": 3,
+       "visual_policy": 1,
+       "_visual_note": "the policy asked for a figure 1 time(s) and none was produced",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 1,
+       "_visual_integration_why": "The tutor did not draw any figure, and none was needed for this text-based legal reasoning exercise, which relies entirely on conceptual definitions and logical application.",
+       "jurisdiction_care": 5,
+       "_jurisdiction_care_why": "The tutor correctly identified the binding nature of vertical stare decisis but failed to specify that this rule applies to the US federal system or specific state systems, presenting the concept as a"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Imagine a trial judge must decide a case. There are two relevant past rulings: one from the Supreme Court and one from a different state\u2019s highest court. Which ruling must the trial judge follow, and why?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (graph); no precomputed aid fits",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The trial judge must follow the Supreme Court ruling because of vertical stare decisis, which strictly binds lower federal courts to the holdings of the Supreme Court. Conversely, decisions from a different state\u2019s highest court are merely persuasive authority and do not create a mandatory obligation for the judge to follow.\n\nWait, are we focusing strictly on federal hierarchy, or should we also drill into how a state trial court handles conflicting precedent from its own state's intermediate appellate courts versus its supreme court? Pushing for harder material."
+       },
+       {
+        "role": "tutor",
+        "text": "You correctly noted the binding power of the Supreme Court but missed that vertical stare decisis applies to all hierarchies, not just federal ones. State courts are bound by their own supreme courts. Consider a Texas trial judge: must they follow a Texas Supreme Court ruling or a Louisiana Supreme Court ruling?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The Texas trial judge must follow the Texas Supreme Court ruling. Vertical stare decisis binds lower courts to decisions from higher courts within the same jurisdiction, so the Louisiana Supreme Court\u2019s decisions carry no binding weight in Texas."
+       },
+       {
+        "role": "tutor",
+        "text": "Correct. Vertical stare decisis ensures consistency within a specific jurisdiction\u2019s hierarchy. Now, consider a judge in the Illinois Supreme Court. Must they follow a prior Illinois Supreme Court decision, or is that horizontal stare decisis, which allows more flexibility?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "It is vertical stare decisis because a court is always bound by its own prior decisions within the same jurisdiction; the distinction lies in whether the binding precedent comes from a higher court (vertical) or a co-equal court (horizontal). While \"horizontal\" stare decisis often implies more flexibility for a court to overrule its own past rulings, that flexibility is an exception, not the rule, and the binding nature remains vertical. Horizontal stare decisis technically refers to a court being bound by its *own* prior decisions, whereas vertical specifically refers to lower courts being bound by higher courts. Wait, actually, I need to correct that: horizontal stare decisis is when a court follows its *own* prior decisions, while vertical is when a lower court follows a higher court. So, for the Illinois Supreme Court following its own prior decision, it is horizontal stare decisis which *does* allow for more flexibility than the strict binding nature of vertical stare decisis."
+       },
+       {
+        "role": "tutor",
+        "text": "You correctly identified the terms but erred in claiming horizontal stare decisis is \"the rule\" with flexibility as an exception. For the Illinois Supreme Court, its own prior decisions are binding precedent, not merely persuasive. The distinction is that while lower courts *must* follow higher courts (vertical), a court like the Supreme Court *may* overrule its own past decisions (horizontal) but generally chooses not to for stability. How does the need for legal stability affect a court's willingness to overrule its own prior rulings?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "Stability promotes reliance interests and protects the public's reasonable expectation that the law is settled, making courts hesitant to overrule precedent unless a prior decision is unworkable or fundamentally unjust. Yet, absolute adherence can entrench error, so courts balance this by only overturning deeply flawed rulings where the cost of maintaining the status quo outweighs the disruption to legal order. For example, *Brown v. Board of Education* overturned *Plessy* because segregation\u2019s harm had become too great to justify relying on the \"separate but equal\" stability it purportedly provided."
+       }
+      ]
+     },
+     "misconception_holder": {
+      "scores": {
+       "socratic": 1,
+       "adaptation": 1,
+       "accuracy": 5,
+       "progression": 1,
+       "misconception_handling": null,
+       "_mh_note": "student made no error; not scoreable",
+       "worst_moment": "The tutor immediately validated the student's correct answer and proceeded to lecture on definitions and jurisdictional scope without ever identifying or challenging the student's hidden misconception, resulting in a static, non-progressive dialogue.",
+       "_judge_samples": 3,
+       "visual_policy": 1,
+       "_visual_note": "the policy asked for a figure 1 time(s) and none was produced",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 5,
+       "_visual_integration_why": "The tutor did not draw any figure, and the question relies entirely on abstract legal concepts (stare decisis, jurisdiction) that do not require a visual aid to be understood or answered.",
+       "jurisdiction_care": 5,
+       "_jurisdiction_care_why": "The tutor explicitly tied the binding nature of precedent to 'their state' and 'same jurisdiction,' correctly distinguishing binding authority from persuasive authority across different jurisdictions "
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Imagine a trial judge must decide a case where a higher court in their state already ruled on an identical legal issue. If the trial judge ignores that prior ruling, what is the likely consequence for their decision?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (graph); no precomputed aid fits",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The trial judge's decision would be considered an abuse of discretion or a legal error because lower courts are bound by the precedents set by higher courts in their jurisdiction, a principle known as *stare decisis*. Consequently, an appellate court would likely reverse the trial judge's decision and remand the case with instructions to apply the controlling precedent."
+       },
+       {
+        "role": "tutor",
+        "text": "You are correct that ignoring binding precedent is a legal error leading to reversal. However, *stare decisis* specifically refers to the principle that courts should follow precedents, not just the error of ignoring them. Do you understand why this principle requires lower courts to follow higher court decisions?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "I think the requirement for lower courts to follow higher court decisions stems from the hierarchical structure of the judicial system, where higher courts have the authority to correct legal errors and ensure uniformity in the application of law. *Stare decisis* reinforces this hierarchy by binding lower courts to the legal principles established by higher courts within the same jurisdiction, even if the lower court judges believe the precedent is incorrect."
+       },
+       {
+        "role": "tutor",
+        "text": "Your reasoning is correct. The hierarchy ensures uniformity and legitimacy. Do you understand why *stare decisis* only binds courts within the same jurisdiction?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "It binds courts within the same jurisdiction because the doctrine rests on the hierarchical structure of the court system, meaning a higher court's ruling is only authoritative over lower courts within its specific legal territory, not over courts in other areas."
+       },
+       {
+        "role": "tutor",
+        "text": "Correct. The authority is tied to the specific geographic or subject-matter jurisdiction. If a court in New York cites a California decision, is that decision binding on the New York judge?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "No, a California decision is not binding on a New York judge because they are in different jurisdictions; however, the New York judge might choose to consider it as persuasive authority if the legal issue is novel or if there is no controlling New York precedent."
+       }
+      ]
+     },
+     "confident_bluffer": {
+      "scores": {
+       "socratic": 2,
+       "adaptation": 1,
+       "accuracy": 5,
+       "progression": 3,
+       "misconception_handling": 5,
+       "_mh_why": "The tutor correctly identified the student's misuse of the term 'intra-circuit stare decisis' and firmly corrected it to 'circuit split', ensuring the student did not accept the incorrect terminology.",
+       "worst_moment": "The tutor failed to challenge the student's repeated misuse of 'intra-circuit stare decisis' to describe a circuit split, allowing the student to maintain a confident but factually incorrect definition without correction.",
+       "_judge_samples": 3,
+       "visual_policy": 1,
+       "_visual_note": "the policy asked for a figure 1 time(s) and none was produced",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 5,
+       "_visual_integration_why": "The tutor's question relies entirely on textual definitions and legal concepts (stare decisis, circuit splits, Supreme Court authority) that are fully explained in the dialogue, making any accompanyin",
+       "jurisdiction_care": 1,
+       "_jurisdiction_care_why": "The tutor never specified that this scenario describes the United States federal court system, presenting a jurisdiction-specific rule (federal circuit splits and Supreme Court supremacy) as if it wer"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Imagine a system where a trial judge must follow the law set by an appellate court, but that appellate court is not bound by a different appellate court in another region. If the regional court changes its mind, does the trial judge have to change their ruling immediately?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (graph); no precomputed aid fits",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The trial judge is not immediately bound by the new regional precedent because the doctrine of *stare decisis* only strictly binds courts within the same vertical hierarchy, such as the trial court to its direct appellate supervisor, not to parallel regional circuits. Therefore, the trial judge can continue to apply the established law unless their own direct appellate court issues a conflicting ruling or the Supreme Court intervenes to resolve the circuit split. The regional court's change in stance is persuasive authority at best for the trial judge, not mandatory law."
+       },
+       {
+        "role": "tutor",
+        "text": "You correctly identified vertical binding. However, you missed that a trial judge is also bound by their *own* direct appellate court. If that court hasn't changed its view, the judge must follow it, even if other regions differ. How do we call this situation where different regional courts reach opposite conclusions on the same legal issue?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "This is known as intra-circuit stare decisis, specifically the principle of vertical binding within a single jurisdiction. It ensures uniformity and predictability, preventing lower courts from diverging from the established precedent of their supervising appellate body."
+       },
+       {
+        "role": "tutor",
+        "text": "You are correct about vertical binding. However, *intra-circuit* refers to within one circuit. When different circuits disagree, it is called a *circuit split*. Does a trial judge have to follow a rule from a different circuit that they do not belong to?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "No, because intra-circuit vertical binding establishes the *ratio decidendi* as the *stare decisis* floor, rendering inter-circuit jurisprudence merely persuasive authority that the trial judge may disregard if it conflicts with their own jurisdiction\u2019s binding precedent."
+       },
+       {
+        "role": "tutor",
+        "text": "Your definition of vertical binding is accurate. However, describing inter-circuit views as \"persuasive authority\" is correct, but the term for the *situation* where they disagree is a \"circuit split.\" Since the judge cannot be bound by conflicting external precedents, what specific court has the authority to resolve this conflict and establish a single national rule?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "The Supreme Court holds the exclusive authority to resolve circuit splits and establish binding national precedent through its certiorari jurisdiction, thereby ensuring uniformity in federal law over any conflicting appellate decisions."
+       }
+      ]
+     },
+     "silent_struggler": {
+      "scores": {
+       "socratic": 2,
+       "adaptation": 1,
+       "accuracy": 5,
+       "progression": 2,
+       "misconception_handling": null,
+       "_mh_note": "student made no error; not scoreable",
+       "worst_moment": "The tutor repeatedly ignores the student's explicit lack of confidence ('idk', 'not sure') and continues to deliver dense legal concepts like 'reliance interests' instead of simplifying or checking for basic understanding.",
+       "_judge_samples": 3,
+       "visual_policy": 1,
+       "_visual_note": "the policy asked for a figure 1 time(s) and none was produced",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 1,
+       "_visual_integration_why": "The tutor's question relies entirely on the textual concept of 'reliance interests' and a hypothetical scenario, requiring no visual aid to understand or answer.",
+       "jurisdiction_care": 1,
+       "_jurisdiction_care_why": "The tutor discusses 'stare decisis' and 'precedent' as universal concepts without specifying that these doctrines and their application vary significantly by jurisdiction (e.g., common law vs. civil l"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Imagine a junior judge faces a case that looks exactly like one decided by the supreme court last year, but the supreme court\u2019s ruling goes against her personal beliefs. If she ignores that prior ruling, what fundamental problem does this create for how our legal system operates?",
+        "aid_decision": {
+         "action": "generate",
+         "slot": null,
+         "reason": "score 5 \u2014 concept opening; visual subject (graph); no precomputed aid fits",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "idk maybe it weakens consistent application of law?"
+       },
+       {
+        "role": "tutor",
+        "text": "You are right: ignoring precedent undermines consistency and predictability, which are essential for the rule of law. Stare decisis ensures that similar cases are treated similarly, creating a stable legal framework. Why might a legal system benefit from stability even if a previous decision seems imperfect?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "idk, maybe because it's predictable? but also seems unfair if we just change things."
+       },
+       {
+        "role": "tutor",
+        "text": "You correctly identified that predictability is a key benefit. You also raised a valid concern: if rules change too easily, it can feel unfair to those who relied on the old rule. How would strict adherence to past decisions (stare decisis) address the fairness issue you mentioned, even if the old decision seems wrong today?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "idk, maybe it helps because people knew the rules? not sure if that really fixes the fairness thing though."
+       },
+       {
+        "role": "tutor",
+        "text": "Fairness here relies on \"reliance interests.\" If the law changes constantly, people cannot plan their lives or businesses. Stare decisis protects those who acted based on the old rule. Imagine a company invested millions assuming a practice was legal, then the court suddenly bans it. Why does this specific scenario make the \"fairness\" concern you raised so powerful?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 2/4 \u2014 visual subject (graph)",
+         "suggested_kinds": [
+          "graph"
+         ]
+        }
+       },
+       {
+        "role": "student",
+        "text": "idk really. i guess it's about the money?"
+       }
+      ]
+     }
+    }
+   },
+   {
+    "concept": "The citation format for a UK case",
+    "derivable": false,
+    "profiles": {
+     "confused_beginner": {
+      "scores": {
+       "socratic": 2,
+       "adaptation": 1,
+       "accuracy": 2,
+       "progression": 2,
+       "misconception_handling": null,
+       "_mh_note": "student made no error; not scoreable",
+       "worst_moment": "The tutor's second turn contains a factual error by claiming the judge's name is standard for neutral citations, when neutral citations explicitly exclude the judge's name to maintain stability.",
+       "_judge_samples": 3,
+       "visual_policy": 5,
+       "_visual_note": "no aid kind carries this concept \u2014 showed none",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 1,
+       "_visual_integration_why": "The tutor did not draw a figure, and none was needed for this text-based conceptual discussion about legal citations.",
+       "honest_telling": 1,
+       "_honest_telling_why": "The tutor repeatedly asked the student to guess or reason about the components of the citation format (e.g., 'What specific information do you think is most critical...') instead of plainly stating th",
+       "jurisdiction_care": 1,
+       "_jurisdiction_care_why": "The tutor presents the concept of neutral citations as a universal standard without specifying that this applies primarily to common law jurisdictions like the UK, Australia, and Canada, failing to fl"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "What specific information do you think is most critical for identifying a unique court decision?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 3/4 \u2014 concept opening",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "Is it the case number? I\u2019m not sure if it goes in the middle or at the end. Does the judge\u2019s name count as part of the citation or just extra info?"
+       },
+       {
+        "role": "tutor",
+        "text": "You correctly identified the case number as key, but omitted the judge\u2019s name is standard for neutral citations. This keeps the reference stable even if the reporter changes. Why do you think stability matters more than including the judge?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "I\u2019m not sure why stability is more important than knowing who the judge was. Isn\u2019t it confusing not to know who made the decision at a glance?"
+       },
+       {
+        "role": "tutor",
+        "text": "Stability ensures the citation remains valid even if the case is reprinted by different publishers, which changes page numbers. This avoids broken links in legal research. Knowing the judge is useful, but a stable identifier is essential for locating the exact decision. Why is a stable identifier more critical than knowing the judge's name for finding the document?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "I don't really get why the judge's name wouldn't be enough since they signed the paper. It feels like the page numbers changing is just a minor issue that doesn't really matter when you're trying to find the case. I'm not sure how the identifier stops it from breaking if the publisher changes things."
+       },
+       {
+        "role": "tutor",
+        "text": "Page numbers change because publishers assign their own numbering, but the decision's official release date and court remain constant. Neutral citations use the year and court to anchor the document, making it findable regardless of who prints it. Why might a fixed date and court be more reliable than a page number that varies by edition?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "I guess that\u2019s because page numbers change so much, but the date and court stay the same? Wait, actually, does every case have a neutral citation or just some of them? I\u2019m not sure how the court fits into that."
+       }
+      ]
+     },
+     "fast_learner": {
+      "scores": {
+       "socratic": 2,
+       "adaptation": 3,
+       "accuracy": 1,
+       "progression": 3,
+       "misconception_handling": 5,
+       "_mh_why": "The tutor correctly identified the student's factual error regarding the existence of the New Law Reports in the 1980s and provided the accurate alternative (Law Reports) with specific guidance on the",
+       "worst_moment": "The tutor incorrectly states that the New Law Reports (NLR) ceased before the 1980s, when in fact they were published from 1970 to 1980, directly contradicting the student's correct identification of them as the relevant series for that specific decade.",
+       "_judge_samples": 3,
+       "visual_policy": 5,
+       "_visual_note": "no aid kind carries this concept \u2014 showed none",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 1,
+       "_visual_integration_why": "The tutor's question relies entirely on the student's prior knowledge of legal citation conventions and does not depend on any visual diagram or figure to be answered.",
+       "honest_telling": 1,
+       "_honest_telling_why": "The tutor asked the student to guess the specific Law Reports series for a Chancery case, a fact that cannot be deduced and is arbitrary convention.",
+       "jurisdiction_care": 1,
+       "_jurisdiction_care_why": "The tutor never specified that this citation format applies to UK law, presenting it as a universal rule despite the prompt's specific UK context and the existence of different citation systems global"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Consider a case decided by the UK Supreme Court in 2019, cited as [2019] UKSC 41. This format uses square brackets for the year and an abbreviation for the court. Why do you think the year is placed in brackets rather than being written out fully?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 3/4 \u2014 concept opening",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "Square brackets indicate that the year is part of the volume identifier essential for locating the report in a specific series, distinguishing it from annual reports like the All ER where the year is not inside brackets because each annual volume is self-contained. This format signals that the volume number is arbitrary within that year rather than sequential across years. I\u2019m ready to move on to how to cite a High Court decision from before 1991."
+       },
+       {
+        "role": "tutor",
+        "text": "Your bracket explanation is sharp. The brackets signal that the number is assigned annually, not sequentially across years. For pre-1991 High Court cases, neutral citations weren't used yet. You must use traditional law reports. Which specific report series is preferred for those older decisions?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "I prefer the *All England Law Reports* (All ER) for their consistent quality and accessibility, though the *Weekly Law Reports* (WLR) are also highly respected. If the case is from the Court of Appeal, the *All England Law Reports* are generally the go-to first choice over the *Law Reports* (Ch, QB, etc.) due to their broader coverage in specific legal fields.\n\nWait, actually, for pre-1991 High Court cases, the *Weekly Law Reports* (WLR) are often the most reliable and widely cited series, as the *All England* series didn't cover all courts or types of cases as comprehensively in that era. I should stick to *WLR* unless the case is specifically from a court not covered by it, in which case the *Law Reports* (e.g., Ch, QB, Fam) are the authoritative source."
+       },
+       {
+        "role": "tutor",
+        "text": "You correctly identify the *Weekly Law Reports* (WLR) as the primary source for High Court decisions in that era. The *All England* series (All ER) began publication only in 1971, leaving a gap for earlier cases. Since you\u2019re citing a High Court decision from 1985, which specific report series would you use if the case isn\u2019t in the WLR?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "I\u2019d use the *New Law Reports* (NLR), specifically the *New Law Reports: Chancery Division* (NLR [Ch]) for Chancery cases or *New Law Reports: Queen\u2019s Bench* (NLR [QB]) for King\u2019s/Queen\u2019s Bench, as these were the secondary but authoritative series covering High Court decisions in the 1980s prior to widespread All ER inclusion. Alternatively, if the case was reported in any of the specialist series like *Industrial Cases Report* (ICR) or *Family Law Reports* (FLR), those would take precedence for their respective subject matters."
+       },
+       {
+        "role": "tutor",
+        "text": "The NLR ceased before the 1980s. For that decade, the Weekly Law Reports (WLR) and All England Reports (All ER) are primary. If a case is missing from both, the official Law Reports (LR) are the definitive source. Each division has its own series (e.g., Ch, QB). Which specific LR series would you cite for a Chancery Division case from 1985?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "Cite **Ch** (Channcey Division). Specifically, the format is [1985] Ch [page number], as the Chancery Division's cases are reported in the Ch series of the Law Reports.\n\n*Extra detail:* If the case is not in LR, you would then look to [1985] Ch for the specific volume, but generally, for a Chancery case, the primary parallel citation is [1985] Ch, distinct from [1985] QB (King's Bench) or [1985] Fam (Family)."
+       }
+      ]
+     },
+     "misconception_holder": {
+      "scores": {
+       "socratic": 2,
+       "adaptation": 1,
+       "accuracy": 1,
+       "progression": 1,
+       "misconception_handling": 5,
+       "_mh_why": "The tutor consistently and firmly challenged the student's persistent misconception about the citation format, correcting the placement of the year and clarifying the purpose of the components in each",
+       "worst_moment": "The tutor incorrectly asserts that the year in a neutral citation indicates when the judgment was 'delivered' rather than 'issued' or 'decided', and fails to correct the student's persistent misconception about citation structure, leading to a loop where the tutor lectures instead of guiding.",
+       "_judge_samples": 3,
+       "visual_policy": 5,
+       "_visual_note": "no aid kind carries this concept \u2014 showed none",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 5,
+       "_visual_integration_why": "The tutor's question relies entirely on the visual structure of the neutral citation format (specifically the position of the year relative to the court abbreviation) which is not explicitly described",
+       "honest_telling": 1,
+       "_honest_telling_why": "The tutor repeatedly asked the student to guess or reason about the arbitrary convention of citation format placement instead of stating the fact plainly.",
+       "jurisdiction_care": 1,
+       "_jurisdiction_care_why": "The tutor failed to specify that this citation format applies to UK law, presenting a jurisdiction-specific convention as if it were a universal legal rule, which violates the core requirement of juri"
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "I introduced too much. Let\u2019s focus on just one element: the year in brackets, like [2019]. Why do you think the year comes first in the citation, rather than at the end?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 3/4 \u2014 concept opening",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "The year indicates when the judgment was delivered or the decision was made, which is crucial for identifying the specific ruling in temporal context, especially when multiple decisions might share the same volume and page number. Placing it immediately after the court abbreviation or volume/page helps distinguish the case by its decision date, ensuring precise identification before the reporter details are considered."
+       },
+       {
+        "role": "tutor",
+        "text": "Your explanation of the year\u2019s purpose is accurate, but the placement you described is incorrect. In neutral citations, the year appears at the very beginning, not after the court abbreviation. For example, in [2019] UKSC 41, [2019] comes first. Why do you think the convention places the date before the court identifier, rather than after?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "I see, but I still believe that the year must come after the court abbreviation to distinguish between cases decided in different years by the same court, as in UKSC [2019] 41. If the date were first, it would imply the case was decided in that year regardless of the court, which seems less precise for legal citation."
+       },
+       {
+        "role": "tutor",
+        "text": "The year [2019] indicates when the judgment was delivered. In the neutral citation [2019] UKSC 41, this date appears first. Why might a legal system choose to identify a case primarily by its decision year rather than by the court that issued it?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "Actually, the year [2019] in neutral citations like [2019] UKSC 41 does not primarily indicate when the judgment was delivered; it indicates the date the judgment was issued by the court, which differs from the earlier date of the substantive hearing or original decision. Choosing to identify a case by its decision year is crucial because legal precedent is time-sensitive, and the year ensures that practitioners and judges can quickly distinguish between conflicting rulings or confirm that the latest authoritative statement of the law is being applied, rather than relying on potentially outdated earlier decisions from the same or lower courts."
+       },
+       {
+        "role": "tutor",
+        "text": "Your reasoning about legal precedent is sound, but you are mistaken about the meaning of the year in neutral citations. The year [2019] indicates when the judgment was *delivered* (made public), not merely issued internally. It serves to identify the specific volume of reports for that year. If two cases were decided by different courts in the same year, such as [2019] UKSC 41 and [2019] EWCA Civ 10, how does the citation format use the court abbreviation to distinguish them?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "The court abbreviation is placed immediately after the year and before the case number to distinguish the specific court and division issuing the judgment, as seen in the contrast between [2019] UKSC 41 for the Supreme Court and [2019] EWCA Civ 10 for the Court of Appeal (Civil Division). This structure ensures that the unique identifier within that court\u2019s annual series of decisions is clearly attributed to the correct judicial body."
+       }
+      ]
+     },
+     "confident_bluffer": {
+      "scores": {
+       "socratic": 1,
+       "adaptation": 1,
+       "accuracy": 1,
+       "progression": 1,
+       "misconception_handling": 5,
+       "_mh_why": "The tutor explicitly and correctly challenged the student's fundamental misunderstanding that brackets denote volume/authority, clarifying they denote the year, and further corrected the student's fla",
+       "worst_moment": "The tutor failed to recognize the student's confident bluffing and continued to engage with the student's nonsensical jargon as if it were a valid misunderstanding, rather than correcting the fundamental factual errors or shutting down the unproductive dialogue.",
+       "_judge_samples": 3,
+       "visual_policy": 5,
+       "_visual_note": "no aid kind carries this concept \u2014 showed none",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 5,
+       "_visual_integration_why": "The tutor did not draw any figure, and no figure was needed to answer the text-based question about legal citation formats.",
+       "honest_telling": 1,
+       "_honest_telling_why": "The tutor engaged in 'fake-Socratic questioning' by asking the student to guess or reason about the function of brackets and the year, despite the concept being an arbitrary convention that cannot be ",
+       "jurisdiction_care": 1,
+       "_jurisdiction_care_why": "The tutor never specified whose law (UK) it was describing, presenting the UK neutral citation format as a universal standard without flagging that jurisdictions differ."
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Let's explore how legal citations work. Imagine a case decided in 2019 by the UK Supreme Court, case number 41. If you were to cite this without using the official law report name, how might you structure the details to make it uniquely identifiable?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 3/4 \u2014 concept opening",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "Use the neutral citation format [YEAR] UKSC CASE_NUMBER, so for a 2019 Supreme Court case at number 41, it is structured as [2019] UKSC 41. This notation places the year in square brackets to denote the court's authority and appends the sequential decision number to ensure precise identification without relying on specific law report series. It isolates the core judicial identifier by stripping away the publisher-specific pagination, leaving only the official court file reference."
+       },
+       {
+        "role": "tutor",
+        "text": "You got the citation right, but the brackets aren't about \"authority.\" They just mark the year as essential. The rest is a convention. Why do you think courts use arbitrary labels instead of unique names for every case?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "The brackets denote the *volume* and *reporting authority* rather than mere year designation, distinguishing the official *Law Reports* from the less authoritative *Weekly Law Reports* or regional *All England* series. Courts eschew unique identifiers to maintain stability in the legal lexicon, ensuring that references remain consistent regardless of changes in case titles, which prevents the \"arbitrary labels\" you suspect from becoming obsolete when parties change names or jurisdictional nuances shift."
+       },
+       {
+        "role": "tutor",
+        "text": "Your explanation is wrong. The brackets strictly denote the year, not volume or authority. Neutral citations are publisher-independent. We use the year as an anchor for stability. Why is the year a better long-term identifier than a complex volume code?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "The year functions as a high-entropy unique hash for legal precedent, ensuring absolute determinism in citation resolution. Volume codes are merely legacy noise that introduce ambiguity, whereas the year provides a stable, unambiguous anchor for the case law ontology."
+       },
+       {
+        "role": "tutor",
+        "text": "Your reasoning is wrong. The year is not a unique hash; many cases are decided in the same year. Volume codes are not legacy noise; they organize case law chronologically within specific reports. Neutral citations combine the year with a sequential number to create uniqueness. How does adding a sequential number to the year solve the problem of multiple cases in one year?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "The uniqueness is achieved by the neutral citation\u2019s square brackets, where the year acts as a discrete partition that the sequential number resolves, ensuring that the combination of the court\u2019s jurisdiction, the year, and the specific sequential index creates a globally unique identifier without requiring external volume data. This tripartite structure effectively decouples the chronological filing from the physical pagination of reporters."
+       }
+      ]
+     },
+     "silent_struggler": {
+      "scores": {
+       "socratic": 2,
+       "adaptation": 1,
+       "accuracy": 5,
+       "progression": 2,
+       "misconception_handling": null,
+       "_mh_note": "student made no error; not scoreable",
+       "worst_moment": "The tutor dismissed the student's correct answer as a risky guess and demanded an explanation for an arbitrary convention, causing the disengaged student to shut down completely with 'idk'.",
+       "_judge_samples": 3,
+       "visual_policy": 5,
+       "_visual_note": "no aid kind carries this concept \u2014 showed none",
+       "notation_speakable": 5,
+       "_notation_note": "all notation is speakable",
+       "visual_integration": 1,
+       "_visual_integration_why": "The tutor's question relies entirely on the student recalling an arbitrary convention described in the text, with no diagram present or needed to deduce the answer.",
+       "honest_telling": 1,
+       "_honest_telling_why": "The tutor engaged in 'fake-Socratic questioning' by asking the student to guess or deduce the court abbreviation for a specific year, despite explicitly stating earlier that the format is an arbitrary",
+       "jurisdiction_care": 1,
+       "_jurisdiction_care_why": "The tutor presents UK-specific neutral citation conventions as universal rules without identifying the jurisdiction, violating the requirement to flag where jurisdictions differ."
+      },
+      "transcript": [
+       {
+        "role": "tutor",
+        "text": "Neutral citations like [2019] UKSC 41 follow an arbitrary convention set by legal practice directions, meaning the specific structure must be memorized rather than deduced. Since this format is a rigid rule, how would you structure a citation for a 2020 Supreme Court case if you knew the sequence was Year, Court Abbreviation, and then the Case Number?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 3/4 \u2014 concept opening",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "Maybe [2020] UKSC 41? Not sure if the bracket placement is strictly fixed like that."
+       },
+       {
+        "role": "tutor",
+        "text": "Your structure is correct, and the brackets around the year are indeed a fixed requirement of this convention. This specific format distinguishes neutral citations from traditional reports by removing the need for a volume number. To practice this, how would you format a 2023 Court of Appeal case with the sequence number 15?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "something like [2023] EWCA Civ 15? honestly not sure if that's right."
+       },
+       {
+        "role": "tutor",
+        "text": "You proposed [2023] EWCA Civ 15, which correctly applies the convention. Your uncertainty is understandable because the brackets around the year are the most distinct visual marker of this neutral citation style. To verify you have internalized this pattern, how would you write a neutral citation for a 2021 Court of Appeal case with sequence number 50?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "Probably [2021] EWCA Civ 50?"
+       },
+       {
+        "role": "tutor",
+        "text": "You confidently guessed [2021] EWCA Civ 50, and it happens to be correct. However, your phrasing \"Probably\" suggests you are mimicking a pattern rather than understanding the rule. Since the convention is arbitrary, guessing is risky. How did you decide which court abbreviation to use for this specific year?",
+        "aid_decision": {
+         "action": "none",
+         "slot": null,
+         "reason": "score 0/4 \u2014 nothing notable",
+         "suggested_kinds": []
+        }
+       },
+       {
+        "role": "student",
+        "text": "idk"
+       }
+      ]
+     }
+    }
+   }
+  ],
+  "meta": {
+   "bench_version": "1.0",
+   "fingerprint": "c98fa5eb86455db5",
+   "model": "nail-35b-a3b-ctx",
+   "url": "http://localhost:11434",
+   "turns": 4,
+   "judge_samples": 3,
+   "profiles": [
+    "confused_beginner",
+    "fast_learner",
+    "misconception_holder",
+    "confident_bluffer",
+    "silent_struggler"
+   ],
+   "run_at": "2026-08-20T19:15:43"
+  }
+ }
+]
