@@ -2736,7 +2736,12 @@ class MnemosyneFSM:
         kw = {"learner_said": learner_said or "",
               "concept_terms": self._concept_terms(),
               "already_seen": self._seen_terms(),
-              "is_opening": not (self.conversation_history or [])}
+              "is_opening": not (self.conversation_history or []),
+              # A tutor may fairly refer to something said two turns ago, so
+              # the grounded_claim rule looks back further than the last
+              # message before calling an attribution invented.
+              "recent_learner": [p[0] for p in
+                                 (self.conversation_history or [])[-3:] if p[0]]}
         try:
             violations = dc.check(question, **kw)
         except Exception as e:

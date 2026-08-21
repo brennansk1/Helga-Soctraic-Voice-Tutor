@@ -166,3 +166,85 @@ def test_a_retry_that_trades_one_violation_for_another_is_not_better():
     too_long = _long(90)                                   # length only
     ignores = "Consider the determinant instead."          # question+reference
     assert not dc.is_better(ignores, too_long, **kw)
+
+
+# ------------------------------- A.1: claims about the student must be true
+#
+# The measured failure on the maths run, three times in fifteen dialogues:
+# the tutor apologised for confusion that never happened, asserted a
+# calculation error the student had not made, and let a student's false claim
+# stand. History reaches the model correctly paired and untruncated, so it HAS
+# the transcript and misremembers it.
+#
+# `reference` cannot catch this. It asks whether the turn overlaps the
+# learner's words at all, so an invented attribution passes on one shared
+# noun. This asks whether the attribution is SUPPORTED.
+
+def test_an_invented_attribution_is_caught():
+    v = dc.check("You said the derivative is negative — why?",
+                 learner_said="I think eigenvectors keep their direction",
+                 concept_terms=TERMS)
+    assert any(x.rule == "grounded_claim" for x in v)
+
+
+def test_a_supported_attribution_passes():
+    v = dc.check("You said eigenvectors keep their direction — always?",
+                 learner_said="I think eigenvectors keep their direction")
+    assert not any(x.rule == "grounded_claim" for x in v)
+
+
+def test_apologising_for_confusion_that_never_happened_is_caught():
+    """Verbatim from the judge: 'apologizing for confusion that never existed'."""
+    v = dc.check("Sorry for the confusion earlier — shall we restart?",
+                 learner_said="", is_opening=True)
+    assert any(x.rule == "grounded_claim" for x in v)
+
+
+def test_an_attribution_on_the_opening_turn_is_always_ungrounded():
+    """They have not said anything yet, so nothing can be attributed."""
+    v = dc.check("As you noted, the matrix scales it. What else?",
+                 learner_said="", is_opening=True)
+    viol = [x for x in v if x.rule == "grounded_claim"]
+    assert viol and "first turn" in viol[0].instruction
+
+
+def test_a_question_is_not_an_attribution():
+    """"What do you think?" claims nothing and must not trip the rule."""
+    v = dc.check("What do you think happens to the vector?",
+                 learner_said="the matrix scales it")
+    assert not any(x.rule == "grounded_claim" for x in v)
+
+
+def test_a_suggestion_is_not_an_attribution():
+    v = dc.check("You might consider what stays fixed — which vector does?",
+                 learner_said="the matrix scales it")
+    assert not any(x.rule == "grounded_claim" for x in v)
+
+
+def test_a_direct_quote_grounds_the_claim():
+    v = dc.check('You said "eigenvectors keep direction" — under what condition?',
+                 learner_said="eigenvectors keep direction I think")
+    assert not any(x.rule == "grounded_claim" for x in v)
+
+
+def test_grounding_can_look_further_back_than_the_last_message():
+    """A tutor may fairly refer to something said two turns ago."""
+    v = dc.check("Earlier you mentioned the rubber sheet — does it still hold?",
+                 learner_said="not sure",
+                 recent_learner=["it is like a rubber sheet stretching"])
+    assert not any(x.rule == "grounded_claim" for x in v)
+
+
+def test_grounding_is_not_substring_matching():
+    """Fifth time this class of bug would have bitten; it does not."""
+    v = dc.check("You said you were aware of the warranty — were you?",
+                 learner_said="war")
+    assert any(x.rule == "grounded_claim" for x in v)
+
+
+def test_the_correction_tells_the_model_what_to_do_about_it():
+    v = dc.check("Your error was in the second step — see it?",
+                 learner_said="eigenvectors keep their direction")
+    viol = [x for x in v if x.rule == "grounded_claim"][0]
+    assert "quote their exact words" in viol.instruction
+    assert "eigenvectors keep their direction" in viol.instruction

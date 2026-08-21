@@ -22,6 +22,8 @@ THE FOUR RULES
                 here so the contract is checkable in one place.)
   reference     must quote or reference something the learner actually said.
                 Waived on the opening turn, when there is nothing to reference.
+  grounded_claim  if it claims the student said or did something, that claim
+                must match what they actually wrote. See A.1 below.
   one_new_idea  must not introduce more than one new technical term.
 
 COST
@@ -129,8 +131,71 @@ def new_terms(turn, concept_terms, already_seen):
     return sorted((turn_words & terms) - seen)
 
 
+# --- A.1: a claim about the student must be grounded in what they said -------
+#
+# The measured failure, from the judge's own words on the maths run:
+#
+#   "apologizing for confusion that never existed"
+#   "incorrectly claims the student made a calculation error, despite the
+#    student having already correctly identified the partial derivative"
+#   "the student falsely claimed it was not provided, and the tutor failed to
+#    correct this hallucination"
+#
+# Three in fifteen dialogues. Conversation history reaches the model correctly
+# paired and untruncated -- this was checked -- so the tutor HAS the transcript
+# and misremembers it.
+#
+# The existing `reference` rule cannot catch this: it asks whether the turn
+# overlaps the learner's words at all, so "You said the derivative is
+# negative" passes on the word "derivative" even when the learner said the
+# opposite. This rule asks the harder question: when the turn ATTRIBUTES
+# something to the student, is that attribution supported?
+#
+# PAST-TENSE ATTRIBUTION ONLY. "What do you think?" and "you might consider"
+# are not claims about what happened and must not trip it.
+_ATTRIBUTION = re.compile(
+    r"\b(you (said|wrote|mentioned|claimed|stated|told me|suggested|answered|"
+    r"guessed|called it|described)"
+    r"|you'?re (confusing|mixing|assuming|thinking of|saying)"
+    r"|you (were|got it|got that|had) (right|wrong|confused|mixed up)"
+    r"|your (answer|error|mistake|reasoning|point|example|definition)"
+    r"|as you (said|noted|pointed out|mentioned)"
+    r"|earlier you|a moment ago you|you just said"
+    r"|(sorry|apologies) for the confusion"
+    r"|you seem to (think|believe))\b", re.I)
+
+#: How much of the learner's own vocabulary an attribution has to reuse before
+#: we believe it. Two content words is a low bar on purpose: this rule is
+#: aimed at inventions, not paraphrases, and a false violation costs a
+#: regeneration that teaches nothing.
+MIN_GROUNDING_WORDS = 2
+
+
+def attributes_to_learner(turn):
+    """Does this turn claim the student said or did something?"""
+    return bool(_ATTRIBUTION.search(turn or ""))
+
+
+def attribution_is_grounded(turn, learner_said, recent_learner=None):
+    """Is that claim supported by what the learner actually wrote?
+
+    Grounded when the turn reuses at least MIN_GROUNDING_WORDS content words
+    from the learner's recent messages, or quotes them directly. Whole words
+    only -- "war" inside "aware" has cost this codebase four separate bugs.
+    """
+    pool = " ".join([learner_said or ""] + list(recent_learner or []))
+    said = _content_words(pool)
+    if not said:
+        return False              # nothing was said; nothing can be attributed
+    quoted = re.findall(r"[\"\u201c]([^\"\u201d]{3,80})[\"\u201d]", turn or "")
+    for q in quoted:
+        if _content_words(q) & said:
+            return True
+    return len(_content_words(turn) & said) >= MIN_GROUNDING_WORDS
+
+
 def check(turn, learner_said="", concept_terms=None, already_seen=None,
-          is_opening=False, max_words=MAX_WORDS):
+          is_opening=False, max_words=MAX_WORDS, recent_learner=None):
     """Every rule this turn breaks, in the order worth fixing.
 
     Returns [] for a compliant turn. An empty or missing turn returns no
@@ -163,6 +228,19 @@ def check(turn, learner_said="", concept_terms=None, already_seen=None,
             f'Your last reply did not engage with what the student actually '
             f'said: "{snippet}". Refer to their words directly before asking '
             f'anything new.'))
+
+    if attributes_to_learner(turn) and not attribution_is_grounded(
+            turn, learner_said, recent_learner):
+        snippet = " ".join((learner_said or "").split()[:20])
+        out.append(Violation(
+            "grounded_claim",
+            "claims the student said something they did not",
+            "Your last reply said something about what the student had said or "
+            "done, but it does not match what they actually wrote"
+            + (f': "{snippet}"' if snippet else " — this is the first turn, so "
+               "they have not said anything yet")
+            + ". Either quote their exact words, or drop the claim and ask "
+              "instead."))
 
     intro = new_terms(turn, concept_terms, already_seen)
     if len(intro) > MAX_NEW_TERMS:

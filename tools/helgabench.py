@@ -324,7 +324,9 @@ def _apply_contract(url, model, messages, turn, learner_said, transcript, topic)
                         f"{topic.get('concept','')} {topic.get('context','')}")
              if len(w) > 3}
     kw = {"learner_said": learner_said or "", "concept_terms": terms,
-          "already_seen": seen, "is_opening": not transcript}
+          "already_seen": seen, "is_opening": not transcript,
+          "recent_learner": [t.get("text", "") for t in transcript
+                             if t.get("role") == "student"][-3:]}
 
     try:
         violations = dc.check(turn, **kw)
