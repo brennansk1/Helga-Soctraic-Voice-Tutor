@@ -137,6 +137,46 @@ def notes_in_text(text, limit=6):
             for m in _NOTE.finditer(text or "")][:limit]
 
 
+_TITLE_WORD = re.compile(r"[A-Za-z]{4,}")
+
+#: Words that appear in half the titles in any maths course and so carry no
+#: matching signal.
+_STOP = {"function", "functions", "value", "values", "using", "with", "from",
+         "properties", "expression", "expressions", "applying", "finding",
+         "evaluating", "identifying", "understanding", "conditions", "rules",
+         "rule", "form", "forms", "the", "and", "for"}
+
+
+def _best_for(concept, moves):
+    """The move that is ABOUT this concept, or the next one available.
+
+    WHY MATCHING IS NEEDED AT ALL.
+    The first version took `best_move(moves)` and popped in order, so within a
+    lesson each concept got whichever example came next. Measured on a real
+    build: "Applying the Squeeze Theorem" was taught with a factoring limit,
+    "Integration by parts" with the antiderivative of 1/x, and "Definite
+    integrals and power rule" with the one example that IS integration by
+    parts. Systematically off by one, and every pairing wrong in a way a
+    learner would notice before the tutor did.
+    """
+    if not moves:
+        return None
+    words = {w.lower() for w in _TITLE_WORD.findall(concept.get("title") or "")}
+    words -= _STOP
+    if words:
+        best, score = None, 0
+        for m in moves:
+            blob = ((m.get("first") or "") + " " + (m.get("second") or "")).lower()
+            hits = sum(1 for w in words if w in blob)
+            if hits > score:
+                best, score = m, hits
+        if best is not None:
+            return best
+    # No shared vocabulary: order is as good a guess as any, and a worked
+    # example from the same lesson is still on-topic.
+    return tm.best_move(moves)
+
+
 def attach_to_course(course, book, status_callback=None):
     """Attach a worked example and a teaching move to each aided concept.
 
@@ -185,7 +225,7 @@ def attach_to_course(course, book, status_callback=None):
             if kind not in aided:
                 tally["skipped"] += 1
                 continue
-            move = tm.best_move(moves)
+            move = _best_for(concept, moves)
             if not move:
                 tally["skipped"] += 1
                 continue
@@ -199,7 +239,17 @@ def attach_to_course(course, book, status_callback=None):
                 continue
             seen.add(fingerprint)
 
-            concept["teaching_move"] = {
+            # THE FIELD NAME IS `teaching_pair`, NOT `teaching_move`.
+            #
+            # `fsm_logic._domain_teaching` reads `teaching_pair`; the computer
+            # science domain writes `teaching_pair`. Writing anything else
+            # attaches material the tutor never reads — which is the defect
+            # this repository has now hit nine times, and this module hit it
+            # while sitting beside the document describing it.
+            #
+            # `teaching_move` is also already taken: services/common/
+            # teaching_move.py is an unrelated (reverted) A.6 mechanism.
+            concept["teaching_pair"] = {
                 "kind": move["kind"],
                 "first": move.get("first", "")[:900],
                 "second": move.get("second", "")[:900],

@@ -180,3 +180,71 @@ def test_the_aid_loader_calls_it():
     assert "_load_domain_code_aid" in src, (
         "the aid loader stopped calling the domain code aid, which silently "
         "hides every mined example again")
+
+
+# ---------------------------------------------------------------------------
+# Instance NINE: a domain wrote its mined material under a field the tutor
+# does not read. The mathematics domain attached 15 teaching moves to a real
+# built course as `teaching_move`, while `fsm_logic._domain_teaching` reads
+# `teaching_pair` — so every one of them was invisible.
+#
+# This asserts the CONTRACT between what a domain writes and what the FSM
+# reads, for every domain, rather than trusting each to remember.
+# ---------------------------------------------------------------------------
+
+#: The field `fsm_logic._domain_teaching` actually reads off a concept.
+TUTOR_READS = "teaching_pair"
+
+
+def test_the_fsm_reads_the_field_this_test_names():
+    """If someone renames the field in fsm_logic, this file must fail too."""
+    src = inspect.getsource(fsm_logic.MnemosyneFSM._domain_teaching)
+    assert f'get("{TUTOR_READS}")' in src, src[:400]
+
+
+def test_every_domain_attaches_under_the_field_the_tutor_reads():
+    """Run each domain's attach_to_course over material it can mine, and
+    require the result to land where the tutor will look for it."""
+    from services.domains import registry
+
+    chapter_text = (
+        "EXAMPLE 1.1\nFind the derivative of $f(x)=x^2$.\n\n"
+        "Solution\nStep 1. Apply the power rule.\n"
+        "Step 2. The result is $2x$ exactly as expected here.\n\n"
+        "Common mistake: students often write $x^{-2}=-x^2$. This is "
+        "incorrect. In fact $x^{-2}=\\frac{1}{x^2}$ for every nonzero $x$.\n\n"
+        "```python\nprint('hello')\n```\n\n"
+        "```text\nTraceback (most recent call last):\nError: boom\n```\n\n"
+        "```python\nprint('fixed')\n```\n")
+
+    class _Ch:
+        def __init__(self):
+            self.order, self.text, self.title = 1, chapter_text, "c"
+
+    class _Bk:
+        def chapter(self, order):
+            return _Ch() if order == 1 else None
+
+    checked = 0
+    for key in registry.available():
+        module = registry.for_domain(key)
+        attach = getattr(module, "attach_to_course", None)
+        if not attach:
+            continue
+        kinds = [k for k in getattr(module, "RANK", {}) if k != "UNKNOWN"] or \
+                ["PROCEDURE"]
+        course = {"modules": [{"units": [{"lessons": [{
+            "title": "L", "book_chapter": 1,
+            "concepts": [{"title": f"c{i}", "uid": f"u{i}",
+                          "concept_kind": k}
+                         for i, k in enumerate(kinds)],
+        }]}]}]}
+        attach(course, _Bk())
+        concepts = course["modules"][0]["units"][0]["lessons"][0]["concepts"]
+        stray = {f for c in concepts for f in c
+                 if "teach" in f and f != TUTOR_READS}
+        assert not stray, (
+            f"{key} attached mined material under {sorted(stray)}, which "
+            f"`fsm_logic` never reads; it must use {TUTOR_READS!r}")
+        checked += 1
+    assert checked >= 1, "no domain exposed attach_to_course"

@@ -254,7 +254,54 @@ deterministic and do not depend on a noisy rubric to be true.
 
 ---
 
-## 10. What is deliberately not built
+## 10. Building a real course, and two defects only that revealed
+
+`build_from_book` on a calculus textbook, through the production builder:
+
+    3 modules, 6 units, 12 lessons, 36 concepts
+    classified      36/36   (0 unknown)
+    teaching moves  14      (9 WORKED_STEP, 5 ERROR_HUNT)
+    modules named   Foundations of Change / Calculating Rates /
+                    Accumulating Quantities   — synthesised, not chapter titles
+
+Two defects surfaced only here, and neither could have been caught by a
+component test.
+
+**The tutor could not see any of it.** The domain attached its mined material
+as `teaching_move`; `fsm_logic._domain_teaching` reads `teaching_pair`. Fifteen
+moves, invisible. That is the ninth instance of this failure in this
+repository, and it was introduced *in the same session that documented the
+pattern*, in a file sitting beside the document describing it. `teaching_move`
+was also already taken — `services/common/teaching_move.py` is an unrelated
+reverted mechanism.
+
+`tests/domains/test_domain_reaches_the_tutor.py` now runs EVERY domain's
+`attach_to_course` and fails if it writes any `teach*` field other than the one
+the FSM reads.
+
+**Every example was attached to the wrong concept.** `attach_to_course` popped
+moves in order, so within a lesson each concept received whichever example came
+next — systematically off by one:
+
+| concept | material it was given |
+|---|---|
+| Applying the Squeeze Theorem | a factoring limit |
+| Integration by Parts | the antiderivative of 1/x |
+| Definite Integrals via Power Rule | ∫xeˣ — which *is* by parts |
+
+The tutor taught integration by parts from a power-rule example. Matching on
+title vocabulary (minus the words every maths title contains) fixed all 14
+pairings, and matching is a preference rather than a filter — an unmatched
+concept still gets an example from its own lesson.
+
+**Measured after, on the built course through the production path**, 10 turns:
+one question 10/10, asked to solve **0**, empty 0, material used 9/10. The two
+solve-violations present before the matching fix disappeared with it: given
+material about its own concept, the tutor stops restating a mismatched problem.
+
+---
+
+## 11. What is deliberately not built
 
 **No solver and no marker.** Adding one would change the pedagogy entirely and
 is a substantial build. Until it exists the product teaches reasoning *about*
