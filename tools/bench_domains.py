@@ -1018,6 +1018,19 @@ def _kind_for(domain_key, topic):
     Never raises: a benchmark that dies because a domain package is missing
     measures nothing at all.
     """
+    # A/B SWITCH, same instrument.
+    #
+    # The recorded baselines (2.20 adaptation, 2.80 socratic) were taken under
+    # fingerprint c98fa5eb86455db5 / a21992105fe9aad7, before the bench
+    # supplied `concept_kind` at all. This run is 4faf5407715a9e4d. Comparing
+    # across that boundary is precisely the comparison the fingerprint exists
+    # to refuse, so "did the domain layer help?" cannot be answered by holding
+    # a new run against the old table.
+    #
+    # It CAN be answered by running both arms under THIS instrument. Setting
+    # HELGA_BENCH_NO_DOMAIN=1 withholds the kind and nothing else.
+    if os.environ.get("HELGA_BENCH_NO_DOMAIN") == "1":
+        return None
     try:
         from services.domains import registry
         module = registry.for_domain(domain_key)

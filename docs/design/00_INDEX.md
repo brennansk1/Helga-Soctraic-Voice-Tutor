@@ -28,6 +28,8 @@ Read **01** and **02** first — they are the shared foundation every other spec
 | 14 | `14_OFF_SCREEN_AND_PHYSICAL.md` | B16, B19 | Epistemic × enactment-channel taxonomy; build-time auto-classification + human review; kits/video/parent-guided activity; debrief verification; capped FSRS signal; offline materials manifest |
 | 15 | `15_AGE_ADAPTIVE_SHELL.md` | FE5, B25 | Tab count by band (0/2/4); tap targets, type scale, choice counts, no-scroll at K-1; accessibility built into the one mode |
 | 16 | `16_INTERESTS_AND_ELECTIVES.md` | — | Child interest calibration (entry → safety → parent approval → non-cringey use in tutoring); elective choice with parent approval and grade-matched course build |
+| 17 | `17_CS_DOMAIN_TEACHING.md` | — | Computer-science domain: concept kinds, mined code pairs, DevDocs/doc-crawl sourcing; teaching code without the learner typing it or running a sandbox |
+| 18 | `18_MATHEMATICS_DOMAIN_TEACHING.md` | — | Mathematics domain: MathML→LaTeX (flattening it yields FALSE statements), nine concept kinds, mined worked examples and erroneous examples; teaching without letting the learner solve |
 
 ## Research basis (verbatim source reports)
 - `docs/UTAH_K12_CURRICULUM_REFERENCE.md` — Utah Core Standards map (curriculum source-of-truth for spec 04).

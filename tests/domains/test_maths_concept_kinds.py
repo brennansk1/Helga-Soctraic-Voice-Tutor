@@ -122,6 +122,51 @@ def test_no_kind_asks_the_learner_to_solve():
     assert not offenders, offenders
 
 
+def test_the_rule_variant_is_selectable_and_defaults_to_long():
+    """Which variant ships is a MEASUREMENT question, not a preference.
+
+    The long form spends most of its words justifying the rule, and 90 words
+    on top of ~106 of kind guidance roughly doubles the block in a prompt that
+    already carries context, history, aid policy, turn state and
+    misconceptions. The switch exists so the two can be compared without
+    editing code; the default stays the measured-good one until a comparison
+    says otherwise.
+    """
+    import importlib
+    import os
+
+    original = os.environ.get("HELGA_MATHS_RULE_VARIANT")
+    try:
+        for value, expect in (("short", mk.NEVER_SOLVE_SHORT),
+                              ("SHORT", mk.NEVER_SOLVE_SHORT),
+                              ("", mk.NEVER_SOLVE)):
+            os.environ["HELGA_MATHS_RULE_VARIANT"] = value
+            importlib.reload(mk)
+            assert expect in mk.prompt_line("PROCEDURE"), value
+
+        os.environ["HELGA_MATHS_RULE_VARIANT"] = "none"
+        importlib.reload(mk)
+        line = mk.prompt_line("PROCEDURE")
+        assert mk.NEVER_SOLVE not in line and mk.NEVER_SOLVE_SHORT not in line
+        assert "HOW TO TEACH" in line, "the kind guidance must survive"
+        assert mk.prompt_line(mk.UNKNOWN) == "", "no rule and no kind = nothing"
+    finally:
+        if original is None:
+            os.environ.pop("HELGA_MATHS_RULE_VARIANT", None)
+        else:
+            os.environ["HELGA_MATHS_RULE_VARIANT"] = original
+        importlib.reload(mk)
+
+
+def test_the_short_rule_keeps_the_operative_content():
+    """Shorter must not mean weaker: the prohibition and the replacement both
+    have to survive, or the variant is not a fair comparison."""
+    short = mk.NEVER_SOLVE_SHORT
+    assert len(short.split()) < len(mk.NEVER_SOLVE.split()) / 1.5
+    for must in ("never ask", "compute", "solve", "reason"):
+        assert must in short.lower(), must
+
+
 def test_the_standing_rule_rides_every_turn():
     """Per-kind guidance was not enough: 2 of 24 turns asked the learner to
     compute, because neither kind's guidance happened to name that failure."""

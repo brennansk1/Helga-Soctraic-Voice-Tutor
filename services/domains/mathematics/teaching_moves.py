@@ -161,9 +161,41 @@ def from_examples(examples, notes=None):
                        "both are."),
         })
 
+    # PREFER MATERIAL THE TUTOR CAN SAY ALOUD.
+    #
+    # Helga teaches by VOICE, so a move whose notation `math_speech` cannot
+    # render is one the learner HEARS AS RAW MARKUP. Measured: before
+    # `math_speech` learned `\int`, every integration example in a calculus
+    # chapter was unspeakable — and there was nothing to stop one being chosen
+    # over a speakable alternative sitting right next to it.
+    #
+    # A tie-breaker rather than a filter: dropping every example containing one
+    # exotic command would cost more teaching than it saves, and the kind
+    # ranking still dominates — a spoken-imperfect ERROR_HUNT beats a clean
+    # WORKED_STEP, because a real error is the scarcer material.
     rank = {ERROR_HUNT: 0, WORKED_STEP: 1, COMPARE: 2, PREDICT: 3}
-    out.sort(key=lambda m: rank.get(m["kind"], 9))
+    out.sort(key=lambda m: (rank.get(m["kind"], 9), 0 if is_speakable(m) else 1))
     return out
+
+
+def is_speakable(move):
+    """Can a voice tutor read this move's notation aloud? Never raises.
+
+    True when `math_speech` is unavailable: an unavailable checker must not
+    silently demote every piece of material in the course.
+    """
+    try:
+        from services.core.math_speech import speech_for
+    except Exception:
+        return True
+    try:
+        blob = (move.get("first") or "") + " " + (move.get("second") or "")
+        for _latex, _spoken, left in speech_for(blob):
+            if left:
+                return False
+        return True
+    except Exception:
+        return True
 
 
 _TOKEN = re.compile(r"[A-Za-z\\]{3,}")

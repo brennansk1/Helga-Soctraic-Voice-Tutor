@@ -74,6 +74,23 @@ Children are not consenting adults and the bar is higher:
 
 \* mathematics `honest_telling` is n=1 — unmeasured, not regressed.
 
+> **⚠ These figures are NOT comparable with runs after 2026-08-22.**
+> They were taken under instrument fingerprint `c98fa5eb86455db5` /
+> `a21992105fe9aad7`, before `bench_domains` supplied `concept_kind`. The bench
+> was passing six production inputs while the FSM passed the domain's concept
+> kind as well, so every number in this table measures
+> **production-minus-the-domain-layer** — a configuration that does not ship.
+> That is the same defect `turn_state` had before it was fixed.
+>
+> Supplying it moved the fingerprint to `4faf5407715a9e4d`, which is the
+> mechanism working: holding a new run against this table compares two
+> different instruments.
+>
+> To answer "did the domain layer help?", run both arms under the CURRENT
+> instrument — `HELGA_BENCH_NO_DOMAIN=1` withholds the kind and nothing else.
+> Until that pair exists, the mathematics row above is **superseded, not
+> beaten**.
+
 Medicine and language & literature are the 2026-08-20 baselines; they have not
 been re-measured since B.1/C.1/C.1b/B.2, all of which improved every domain they
 were measured on. **Their figures are stale and probably understate the current

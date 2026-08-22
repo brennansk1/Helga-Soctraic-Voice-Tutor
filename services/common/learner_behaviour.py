@@ -141,13 +141,31 @@ def classify(answers, grades=None):
         if _MOVE_ON.search(last) and (not grades or grades[-1] >= 3):
             return AHEAD
 
-        # Long, confident, and mechanism-free, while being wrong. All three
-        # conditions: a long correct answer is not a bluff, and a long
-        # mechanism-rich wrong answer is a misconception, not a bluff.
+        # Long, confident, and WRONG.
+        #
+        # A CONNECTIVE IS NOT A MECHANISM. The original required
+        # `not _MECHANISM.search(last)`, and `_MECHANISM` matches words like
+        # "because", "since" and "which is why". Fluent use of exactly those
+        # words is the defining trait of a bluffer, so the test was defeated by
+        # the thing it exists to catch.
+        #
+        # Measured on the mathematics benchmark, confident_bluffer profile,
+        # three topics: two were blocked by "Since" and "because" — in
+        # "The slope remains identical BECAUSE the mixed partial derivatives
+        # are commutative", a sentence that states no mechanism at all — and
+        # the third by the last grade being exactly 3. Adaptation scored 1.00
+        # of 5 on that profile, the lowest of any, while the mechanism meant to
+        # handle it never once fired.
+        #
+        # The grade already carries the judgement the connective was standing
+        # in for: if the answer were a real mechanism it would not be graded
+        # low. So confidence (no hedging) plus length plus a low RECENT grade
+        # is the evidence, and the connective is dropped.
+        recent_grades = [g for g in grades[-2:] if isinstance(g, (int, float))]
+        wrong_recently = bool(recent_grades) and min(recent_grades) < 3
         if (mean_len >= VERBOSE_WORDS
-                and not _MECHANISM.search(last)
                 and not _HEDGE.search(last)
-                and grades and grades[-1] < 3):
+                and wrong_recently):
             return BLUFFING
 
         if _HEDGE.search(last):

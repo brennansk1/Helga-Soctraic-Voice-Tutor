@@ -134,17 +134,47 @@ def speak(latex):
         s = re.sub(r"\\vec\s*\{([^{}]+)\}", r" vector \1 ", s)
         s = re.sub(r"\\tilde\s*\{([^{}]+)\}", r" \1 tilde ", s)
         s = re.sub(r"\\overline\s*\{([^{}]+)\}", r" \1 bar ", s)
-        s = re.sub(r"\\(sum|prod|int)\s*_\s*\{([^{}]+)\}\s*\^\s*\{([^{}]+)\}",
+        # Limits may be BRACED or BARE. `\int_0^1` is at least as common as
+        # `\int_{0}^{1}` and was not matched here, so it fell through to the
+        # rule below -- which could not match it either (see there). Every
+        # definite integral written the ordinary way was heard as raw markup.
+        # A BARE limit is ONE token, not a greedy run. In LaTeX `^1x` means
+        # `^{1}` followed by `x`, so `\int_0^1x` is "from 0 to 1", then "x" —
+        # matching `\w+` read the upper limit as "1x".
+        s = re.sub(r"\\(sum|prod|int)\s*_\s*(?:\{([^{}]+)\}|(\w))"
+                   r"\s*\^\s*(?:\{([^{}]+)\}|(\w))",
                    lambda m: (f" the {'sum' if m.group(1)=='sum' else 'product' if m.group(1)=='prod' else 'integral'}"
-                              f" from {m.group(2)} to {m.group(3)} of "), s)
+                              f" from {m.group(2) or m.group(3)}"
+                              f" to {m.group(4) or m.group(5)} of "), s)
         # \lim_{x \to 0} is "the limit as x approaches 0" — the subscript is a
         # condition, not an index, so the generic "sub" rule reads it wrongly.
         s = re.sub(r"\\lim\s*_\s*\{([^{}]+?)\s*\\to\s*([^{}]+)\}",
                    r" the limit as \1 approaches \2 ", s)
-        s = re.sub(r"\\(sum|prod|int)\b",
+        # NOT `\b`. An underscore is a WORD character, so `\int_0` has no word
+        # boundary after "int" and this rule silently declined to fire --
+        # leaving `\int` in the spoken text, where the notation check counts it
+        # as unspeakable. The lookahead treats sub/superscripts as boundaries.
+        s = re.sub(r"\\(sum|prod|int)(?![A-Za-z])",
                    lambda m: (" the sum of " if m.group(1) == "sum"
                               else " the product of " if m.group(1) == "prod"
                               else " the integral of "), s)
+        # Multiple and contour integrals. A calculus course reaches these in
+        # its third volume and a voice tutor must not read them as markup.
+        s = re.sub(r"\\iiint(?![A-Za-z])", " the triple integral of ", s)
+        s = re.sub(r"\\iint(?![A-Za-z])", " the double integral of ", s)
+        s = re.sub(r"\\oint(?![A-Za-z])", " the contour integral of ", s)
+        # Logic, which discrete mathematics needs throughout.
+        s = re.sub(r"\\land(?![A-Za-z])", " and ", s)
+        s = re.sub(r"\\lor(?![A-Za-z])", " or ", s)
+        s = re.sub(r"\\neg(?![A-Za-z])", " not ", s)
+        s = re.sub(r"\\vdots(?![A-Za-z])", " and so on ", s)
+        # A bare \sqrt with no argument is malformed, but reading it as
+        # markup helps nobody.
+        s = re.sub(r"\\sqrt(?![A-Za-z{[])", " square root ", s)
+        # Matrix environments: say what it is rather than spelling the
+        # environment name.
+        s = re.sub(r"\\begin\{[bpvBV]?matrix\}", " the matrix ", s)
+        s = re.sub(r"\\end\{[bpvBV]?matrix\}", " end matrix ", s)
         if s == before:
             break
 

@@ -264,26 +264,43 @@ MAX_OBJECT_WORDS = 4
 def classify(title, text="", objectives=None):
     """The kind of mathematical knowledge a concept is, or UNKNOWN.
 
-    Title first — it is the most deliberate signal — then objectives, then a
-    bounded prefix of the body. Never raises.
+    TITLE FIRST, AND SEPARATELY. The title is the most deliberate signal a
+    course author gives, and the body is 600 characters of prose that mentions
+    many things in passing.
+
+    Concatenating them — which this did originally, while its docstring already
+    claimed otherwise — lets an incidental phrase outvote an explicit one:
+    "Proof of the Chain Rule" set in a section whose text says "how the symbol
+    is written" came back NOTATION, because NOTATION is the more specific kind
+    and the body happened to match it. The body is the fallback, not a peer.
+
+    Never raises.
     """
     try:
-        hay = " ".join([
-            str(title or ""),
-            " ".join(str(o) for o in (objectives or [])),
-            str(text or "")[:600],
-        ])
-        if not hay.strip():
-            return UNKNOWN
-        hits = [k for k, rx in _COMPILED if rx.search(hay)]
-        if not hits:
-            title_only = str(title or "").strip()
-            if (title_only and len(title_only.split()) <= MAX_OBJECT_WORDS
-                    and _OBJECT.match(title_only)):
-                return DEFINITION
-            return UNKNOWN
-        # Most specific wins. Ties cannot happen: RANK is injective.
-        return min(hits, key=lambda k: RANK.get(k, 99))
+        def _best(hay):
+            if not (hay or "").strip():
+                return UNKNOWN
+            hits = [k for k, rx in _COMPILED if rx.search(hay)]
+            if not hits:
+                return UNKNOWN
+            # Most specific wins. Ties cannot happen: RANK is injective.
+            return min(hits, key=lambda k: RANK.get(k, 99))
+
+        head = " ".join([str(title or ""),
+                         " ".join(str(o) for o in (objectives or []))])
+        kind = _best(head)
+        if kind != UNKNOWN:
+            return kind
+
+        kind = _best(str(text or "")[:600])
+        if kind != UNKNOWN:
+            return kind
+
+        title_only = str(title or "").strip()
+        if (title_only and len(title_only.split()) <= MAX_OBJECT_WORDS
+                and _OBJECT.match(title_only)):
+            return DEFINITION
+        return UNKNOWN
     except Exception as e:                # pragma: no cover - defensive
         logger.debug(f"[MATH] classify failed for {title!r}: {e}")
         return UNKNOWN
@@ -321,6 +338,37 @@ NEVER_SOLVE = (
 )
 
 
+#: The same rule at a third the length.
+#:
+#: The long form spends most of its words JUSTIFYING the rule ("there is no
+#: marker here, so a wrong answer cannot be caught"). A model does not need to
+#: be persuaded, and 90 words on top of ~106 words of kind guidance roughly
+#: doubles the block — in a prompt that already carries context, history, aid
+#: policy, turn state and misconceptions. This repository has measured prompt
+#: additions costing more elsewhere than they gained.
+#:
+#: Which one ships is decided by measurement, not by preference; see
+#: HELGA_MATHS_RULE_VARIANT.
+NEVER_SOLVE_SHORT = (
+    "ABSOLUTE RULE: never ask the learner to compute, evaluate, simplify or "
+    "solve anything, and never ask what an expression equals. Ask only for "
+    "reasons, structure or predictions — a question whose answer is a number "
+    "is forbidden; one whose answer is a reason is what you want."
+)
+
+#: Environment override so the two can be compared without editing code.
+#: "short" selects the compact rule; anything else keeps the long one.
+import os as _os  # noqa: E402
+
+
+def _standing_rule():
+    if (_os.environ.get("HELGA_MATHS_RULE_VARIANT") or "").lower() == "short":
+        return NEVER_SOLVE_SHORT
+    if (_os.environ.get("HELGA_MATHS_RULE_VARIANT") or "").lower() == "none":
+        return ""
+    return NEVER_SOLVE
+
+
 def prompt_line(kind, has_pair=False):
     """The line that rides in the tutor prompt, or "".
 
@@ -330,13 +378,16 @@ def prompt_line(kind, has_pair=False):
     mined material wins: it is real, and this guidance is a description of what
     real material would look like.
     """
+    rule = _standing_rule()
     text = guidance(kind)
     # The standing rule applies even when the kind is UNKNOWN — an
     # unclassified mathematics concept is still mathematics, and is exactly
     # the case where per-kind guidance cannot help.
     if not text:
-        return NEVER_SOLVE
+        return rule
     if has_pair:
-        return (f"{NEVER_SOLVE}\n\nTEACHING THIS KIND ({kind}), as background "
-                f"only — the turn's instruction is the material below: {text}")
-    return f"{NEVER_SOLVE}\n\nHOW TO TEACH THIS CONCEPT ({kind}): {text}"
+        body = (f"TEACHING THIS KIND ({kind}), as background only — the "
+                f"turn's instruction is the material below: {text}")
+    else:
+        body = f"HOW TO TEACH THIS CONCEPT ({kind}): {text}"
+    return f"{rule}\n\n{body}" if rule else body

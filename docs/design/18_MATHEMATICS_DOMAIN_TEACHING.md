@@ -186,7 +186,75 @@ what a symbol *denotes* — which is the guidance working, not failing.
 
 ---
 
-## 8. What is deliberately not built
+## 8. The notation has to be SPOKEN, not just rendered
+
+`notation_rigour` — the mathematics benchmark's own dimension — scores whether
+notation is correct **and readable aloud**, because Helga teaches by voice. A
+turn containing LaTeX that `math_speech` cannot render is a turn the learner
+hears as raw markup.
+
+That is in direct tension with §2: the fix for false mathematics was to emit
+LaTeX. So the LaTeX this domain produces was checked against the speaker, and
+**10 of 66 commands it can emit were unspeakable** — including `\int`.
+
+The cause was a one-character bug in `services/core/math_speech.py`:
+
+```python
+re.sub(r"\\(sum|prod|int)\b", ...)     # \b never fires before "_"
+```
+
+An underscore is a **word character**, so `\int_0^1` has no word boundary after
+`int` and the rule silently declined. The braced rule above it required
+`_{...}^{...}`, which `\int_0^1` also is not. Neither matched, so *the ordinary
+way of writing a definite integral* was spoken as "\int" — the most common
+symbol in a calculus course, heard as markup, in every turn that used one.
+
+Fixed, along with `\iint` / `\iiint` / `\oint` (Calculus III), `\land` /
+`\lor` / `\neg` (discrete mathematics), matrix environments, and a greedy
+bare-limit match that read `\int_0^1x` as "from 0 to **1x**".
+
+The end-to-end path — MathML → LaTeX → speech — is now pinned by a test, since
+each stage passing alone would not catch a LaTeX dialect the converter emits
+and the speaker cannot read.
+
+---
+
+## 9. The benchmark, and what it can and cannot see
+
+Two runs under fingerprint `4faf5407715a9e4d` (n=15 dialogues each), differing
+only by the bluff-detection fix:
+
+| dimension | A | B | floor |
+|---|---|---|---|
+| domain score | 3.324 | 3.369 | 0.162 composite |
+| adaptation | 2.00 | 2.13 | **0.13** |
+| socratic | 2.60 | 2.13 | 0.00 (underestimate) |
+| misconception_handling | 5.00 | 4.33 | **0.80** |
+| notation_speakable | 5.00 | 5.00 | 0.40 |
+
+**The two runs are indistinguishable.** The adaptation gain is exactly the
+measured noise floor, and the file that records those floors warns to "prefer a
+dimension that moved several times its floor over one that just cleared it".
+The misconception drop is *below* its floor, so it is not a regression either.
+
+The clearest evidence is a profile I did not touch: `silent_struggler`
+adaptation moved 1.33 → 3.00 between the two runs with no change addressed to
+it. Run-to-run variance dominates everything at this scale.
+
+**What that means for the release gate.** `adaptation` must reach 3.5 from
+2.0 — more than ten times its noise floor. That will not come from detector
+tweaks, and it cannot be *measured* from single runs: the floors themselves were
+withdrawn once when a third run showed `accuracy` spread nearly seven times the
+two-run estimate.
+
+**What is verified regardless of the judge.** The bluff detector fires 3/3 on
+the real bluffer transcripts where it fired 0/3 before; `\int` is speakable
+where it was raw markup; MathML no longer yields false statements. These are
+deterministic and do not depend on a noisy rubric to be true.
+
+---
+
+## 10. What is deliberately not built
 
 **No solver and no marker.** Adding one would change the pedagogy entirely and
 is a substantial build. Until it exists the product teaches reasoning *about*

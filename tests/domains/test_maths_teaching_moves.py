@@ -143,3 +143,35 @@ def test_predict_never_asks_for_a_number():
 
 def test_prompt_block_of_none_is_empty():
     assert tm.prompt_block(None) == ""
+
+
+# ------------------------------------------------------- speakability
+
+UNSPEAKABLE = {
+    "problem": r"Evaluate $\nexists\owns\wp{x}$ for the given case.",
+    "solution": r"The value follows from $\nexists\owns\wp{x} = 1$ directly here.",
+}
+
+
+def test_speakable_material_is_preferred_over_unspeakable():
+    """Helga teaches by VOICE: a move whose notation math_speech cannot render
+    is one the learner hears as raw markup. Before math_speech learned \\int,
+    every integration example in a calculus chapter was unspeakable, and
+    nothing stopped one being chosen over a clean alternative beside it."""
+    moves = tm.from_examples([UNSPEAKABLE, WORKED])
+    same_kind = [m for m in moves if m["kind"] == tm.WORKED_STEP]
+    assert len(same_kind) == 2
+    assert tm.is_speakable(same_kind[0]), "the speakable one must come first"
+
+
+def test_speakability_is_a_tie_break_not_a_filter():
+    """Dropping every example with one exotic command costs more teaching than
+    it saves, and the KIND ranking must still dominate."""
+    moves = tm.from_examples([UNSPEAKABLE], notes=[FLAGGED_ERROR])
+    assert moves[0]["kind"] == tm.ERROR_HUNT, "kind still outranks speech"
+    assert any(m["kind"] == tm.WORKED_STEP for m in moves), "not filtered out"
+
+
+def test_is_speakable_never_raises():
+    for bad in (None, {}, {"first": None}, {"first": "\\"}):
+        tm.is_speakable(bad or {})

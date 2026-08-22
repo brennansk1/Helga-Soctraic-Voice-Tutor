@@ -31,6 +31,12 @@ from services.domains.mathematics.teaching_moves import (  # noqa: F401
 from services.domains.mathematics.mathml import (  # noqa: F401
     to_latex, replace_math,
 )
+from services.domains.mathematics.worked_examples import (  # noqa: F401
+    examples_in_text, notes_in_text, attach_to_course,
+)
+from services.domains.mathematics.concept_classifier import (  # noqa: F401
+    classify_course as classify_concepts,
+)
 from services.domains.mathematics.openstax import (  # noqa: F401
     book_for, syllabus, parse_book_html, NOT_COVERED,
 )
