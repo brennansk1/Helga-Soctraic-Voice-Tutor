@@ -119,6 +119,24 @@ class LLMClient:
             logger.warning(f"warm_up failed: {e}")
             return False
 
+    def _model_is_loading(self):
+        """True when our model is NOT resident, i.e. a load is in progress.
+
+        Deliberately conservative. If `/api/ps` cannot be reached or gives an
+        answer we do not understand, return False and let the normal breaker
+        path run: treating a genuinely dead host as "just loading" would retry
+        against nothing for fifteen minutes, which is far worse than the
+        failure this exists to prevent.
+        """
+        try:
+            resp = requests.get(f"{self.base_url}/api/ps", timeout=5)
+            if resp.status_code != 200:
+                return False
+            names = [e.get("name", "") for e in resp.json().get("models", [])]
+            return not any(self.model.split(":")[0] in n for n in names)
+        except Exception:
+            return False
+
     def chat(self, system_prompt, user_message, max_tokens=512,
              temperature=0.6, json_mode=False, json_schema=None, images=None,
              timeout=60, retries=3, ctx=None, think=False, strict=None):
@@ -285,6 +303,30 @@ class LLMClient:
                                f"retrying in {wait}s")
                 time.sleep(wait)
             except requests.exceptions.Timeout:
+                # A TIMEOUT WHILE THE MODEL IS LOADING IS NOT A SICK HOST.
+                #
+                # `warm_up` is backgrounded from SET_CONTEXT and pays a load of
+                # ~2 minutes warm, and ~9 minutes after the Mac has slept. A
+                # learner who asks their first question before it finishes
+                # lands here: Ollama queues the request behind the load, the
+                # 60s timeout fires, and three of those open the breaker. The
+                # learner's first question of the session then returns nothing
+                # — the worst possible moment for it.
+                #
+                # The host is fine and the model is coming. Ask /api/ps who is
+                # resident: if our model is NOT, this timeout is a load in
+                # progress, so it must not count toward the breaker, and the
+                # retry has to be given a timeout that expects a load.
+                loading = self._model_is_loading()
+                if loading:
+                    timeout = min(max(timeout * 4, 240), 900)
+                    logger.info(
+                        f"Ollama timeout while the model is still loading — "
+                        f"not counted against the breaker; retrying with "
+                        f"{timeout}s (attempt {attempt + 1}/{retries})")
+                    time.sleep(2)
+                    continue
+
                 failure = record_failure_reason(
                     LLMTimeout(f"no response in {timeout}s"))
                 get_breaker().record_failure(failure)
