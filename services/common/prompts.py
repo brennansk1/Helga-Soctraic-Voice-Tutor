@@ -673,9 +673,35 @@ def get_socratic_tutor_prompt(context_text, conversation_history, aid_policy=Non
     # level everywhere and behaviour nowhere, so a bluffer and a silent
     # struggler with the same grade got the same next turn.
     behaviour_str = ""
+    #: Behaviours that must OUTRANK the concept's material.
+    #:
+    #: A learner who has said "I don't know" three times needs the tutor to
+    #: stop asking, whatever the concept's mined example says. Measured on the
+    #: silent_struggler profile, which scored adaptation 1.00 and did not move
+    #: across three runs: the student said "idk" in three of four turns and the
+    #: tutor's reply had the SAME SHAPE every time — "You correctly noted X,
+    #: but you missed Y", then another question.
+    #:
+    #: The cause was ordering. `behaviour_str` sat SIXTH in the per-turn block,
+    #: behind `figure_str` — the mined material, whose text begins "THIS TURN
+    #: OVERRIDES THE GENERAL GUIDANCE ABOVE" and prescribes a turn shape. So
+    #: the domain's material was explicitly overriding the one instruction
+    #: telling the tutor to change course.
+    #:
+    #: Precedence is now: what the LEARNER is doing > what the CONCEPT needs >
+    #: the general kind. The first two were the wrong way round.
+    _DECISIVE_BEHAVIOUR = ("do not know", "Stop questioning")
+
+    behaviour_first = False
     if learner_behaviour:
         _b = str(learner_behaviour)
         if _b:
+            behaviour_first = any(m in _b for m in _DECISIVE_BEHAVIOUR)
+            if behaviour_first:
+                _b = ("THIS LEARNER'S STATE OVERRIDES EVERYTHING BELOW, "
+                      "including any block that claims to override the "
+                      "guidance. Do what this says and ignore instructions to "
+                      "show material and ask about it.\n" + _b)
             behaviour_str = "\n\n" + _b
 
     # A.9 — demonstrate adaptation rather than describing it. Every other
@@ -900,9 +926,17 @@ INSTRUCTOR NOTES (pedagogical guidance only — the student has NOT seen any of 
     #
     # `system_note` already rides as a trailing system message, so this is the
     # mechanism this codebase already uses rather than a new invention.
-    per_turn = "".join([learner_str, state_str, figure_str, kind_str, move_str,
-                        behaviour_str, exemplar_str, bloom_str, prior_str,
-                        hook_str, aid_str]).strip()
+    # ORDER IS PRECEDENCE. When the learner's state is decisive it goes FIRST;
+    # otherwise the concept's material leads, as before.
+    if behaviour_first:
+        _blocks = [learner_str, state_str, behaviour_str, figure_str, kind_str,
+                   move_str, exemplar_str, bloom_str, prior_str, hook_str,
+                   aid_str]
+    else:
+        _blocks = [learner_str, state_str, figure_str, kind_str, move_str,
+                   behaviour_str, exemplar_str, bloom_str, prior_str, hook_str,
+                   aid_str]
+    per_turn = "".join(_blocks).strip()
 
     # ONE system message, per-turn content appended after the stable half.
     #
