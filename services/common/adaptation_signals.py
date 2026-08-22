@@ -44,6 +44,31 @@ WHAT THEY FOUND
                        transcript opened two turns running with "You correctly
                        identified that..." / "You correctly noted that...".
 
+WHAT THE JUDGE ACTUALLY SEES, AND WHY IT IS NOT HERE
+----------------------------------------------------
+The judge's own `worst_moment` rationales separate cleanly. Words appearing in
+the 34 dialogues scoring 1 and NEVER in the 11 scoring 4+:
+
+    repeatedly 8   instead 8   despite 7   same 7   loop 6
+    ignores/ignoring 9   adapt 5   failing 4
+
+    "The tutor repeated the same question about walking West after the student
+     already answered 'idk'"
+    "The tutor ignores the student's repeated 'idk' and 'not sure' responses,
+     continuing to lecture and ask complex conceptual questions"
+
+So the failure is REPEATING and IGNORING. That sounds mechanical, and nine
+surface features were tried against it: turn length, length variance, questions
+per turn, echoing the learner's content words, repeated openings, handling a
+stuck learner, quoting the learner, and lexical repetition of whole questions.
+
+NONE discriminates. Lexical question-repetition is 0.076 on dialogues scoring 1
+and 0.056 on those scoring 4+ — 21% versus 18% have any repeat at all.
+
+The repetition the judge names is SEMANTIC: asking the same thing in different
+words. Detecting that needs a model, which is what the judge already is. This
+module cannot substitute for it and does not try to.
+
 Use them to READ a transcript, not to score one. A tutor can pass both while
 teaching badly, and — as the four-run comparison above shows — can fail them
 while the judge is satisfied.
