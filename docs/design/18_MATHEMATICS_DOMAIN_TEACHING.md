@@ -221,38 +221,55 @@ and the speaker cannot read.
 
 ## 9. The benchmark, and what it can and cannot see
 
-Two runs under fingerprint `4faf5407715a9e4d` (n=15 dialogues each), differing
-only by the bluff-detection fix:
+Three runs under fingerprint `4faf5407715a9e4d`, n=15 dialogues each.
+A = domain layer wired; B = + bluff detection; C = + behaviour-chosen material.
 
-| dimension | A | B | floor |
-|---|---|---|---|
-| domain score | 3.324 | 3.369 | 0.162 composite |
-| adaptation | 2.00 | 2.13 | **0.13** |
-| socratic | 2.60 | 2.13 | 0.00 (underestimate) |
-| misconception_handling | 5.00 | 4.33 | **0.80** |
-| notation_speakable | 5.00 | 5.00 | 0.40 |
+| dimension | A | B | C | Δ(C−A) | floor | |
+|---|---|---|---|---|---|---|
+| **domain score** | 3.324 | 3.369 | **3.700** | +0.376 | 0.162 | **2.3× floor** |
+| **adaptation** | 2.00 | 2.13 | **2.40** | +0.40 | 0.13 | **3× floor** |
+| **notation_rigour** | 2.80 | 3.33 | **4.07** | +1.27 | 1.00 | beats floor |
+| accuracy | 4.27 | 4.47 | 5.00 | +0.73 | 0.87 | under floor |
+| progression | 2.67 | 2.47 | 2.87 | +0.20 | 0.47 | noise |
+| socratic | 2.60 | 2.13 | 2.20 | −0.40 | 0.00 | floor unreliable |
+| notation_speakable | 5.00 | 5.00 | 5.00 | 0 | 0.40 | at ceiling |
 
-**The two runs are indistinguishable.** The adaptation gain is exactly the
-measured noise floor, and the file that records those floors warns to "prefer a
-dimension that moved several times its floor over one that just cleared it".
-The misconception drop is *below* its floor, so it is not a regression either.
+`adaptation` rose monotonically across all three runs, and the profiles the
+work targeted are the ones that moved:
 
-The clearest evidence is a profile I did not touch: `silent_struggler`
-adaptation moved 1.33 → 3.00 between the two runs with no change addressed to
-it. Run-to-run variance dominates everything at this scale.
+| profile | A → C |
+|---|---|
+| confident_bluffer | 1.00 → 1.67 |
+| fast_learner | 2.00 → 3.00 |
+| confused_beginner | 2.67 → 3.33 |
+| silent_struggler | 1.33 → 1.33 |
 
-**What that means for the release gate.** `adaptation` must reach 3.5 from
-2.0 — more than ten times its noise floor. That will not come from detector
-tweaks, and it cannot be *measured* from single runs: the floors themselves were
-withdrawn once when a third run showed `accuracy` spread nearly seven times the
-two-run estimate.
+**THE GATE IS NOT MET.** `adaptation` must reach **3.5**; it is at 2.40. That
+is another 1.1 points, roughly eight more noise-floors, and nothing here
+suggests the remaining distance comes from the same kind of change.
 
-**What is verified regardless of the judge.** The bluff detector fires 3/3 on
-the real bluffer transcripts where it fired 0/3 before; `\int` is speakable
-where it was raw markup; MathML no longer yields false statements. These are
-deterministic and do not depend on a noisy rubric to be true.
+### How to read these numbers, and how NOT to
 
----
+Two mistakes were made against this instrument during this work and are worth
+recording, because both are easy to repeat.
+
+**Comparing across a fingerprint change.** The recorded 2.20/2.80 baselines
+were taken under `c98fa5eb86455db5` / `a21992105fe9aad7`, before the bench
+supplied `concept_kind` at all — they measured production MINUS the domain
+layer, a configuration that never shipped. Holding a new run against that
+table is exactly the comparison the fingerprint exists to refuse. Run A
+supersedes that baseline; it does not beat it.
+
+**Reading early samples as a trend.** The first three dialogues of run A
+scored socratic 4/1/5 and looked encouraging. The full n=15 came in at 2.60.
+Three dialogues are not a sample.
+
+**And the standing caution:** these floors were derived from three runs and
+are explicitly LOWER BOUNDS — the previous estimate put `accuracy` at 0.13
+until a third run showed a spread of 0.87, nearly seven times that. A single
+run against a single run is weak whatever the deltas say. Prefer a dimension
+that moved several times its floor, and prefer a deterministic check to any
+of this where one exists.
 
 ## 10. Building a real course, and two defects only that revealed
 
