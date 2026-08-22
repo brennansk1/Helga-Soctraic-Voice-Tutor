@@ -96,6 +96,17 @@ Children are not consenting adults and the bar is higher:
 > and every one grew — `adaptation` 0.13 → 0.40, composite 0.162 → 0.376 — which
 > retracted three "floor-beating" gains claimed after a single high draw.
 > `adaptation` reads 2.00 / 2.13 / 2.40 / 2.00 against a 3.5 gate.
+>
+> **The 3.5 adaptation gate should be re-examined.** Across 60 dialogues, 42%
+> score 1 and 15% score 4+; a 3.5 mean needs roughly half at 4+. No domain has
+> ever exceeded 2.30 in this repository's recorded history. An ablation run with
+> ALL domain guidance removed moved it by −0.07, so it is not a guidance
+> problem — while the SAME ablation dropped `misconception_handling` by 2.25,
+> three times its floor, which is the only floor-beating result obtained and
+> shows the instrument can detect a real effect when one exists.
+>
+> Reaching 3.5 needs a different model, dialogues longer than four turns, or a
+> different number. It is not reachable at the prompt layer.
 
 Medicine and language & literature are the 2026-08-20 baselines; they have not
 been re-measured since B.1/C.1/C.1b/B.2, all of which improved every domain they

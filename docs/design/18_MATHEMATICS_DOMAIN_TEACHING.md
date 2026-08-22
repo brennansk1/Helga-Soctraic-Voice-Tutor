@@ -262,6 +262,55 @@ lesson is not "use one more run". It is that **a single high draw is
 indistinguishable from success**, and that a delta measured against a floor
 derived from a handful of runs is worth very little.
 
+### The one floor-beating result: the domain layer DOES work
+
+A fifth run with `HELGA_MATHS_RULE_VARIANT=none` — every standing instruction
+this sprint added, removed, same instrument:
+
+| dimension | A–D mean | no guidance | diff | floor |
+|---|---|---|---|---|
+| **misconception_handling** | 4.65 | **2.40** | **−2.25** | 0.75 |
+| adaptation | 2.13 | 2.07 | −0.07 | 0.40 |
+| socratic | 2.27 | 2.07 | −0.20 | 0.47 |
+
+Two things follow, and they point in opposite directions.
+
+**The domain guidance is doing real work.** Removing it drops
+`misconception_handling` by 2.25 — three times its floor, and the largest
+effect measured anywhere in this sprint. This is the only floor-beating result
+obtained, and it is an ablation rather than an improvement claim, which is the
+more trustworthy direction: it is much harder to get a 3× floor drop by luck
+than a 1× rise.
+
+**And it has nothing to do with the gate.** `adaptation` reads 2.07 without any
+of it and 2.13 with all of it. The hypothesis that this sprint's prescriptive
+guidance was making the tutor *more* scripted — raised twice in this document —
+is disproved.
+
+### Why 3.5 is not reachable by prompt-level work
+
+| evidence | |
+|---|---|
+| 42% of all dialogues score **1** | n=60; the mode is the bottom of the scale, not a near miss |
+| a 3.5 mean needs ~half of dialogues at **4+** | currently **15%** |
+| no domain has ever exceeded **2.30** | across 7 domains and the whole recorded history |
+| the strongest behavioural difference found is **+0.42** | at the 0.40 floor |
+| removing ALL guidance moves it **−0.07** | it is not a guidance problem |
+
+The strongest difference between a 5-scoring and a 1-scoring dialogue is that
+the tutor **quotes the learner's own words**: *"You said 'idk, maybe,' which
+suggests you're unsure if the arrow's line counts as a direction change."* Both
+5s do it. But quoted dialogues average 2.27 against 1.85 — one noise floor —
+and 14 quoted dialogues still scored 1. (This sprint had earlier FORBIDDEN that
+move, on the intuition that being told you are being handled is worse than not
+being handled. The data disagrees; the effect is too small to have mattered.)
+
+**The conclusion is about the release criteria, not the domain.** Reaching 3.5
+would require turning the 25 dialogues that score 1 into 4s, and nothing at the
+prompt layer moves that. It needs a different model, longer dialogues than four
+turns, or a re-examination of whether 3.5 is the right number for this system —
+a question worth asking, given no subject has ever come within 1.2 of it.
+
 ### What is verified regardless of the judge
 
 These are computed, not scored, and none depends on a rubric:
