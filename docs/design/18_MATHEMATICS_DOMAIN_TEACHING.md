@@ -219,57 +219,64 @@ and the speaker cannot read.
 
 ---
 
-## 9. The benchmark, and what it can and cannot see
+## 9. The benchmark: four runs, no measurable improvement
 
-Three runs under fingerprint `4faf5407715a9e4d`, n=15 dialogues each.
-A = domain layer wired; B = + bluff detection; C = + behaviour-chosen material.
+Four runs under fingerprint `4faf5407715a9e4d`, n=15 dialogues each.
+A = domain layer wired; B = + bluff detection; C = + behaviour-chosen material;
+D = + learner-state precedence.
 
-| dimension | A | B | C | Δ(C−A) | floor | |
-|---|---|---|---|---|---|---|
-| **domain score** | 3.324 | 3.369 | **3.700** | +0.376 | 0.162 | **2.3× floor** |
-| **adaptation** | 2.00 | 2.13 | **2.40** | +0.40 | 0.13 | **3× floor** |
-| **notation_rigour** | 2.80 | 3.33 | **4.07** | +1.27 | 1.00 | beats floor |
-| accuracy | 4.27 | 4.47 | 5.00 | +0.73 | 0.87 | under floor |
-| progression | 2.67 | 2.47 | 2.87 | +0.20 | 0.47 | noise |
-| socratic | 2.60 | 2.13 | 2.20 | −0.40 | 0.00 | floor unreliable |
-| notation_speakable | 5.00 | 5.00 | 5.00 | 0 | 0.40 | at ceiling |
+| dimension | A | B | C | D | floor (4-run) |
+|---|---|---|---|---|---|
+| domain score | 3.324 | 3.369 | **3.700** | 3.329 | **0.376** |
+| adaptation | 2.00 | 2.13 | 2.40 | 2.00 | **0.40** |
+| socratic | 2.60 | 2.13 | 2.20 | 2.13 | 0.47 |
+| accuracy | 4.27 | 4.47 | 5.00 | 4.80 | 0.73 |
+| notation_rigour | 2.80 | 3.33 | 4.07 | 3.13 | 1.27 |
+| notation_speakable | 5.00 | 5.00 | 5.00 | 5.00 | 0.00 |
 
-`adaptation` rose monotonically across all three runs, and the profiles the
-work targeted are the ones that moved:
+**Nothing here clears its noise floor.** No dimension moved further than the
+instrument's own run-to-run spread across four identical configurations.
 
-| profile | A → C |
-|---|---|
-| confident_bluffer | 1.00 → 1.67 |
-| fast_learner | 2.00 → 3.00 |
-| confused_beginner | 2.67 → 3.33 |
-| silent_struggler | 1.33 → 1.33 |
+### A retraction, and the mistake worth learning from
 
-**THE GATE IS NOT MET.** `adaptation` must reach **3.5**; it is at 2.40. That
-is another 1.1 points, roughly eight more noise-floors, and nothing here
-suggests the remaining distance comes from the same kind of change.
+After run C this document claimed real, floor-beating gains: adaptation +0.40
+against a floor of 0.13 ("3× the floor"), the composite +0.376 against 0.162
+("2.3×"), `notation_rigour` +1.27 against 1.00. It also called adaptation
+"monotonic across all three runs" (2.00 → 2.13 → 2.40).
 
-### How to read these numbers, and how NOT to
+Run D read 2.00, and re-deriving the floors from four runs grew every one of
+them:
 
-Two mistakes were made against this instrument during this work and are worth
-recording, because both are easy to repeat.
+    adaptation      0.13 -> 0.40    3x
+    socratic        0.00 -> 0.47
+    visual_policy   0.27 -> 0.53    2x
+    composite      0.162 -> 0.376   2.3x
 
-**Comparing across a fingerprint change.** The recorded 2.20/2.80 baselines
-were taken under `c98fa5eb86455db5` / `a21992105fe9aad7`, before the bench
-supplied `concept_kind` at all — they measured production MINUS the domain
-layer, a configuration that never shipped. Holding a new run against that
-table is exactly the comparison the fingerprint exists to refuse. Run A
-supersedes that baseline; it does not beat it.
+Each claimed gain landed **exactly at** its re-derived floor. Run C was a high
+draw — the composite over four runs reads 3.324 / 3.369 / **3.700** / 3.329 —
+and three ascending points were three noise samples.
 
-**Reading early samples as a trend.** The first three dialogues of run A
-scored socratic 4/1/5 and looked encouraging. The full n=15 came in at 2.60.
-Three dialogues are not a sample.
+This is the second time the floors have been withdrawn in this file's history:
+`accuracy` was estimated at 0.13 from two runs until a third showed 0.87. The
+lesson is not "use one more run". It is that **a single high draw is
+indistinguishable from success**, and that a delta measured against a floor
+derived from a handful of runs is worth very little.
 
-**And the standing caution:** these floors were derived from three runs and
-are explicitly LOWER BOUNDS — the previous estimate put `accuracy` at 0.13
-until a third run showed a spread of 0.87, nearly seven times that. A single
-run against a single run is weak whatever the deltas say. Prefer a dimension
-that moved several times its floor, and prefer a deterministic check to any
-of this where one exists.
+### What is verified regardless of the judge
+
+These are computed, not scored, and none depends on a rubric:
+
+* the bluff detector fires **3/3** on the real bluffer transcripts (was 0/3)
+* **5/5** concepts hand a bluffer and a give-up learner different material
+* **4/5** stuck learners get an explanation instead of another question (was 0/5)
+* **14/14** worked examples land on the concept they belong to (all were off by one)
+* `\int` is speakable; MathML no longer yields `3 2 = 9`
+* `notation_speakable` is 5.00 with range 5–5, and has a floor of **0.00**
+  because it is the one number here that is measured rather than judged
+
+**The release gate is not met**, and there is no evidence any change in this
+sprint moved it. `adaptation` must reach 3.5; four runs put it between 2.00
+and 2.40, which is one draw's worth of spread around a single value.
 
 ## 10. Building a real course, and two defects only that revealed
 

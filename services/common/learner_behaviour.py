@@ -179,6 +179,36 @@ def classify(answers, grades=None):
         return None
 
 
+#: NOT ADDED: an instruction to SIGNAL the shift in the turn's opening.
+#:
+#: The idea was sound — a judge reading a transcript cannot score an
+#: adjustment that leaves no trace, and the tutor was switching tack silently.
+#: Two attempts, both measured, both worse than nothing:
+#:
+#:   with a quoted example ("let me try this a different way"), 5 of 5 turns
+#:   opened with that exact sentence. The fix for a scripted tutor produced a
+#:   tutor reading from a SHORTER script, and would have tripped
+#:   `adaptation_signals.repeated_openings` on every consecutive pair. An
+#:   example in a prompt is a template, whatever the surrounding words ask.
+#:
+#:   without the example, and with an explicit instruction never to comment on
+#:   the learner, 3 of 5 turns opened "Since you're stuck..." — which is
+#:   exactly that comment, and 2 of 4 consecutive pairs still counted as
+#:   repeated.
+#:
+#: Abandoned because the benefit is UNMEASURABLE here — the domain benchmark's
+#: run-to-run spread on `adaptation` is 0.40 and a change this size cannot be
+#: resolved at any practical number of runs — while each iteration introduced a
+#: new, visible failure. Shipping a plausible-sounding prompt addition that
+#: cannot be validated is how a prompt accumulates instructions nobody can
+#: attribute an effect to.
+#:
+#: The behaviour instructions above are unchanged, and the ORDERING fix that
+#: makes them actually reach the tutor (learner state before concept material,
+#: services/common/prompts.py) is kept — that one was measured: 0 of 5 stuck
+#: learners got an explanation before it, 4 of 5 after.
+
+
 def prompt_line(behaviour):
     """The line appended to the tutor prompt, or "" for no clear behaviour."""
     if behaviour not in _INSTRUCTION:

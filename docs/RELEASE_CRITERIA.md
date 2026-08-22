@@ -90,6 +90,12 @@ Children are not consenting adults and the bar is higher:
 > instrument — `HELGA_BENCH_NO_DOMAIN=1` withholds the kind and nothing else.
 > Until that pair exists, the mathematics row above is **superseded, not
 > beaten**.
+>
+> **Update 2026-08-22, four runs in:** no dimension has moved further than the
+> instrument's own run-to-run spread. The floors were re-derived from four runs
+> and every one grew — `adaptation` 0.13 → 0.40, composite 0.162 → 0.376 — which
+> retracted three "floor-beating" gains claimed after a single high draw.
+> `adaptation` reads 2.00 / 2.13 / 2.40 / 2.00 against a 3.5 gate.
 
 Medicine and language & literature are the 2026-08-20 baselines; they have not
 been re-measured since B.1/C.1/C.1b/B.2, all of which improved every domain they

@@ -820,18 +820,41 @@ def domain_score(result):
 #: delta close to a floor, and prefer a dimension that moved several times its
 #: floor over one that just cleared it.
 DIMENSION_FLOORS = {
-    "socratic": 0.00,
-    "adaptation": 0.13,
-    "visual_policy": 0.27,
+    "notation_speakable": 0.00,          # deterministic, not judged
+    "adaptation": 0.40,
     "honest_telling": 0.40,
-    "notation_speakable": 0.40,
-    "progression": 0.47,
-    "misconception_handling": 0.80,
-    "accuracy": 0.87,
-    "notation_rigour": 1.00,             # cannot support a 1-point claim
-    "visual_integration": 2.13,          # nor can this; needs many more samples
+    "progression": 0.40,
+    "socratic": 0.47,
+    "visual_policy": 0.53,
+    "accuracy": 0.73,
+    "misconception_handling": 0.75,
+    "notation_rigour": 1.27,             # cannot support a 1-point claim
+    "visual_integration": 1.33,          # nor can this
 }
 
+#: RE-DERIVED FROM FOUR RUNS, 2026-08-22, AND EVERY EARLIER FLOOR GREW.
+#:
+#:     adaptation        0.13 -> 0.40    3x
+#:     socratic          0.00 -> 0.47
+#:     visual_policy     0.27 -> 0.53    2x
+#:     composite        0.162 -> 0.376   2.3x
+#:
+#: The three-run estimates were used to claim that a domain-layer change had
+#: moved `adaptation` by +0.40 ("3x the floor"), the composite by +0.376
+#: ("2.3x"), and `notation_rigour` by +1.27. A fourth run put each of those
+#: deltas EXACTLY AT the re-derived floor, and the run they were measured
+#: against turned out to be a high draw: the composite over four runs reads
+#: 3.324 / 3.369 / 3.700 / 3.329.
+#:
+#: The same thing happened to `accuracy` at two runs. It has now happened
+#: twice. The lesson is not "add one more run" — it is that a delta measured
+#: against a floor derived from n runs is worth very little until n is much
+#: larger than it feels like it needs to be, and that a single high draw looks
+#: exactly like success.
+#:
+#: Where a deterministic check exists, prefer it outright. `notation_speakable`
+#: has a floor of 0.00 because it is computed, not judged, and it is the only
+#: number here that can support a claim on its own.
 #: Composite floor from the same three runs. Was 0.162 on two runs.
 COMPOSITE_FLOOR = 0.533
 
