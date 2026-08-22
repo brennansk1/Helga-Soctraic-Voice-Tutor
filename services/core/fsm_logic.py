@@ -1564,6 +1564,48 @@ class MnemosyneFSM:
             "llm_fallback": bool(concept.get("llm_fallback")),
         }
 
+    def _figure_facts_note(self):
+        """The tutor's own stated figure values, or "".
+
+        WHY. Measured 2026-08-21 on mathematics, `misconception_holder`, partial
+        derivatives: the tutor drew a surface labelling Peak (0,0) z=10 and
+        Point A (2,0) z=6, then argued in prose that moving toward A increased
+        z. The learner is asked to trust a figure the tutor then contradicts.
+
+        `services/common/figure_facts.py` was written for exactly that and,
+        like the model warm-up before it, only ever ran inside the benchmark:
+        it recovers aids by parsing JSON out of transcript text, and the
+        product keeps specs in `AidStore` with only a slim descriptor in the
+        transcript. So the benchmark was protected and learners were not.
+
+        Reads the specs actually shown for this concept. Never raises.
+        """
+        try:
+            ids = getattr(self, "_aid_ids_this_concept", None)
+            if not ids:
+                return ""
+            store = getattr(self, "aid_store", None)
+            # `_aid_ids_this_concept` holds BOTH aid ids (generated aids, via
+            # _note_aids_shown) and SLOT names (the reuse path adds
+            # `decision.slot`). A slot is not a store key, so a reused
+            # build-time diagram — the checked one, the one most worth holding
+            # the tutor to — would be missed by an id lookup alone.
+            prebuilt = getattr(self, "_concept_aids", None) or {}
+            specs = []
+            for key in ids:
+                spec = store.get(key) if store is not None else None
+                if spec is None:
+                    spec = prebuilt.get(key)
+                if spec:
+                    specs.append(spec)
+            if not specs:
+                return ""            # evicted: normal, not an error
+            from services.common.figure_facts import facts_from_aids
+            return facts_from_aids(specs) or ""
+        except Exception as e:
+            logging.debug(f"figure facts unavailable: {e}")
+            return ""
+
     def _domain_teaching(self):
         """(concept_kind, pair_block) for the current concept, or (None, None).
 
@@ -2786,6 +2828,15 @@ class MnemosyneFSM:
             logging.info(f"[DOMAIN] kind={_domain_kind} "
                          f"pair={'yes' if _domain_pair else 'no'}")
 
+        # Both ride the `figure_facts` slot, and both are constraints on the
+        # turn, so they COMPOSE rather than one replacing the other: the pair
+        # says what to show, the facts say what the tutor has already committed
+        # to and must not contradict.
+        _fig_facts = self._figure_facts_note()
+        _extra = "\n\n".join(x for x in (_domain_pair, _fig_facts) if x) or None
+        if _fig_facts:
+            logging.info("[FIGURE] holding the tutor to its own figure values")
+
         # SELECT PROMPT BASED ON MODE
         if teaching_mode == "LECTURE":
             prompt = get_micro_lecture_prompt(
@@ -2838,7 +2889,7 @@ class MnemosyneFSM:
                 # are None for non-CS courses, which leaves this turn exactly
                 # as it was.
                 concept_kind=_domain_kind,
-                figure_facts=_domain_pair,
+                figure_facts=_extra,
             )
         # Tune max_tokens: lectures need more room for explanations, questions are shorter
         token_limit = 500 if teaching_mode == "LECTURE" else 400

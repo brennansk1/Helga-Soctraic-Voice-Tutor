@@ -142,10 +142,23 @@ This is the sixth instance of one failure mode in this system:
 | 5 | LLM domain classifier | never passed to `for_subject()` |
 | 6 | `concept_kind` + `teaching_pair` | never passed by `fsm_logic` |
 | 7 | `code_example` | aid loader reads MARKDOWN; the example is in structure.json |
+| 8 | `figure_facts` | parses aid JSON from transcript TEXT; the product keeps specs in `AidStore` |
 
 The shape is always the same: **the component works, the path does not fire,
 and nothing fails.** Unused data is silent, so no test built around the
 component can catch it.
+
+Instances 1 and 8 share a sharper variant: the fix was written **for the
+benchmark**, and the benchmark got it while the product did not. So the
+measurement showed a safeguard learners never had. `figure_facts` exists
+because a maths tutor drew Peak (0,0) z=10 and Point A (2,0) z=6 and then
+argued in prose that moving toward A increased z — and it recovered aids by
+parsing JSON out of transcript text, which only the benchmark's transcript
+contains. The product stores specs in `AidStore` and puts a slim descriptor in
+the transcript, so the parse found nothing, every time, silently.
+
+Anything measured only in a harness should be assumed unwired until a test
+reads the production call site.
 
 Instance 7 was found by auditing for it deliberately — listing every field the
 builder writes onto a concept and grepping for a READER outside the writer:

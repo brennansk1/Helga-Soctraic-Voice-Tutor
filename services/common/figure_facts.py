@@ -81,38 +81,66 @@ def _describe_point(p):
     return f"{label} at {', '.join(coords)}"
 
 
-def facts_from(transcript):
-    """The FACTS block for the tutor prompt, or "".
+def facts_from_aids(aids):
+    """The FACTS block for a list of aid SPECS, or "".
 
-    `transcript` is the dialogue so far. Only the tutor's own aids are read —
-    a figure the student described is not something the tutor committed to.
+    WHY THIS EXISTS SEPARATELY FROM `facts_from`.
+    `facts_from` recovers aids by parsing JSON fences out of transcript text.
+    That works for the benchmark, whose transcript carries whole aid objects
+    inline — and not at all for the product, which stores the spec in
+    `AidStore` and puts only a slim descriptor in the transcript. So the
+    benchmark had this protection and learners did not.
+
+    Taking specs directly is what the product can actually supply.
     Never raises: a bookkeeping failure must not cost a turn.
     """
     try:
         items, title = [], None
+        for aid in (aids or []):
+            if not isinstance(aid, dict):
+                continue
+            spec = aid.get("spec") if isinstance(aid.get("spec"), dict) else aid
+            for key in _DATA_KEYS:
+                seq = spec.get(key)
+                if not isinstance(seq, list):
+                    continue
+                for p in seq:
+                    d = _describe_point(p)
+                    if d and d not in items:
+                        items.append(d)
+                        title = title or aid.get("title") or spec.get("title")
+        return _render(items, title)
+    except Exception:            # pragma: no cover - defensive
+        return ""
+
+
+def _render(items, title):
+    """The FACTS block itself, shared by both entry points."""
+    if not items:
+        return ""
+    shown = items[:MAX_ITEMS]
+    head = (f'FACTS FROM THE FIGURE YOU DREW'
+            f'{" (" + str(title) + ")" if title else ""} — '
+            f'these are YOUR OWN stated values:')
+    body = "; ".join(shown)
+    tail = ("Every claim you make about this figure must agree with those "
+            "values. If you say something moves closer to or further from "
+            "a point, check the numbers above before you say it.")
+    return f"{head}\n  {body}\n  {tail}"[:MAX_CHARS]
+
+
+def facts_from(transcript):
+    """The FACTS block for a benchmark-style transcript, or "".
+
+    Only the tutor's own aids are read — a figure the student described is not
+    something the tutor committed to. Never raises.
+    """
+    try:
+        aids = []
         for turn in (transcript or []):
             if turn.get("role") != "tutor":
                 continue
-            for aid in _aids_in(turn.get("text", "")):
-                for key in _DATA_KEYS:
-                    seq = aid.get(key)
-                    if not isinstance(seq, list):
-                        continue
-                    for p in seq:
-                        d = _describe_point(p)
-                        if d and d not in items:
-                            items.append(d)
-                            title = title or aid.get("title")
-        if not items:
-            return ""
-        shown = items[:MAX_ITEMS]
-        head = (f'FACTS FROM THE FIGURE YOU DREW'
-                f'{" (" + str(title) + ")" if title else ""} — '
-                f'these are YOUR OWN stated values:')
-        body = "; ".join(shown)
-        tail = ("Every claim you make about this figure must agree with those "
-                "values. If you say something moves closer to or further from "
-                "a point, check the numbers above before you say it.")
-        return f"{head}\n  {body}\n  {tail}"[:MAX_CHARS]
+            aids.extend(_aids_in(turn.get("text", "")))
+        return facts_from_aids(aids)
     except Exception:            # pragma: no cover - defensive
         return ""
