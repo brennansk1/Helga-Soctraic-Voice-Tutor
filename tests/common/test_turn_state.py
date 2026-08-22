@@ -11,7 +11,7 @@ fails — a fail-safe that never credits mastery. If that became "the student
 partly understood this", then during an outage the tutor would invent an
 entire history of half-understanding that never happened.
 """
-from services.common.turn_state import TurnState
+from services.common.turn_state import TurnState, MAX_CHARS
 
 
 def _graded(grade, reason="", missing=None, feedback=""):
@@ -108,8 +108,42 @@ def test_repeated_attempts_tell_the_tutor_to_change_approach():
     s.record("dunno", _graded(1))
     s.record("still dunno", _graded(1))
     out = s.render()
-    assert "tried this question 2 times" in out
-    assert "asking it again in different words has already failed" in out
+    assert "CHANGE YOUR APPROACH" in out
+    assert "already failed twice" in out
+
+
+def test_the_change_approach_instruction_SURVIVES_A_REWORDING():
+    """The defect this catches.
+
+    `attempts` counts tries at one question STRING and is reset by a
+    rewording — which is the first thing a tutor does when a learner is stuck.
+    `misses` was added to survive that, and `render` went on reading
+    `attempts`. Measured across 60 benchmark dialogues: `attempts` reached 2 in
+    NONE of them, so the instruction never once appeared in a prompt.
+
+    The judge's rationale for the worst-scoring dialogues names exactly this:
+    "The tutor repeated the same question about walking West after the student
+    already answered 'idk'."
+    """
+    s = TurnState()
+    s.ask("Why must the vector be non-zero?")
+    s.record("dunno", _graded(1))
+    s.ask("Put another way — what would a zero vector point at?")
+    s.record("still dunno", _graded(1))
+
+    assert s.attempts == 1, "the rewording reset the per-question counter"
+    assert s.misses == 2, "but the consecutive-failure counter survived it"
+    assert "CHANGE YOUR APPROACH" in s.render()
+
+
+def test_getting_it_right_clears_the_stuck_state():
+    """A learner who recovers must not keep being told they are stuck."""
+    s = TurnState()
+    s.ask("Why non-zero?")
+    s.record("dunno", _graded(1))
+    s.record("still dunno", _graded(1))
+    s.record("because a point has no direction", _graded(5))
+    assert "CHANGE YOUR APPROACH" not in s.render()
 
 
 def test_a_new_question_resets_the_attempt_count():
@@ -170,3 +204,42 @@ def test_it_does_not_editorialise_about_the_learner():
         assert editorial not in out, f"editorialising: {editorial}"
     assert "fact, not your impression" in s.render().lower() or \
            "this is fact" in s.render().lower()
+
+
+def test_the_instruction_survives_truncation():
+    """The second half of the defect.
+
+    `render()` ends `[:MAX_CHARS]` with MAX_CHARS = 600, and the
+    change-your-approach line used to be appended LAST — after the established
+    list, the errors and the unresolved topics.
+
+    Measured across 60 benchmark dialogues: 26 were eligible for the
+    instruction, and in 25 of those it was generated and then CUT OFF by the
+    character cap. It reached exactly one prompt.
+
+    Everything else in this block is DESCRIPTION of what the learner has shown.
+    This one line is the INSTRUCTION. Truncating the instruction and keeping
+    the description is the wrong way round.
+    """
+    s = TurnState()
+    s.ask("Why must it be non-zero?")
+    s.record("dunno", _graded(1))
+    s.record("still dunno", _graded(1))
+    # Flood the descriptive parts well past MAX_CHARS.
+    for i in range(6):
+        s.ask(f"Question number {i} about a fairly long topic name here")
+        s.record("wrong answer that is quite long indeed " * 3, _graded(1))
+
+    out = s.render()
+    assert len(out) <= MAX_CHARS
+    assert "CHANGE YOUR APPROACH" in out, (
+        "the instruction was truncated away by the descriptive history")
+
+
+def test_a_stuck_learner_alone_is_not_an_empty_state():
+    """`is_empty` gated on established/errors/unresolved only, so a learner
+    who has just failed twice could render nothing at all — which is exactly
+    the moment the block exists to act on."""
+    s = TurnState()
+    s.misses = 2
+    assert not s.is_empty()

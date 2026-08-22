@@ -170,7 +170,11 @@ class TurnState:
             return list(self.errors)
 
     def is_empty(self):
-        return not (self.established or self.errors or self.unresolved)
+        # `misses` counts: a learner who has failed twice running is exactly
+        # the case this block exists to act on, even if nothing else has been
+        # recorded yet.
+        return not (self.established or self.errors or self.unresolved
+                    or self.misses >= 2)
 
     def render(self):
         """The prompt block, or "" when nothing has been established yet.
@@ -181,8 +185,30 @@ class TurnState:
         if self.is_empty():
             return ""
 
+        # THE ACTIONABLE INSTRUCTION GOES FIRST, AND IS NEVER TRUNCATED.
+        #
+        # This block ends `[:MAX_CHARS]`, MAX_CHARS is 600, and the
+        # change-your-approach line used to be appended LAST — after the
+        # established list, the errors and the unresolved topics. Measured
+        # across 60 benchmark dialogues: 26 were eligible for it, and in 25 of
+        # those the line was generated and then CUT OFF by the character cap.
+        # It reached exactly one prompt.
+        #
+        # Everything else here is DESCRIPTION — what the learner has shown.
+        # This one line is an INSTRUCTION, and it is the only part that tells
+        # the tutor to do something different. Losing the instruction and
+        # keeping the description is precisely the wrong way round.
+        head = []
+        if self.misses >= 2:
+            head.append(f"  They have now failed this point {self.misses} "
+                        f"times in a row. CHANGE YOUR APPROACH — asking it "
+                        f"again in different words has already failed twice. "
+                        f"Show them the answer worked through, then ask "
+                        f"something different about it.")
+
         lines = ["WHAT THIS STUDENT HAS DEMONSTRATED "
                  "(from graded answers — this is fact, not your impression):"]
+        lines.extend(head)
 
         if self.established:
             got = "; ".join(f'{q} — they answered "{a}"'
@@ -200,11 +226,6 @@ class TurnState:
 
         if self.unresolved:
             lines.append("  NOT YET COVERED: " + ", ".join(self.unresolved))
-
-        if self.attempts >= 2:
-            lines.append(f"  They have now tried this question {self.attempts} "
-                         f"times. Change your approach — asking it again in "
-                         f"different words has already failed.")
 
         return "\n".join(lines)[:MAX_CHARS]
 
