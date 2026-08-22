@@ -1,6 +1,11 @@
 # Mathematics domain — teaching without letting the learner solve
 
 **Status:** built 2026-08-22. Second domain, after computer science.
+**CLOSED 2026-08-22** at the owner's direction, with the benchmark gate
+knowingly unmet — see §9. Four of five release clauses are verified; the
+`adaptation` gate of 3.5 is not reached and is not reachable at the prompt
+layer on `nail-35b-a3b-ctx`. Re-open if the gate is revised or the model
+changes.
 
 The product must build and teach any mathematics course up to college level —
 arithmetic, algebra, geometry, trigonometry, precalculus, calculus, statistics
