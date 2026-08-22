@@ -55,8 +55,33 @@ def test_a_domain_with_a_package_supplies_a_kind():
 
 
 def test_a_domain_without_a_package_supplies_nothing():
-    """History has no specialist, and must be measured exactly as it ships."""
-    assert bd._kind_for("history", _topic("history")) is None
+    """A bench domain with no specialist must be measured exactly as it ships.
+
+    Computed, not hard-coded. This test named `history` until history GOT a
+    package, at which point it failed for the right reason and the wrong one:
+    the behaviour was correct and the fixture was stale. Deriving the list from
+    the registry means the next domain added does not break it either.
+    """
+    from services.domains import registry
+
+    have = set(registry.available())
+    without = [k for k in sorted(bd.DOMAINS) if k not in have]
+    assert without, (
+        "every bench domain now has a specialist — this test has nothing left "
+        "to check and should be deleted rather than weakened")
+    for key in without:
+        assert bd._kind_for(key, _topic(key)) is None, key
+
+
+def test_every_domain_WITH_a_package_supplies_a_kind():
+    """The other half: a domain that HAS a specialist must actually use it."""
+    from services.domains import registry
+
+    have = [k for k in sorted(bd.DOMAINS) if k in set(registry.available())]
+    assert have, "no bench domain has a specialist"
+    for key in have:
+        got = bd._kind_for(key, _topic(key))
+        assert got is None or got[0] == key, got
 
 
 def test_the_ab_switch_withholds_the_kind():

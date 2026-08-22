@@ -31,6 +31,9 @@ from services.domains.history.concept_kind import (  # noqa: F401
     FACT, CHRONOLOGY, CONTESTED, CAUSATION, SOURCE, CONTEXT, SIGNIFICANCE,
     CONTINUITY, MISCONCEPTION, UNKNOWN, AIDED_KINDS_ORDER,
 )
+from services.domains.history.source_mining import (  # noqa: F401
+    attach_to_course,
+)
 from services.domains.history.teaching_moves import (  # noqa: F401
     from_text, best_move, choose_move, prompt_block as pair_block,
     sources_in_text, historians_in_text,

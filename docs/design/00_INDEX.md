@@ -30,6 +30,7 @@ Read **01** and **02** first — they are the shared foundation every other spec
 | 16 | `16_INTERESTS_AND_ELECTIVES.md` | — | Child interest calibration (entry → safety → parent approval → non-cringey use in tutoring); elective choice with parent approval and grade-matched course build |
 | 17 | `17_CS_DOMAIN_TEACHING.md` | — | Computer-science domain: concept kinds, mined code pairs, DevDocs/doc-crawl sourcing; teaching code without the learner typing it or running a sandbox |
 | 18 | `18_MATHEMATICS_DOMAIN_TEACHING.md` | — | Mathematics domain: MathML→LaTeX (flattening it yields FALSE statements), nine concept kinds, mined worked examples and erroneous examples; teaching without letting the learner solve |
+| 19 | `19_HISTORY_DOMAIN_TEACHING.md` | — | History domain: the failure is ASKING, not telling — a contingent fact cannot be elicited; two-sided contested/settled rubric; Wineburg sourcing, corroboration and historiography moves |
 
 ## Research basis (verbatim source reports)
 - `docs/UTAH_K12_CURRICULUM_REFERENCE.md` — Utah Core Standards map (curriculum source-of-truth for spec 04).
