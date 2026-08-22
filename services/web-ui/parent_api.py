@@ -16,7 +16,7 @@ from auth import (current_parent_id, owns_student_required, parent_required,
 
 logger = logging.getLogger(__name__)
 
-GRADE_BANDS = ("K-2", "3-5", "6-8", "9-12")
+GRADE_BANDS = ("K-1", "2-3", "4-5", "6-8", "9-12")
 STATUS_ORDER = {"not_started": 0, "in_progress": 1, "mastered": 2}
 
 

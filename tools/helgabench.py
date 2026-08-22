@@ -131,8 +131,17 @@ Score each dimension 1-5 (5 = excellent, 1 = poor):
   rather than lecturing? Long explanatory monologues score low.
 - adaptation: Did the tutor adjust to THIS student's demonstrated level and
   behaviour, rather than following a script?
-- accuracy: Was everything the tutor said factually correct? Any incorrect
-  statement caps this at 2.
+- accuracy: Was everything THE TUTOR said factually correct? Any incorrect
+  statement BY THE TUTOR caps this at 2.
+  The STUDENT in this transcript is a simulation and is SUPPOSED to say false
+  things — that is the task the tutor is being tested on. A student error is
+  NEVER evidence against accuracy. If the tutor's own statements are correct,
+  accuracy is high even when the student's are badly wrong. Whether the tutor
+  CAUGHT the student's error is a DIFFERENT question and is not scored here —
+  do not let it influence this number in either direction.
+  If the tutor states data that contradicts a figure it produced earlier in the
+  dialogue (e.g. calling a point a maximum when its own plot puts the peak
+  elsewhere), that IS a tutor error.
 - progression: Did the dialogue actually move forward? Repeating the same
   question or looping scores low.
 
@@ -273,6 +282,73 @@ def _chat(client, system, user, max_tokens=700, temperature=0.7):
                        temperature=temperature) or ""
 
 
+#: A line some models read from the SYSTEM prompt to set how much they think.
+#: Muse-Glimmer takes `Reasoning strength: low|medium|high|xhigh` this way, and
+#: neither of the harness's existing guards reaches it: `reasoning_effort` is an
+#: API field the model never sees, and stripping `<think>` blocks happens after
+#: the tokens have already been spent. On this project a thinking model once ate
+#: the whole budget and returned an EMPTY string for every single response, so
+#: the setting has to be reachable from outside without editing code — otherwise
+#: sweeping it means a source change per arm, and a source change per arm means
+#: the arms are not comparable.
+SYSTEM_DIRECTIVE = os.environ.get("HELGA_SYSTEM_DIRECTIVE", "").strip()
+
+
+def _apply_system_directive(messages):
+    """Prepend SYSTEM_DIRECTIVE to the system message, if one is set.
+
+    Folded into the existing system message rather than added as a second one:
+    several servers keep only the first system message, and a directive that is
+    silently dropped is worse than none because the run would be labelled with
+    a setting that never applied.
+    """
+    if not SYSTEM_DIRECTIVE:
+        return messages
+    out = list(messages)
+    for i, m in enumerate(out):
+        if m.get("role") == "system":
+            out[i] = dict(m, content=f"{SYSTEM_DIRECTIVE}\n\n{m.get('content','')}")
+            return out
+    return [{"role": "system", "content": SYSTEM_DIRECTIVE}] + out
+
+
+def _figure_facts(transcript):
+    """Facts from aids the tutor already drew, or "". Never raises."""
+    try:
+        from services.common.figure_facts import facts_from
+        return facts_from(transcript)
+    except Exception:
+        return ""
+
+def _ensure_user_turn(messages):
+    """Guarantee at least one `user` message.
+
+    Ollama happily completes a system-only messages array. `mlx_lm.server`
+    refuses it outright: `404 {"error": "No user query found in messages."}`.
+    `get_socratic_grading_prompt` returns exactly one system message, so EVERY
+    grading call 404s against mlx_lm while every tutor call succeeds.
+
+    That failure is quiet and it biases a model comparison. A grading call that
+    returns "" leaves TurnState with nothing recorded, so A.2 — the structured
+    "what this student has demonstrated" block — renders empty for the whole
+    run. The model served by mlx would tutor WITHOUT turn state while the model
+    served by Ollama tutored WITH it, and the resulting gap would look like a
+    difference in tutoring ability.
+
+    The last system message is RETYPED as user rather than a synthetic user
+    turn being appended: the text stays byte-identical, so the two servers see
+    the same prompt content and only the role envelope differs.
+    """
+    if any(m.get("role") == "user" for m in messages):
+        return messages
+    out = list(messages)
+    for i in range(len(out) - 1, -1, -1):
+        if out[i].get("role") == "system":
+            out[i] = dict(out[i], role="user")
+            return out
+    return out
+
+
 def _chat_messages(url, model, messages, max_tokens=700, temperature=0.7):
     """Send a prepared messages array.
 
@@ -286,23 +362,64 @@ def _chat_messages(url, model, messages, max_tokens=700, temperature=0.7):
              if isinstance(m, dict) and str(m.get("content", "")).strip()]
     if not clean:
         return ""
+    clean = _ensure_user_turn(_apply_system_directive(clean))
+    # WHY THIS REPORTS ITS FAILURES.
+    #
+    # Every path here used to return "" — a timeout, an HTTP 500 and a
+    # genuinely empty completion were indistinguishable downstream, and
+    # `run_dialogue` records "" as an empty tutor turn and abandons the
+    # dialogue. That silence cost real measurements: five of fifteen
+    # mathematics dialogues were discarded in one run and four in another, and
+    # the first occurrence was mis-attributed to a model eviction because there
+    # was nothing to read. One third of that domain has been quietly missing
+    # from three runs, and `honest_telling` was unmeasurable on it throughout.
+    #
+    # The failure still returns "" — the caller's contract is unchanged — but
+    # it now says why, on stderr, where the run log keeps it.
+    import time as _time
+    _t0 = _time.time()
     try:
         r = requests.post(
             f"{url}/v1/chat/completions",
             json={"model": model, "messages": clean, "max_tokens": max_tokens,
                   "temperature": temperature, "stream": False,
-                  "reasoning_effort": "none"},
+                  # TWO SERVERS, TWO LEVERS — send both; each ignores the
+                  # other's field. `llm_client.chat()` already does this for
+                  # every production path, and this is the ONE call site that
+                  # did not, because it posts a prepared messages array rather
+                  # than going through LLMClient.
+                  #   Ollama /v1 : reasoning_effort="none"
+                  #   mlx_lm /v1 : chat_template_kwargs.enable_thinking
+                  # Measured on Qwen3.8-27B via mlx_lm.server: WITHOUT the
+                  # second field the reply is 120 tokens of reasoning and an
+                  # EMPTY `content`; with it, 24 tokens and a real question.
+                  "reasoning_effort": "none",
+                  "chat_template_kwargs": {"enable_thinking": False}},
             timeout=180)
         if r.status_code != 200:
+            print(f"    [llm] HTTP {r.status_code} after {_time.time()-_t0:.0f}s "
+                  f"({sum(len(str(m.get('content',''))) for m in clean)} prompt chars)",
+                  file=sys.stderr)
             return ""
         import re as _re
         c = (r.json()["choices"][0]["message"].get("content") or "")
-        return _re.sub(r"<think>.*?</think>", "", c, flags=_re.DOTALL).strip()
-    except Exception:
+        out = _re.sub(r"<think>.*?</think>", "", c, flags=_re.DOTALL).strip()
+        if not out:
+            print(f"    [llm] EMPTY completion after {_time.time()-_t0:.0f}s "
+                  f"(finish_reason="
+                  f"{r.json()['choices'][0].get('finish_reason')!r}, "
+                  f"{sum(len(str(m.get('content',''))) for m in clean)} prompt chars)",
+                  file=sys.stderr)
+        return out
+    except Exception as e:
+        print(f"    [llm] {type(e).__name__} after {_time.time()-_t0:.0f}s "
+              f"({sum(len(str(m.get('content',''))) for m in clean)} prompt chars): "
+              f"{str(e)[:90]}", file=sys.stderr)
         return ""
 
 
-def _apply_contract(url, model, messages, turn, learner_said, transcript, topic):
+def _apply_contract(url, model, messages, turn, learner_said, transcript, topic,
+                    missing_concepts=None):
     """A4.1a as the FSM applies it: check, then regenerate once if a rule trips.
 
     Kept faithful to fsm_logic._enforce_dialogue_contract -- same rules, same
@@ -315,6 +432,7 @@ def _apply_contract(url, model, messages, turn, learner_said, transcript, topic)
     except Exception:
         return turn
 
+    _last_missing = list(missing_concepts or [])
     seen = set()
     for t in transcript:
         for w in re.findall(r"[A-Za-z][A-Za-z'\-]+", str(t.get("text") or "")):
@@ -326,7 +444,15 @@ def _apply_contract(url, model, messages, turn, learner_said, transcript, topic)
     kw = {"learner_said": learner_said or "", "concept_terms": terms,
           "already_seen": seen, "is_opening": not transcript,
           "recent_learner": [t.get("text", "") for t in transcript
-                             if t.get("role") == "student"][-3:]}
+                             if t.get("role") == "student"][-3:],
+          # A.3 — every earlier tutor turn, so the contract can refuse a turn
+          # that merely re-asks one of them. This is the most frequent
+          # complaint the judge makes, in every domain.
+          "previous_turns": [t.get("text", "") for t in transcript
+                             if t.get("role") == "tutor"],
+          # A.8 — what the grader said the last answer left out. The turn must
+          # engage with it rather than saying "Correct." and moving on.
+          "missing_concepts": _last_missing}
 
     try:
         violations = dc.check(turn, **kw)
@@ -346,7 +472,7 @@ def _apply_contract(url, model, messages, turn, learner_said, transcript, topic)
 
 def run_dialogue(client, profile_key, topic, turns, verbose=False,
                  url=DEFAULT_OLLAMA_URL, model=DEFAULT_MODEL, aid_decider=None,
-                 enforce_contract=False):
+                 enforce_contract=False, grade_answers=False):
     """Run one tutor<->simulated-student dialogue. Returns the transcript.
 
     `aid_decider(turn_index, transcript) -> AidDecision | None` reproduces the
@@ -377,9 +503,56 @@ def run_dialogue(client, profile_key, topic, turns, verbose=False,
     # get_socratic_tutor_prompt expects (user_text, assistant_text) TUPLES.
     history, transcript = [], []
     pending_student = ""
+    # A.2 — the structured record of what this learner has established, built
+    # from graded answers exactly as the FSM builds it. `grade_answers=False`
+    # keeps the old behaviour (and the old cost) for callers that do not want
+    # the extra grading call per student turn.
+    last_grade, correct_streak = 0, 0
+    _last_missing = []
+    turn_state = None
+    if grade_answers:
+        try:
+            from services.common.turn_state import TurnState
+            turn_state = TurnState()
+        except Exception:
+            turn_state = None
 
     for turn in range(turns):
         # --- tutor turn: the REAL production prompt ------------------------
+        # A.6 — the teaching move, decided in code exactly as the FSM decides
+        # it. Without this the bench measures a tutor choosing its own move,
+        # which is not the tutor that ships.
+        # A.7 — behaviour from the learner's own words so far.
+        behaviour = ""
+        _behaviour_key = None
+        try:
+            from services.common.learner_behaviour import describe
+            _said = [t.get("text", "") for t in transcript
+                     if t.get("role") == "student"]
+            _grades = [t.get("grade") for t in transcript
+                       if t.get("role") == "student" and t.get("grade")]
+            from services.common.learner_behaviour import classify
+            behaviour = describe(_said, grades=_grades)
+            _behaviour_key = classify(_said, grades=_grades)
+        except Exception:
+            behaviour = ""
+            _behaviour_key = None
+
+        move = None
+        if turn_state is not None:
+            try:
+                from services.common.teaching_move import from_turn_state
+                from services.common.prompts import _concept_is_arbitrary
+                move = from_turn_state(
+                    turn_state,
+                    last_grade=last_grade,
+                    correct_streak=correct_streak,
+                    is_opening=not transcript,
+                    is_arbitrary=_concept_is_arbitrary(topic.get("context", "")),
+                    already_told=bool(transcript),
+                    behaviour=_behaviour_key)
+            except Exception:
+                move = None
         try:
             decision = None
             if aid_decider is not None:
@@ -392,6 +565,19 @@ def run_dialogue(client, profile_key, topic, turns, verbose=False,
                 conversation_history=history,
                 bloom_level=2,
                 aid_policy=decision,
+                turn_state=turn_state,
+                teaching_move=None,   # A.6 reverted: measured -0.53 on adaptation
+                learner_behaviour=behaviour,
+                # The concept's known misconceptions, which production supplies
+                # and this bench withheld while SCORING misconception_handling.
+                # One of the five student profiles is defined as holding "ONE
+                # specific, confidently-stated misconception", so the tutor was
+                # being asked to catch a belief it had no list to check against.
+                misconceptions=topic.get("misconceptions"),
+                # Hold the tutor to the coordinates in the figure it drew.
+                # Measured failure: peak at (0,0) in its own plot, then
+                # "moving toward x=2 gets closer to the peak" five turns later.
+                figure_facts=_figure_facts(transcript),
             )
         except Exception as e:
             return {"error": f"prompt build failed: {e}", "transcript": transcript}
@@ -406,7 +592,8 @@ def run_dialogue(client, profile_key, topic, turns, verbose=False,
         tutor_msg = _chat_messages(url, model, messages)
         if enforce_contract and tutor_msg.strip():
             tutor_msg = _apply_contract(url, model, messages, tutor_msg,
-                                        pending_student, transcript, topic)
+                                        pending_student, transcript, topic,
+                                        missing_concepts=_last_missing)
         if not tutor_msg.strip():
             transcript.append({"role": "tutor", "text": "", "empty": True})
             break
@@ -436,6 +623,16 @@ def run_dialogue(client, profile_key, topic, turns, verbose=False,
         student_msg = _chat(client, student_system, tutor_msg,
                             max_tokens=200, temperature=0.9)
         transcript.append({"role": "student", "text": student_msg})
+        if turn_state is not None:
+            turn_state.ask(tutor_msg)
+            graded = _grade_student_turn(url, model, topic, tutor_msg, student_msg)
+            if graded:
+                turn_state.record(student_msg, graded)
+                transcript[-1]["grade"] = graded["grade"]
+                last_grade = graded["grade"]
+                correct_streak = (correct_streak + 1
+                                  if last_grade >= 3 else 0)
+                _last_missing = graded.get("missing_concepts") or []
         # History is (user_text, assistant_text) pairs: what the student said,
         # and what the tutor replied.
         history.append((pending_student or "", tutor_msg))
@@ -444,6 +641,57 @@ def run_dialogue(client, profile_key, topic, turns, verbose=False,
             print(f"    STUDENT : {student_msg[:110]}")
 
     return {"transcript": transcript}
+
+
+
+def _grade_student_turn(url, model, topic, question, answer):
+    """Grade one simulated student answer with the PRODUCTION grading prompt.
+
+    WHY THE BENCH NEEDS THIS AT ALL
+    -------------------------------
+    A.2 hands the tutor a structured record of what the learner has actually
+    established, built in code from graded answers. The benchmark could not see
+    it, because nothing here produced a grade -- so the one intervention aimed
+    at `adaptation` and at the semantic quality of a question was invisible to
+    the instrument measuring exactly those things.
+
+    Measured 2026-08-21 across five domain runs: no surface feature of a tutor
+    turn (length, statement count, ends-with-question, repetition, open-vs-
+    closed stem) distinguishes a dialogue the judge scores socratic >=4 from one
+    it scores <=2. `socratic` is nevertheless the most reproducible dimension in
+    the instrument (floor 0.00 across three identical runs). It is measuring
+    something semantic that surface rules cannot reach -- which is what turn
+    state is for.
+
+    Returns the dict shape `TurnState.record` expects, or None. Never raises: a
+    grading failure must cost the state entry, not the dialogue.
+    """
+    try:
+        from services.common.prompts import get_socratic_grading_prompt
+        messages = get_socratic_grading_prompt(
+            topic["concept"], question or "", answer or "",
+            context_text=topic.get("context", ""))
+        raw = _chat_messages(url, model, messages, max_tokens=300)
+        data = _loads_tolerant(raw)
+        if not isinstance(data, dict):
+            return None
+        grade = data.get("grade")
+        if isinstance(grade, str):
+            m = re.search(r"\d", grade)
+            grade = int(m.group(0)) if m else None
+        if not isinstance(grade, (int, float)):
+            return None
+        missing = data.get("missing_concepts") or []
+        if not isinstance(missing, list):
+            missing = []
+        return {"grade": int(grade),
+                "reason": str(data.get("reason") or data.get("feedback") or "")[:200],
+                "missing_concepts": [str(m)[:60] for m in missing[:3]],
+                # A real assessment, as opposed to the fail-safe the production
+                # parser emits on an LLM outage — which TurnState refuses.
+                "graded": True, "grade_source": "bench"}
+    except Exception:
+        return None
 
 
 def _loads_tolerant(raw):

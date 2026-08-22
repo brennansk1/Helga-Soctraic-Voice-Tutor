@@ -1,41 +1,36 @@
 name: Helga CI
 
+# WHAT THIS RUNS, AND WHY IT CHANGED
+#
+# The previous version had a step `pytest tests/verification/`. That directory
+# does not exist in this repository and has not for as long as the workflow
+# has, so the step exited non-zero and EVERY push to main was red — a red CI
+# nobody reads is the same as no CI.
+#
+# It also ran only `tests/core/` plus one integration file: 1,679 of 2,382
+# tests. Everything under tests/common (the dialogue contract, learner history,
+# code aids), tests/tools (the benchmark's own scorers), tests/web, tests/ops,
+# tests/fuzzing and tests/e2e was invisible to CI. Those are exactly the
+# directories where the recent work lives.
+#
+# It now runs the whole suite. Tests needing a model, Docker or a network skip
+# themselves (32 skips locally); nothing is excluded by hand here, because a
+# hand-maintained exclusion list is how the gap above opened in the first place.
+
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  unit-tests:
+  tests:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-
-      - name: Install core dependencies
-        run: |
-          pip install -r services/core/requirements.txt
-          pip install pytest
-
-      - name: Install web-ui dependencies
-        run: |
-          pip install flask flask-socketio gevent python-socketio python-engineio requests werkzeug
-
-      - name: Run core unit tests
-        run: python -m pytest tests/core/ -v --tb=short
-
-      - name: Run verification tests
-        run: python -m pytest tests/verification/ -v --tb=short
-
-  integration-tests:
-    runs-on: ubuntu-latest
-    needs: unit-tests
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -47,8 +42,40 @@ jobs:
 
       - name: Install dependencies
         run: |
+          python -m pip install --upgrade pip
           pip install -r services/core/requirements.txt
-          pip install flask flask-socketio gevent python-socketio python-engineio requests werkzeug pytest
+          pip install -r services/web-ui/requirements.txt
+          pip install -r services/rag/requirements.txt
+          pip install -r services/research/requirements.txt
+          pip install pytest
 
-      - name: Run integration tests
-        run: python -m pytest tests/integration/test_web_routes.py -v --tb=short
+      - name: Run the full test suite
+        run: python -m pytest tests/ -q --tb=short
+
+  # The benchmark's deterministic half needs no model, so it can gate on every
+  # push. It is the part that decides whether a figure gave the answer away and
+  # whether notation is speakable — regressions there silently corrupt every
+  # score the judged half produces.
+  benchmark-scorers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r services/core/requirements.txt
+          pip install pytest
+
+      - name: Deterministic benchmark scorers (no model)
+        run: python3 tools/bench_domains.py --static-only
+
+      - name: HelgaBench self-tests
+        run: python -m pytest tests/tools/ -q --tb=short

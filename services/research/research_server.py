@@ -37,12 +37,18 @@ CACHE_TTL_SEARCH = 86400       # 24 hours for search results
 CACHE_TTL_EXTRACT = 604800     # 7 days for extracted page content
 
 os.makedirs(CACHE_DIR, exist_ok=True)
-cache = Cache(CACHE_DIR)
+# EXPLICIT SIZE LIMIT. diskcache defaults to ~1 GB and nothing here ever set
+# it; `background_ops` only LOGS past 100 MB, which is a warning rather than a
+# control. Disk is the plentiful resource on this machine (1.4 TB free) while
+# RAM is not, so a generous cap is the right trade — but a cap, not a hope.
+cache = Cache(CACHE_DIR, size_limit=int(os.getenv("HELGA_CACHE_BYTES",
+                                                  2 * 1024 ** 3)))
 
 wiki = wikipediaapi.Wikipedia(user_agent=_rl.user_agent(), language="en")
 
 # Pure ranking/query/scoring helpers live in ranking.py (dep-free + unit-tested).
-from ranking import domain_tier, build_search_queries, compute_confidence, dedup_by_url
+from ranking import (domain_tier, build_search_queries, compute_confidence,
+                     dedup_by_url, is_documentation)
 
 
 def cache_key(prefix, text):
@@ -66,6 +72,11 @@ def wiki_search_title(query):
     cached = cache.get(key)
     if cached is not None:
         return cached or None
+    # A recent miss is remembered briefly so a dead lookup is not retried on
+    # every concept of a build — but for 15 minutes, not the 24 hours the old
+    # shared key gave it.
+    if cache.get("miss:" + key):
+        return None
     try:
         r = requests.get(
             "https://en.wikipedia.org/w/api.php",
@@ -81,7 +92,11 @@ def wiki_search_title(query):
                 return title
     except Exception as e:
         logger.debug(f"wiki search failed for {query!r}: {e}")
-    cache.set(key, "", expire=CACHE_TTL_SEARCH)
+    # A MISS IS NOT A RESULT. This wrote an empty value under the SAME key a
+    # successful 7-day extract uses, so one transient Wikipedia blip blocked
+    # that concept from grounding for a full day. Negative results get their
+    # own short-lived key instead.
+    cache.set("miss:" + key, True, expire=900)
     return None
 
 
@@ -418,12 +433,9 @@ async def searxng_search(session, query, max_results=5):
 
 
 # --- Page extraction ---
-async def extract_page(session, url):
-    key = cache_key("page", url)
-    cached = cache.get(key)
-    if cached is not None:
-        return cached
-
+async def _fetch_html(session, url):
+    """Raw HTML for one URL, or None. Separated so the documentation crawler
+    can read a page's LINKS, which `trafilatura.extract` discards."""
     try:
         async with session.get(
             url,
@@ -431,20 +443,70 @@ async def extract_page(session, url):
             headers=_rl.headers("Helga-Research/1.0"),
         ) as resp:
             if resp.status == 200:
-                html = await resp.text()
-                text = trafilatura.extract(
-                    html,
-                    output_format="txt",
-                    include_formatting=False,
-                    include_links=False,
-                )
-                if text and len(text) > 100:
-                    cache.set(key, text, expire=CACHE_TTL_EXTRACT)
-                    return text
+                return await resp.text()
     except Exception as e:
-        logger.warning(f"Extraction failed for {url}: {e}")
-
+        logger.warning(f"Fetch failed for {url}: {e}")
     return None
+
+
+def _extract_text(html):
+    if not html:
+        return None
+    text = trafilatura.extract(html, output_format="txt",
+                               include_formatting=False, include_links=False)
+    return text if (text and len(text) > 100) else None
+
+
+async def extract_page(session, url):
+    """Text for `url`.
+
+    When `url` is official documentation, this reads the DOCUMENTATION SET
+    rather than the single page: the entry page's own navigation is followed
+    one hop, within the same host and the same doc root, up to a hard page cap.
+
+    Why: `is_documentation()` weights these sources 0.30 — the highest
+    non-Wikipedia weight — but fetching only ever took one page and 6000
+    characters. A guide that spans tens of pages (the Python tutorial, the dbt
+    docs) was grounding a whole concept on one page of one search hit while
+    being scored as though the docs had been read. The weight was earned by the
+    host's authority, not by the coverage.
+
+    Falls back to single-page behaviour whenever the URL is not documentation
+    or discovery finds nothing, so the caller's contract is unchanged.
+    """
+    key = cache_key("page", url)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+
+    html = await _fetch_html(session, url)
+    text = _extract_text(html)
+    if not text:
+        return None
+
+    try:
+        from services.research.ranking import is_documentation
+        from services.research import doc_crawler
+        if is_documentation(url):
+            links = doc_crawler.discover(url, html)
+            if links:
+                pages = [(url, url, text)]
+                for link in links:
+                    sub_html = await _fetch_html(session, link)
+                    sub_text = _extract_text(sub_html)
+                    if sub_text:
+                        pages.append((link, link, sub_text))
+                combined = doc_crawler.combine(pages)
+                if len(combined) > len(text):
+                    logger.info(
+                        f"doc set: {url} -> {len(pages)} pages, "
+                        f"{len(combined)} chars (single page was {len(text)})")
+                    text = combined
+    except Exception as e:                   # a crawl bug must not lose the page
+        logger.warning(f"Doc-set expansion failed for {url}: {e}")
+
+    cache.set(key, text, expire=CACHE_TTL_EXTRACT)
+    return text
 
 
 # --- Full research pipeline for one concept ---
@@ -606,12 +668,23 @@ async def _research_concept_async(title, module_title, course_title, mastery=1):
     # EVERY kind the pipeline can produce must be passed. A kind that is not
     # passed does not exist as far as the score is concerned — that has now
     # been the bug here twice (primary literature, then textbooks).
-    web_sources = [s for s in sources if s.get("type") == "web"]
+    # Official documentation is promoted OUT of the generic web bucket before
+    # counting, so it is not double-counted at the lower weight. For a
+    # technical concept this is the authoritative source and the only one that
+    # is reliably right about version-specific behaviour.
+    doc_sources = [s for s in sources
+                   if s.get("type") == "web" and is_documentation(s.get("url"))]
+    _doc_urls = {s.get("url") for s in doc_sources}
+    for s in doc_sources:
+        s["type"] = "documentation"
+    web_sources = [s for s in sources
+                   if s.get("type") == "web" and s.get("url") not in _doc_urls]
     primary_sources = [s for s in sources
                        if s.get("type") in ("journal", "preprint")]
     textbook_sources = [s for s in sources if s.get("type") == "textbook"]
     confidence = compute_confidence(bool(wikipedia_data), len(web_sources),
-                                    len(primary_sources), len(textbook_sources))
+                                    len(primary_sources), len(textbook_sources),
+                                    len(doc_sources))
 
     # Report whether the web leg actually ran. Without this a concept grounded
     # only by Wikipedia looks the same whether the topic is obscure or the

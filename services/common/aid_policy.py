@@ -39,6 +39,13 @@ import logging
 import re
 from dataclasses import dataclass, field
 
+# One definition of "young learner", shared with the prompt builders and the
+# safety filter. It was an inline ("K-2", "3-5") tuple repeated across five
+# modules; the 2026-08-21 re-banding would have silently stopped matching in
+# every one of them, quietly handing a young child the adult diagram budget and
+# the adult profanity list with nothing failing.
+from services.common.prompts import YOUNG_BANDS, is_young_band  # noqa: F401
+
 logger = logging.getLogger(__name__)
 
 
@@ -48,7 +55,6 @@ logger = logging.getLogger(__name__)
 # is strongest for novices, and weakest (sometimes negative) for the fluent.
 MAX_AIDS_PER_CONCEPT = 3
 MAX_AIDS_YOUNG = 4
-YOUNG_BANDS = ("K-2", "3-5")
 
 # Turns that must pass after a diagram before another may appear. This is the
 # single most important number here: it is what stops a picture every turn.
@@ -64,6 +70,20 @@ MAX_AIDS_PER_SESSION = 10
 # back-and-forth of a correct-ish dialogue scores below it, and genuine trouble
 # clears it comfortably.
 THRESHOLD = 4
+
+# B.2 — the bar for showing a diagram that ALREADY EXISTS.
+#
+# Deliberately lower than THRESHOLD. A prebuilt slot costs no model call, adds
+# no latency, keeps its provenance, and was reviewed at build time, so it cannot
+# invent an answer mid-turn. Pricing it identically to authoring a fresh figure
+# meant courses shipped 44 assets across 24 concepts and showed the learner
+# almost none of them.
+#
+# Not zero: the cooldown and the per-concept/per-session budgets above still
+# bind, and a diagram nobody needs is still an interruption even when it is
+# free. 2 is "there is at least one real reason" — a visual subject, or an
+# opening — rather than "nothing notable".
+REUSE_THRESHOLD = 2
 
 # Teaching moments a course build can anticipate and draw in advance.
 SLOT_OPENING = "opening"                 # the object of inquiry, turn one
@@ -123,6 +143,85 @@ _DOMAIN_KINDS = (
      r"prerequisite|upstream|downstream)", ("graph",)),
     (r"\b(step|method|procedure|algorithm|solve for|how to|"
      r"first .* then|derivation)", ("steps",)),
+    # CODE. The listing is the teaching object for programming, so this needs
+    # to be EXHAUSTIVE rather than illustrative. Measured 2026-08-21 against 35
+    # topics people actually build CS courses from: the first attempt matched
+    # 9. "Stacks and queues", "Exceptions and error handling" and even "SQL
+    # SELECT queries" all fell through, because the pattern was written from
+    # the phrasings that happened to get tested rather than from how topics are
+    # titled.
+    #
+    # Grouped by category so a gap is visible rather than buried. Ambiguous
+    # single words are deliberately excluded and appear only in a
+    # programming-specific phrase: "function", "variable", "parameter",
+    # "argument", "set", "tree" and "graph" all mean something else in
+    # mathematics, statistics, biology or literature, and each one dragged a
+    # non-CS subject into `code` on an earlier attempt.
+    (r"\b("
+     # languages and ecosystems
+     r"python|javascript|typescript|\bjava\b|c\+\+|c#|csharp|\brust\b|golang|"
+     r"\bgo lang|kotlin|swift|\bruby\b|\bphp\b|scala|haskell|perl|matlab|"
+     r"\bbash\b|shell script|powershell|"
+     # core constructs
+     r"variable(s| name| scope)|data type|primitive type|type system|"
+     r"conditional(s)?|if[ -]else|if statement|elif|switch statement|"
+     r"for loop|while loop|do[ -]while|loop(s|ing)? (over|through)|iteration over|"
+     r"function (call|definition|signature|argument|parameter)|"
+     r"defining a function|writ(e|ing) (a|your first|the) function|"
+     r"helper function|pure function|"
+     r"method (call|signature|definition)|"
+     r"class (method|definition|hierarchy)|classes and objects|"
+     r"object[ -]oriented|inheritance|polymorphism|encapsulation|"
+     r"constructor|instantiat|subclass|superclass|interface implementation|"
+     # data structures
+     r"array(s)?|list comprehension|linked list|dictionar(y|ies)|hash (map|table)|"
+     r"key[ -]value pair|stack(s)? and queue|\bqueue(s)?\b|call stack|"
+     r"binary tree|tree traversal|\btrie\b|heap\b|priority queue|"
+     r"breadth[- ]first|depth[- ]first|\bbfs\b|\bdfs\b|adjacency (list|matrix)|"
+     r"collision handling|load factor|"
+     # algorithms and complexity
+     r"sort(ing)? algorithm|bubble sort|merge sort|quicksort|insertion sort|"
+     r"binary search|linear search|recursion|recursive (call|function|case)|"
+     r"base case|memoi[sz]ation|dynamic programming|greedy algorithm|"
+     r"big[- ]o\b|time complexity|space complexity|asymptotic|"
+     # memory
+     r"pointer(s)?|dereference|reference semantics|pass by (value|reference)|"
+     r"memory (management|leak|allocation)|garbage collect|heap allocation|"
+     # errors, debugging, testing
+     r"exception(s)?|error handling|try[ /-]catch|try[ /-]except|raise an error|"
+     r"throw(s|n|ing)? an? (error|exception)|stack trace|traceback|"
+     r"debug(ger|ging)?|breakpoint|syntax error|runtime error|"
+     r"unit test|test[- ]driven|assertion|mocking|test suite|"
+     # I/O, text, serialisation
+     r"file (i/?o|handling|read|write)|read(ing)? (a|the) file|"
+     r"read(ing)? and writ(e|ing) files?|writ(e|ing) to a file|"
+     r"regular expression|regex|pattern matching|"
+     r"\bjson\b|\byaml\b|\bxml\b|serciali[sz]|deserial|parsing|parser|"
+     r"string (manipulation|slicing|formatting|concatenation)|"
+     # SQL and databases — the whole surface is keywords
+     r"\bsql\b|select statement|\bselect\b.{0,40}\bfrom\b|where clause|"
+     r"(inner|left|right|outer|cross|self)[ -]join|\bjoin\b.{0,30}\bon\b|"
+     r"group by|order by|having clause|window function|partition by|"
+     r"common table expression|\bcte\b|subquer(y|ies)|"
+     r"primary key|foreign key|schema design|normali[sz]ation.{0,20}(table|database)|"
+     r"query plan|\bindex(es)?\b.{0,30}(scan|seek|lookup)|"
+     r"insert into|update .{0,20}\bset\b|delete from|create table|"
+     # web, APIs, tooling
+     r"rest api|api (call|endpoint|request)|http (request|response|method)|"
+     r"endpoint|\bcurl\b|webhook|"
+     r"version control|\bgit\b|commit(s|ting)?\b|branch(es|ing)? and merg|"
+     r"pull request|merge conflict|package manager|dependenc(y|ies)|"
+     r"compiler|interpreter|transpil|build step|"
+     # concurrency
+     r"concurren(cy|t)|thread(s|ing)?\b|async|await|coroutine|"
+     r"race condition|deadlock|mutex|semaphore|parallelis[mz]|"
+     # language features
+     r"closure(s)?|lexical scope|generator function|iterator|decorator|"
+     r"lambda (function|expression)|higher[- ]order function|callback|"
+     r"immutab|mutable state|"
+     r"code (snippet|example|listing|review)|source code|pseudocode|"
+     r"algorithm implementation|implement(ing)? (a|the) (algorithm|function|class)"
+     r")", ("code",)),
 )
 
 
@@ -134,9 +233,22 @@ _DOMAIN_KINDS = (
 # exactly backwards: "Why the partial derivative uses a curly d" contains
 # "partial derivative" and scores as a plot, when the subject is the SHAPE OF
 # A SYMBOL.
+# NOTE ON THE WORD BOUNDARIES. `abbreviat` and `terminolog` are PREFIXES, and
+# for two years they sat inside a group closed by `\b` -- so `terminolog\b`
+# required a non-word character straight after "terminolog", which "terminology"
+# does not have. Both branches could never match anything. They are moved out
+# of the `\b`-terminated group; the leading `\b` still prevents matching inside
+# a longer word, which is the boundary that actually matters here ("war" in
+# "aware" has cost this codebase four separate bugs).
 _ARBITRARY = re.compile(
-    r"\b(convention|notation|symbol for|is called|are called|the name|named "
-    r"after|abbreviat|terminolog|nomenclature|by definition we write|"
+    r"\b(?:abbreviat|terminolog)\w*"
+    # `notation` alone caught "Big-O notation" and "sigma notation" — both
+    # DERIVABLE concepts whose content is the idea, not the squiggle. Routing
+    # them to arbitrary told the tutor to state Big-O rather than build it, and
+    # suppressed the diagram for it. It now needs convention-flavoured context.
+    r"|\bnotational convention|\bthe notation for|\bthis notation (means|is)"
+    r"|\b(convention|symbol for|is called|are called|the name|named "
+    r"after|nomenclature|by definition we write|"
     r"why (is|do) (it|we|they) (called|write|use)|stands for|"
     r"reference range|citation format|indexes? from)\b", re.I)
 
@@ -310,18 +422,31 @@ def _decide(m):
         avoid = tuple(dict.fromkeys(avoid + recent))
 
     reason = "; ".join(why) or "nothing notable"
+
+    # --- B.2: a prebuilt diagram clears a LOWER bar than authoring one.
+    #
+    # The two actions were gated on the same threshold, which priced them as if
+    # they cost the same. They do not. A `reuse` spends no model call, adds no
+    # latency to the turn, carries its provenance, and was checked at build time
+    # so it cannot hand over the answer the way a freshly authored figure can.
+    # `generate` risks all four. Holding the cheap, safe action to the expensive
+    # action's bar is why courses ship 44 assets for 24 concepts and the learner
+    # is shown almost none of them.
+    #
+    # The hard budget gates above still bind: this lowers the pedagogical bar,
+    # never the per-concept or per-session cap, and never the cooldown.
+    slot = _pick_slot(m)
+    if slot and score >= REUSE_THRESHOLD:
+        return AidDecision(action="reuse", slot=slot, score=score,
+                           reason=f"score {score}/{REUSE_THRESHOLD} — {reason}; "
+                                  f"reusing '{slot}'",
+                           suggested_kinds=kinds, avoid_kinds=avoid,
+                           urgency="encouraged" if stuck else "optional")
+
     if score < THRESHOLD:
         return AidDecision(action="none", score=score,
                            reason=f"score {score}/{THRESHOLD} — {reason}",
                            suggested_kinds=kinds, avoid_kinds=avoid)
-
-    # --- Prefer a diagram that was built and checked at course-creation time.
-    slot = _pick_slot(m)
-    if slot:
-        return AidDecision(action="reuse", slot=slot, score=score,
-                           reason=f"score {score} — {reason}; reusing '{slot}'",
-                           suggested_kinds=kinds, avoid_kinds=avoid,
-                           urgency="encouraged" if stuck else "optional")
 
     return AidDecision(action="generate", score=score,
                        reason=f"score {score} — {reason}; no precomputed aid fits",
@@ -373,13 +498,19 @@ def prompt_nudge(decision):
     """
     if decision.action != "generate":
         return ""
+    # B.1: an instruction, not a permission. `generate` already MEANS the cost
+    # was weighed and a figure won; "you may … if it would only decorate, do
+    # not" invited the model to overturn that, and it did — `visual_policy`
+    # sat at 1.00 in six of seven domains, which is precisely "the policy asked
+    # and nothing was drawn". The restraint the old wording protected lives in
+    # the policy's `none` decisions, where the grammar is withheld entirely.
     bits = []
     if decision.urgency == "encouraged":
-        bits.append("A diagram would genuinely help THIS turn — the student is "
-                    "stuck and words have not worked. Draw one.")
+        bits.append("Draw a diagram this turn. The student is stuck and words "
+                    "have not worked.")
     else:
-        bits.append("You may draw ONE diagram this turn if it makes your question "
-                    "askable in a way words cannot. If it would only decorate, do not.")
+        bits.append("Draw ONE diagram this turn. Decide WHAT it shows, not "
+                    "whether to include it.")
     if decision.suggested_kinds:
         bits.append("Most likely useful here: "
                     + ", ".join(decision.suggested_kinds) + ".")

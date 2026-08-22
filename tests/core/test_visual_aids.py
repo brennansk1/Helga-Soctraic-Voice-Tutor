@@ -39,6 +39,7 @@ class TestNormalization(unittest.TestCase):
             "steps": {"steps": [{"label": "first"}]},
             "fraction": {"models": [{"parts": 4, "shaded": 1}]},
             "image": {"src": "/static/img/x.png"},
+            "code": {"language": "python", "code": "x = 1"},
         }
         self.assertEqual(set(minimal), set(KINDS), "KINDS and this table drifted apart")
         for kind, spec in minimal.items():

@@ -168,6 +168,29 @@ class Book:
             "chapter_titles": [c.title for c in self.chapters],
         }
 
+    def as_brief(self):
+        """A `scope_fit`-shaped brief — smart stretch for book-sourced courses.
+
+        `assess_scope` reads `chapter_count` and `structural_sources`. A book's
+        chapters ARE its syllabus: an author decided how much material the
+        subject needs and wrote that much, which is exactly the evidence the
+        scope check wants.
+
+        `structural_sources` is 1. One book is one account of how a subject is
+        organised, however many chapters it runs to — claiming more would
+        inflate confidence the same way `domain_sources` warns about. It also
+        means a 6-chapter book asked to carry a degree is correctly reported as
+        unsupported rather than being padded into one, which is the whole
+        purpose of the check.
+        """
+        return {
+            "chapter_count": len(self.chapters),
+            "structural_sources": 1 if self.chapters else 0,
+            "degraded": not self.chapters,
+            "source": "book",
+            "entry_url": self.source_path,
+        }
+
     def chapter(self, order):
         for c in self.chapters:
             if c.order == order:
@@ -291,9 +314,26 @@ def _drop_front_matter(chapters):
 
 
 def _clean(text):
+    """Normalise whitespace — EXCEPT inside fenced code blocks.
+
+    Collapsing runs of spaces is right for prose and destroys code: measured on
+    a Python chapter, a four-space-indented call argument came out with one
+    space, and in Python indentation IS the syntax. YAML has the same property.
+    So fenced blocks are lifted out, the prose is cleaned, and the blocks are
+    put back byte-for-byte.
+    """
     text = re.sub(r"\r\n?", "\n", text or "")
+    blocks = []
+
+    def _lift(m):
+        blocks.append(m.group(0))
+        return f"\x00FENCE{len(blocks) - 1}\x00"
+
+    text = re.sub(r"```.*?```", _lift, text, flags=re.S)
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
+    for i, b in enumerate(blocks):
+        text = text.replace(f"\x00FENCE{i}\x00", b)
     return text.strip()
 
 
@@ -311,6 +351,37 @@ def _classify_heading(title):
         return "chapter", t
     return None, t
 
+
+def _text_preserving_code(soup):
+    """Chapter text with fenced code blocks, rather than flattened prose.
+
+    `soup.get_text("\n")` returns every character including the contents of
+    `<pre><code>`, but it returns them as UNDIFFERENTIATED PROSE. For a novel
+    that is correct and irrelevant. For a programming book it is the difference
+    between material and mush: nothing downstream can tell a SELECT statement
+    from a sentence about one, so hydration cannot quote code as code and the
+    `code` visual aid — the thing that teaches programming Socratically — has
+    nothing to build from.
+
+    So `<pre>` blocks are replaced with fenced markdown BEFORE the flatten.
+    Same fix, same reason, as `doc_reader._text_and_code`; a coding book and a
+    documentation site fail identically without it.
+
+    Mutates a copy of the tree, never raises: an extraction quirk in one
+    chapter must not lose the book.
+    """
+    try:
+        for pre in soup.find_all("pre"):
+            # Shared with doc_reader: line-level elements make lines,
+            # inline spans do not. Neither separator alone is correct.
+            from services.research.doc_reader import _code_text
+            code = _code_text(pre)
+            if not (code or "").strip():
+                continue
+            pre.replace_with("\n```\n" + code.strip("\n") + "\n```\n")
+    except Exception:                        # pragma: no cover - defensive
+        pass
+    return soup.get_text("\n")
 
 def _epub_chapters(path):
     """EPUB is a ZIP of XHTML. Read the spine order, not the file order."""
@@ -344,7 +415,7 @@ def _epub_chapters(path):
                 tag.decompose()
             head = soup.find(["h1", "h2"])
             title = (head.get_text(" ", strip=True) if head else "").strip()
-            text = _clean(soup.get_text("\n"))
+            text = _clean(_text_preserving_code(soup))
             kind, label = _classify_heading(title)
             if kind == "part":
                 # A part divider is usually its own near-empty document; it
@@ -522,11 +593,33 @@ def _text_chapters(path):
     return chapters
 
 
+#: Parsed books, keyed by (path, mtime, size). Small on purpose: a parsed book
+#: holds every chapter's full text, so a 400-page textbook is tens of MB and an
+#: unbounded dict here would repeat the mistake `_DIGEST_CACHE` made.
+_BOOK_CACHE = {}
+_BOOK_CACHE_MAX = 2
+
+
 def open_book(path, max_pages=None):
     """Parse any supported book into a `Book`. Returns None if unreadable."""
     if not path or not os.path.exists(path):
         logger.warning(f"[BOOK] not found: {path}")
         return None
+    # CACHED ON (path, mtime, size). `build_from_book` parses the upload and
+    # `fsm_logic` parses it again when a session opens it, and `_pdf_chapters`
+    # runs PyMuPDF over every page of a file that lives on an 11 MB/s external
+    # drive. Keying on mtime+size means an edited file re-parses rather than
+    # serving stale chapters.
+    try:
+        st = os.stat(path)
+        ckey = (os.path.abspath(path), int(st.st_mtime), st.st_size, max_pages)
+        hit = _BOOK_CACHE.get(ckey)
+        if hit is not None:
+            logger.debug(f"[BOOK] cache hit for {os.path.basename(path)}")
+            return hit
+    except Exception:                        # pragma: no cover - defensive
+        ckey = None
+
     ext = os.path.splitext(path)[1].lower()
     title = os.path.splitext(os.path.basename(path))[0].replace("-", " ").replace("_", " ")
     try:
@@ -548,4 +641,9 @@ def open_book(path, max_pages=None):
         return None
     logger.info(f"[BOOK] {title!r}: {len(chapters)} chapter(s), "
                 f"{len({c.part for c in chapters if c.part})} part(s)")
-    return Book(title, chapters, source_path=path, fmt=fmt)
+    book = Book(title, chapters, source_path=path, fmt=fmt)
+    if ckey is not None:
+        while len(_BOOK_CACHE) >= _BOOK_CACHE_MAX:
+            _BOOK_CACHE.pop(next(iter(_BOOK_CACHE)), None)
+        _BOOK_CACHE[ckey] = book
+    return book

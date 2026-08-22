@@ -17,8 +17,12 @@ logs/
 courses/
 .claude/
 _archive/Matterorn*
+# Screenshots and scratch renders are ignored by default — they are usually
+# debugging artefacts. The README's own images are the deliberate exception,
+# so they must be listed here or `git add` silently does nothing.
 *.png
 !services/web-ui/static/img/*.svg
+!docs/images/*.png
 *.db
 test_prompt_db
 .venv*/

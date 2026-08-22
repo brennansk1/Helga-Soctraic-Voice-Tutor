@@ -147,14 +147,23 @@
     function highlightLine(text, lang) {
         var frag = document.createDocumentFragment();
         var kws = (CODE_RULES.kw[lang] || '').split(' ').filter(Boolean);
+        // Case-insensitive for languages conventionally written in upper case.
+        // SQL is the reason: `SELECT ... FROM ... WHERE` is the ordinary way to
+        // write it, and every one of those rendered as plain text because the
+        // keyword list is lower case and indexOf is case-sensitive. A code aid
+        // that does not highlight the keywords is a grey box.
+        var foldCase = (lang === 'sql');
         // One pass: strings and comments win over keywords, because a keyword
         // inside a string is not a keyword.
-        var re = /(\/\/[^\n]*|#[^\n]*)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|\b(\d+\.?\d*)\b|([A-Za-z_][A-Za-z0-9_]*)/g;
+        // `--` is SQL's comment marker and was missing, so every comment in a
+        // SQL listing rendered as plain code. `//` and `#` cover the rest.
+        var re = /(\/\/[^\n]*|--[^\n]*|#[^\n]*)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|\b(\d+\.?\d*)\b|([A-Za-z_][A-Za-z0-9_]*)/g;
         var last = 0, m;
         while ((m = re.exec(text)) !== null) {
             if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
             var cls = m[1] ? 'code-com' : m[2] ? 'code-str' : m[3] ? 'code-num'
-                : (kws.indexOf(m[4]) >= 0 ? 'code-kw' : null);
+                : ((foldCase ? kws.indexOf(m[4].toLowerCase())
+                               : kws.indexOf(m[4])) >= 0 ? 'code-kw' : null);
             if (cls) { frag.appendChild(elem('span', cls, m[0])); }
             else { frag.appendChild(document.createTextNode(m[0])); }
             last = m.index + m[0].length;

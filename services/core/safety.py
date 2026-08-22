@@ -1,3 +1,4 @@
+from services.common.prompts import is_young_band
 """
 Safety Module for Helga Socratic Voice Tutor
 
@@ -253,7 +254,7 @@ def check_safety_detailed(user_input: str, current_node_title: str = None, grade
 def check_profanity(text: str, grade_band: str = None) -> SafetyResult:
     """Band-aware profanity check: K-2/3-5 use the stricter list."""
     lowered = (text or "").lower()
-    keywords = (PROFANITY_KEYWORDS_STRICT if grade_band in ("K-2", "3-5")
+    keywords = (PROFANITY_KEYWORDS_STRICT if is_young_band(grade_band)
                 else PROFANITY_KEYWORDS)
     for kw in keywords:
         if kw in lowered:
@@ -314,7 +315,7 @@ _REFUSALS = {
 
 
 def get_refusal_message(category: str, grade_band: str = None) -> str:
-    tier = "young" if grade_band in ("K-2", "3-5") else "older"
+    tier = "young" if is_young_band(grade_band) else "older"
     entry = _REFUSALS.get(category)
     if entry:
         return entry[tier]

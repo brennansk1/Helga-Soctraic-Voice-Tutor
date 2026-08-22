@@ -82,6 +82,7 @@ DOMAINS = {
                         "such that Av = lambda v; lambda is the eigenvalue.",
              "concept_tags": ["relationship", "function"],
              "expects_aid": "plot", "derivable": True,
+             "misconceptions": ['the zero vector is an eigenvector', 'eigenvectors must have unit length'],
              "answer_tokens": ["lambda v", "scalar multiple"]},
             {"concept": "Partial derivatives",
              "context": "A partial derivative measures the rate of change of a "
@@ -89,6 +90,7 @@ DOMAINS = {
                         "while the others are held fixed.",
              "concept_tags": ["rate", "function"],
              "expects_aid": "plot", "derivable": True,
+             "misconceptions": ['the other variables are ignored rather than held constant', 'a partial derivative is the same as a total derivative'],
              "answer_tokens": ["hold the others constant", "held fixed"]},
             {"concept": "Why the partial derivative uses a curly d",
              "context": "The symbol used for partial derivatives is a stylised "
@@ -97,6 +99,7 @@ DOMAINS = {
                         "partial from total derivatives. Nothing about it can "
                         "be derived from the mathematics.",
              "concept_tags": [], "expects_aid": None, "derivable": False,
+             "misconceptions": ['the curly d means something mathematically different from d', 'the symbol can be derived from the definition'],
              "answer_tokens": ["convention", "notation"]},
         ],
     },
@@ -116,6 +119,7 @@ DOMAINS = {
                         "frequencies across generations.",
              "concept_tags": ["process", "feedback"],
              "expects_aid": "cycle", "derivable": True,
+             "misconceptions": ['organisms adapt during their lifetime and pass it on', 'evolution has a goal or direction'],
              "answer_tokens": ["differential reproductive success"]},
             {"concept": "Why ice floats on water",
              "context": "Hydrogen bonding holds water molecules in an open "
@@ -123,12 +127,14 @@ DOMAINS = {
                         "liquid it forms from.",
              "concept_tags": ["structure", "spatial"],
              "expects_aid": "geometry", "derivable": True,
+             "misconceptions": ['cold things are always denser', 'ice floats because it is colder'],
              "answer_tokens": ["less dense", "open lattice"]},
             {"concept": "The chemical symbol for gold",
              "context": "Gold's symbol is Au, from the Latin aurum. The symbol "
                         "set is a naming CONVENTION agreed by IUPAC; it cannot "
                         "be worked out from the element's properties.",
              "concept_tags": [], "expects_aid": None, "derivable": False,
+             "misconceptions": ['the symbol comes from the English name', 'symbols are abbreviations of the modern word'],
              "answer_tokens": ["Au", "aurum"]},
         ],
     },
@@ -148,6 +154,7 @@ DOMAINS = {
                         "of the input size.",
              "concept_tags": ["procedure", "algorithm"],
              "expects_aid": "steps", "derivable": True,
+             "misconceptions": ['binary search is O(log n) on any list', 'O(log n) means it takes log n seconds'],
              "answer_tokens": ["log n", "O(log n)", "logarithm"]},
             {"concept": "Recursion and the call stack",
              "context": "A recursive call suspends the current frame on the "
@@ -155,6 +162,7 @@ DOMAINS = {
                         "allows the stack to unwind.",
              "concept_tags": ["hierarchy", "dependency"],
              "expects_aid": "graph", "derivable": True,
+             "misconceptions": ['recursion repeats without using memory', 'the base case is optional'],
              "answer_tokens": ["base case", "unwind"]},
             {"concept": "Why Python lists index from zero",
              "context": "Zero-based indexing is a CONVENTION inherited from C, "
@@ -162,6 +170,7 @@ DOMAINS = {
                         "Python adopted it; it is a design decision, not a "
                         "mathematical necessity.",
              "concept_tags": [], "expects_aid": None, "derivable": False,
+             "misconceptions": ['zero-indexing is a mistake or arbitrary quirk', 'the first element is at index 1 in most languages'],
              "answer_tokens": ["offset", "convention", "inherited"]},
         ],
     },
@@ -184,6 +193,7 @@ DOMAINS = {
                         "and on German responsibility (the Fischer debate).",
              "concept_tags": ["causal", "system"],
              "expects_aid": "graph", "derivable": True,
+             "misconceptions": ['the assassination alone caused the war', 'one nation was solely responsible'],
              "answer_tokens": ["Fischer", "alliance system"]},
             {"concept": "The sequence of the July Crisis",
              "context": "Assassination in Sarajevo, the Austrian ultimatum, "
@@ -191,6 +201,7 @@ DOMAINS = {
                         "invasion of Belgium -- an ordered chain over weeks.",
              "concept_tags": ["chronology", "development"],
              "expects_aid": "timeline", "derivable": True,
+             "misconceptions": ['events happened simultaneously rather than in sequence', 'the alliances activated automatically'],
              "answer_tokens": ["ultimatum", "mobilisation"]},
             {"concept": "The date of the Battle of Hastings",
              "context": "The Battle of Hastings was fought on 14 October 1066. "
@@ -198,6 +209,7 @@ DOMAINS = {
                         "remembered, and cannot be reasoned out from anything "
                         "the learner already knows.",
              "concept_tags": [], "expects_aid": None, "derivable": False,
+             "misconceptions": ['the date can be inferred from other events', 'Hastings and the Norman Conquest are the same event'],
              "answer_tokens": ["1066", "14 October"]},
         ],
     },
@@ -218,6 +230,7 @@ DOMAINS = {
                         "which the reader must suppress.",
              "concept_tags": ["comparison"],
              "expects_aid": "table", "derivable": True,
+             "misconceptions": ['a metaphor is just decoration', "metaphor and simile differ only by 'like'"],
              "answer_tokens": ["transfer", "properties"]},
             {"concept": "Why the sonnet's volta matters",
              "context": "The volta is the turn in argument, conventionally at "
@@ -225,6 +238,7 @@ DOMAINS = {
                         "the poem's claim is resolved.",
              "concept_tags": ["structure"],
              "expects_aid": "geometry", "derivable": True,
+             "misconceptions": ['the volta is always at line 9', 'form is separate from meaning'],
              "answer_tokens": ["turn", "line 9"]},
             {"concept": "The name of the ten-syllable line",
              "context": "A line of five iambs is called iambic pentameter. The "
@@ -232,6 +246,7 @@ DOMAINS = {
                         "metron for measure. The name cannot be reasoned out "
                         "from the rhythm itself.",
              "concept_tags": [], "expects_aid": None, "derivable": False,
+             "misconceptions": ['the name describes the content rather than the metre', 'any ten-syllable line is iambic pentameter'],
              "answer_tokens": ["iambic pentameter", "pentameter"]},
         ],
     },
@@ -253,6 +268,7 @@ DOMAINS = {
                         "so lowering rate and contractility.",
              "concept_tags": ["process", "feedback"],
              "expects_aid": "cycle", "derivable": True,
+             "misconceptions": ['they act directly on the heart muscle rather than receptors', 'they lower blood pressure by thinning blood'],
              "answer_tokens": ["beta-1", "sinoatrial"]},
             {"concept": "Why antibiotic resistance spreads",
              "context": "Selection pressure favours resistant organisms, and "
@@ -260,6 +276,7 @@ DOMAINS = {
                         "between species.",
              "concept_tags": ["process", "causal"],
              "expects_aid": "cycle", "derivable": True,
+             "misconceptions": ['individual bacteria become resistant by exposure', 'the patient becomes resistant, not the bacteria'],
              "answer_tokens": ["selection pressure", "horizontal gene transfer"]},
             {"concept": "The normal reference range for fasting glucose",
              "context": "Roughly 70-99 mg/dL is conventionally reported as "
@@ -267,6 +284,7 @@ DOMAINS = {
                         "CONVENTION and vary by assay and population; they are "
                         "looked up, not derived.",
              "concept_tags": [], "expects_aid": None, "derivable": False,
+             "misconceptions": ['a reference range is a health threshold rather than a population interval', 'the range is the same in every laboratory'],
              "answer_tokens": ["70", "99", "mg/dL"]},
         ],
     },
@@ -288,6 +306,7 @@ DOMAINS = {
                         "particular has no clean civil-law analogue.",
              "concept_tags": ["dependency", "classification"],
              "expects_aid": "graph", "derivable": True,
+             "misconceptions": ['a contract must be written and signed', 'any promise is legally enforceable'],
              "answer_tokens": ["consideration", "offer and acceptance"]},
             {"concept": "How precedent binds a lower court",
              "context": "Stare decisis binds courts to decisions of superior "
@@ -295,6 +314,7 @@ DOMAINS = {
                         "structural question about that hierarchy.",
              "concept_tags": ["hierarchy"],
              "expects_aid": "graph", "derivable": True,
+             "misconceptions": ['all previous decisions bind equally', 'a court may ignore precedent it disagrees with'],
              "answer_tokens": ["stare decisis", "hierarchy"]},
             {"concept": "The citation format for a UK case",
              "context": "Neutral citation format, e.g. [2019] UKSC 41, is a "
@@ -302,6 +322,7 @@ DOMAINS = {
                         "style and court abbreviations are arbitrary and must "
                         "be learned.",
              "concept_tags": [], "expects_aid": None, "derivable": False,
+             "misconceptions": ['citation format carries legal meaning', 'the format can be reasoned out from the case name'],
              "answer_tokens": ["UKSC", "neutral citation"]},
         ],
     },
@@ -661,6 +682,36 @@ WEIGHTS = {
 }
 
 
+#: The production inputs `run_dialogue` supplies to the tutor prompt. Part of
+#: the fingerprint (see below) because changing it changes the measured system.
+#: The FSM supplies ten more; `learner_history` is legitimately absent because
+#: a simulated student has no past sessions.
+#: The model that JUDGES, held fixed across tutor comparisons. Part of the
+#: fingerprint: a different judge is a different instrument.
+JUDGE_MODEL = os.environ.get("HELGA_JUDGE_MODEL", "nail-35b-a3b-ctx")
+
+
+BENCH_PROMPT_INPUTS = (
+    "context_text", "conversation_history", "bloom_level", "aid_policy",
+    "turn_state", "misconceptions",
+)
+
+#: Production inputs that are supplied by the bench from the moment they exist.
+#: NOT part of the fingerprint, and the distinction matters.
+#:
+#: The fingerprint's job is to refuse a comparison that would be INVALID.
+#: `turn_state` bumped it because production had it and the bench did not, so
+#: every earlier baseline measured production-minus-turn-state — a system that
+#: never shipped, and therefore not a legitimate comparison point.
+#:
+#: `teaching_move` (A.6) did not exist anywhere before it existed everywhere.
+#: A run before it and a run after it are both real systems, and comparing them
+#: is precisely the measurement we want. Bumping here would have blocked a
+#: valid comparison, which is the opposite failure to the one the fingerprint
+#: exists to prevent.
+BENCH_INPUTS_SINCE_INCEPTION = ("teaching_move",)
+
+
 def rubric_fingerprint():
     """Identity of the instrument. Any change to what is asked or scored."""
     import hashlib
@@ -673,7 +724,23 @@ def rubric_fingerprint():
          # identical across exactly that change, which is the trap it exists
          # to prevent. Measured: 3.719 -> 3.361 across those two harness
          # changes alone, with no product regression behind it.
-         "harness": {"enforce_contract": True, "real_aid_policy": True},
+         # WHICH PRODUCTION INPUTS THE BENCH SUPPLIES.
+         #
+         # `get_socratic_tutor_prompt` takes 14 inputs; the FSM supplies all of
+         # them and this bench supplied four. Changing that set changes the
+         # SYSTEM BEING MEASURED, so a baseline taken with a different set is
+         # not comparable -- and until 2026-08-21 the fingerprint did not cover
+         # it, so such a comparison would have been made silently while the
+         # fingerprint claimed the instruments matched.
+         #
+         # `grade_answers` is here because A.2's turn state is built from graded
+         # answers, and nothing in the bench produced a grade. That made the one
+         # intervention aimed at the semantic quality of a question invisible to
+         # the instrument measuring it.
+         "judge_model": JUDGE_MODEL,
+         "harness": {"enforce_contract": True, "real_aid_policy": True,
+                     "grade_answers": True,
+                     "prompt_inputs": sorted(BENCH_PROMPT_INPUTS)},
          "domains": {k: {"dimension": v["dimension"],
                          "rubric": v["dimension_rubric"],
                          "topics": [(t["concept"], t["derivable"],
@@ -726,6 +793,82 @@ def domain_score(result):
     total_w = sum(WEIGHTS[k] for k in live)
     score = sum(WEIGHTS[k] * v for k, v in live.items()) / total_w
     return {"score": round(score, 3), "components": comp, "missing": missing}
+
+
+#: Per-dimension spread measured across runs of the SAME config (mathematics,
+#: n=15 dialogues each, model nail-35b-a3b-ctx, 2026-08-20/21). A composite
+#: floor is not enough on its own: across two identical runs the composite
+#: moved 0.162 while `visual_integration` moved 1.20. Regenerate any time with
+#: `--noise-floor a.json b.json ...`.
+#:
+#: These are MEANS. See summarise() for why medians are not used anywhere.
+#:
+#: MEASURED FROM THREE RUNS, NOT TWO, AND THAT MATTERS.
+#: The first estimate used two runs and put `accuracy` at 0.13. A third run
+#: showed accuracy spanning 4.13/4.27/5.00 -- a spread of 0.87, nearly SEVEN
+#: TIMES the two-run estimate. Everything claimed against the two-run floors
+#: had to be withdrawn. Two samples do not estimate a spread; they estimate the
+#: gap between two draws, which is a lower bound and usually a bad one.
+#:
+#: Treat these as lower bounds too. Add runs and re-derive before trusting any
+#: delta close to a floor, and prefer a dimension that moved several times its
+#: floor over one that just cleared it.
+DIMENSION_FLOORS = {
+    "socratic": 0.00,
+    "adaptation": 0.13,
+    "visual_policy": 0.27,
+    "honest_telling": 0.40,
+    "notation_speakable": 0.40,
+    "progression": 0.47,
+    "misconception_handling": 0.80,
+    "accuracy": 0.87,
+    "notation_rigour": 1.00,             # cannot support a 1-point claim
+    "visual_integration": 2.13,          # nor can this; needs many more samples
+}
+
+#: Composite floor from the same three runs. Was 0.162 on two runs.
+COMPOSITE_FLOOR = 0.533
+
+#: Smallest per-dimension delta worth a verdict at all, regardless of floor.
+#:
+#: `socratic` measured a floor of 0.00 -- three runs happened to land on the
+#: same mean. That is not evidence the instrument resolves arbitrarily small
+#: differences; it is evidence those three runs agreed. Without this guard a
+#: 0.07 wobble printed as REAL movement against a 0.00 floor.
+#:
+#: 0.25 is a quarter of one point on a five-point scale, aggregated over 15
+#: dialogues. Below that, this instrument is not saying anything.
+MIN_RESOLVABLE = 0.25
+
+
+def _dimension_means(result):
+    """Mean per dimension across every dialogue in one run."""
+    acc = {}
+    for t in result["topics"]:
+        for p in t["profiles"].values():
+            for k, v in p["scores"].items():
+                if isinstance(v, (int, float)) and not k.startswith("_"):
+                    acc.setdefault(k, []).append(v)
+    return {k: statistics.mean(v) for k, v in acc.items() if v}
+
+
+def dimension_floors(results_for_same_config):
+    """Per-dimension noise, measured the same way as the composite floor.
+
+    Returns {dimension: spread}. A dimension whose spread approaches 1.0 cannot
+    support a claim about a one-point improvement at this sample size, however
+    convincing the delta looks.
+    """
+    if len(results_for_same_config) < 2:
+        return {}
+    per = [_dimension_means(r) for r in results_for_same_config]
+    keys = set().union(*(p.keys() for p in per))
+    out = {}
+    for k in sorted(keys):
+        vals = [p[k] for p in per if k in p]
+        if len(vals) >= 2:
+            out[k] = round(max(vals) - min(vals), 3)
+    return out
 
 
 def noise_floor(results_for_same_config):
@@ -784,6 +927,36 @@ def compare(current, baseline_path, floor=None):
         else:
             print(f"      exceeds the noise floor ({floor}) — real movement")
 
+        # WHICH dimension moved. A composite delta says something changed, not
+        # what; and a dimension can move far inside its OWN floor while the
+        # composite stays put. Both halves have been observed on this bench.
+        bd_, cd_ = _dimension_means(b), _dimension_means(r)
+        rows = []
+        for k in sorted(set(bd_) & set(cd_)):
+            # Rounded before the comparison: 1.40-1.80 is -0.4000000000000001
+            # in binary float, which read as REAL movement against a 0.40
+            # floor. A verdict must not turn on the last mantissa bit.
+            d_ = round(cd_[k] - bd_[k], 3)
+            df = DIMENSION_FLOORS.get(k)
+            if df is None:
+                verdict = "floor unmeasured"
+            elif abs(d_) < MIN_RESOLVABLE:
+                # A floor of 0.00 means "these runs happened to agree", not
+                # "this instrument resolves arbitrarily small differences".
+                # Without this guard a 0.07 wobble on `socratic` printed REAL.
+                verdict = f"below resolution (<{MIN_RESOLVABLE})"
+            elif abs(d_) <= df:
+                verdict = f"noise (floor {df})"
+            else:
+                verdict = f"REAL (floor {df})"
+            rows.append((abs(d_), k, bd_[k], cd_[k], d_, verdict))
+        if rows:
+            rows.sort(reverse=True)
+            print("      per dimension:")
+            for _, k, bv, cv, d_, verdict in rows:
+                print(f"        {k:24s} {bv:5.2f} -> {cv:5.2f}  "
+                      f"{d_:+5.2f}   {verdict}")
+
 
 def make_aid_decider(topic):
     """The PRODUCTION aid path, reproduced for the benchmark.
@@ -828,7 +1001,25 @@ def make_aid_decider(topic):
 
 # ----------------------------------------------------------------- the run
 def run_domain(domain_key, profiles=None, turns=4, samples=3,
-               url=None, model=None, static_only=False, verbose=False):
+               url=None, model=None, static_only=False, verbose=False,
+               generate_only=False):
+    """Run a domain.
+
+    `generate_only` collects transcripts and runs the deterministic scorers,
+    but never constructs a judge client and never makes a judged call.
+
+    WHY THAT MODE EXISTS. The tutor and the judge are each 12-14 GB, and this
+    machine has 24 GB. Judging inline means both must be resident at once —
+    26 GB — so the OS swaps a 13 GB model in and out on EVERY dialogue. Runs
+    in that state are not merely slow: today two of them thrashed 12 GB of
+    swap to exhaustion, and a benchmark measured on a thrashing machine
+    measures the swap file.
+
+    Split in two, only one model is ever loaded: generate with the tutor,
+    unload, then `--rescore` the saved transcripts with the judge. One load
+    each instead of thirty, and the scores are identical because the
+    transcripts are the same bytes either way.
+    """
     import helgabench as hb
 
     url = url or os.environ.get("OLLAMA_URL", "http://localhost:11434")
@@ -836,7 +1027,33 @@ def run_domain(domain_key, profiles=None, turns=4, samples=3,
     dom = DOMAINS[domain_key]
     profiles = profiles or list(hb.PROFILES)
 
+    # SEPARATE CLIENTS FOR TUTOR AND JUDGE.
+    #
+    # One client drove both until 2026-08-21, so setting OLLAMA_MODEL swapped
+    # the JUDGE as well as the tutor — a model comparison changed the
+    # instrument and the subject at the same time, which makes the result
+    # meaningless. It surfaced as `JUDGE MISCALIBRATED` when a 12B was put in,
+    # which is the harness catching it correctly; a model that happened to pass
+    # calibration would have produced a plausible, worthless number instead.
+    #
+    # The judge stays on JUDGE_MODEL regardless of which tutor is measured, so
+    # scores from different tutors are comparable. Changing the judge is an
+    # instrument change and bumps the fingerprint.
+    # The judge also needs its own URL, not just its own model name. A tutor
+    # served by llama-server (the only way to use a speculative-decoding draft
+    # model — Ollama has no --model-draft) listens on a different port and
+    # serves exactly ONE model, so a judge pointed at the same URL would
+    # silently BE the tutor. That is the same defect as the shared client,
+    # one layer down, and it fails the same way: comparable-looking numbers
+    # produced by an instrument that moved with the subject.
+    judge_model = os.environ.get("HELGA_JUDGE_MODEL", JUDGE_MODEL)
+    judge_url = os.environ.get("HELGA_JUDGE_URL", url)
     client = None if static_only else hb._client(model, url)
+    # In generate_only the judge is never built. Constructing it would warm it
+    # up — a 13 GB load — which is the entire cost the mode exists to avoid.
+    judge_client = (None if (static_only or generate_only)
+                    else (client if (judge_model == model and judge_url == url)
+                          else hb._client(judge_model, judge_url)))
     out = {"domain": domain_key, "label": dom["label"], "topics": [],
            # Provenance travels WITH the number. "Socratic went up" is not a
            # result if the model, the rubric or the turn count also moved.
@@ -871,7 +1088,8 @@ def run_domain(domain_key, profiles=None, turns=4, samples=3,
                                 # A4.1a. Without it this measures the bare
                                 # model: the contract lives in the FSM, and
                                 # the FSM is not in this path.
-                                enforce_contract=True)
+                                enforce_contract=True,
+                                grade_answers=True)
             tr = d.get("transcript") if isinstance(d, dict) else d
             if isinstance(d, dict) and d.get("error"):
                 print(f"      {pk}: ERROR {d['error']}", flush=True)
@@ -879,9 +1097,14 @@ def run_domain(domain_key, profiles=None, turns=4, samples=3,
 
             # samples_n, or --repeat silently applies only to the new
             # dimensions and not to socratic/adaptation/accuracy.
-            scores = hb.judge(client, pk, topic, tr, samples_n=samples)
+            scores = ({} if generate_only
+                      else hb.judge(judge_client, pk, topic, tr,
+                                    samples_n=samples))
             convo = "\n".join(f"{t['role'].upper()}: {t['text']}" for t in tr)
 
+            # Deterministic scorers run in BOTH modes: they need no model, so
+            # skipping them in generate_only would save nothing and would make
+            # the two paths disagree about what a saved file contains.
             vis = score_visuals(tr, topic)
             nota = score_notation(tr)
             scores["visual_policy"] = vis["score"]
@@ -889,26 +1112,28 @@ def run_domain(domain_key, profiles=None, turns=4, samples=3,
             scores["notation_speakable"] = nota["score"]
             scores["_notation_note"] = nota["note"]
 
-            vi, vi_why = _median_judged(client, VISUAL_INTEGRATION_PROMPT,
-                                        convo, samples, hb)
-            scores["visual_integration"] = vi
-            scores["_visual_integration_why"] = vi_why
+            if not generate_only:
+                vi, vi_why = _median_judged(judge_client,
+                                            VISUAL_INTEGRATION_PROMPT,
+                                            convo, samples, hb)
+                scores["visual_integration"] = vi
+                scores["_visual_integration_why"] = vi_why
 
-            if not topic["derivable"]:
-                ht, ht_why = _median_judged(
-                    client,
-                    HONEST_TELLING_PROMPT.format(
-                        concept=topic["concept"], why=topic["context"]),
+                if not topic["derivable"]:
+                    ht, ht_why = _median_judged(
+                        judge_client,
+                        HONEST_TELLING_PROMPT.format(
+                            concept=topic["concept"], why=topic["context"]),
+                        convo, samples, hb)
+                    scores["honest_telling"] = ht
+                    scores["_honest_telling_why"] = ht_why
+
+                dd, dd_why = _median_judged(
+                    judge_client,
+                    DOMAIN_DIMENSION_PROMPT.format(rubric=dom["dimension_rubric"]),
                     convo, samples, hb)
-                scores["honest_telling"] = ht
-                scores["_honest_telling_why"] = ht_why
-
-            dd, dd_why = _median_judged(
-                client,
-                DOMAIN_DIMENSION_PROMPT.format(rubric=dom["dimension_rubric"]),
-                convo, samples, hb)
-            scores[dom["dimension"]] = dd
-            scores[f"_{dom['dimension']}_why"] = dd_why
+                scores[dom["dimension"]] = dd
+                scores[f"_{dom['dimension']}_why"] = dd_why
 
             rec["profiles"][pk] = {"scores": scores, "transcript": tr}
             shown = ["socratic", "adaptation", "visual_policy",
@@ -950,7 +1175,17 @@ def summarise(result):
                 if isinstance(v, (int, float)):
                     vals.append(v)
         if vals:
-            print(f"  {d:24s} {statistics.median(vals):.2f}   (n={len(vals)})")
+            # MEAN, not median. The composite is built from means, and a median
+            # over n=15 bimodal judgements is unstable: `visual_integration`
+            # was measured moving 5 -> 1 between two IDENTICAL runs while its
+            # mean moved only 3.27 -> 2.07. Reporting the median made pure
+            # noise read as a four-point improvement.
+            floor = DIMENSION_FLOORS.get(d)
+            note = ""
+            if floor is not None and floor >= 1.0:
+                note = f"  [unstable: swings +/-{floor:.2f} on identical runs]"
+            print(f"  {d:24s} {statistics.mean(vals):5.2f}   "
+                  f"(n={len(vals)}, range {min(vals)}-{max(vals)}){note}")
     # The pattern that matters: Socratising everything looks like a high
     # socratic score next to a low honest_telling one.
     der, arb = [], []
@@ -961,12 +1196,13 @@ def summarise(result):
     h = [x.get("honest_telling") for x in arb
          if isinstance(x.get("honest_telling"), (int, float))]
     if s and h:
-        print(f"\n  derivable socratic {statistics.median(s):.2f}  vs  "
-              f"arbitrary honest_telling {statistics.median(h):.2f}")
-        if statistics.median(s) - statistics.median(h) >= 1.5:
+        ms, mh = statistics.mean(s), statistics.mean(h)
+        print(f"\n  derivable socratic {ms:.2f}  vs  "
+              f"arbitrary honest_telling {mh:.2f}")
+        if ms - mh >= 1.5:
             print("  -> Socratises indiscriminately: it questions where it "
                   "should simply tell.")
-        elif statistics.median(h) - statistics.median(s) >= 1.5:
+        elif mh - ms >= 1.5:
             print("  -> Tells indiscriminately: it lectures where it should ask.")
 
 
@@ -1002,10 +1238,24 @@ def static_check():
         print("  FAIL: restraint is not rewarded where no aid is called for")
         ok = False
 
+    # The unspeakable sample used to be `$A \perp B$`, which became SPEAKABLE
+    # the day "\perp" was taught to the converter -- so the check was feeding
+    # the scorer two passing cases and calling it a pass. Worse, it only
+    # PRINTED the two scores and set `ok` from neither, so no result here could
+    # ever fail the check. Both halves are fixed: a sample the converter really
+    # cannot say, and an assertion.
     spk = score_notation([{"role": "tutor", "text": r"Consider $x^2 + y^2$."}])
-    uns = score_notation([{"role": "tutor", "text": r"Consider $A \perp B$."}])
+    uns = score_notation([{"role": "tutor",
+                           "text": r"Consider $\oiint_S \mathfrak{X}$."}])
     print(f"  speakable notation -> {spk['score']}   ({spk['note']})")
     print(f"  unspeakable notation -> {uns['score']}   ({uns['note']})")
+    if spk["score"] != 5:
+        print("  FAIL: notation the converter handles is being marked down")
+        ok = False
+    if uns["score"] >= spk["score"]:
+        print("  FAIL: markup the converter cannot say is not being caught — "
+              "a voice learner would hear it raw")
+        ok = False
 
     print("\n  " + ("Deterministic scorers behave." if ok else "SCORERS BROKEN."))
     return ok
@@ -1025,8 +1275,15 @@ def rescore(path, samples=0, url=None, model=None):
     if samples:
         import helgabench as _hb
         hb = _hb
-        url = url or os.environ.get("OLLAMA_URL", "http://localhost:11434")
-        model = model or os.environ.get("OLLAMA_MODEL", "nail-35b-a3b-ctx")
+        url = url or os.environ.get("HELGA_JUDGE_URL") \
+            or os.environ.get("OLLAMA_URL", "http://localhost:11434")
+        # HELGA_JUDGE_MODEL first: in a rescore the model IS the judge, and
+        # phase 1 of a two-phase run has OLLAMA_MODEL set to the TUTOR. Reading
+        # OLLAMA_MODEL here would silently judge with the model under test —
+        # the same defect as the shared client, arriving by a different route.
+        model = model or os.environ.get("HELGA_JUDGE_MODEL") \
+            or os.environ.get("OLLAMA_MODEL", "nail-35b-a3b-ctx")
+        print(f"  judging with: {model} @ {url}", flush=True)
         client = hb._client(model, url)
 
     for r in results:
@@ -1053,9 +1310,41 @@ def rescore(path, samples=0, url=None, model=None):
                 if hb:
                     convo = "\n".join(f"{x['role'].upper()}: {x['text']}"
                                        for x in tr)
-                    vi, _ = _median_judged(client, VISUAL_INTEGRATION_PROMPT,
-                                           convo, samples, hb)
+                    # THE FULL JUDGED BATTERY, not just visual_integration.
+                    #
+                    # This used to re-judge one dimension, which was fine when
+                    # rescoring meant "the visual rubric changed". It is not
+                    # fine as the second half of a two-phase run: `--generate
+                    # -only` writes a file with NO judged scores in it, so a
+                    # rescore that skips socratic/adaptation/accuracy leaves
+                    # them permanently missing — and `summarise` would report
+                    # the run as complete with the blocking dimensions absent.
+                    judged = hb.judge(client, pk, topic, tr, samples_n=samples)
+                    for k, v in (judged or {}).items():
+                        sc[k] = v
+
+                    vi, vi_why = _median_judged(client,
+                                                VISUAL_INTEGRATION_PROMPT,
+                                                convo, samples, hb)
                     sc["visual_integration"] = vi
+                    sc["_visual_integration_why"] = vi_why
+
+                    if not topic["derivable"]:
+                        ht, ht_why = _median_judged(
+                            client,
+                            HONEST_TELLING_PROMPT.format(
+                                concept=topic["concept"], why=topic["context"]),
+                            convo, samples, hb)
+                        sc["honest_telling"] = ht
+                        sc["_honest_telling_why"] = ht_why
+
+                    dd, dd_why = _median_judged(
+                        client,
+                        DOMAIN_DIMENSION_PROMPT.format(
+                            rubric=dom["dimension_rubric"]),
+                        convo, samples, hb)
+                    sc[dom["dimension"]] = dd
+                    sc[f"_{dom['dimension']}_why"] = dd_why
         # The instrument changed, so the identity must too.
         r.setdefault("meta", {})["fingerprint"] = rubric_fingerprint()
         r["meta"]["rescored_at"] = _now()
@@ -1072,6 +1361,11 @@ def main():
     p.add_argument("--repeat", type=int, default=3, help="judge samples")
     p.add_argument("--static-only", action="store_true",
                    help="deterministic scorers only; no model needed")
+    p.add_argument("--generate-only", action="store_true",
+                   help="run the dialogues and save transcripts WITHOUT "
+                        "judging; no judge model is loaded. Feed the output "
+                        "to --rescore to judge it. Use this when the tutor "
+                        "and judge cannot both fit in memory.")
     p.add_argument("--out")
     p.add_argument("--rescore", metavar="FILE",
                    help="re-score saved transcripts against the current "
@@ -1083,8 +1377,34 @@ def main():
     p.add_argument("--skip-calibration", action="store_true",
                    help="run even if the judge fails its self-check (the "
                         "scores are then not evidence)")
+    p.add_argument("--noise-floor", nargs="+", metavar="FILE",
+                   help="two or more result files from IDENTICAL configs; "
+                        "prints the composite floor and the per-dimension "
+                        "floors to paste into DIMENSION_FLOORS")
     p.add_argument("--verbose", action="store_true")
     a = p.parse_args()
+
+    if a.noise_floor:
+        runs = []
+        for f in a.noise_floor:
+            doc = json.load(open(f))
+            runs += [x for x in (doc if isinstance(doc, list) else [doc])
+                     if isinstance(x, dict) and "topics" in x]
+        by_dom = {}
+        for r in runs:
+            by_dom.setdefault(r["domain"], []).append(r)
+        for dom, rs in sorted(by_dom.items()):
+            if len(rs) < 2:
+                print(f"{dom}: only {len(rs)} run — a floor needs two")
+                continue
+            print(f"\n=== {dom} — {len(rs)} identical runs ===")
+            print(f"  composite floor: {noise_floor(rs)}")
+            print("  per dimension (paste into DIMENSION_FLOORS):")
+            for k, v in sorted(dimension_floors(rs).items(),
+                               key=lambda kv: -kv[1]):
+                flag = "   <-- cannot support a 1-point claim" if v >= 1.0 else ""
+                print(f'    "{k}": {v:.2f},{flag}')
+        return 0
 
     if a.rescore:
         res = rescore(a.rescore, samples=0 if a.static_only else a.repeat)
@@ -1106,16 +1426,26 @@ def main():
 
     # A miscalibrated judge makes every number below meaningless, so it gates
     # rather than warns. --skip-calibration exists for debugging and says so.
-    if not a.static_only and not a.skip_calibration:
+    # generate_only is exempt: it produces no scores, so there is no judge to
+    # calibrate. Worse than pointless — this gate reads OLLAMA_MODEL, which in
+    # a two-phase run is the TUTOR, so it would calibrate the model under test
+    # AS the judge, fail it, and refuse to collect transcripts. The judge gets
+    # calibrated in phase 2, where it is actually used.
+    if not a.static_only and not a.generate_only and not a.skip_calibration:
         import helgabench as hb
         print("Checking the judge before trusting it...")
         try:
             # judge_self_test(model, url) -- MODEL FIRST, matching _client().
             # Getting this backwards makes base_url the model name and every
             # call fails with "No scheme supplied"; it has bitten twice.
+            #
+            # HELGA_JUDGE_MODEL first, for the same reason as in rescore():
+            # OLLAMA_MODEL names the tutor whenever the two differ.
             if not hb.judge_self_test(
-                    os.environ.get("OLLAMA_MODEL", "nail-35b-a3b-ctx"),
-                    os.environ.get("OLLAMA_URL", "http://localhost:11434")):
+                    os.environ.get("HELGA_JUDGE_MODEL")
+                    or os.environ.get("OLLAMA_MODEL", "nail-35b-a3b-ctx"),
+                    os.environ.get("HELGA_JUDGE_URL")
+                    or os.environ.get("OLLAMA_URL", "http://localhost:11434")):
                 print("\nJUDGE MISCALIBRATED — refusing to produce scores.\n"
                       "If the model was cold this is the harness, not the "
                       "judge; warm it and retry.")
@@ -1126,8 +1456,19 @@ def main():
     results = []
     for k in keys:
         r = run_domain(k, profiles=profiles, turns=a.turns, samples=a.repeat,
-                       static_only=a.static_only, verbose=a.verbose)
-        summarise(r)
+                       static_only=a.static_only, verbose=a.verbose,
+                       generate_only=a.generate_only)
+        # summarise() prints per-dimension means. In generate_only there ARE
+        # no judged dimensions yet, so printing the table would show a wall of
+        # blanks that reads like a catastrophic run rather than like half of a
+        # deliberate two-phase one.
+        if a.generate_only:
+            n = sum(len(t.get("profiles") or {}) for t in r.get("topics", []))
+            print(f"\n  [{r.get('label')}] {n} transcripts saved, UNJUDGED.")
+            print(f"  Next: unload the tutor, then re-run with "
+                  f"--rescore {a.out or '<out.json>'} --repeat {a.repeat}")
+        else:
+            summarise(r)
         results.append(r)
         if a.out:
             json.dump(results, open(a.out, "w"), indent=1, default=str)

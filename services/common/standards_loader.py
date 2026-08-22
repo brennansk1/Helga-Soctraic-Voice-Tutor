@@ -34,7 +34,8 @@ except ImportError:
 
 # Bands plus HS course codes (spec 04 §1.1: grade_band is a band OR a course
 # code like 'BIO', 'GFL', 'USG', 'SII'; world-lang proficiency codes use null).
-_BANDS = {"K-2", "3-5", "6-8", "9-12"}
+_BANDS = {"K-1", "2-3", "4-5", "6-8", "9-12",
+          "K-2", "3-5"}          # legacy names still present in seed data
 
 
 def _parse_seed(path):

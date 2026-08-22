@@ -73,7 +73,7 @@ class LLMClient:
             parts.append({"type": "image_url", "image_url": {"url": url}})
         return parts
 
-    def warm_up(self, timeout=300):
+    def warm_up(self, timeout=900):
         """Pay the cold load ONCE, deliberately, with a timeout sized for it.
 
         A6 traded pinned weights for a 30m idle window, which means the first
@@ -83,6 +83,19 @@ class LLMClient:
         whole run — a cascade the overnight run hit twice. This is the
         antidote: tools call it first, so the load happens under a timeout
         that expects it, and every later call runs against a warm model.
+
+        WHY 900s AND NOT 300s. The 142s figure, and the 3m31s worst case
+        recorded in docs/MODEL.md, were both measured on a machine that had
+        been running. After the Mac SLEEPS, the weights are gone from the page
+        cache too, so the load is a cold 13.7 GB read from disk rather than a
+        warm one: measured 2026-08-21 at **~9 minutes**. A 300s timeout gives
+        up in the middle of that, the caller retries, the retry restarts the
+        load, and the run livelocks — which is exactly what happened to the
+        overnight domain sweep, costing a full night of measurement.
+
+        The cost of a too-long timeout here is waiting for a load that was
+        going to finish anyway. The cost of a too-short one is a run that
+        never starts and looks like a dead model.
 
         Returns True when the model answered. Never raises.
         """

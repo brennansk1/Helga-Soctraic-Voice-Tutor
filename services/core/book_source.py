@@ -164,6 +164,9 @@ CONCEPT_SCHEMA = {
 # and the second run is pure waste. Keyed on identity and length so a different
 # book with the same chapter number cannot collide.
 _DIGEST_CACHE = {}
+#: Cap on retained digests. A digest is a few KB; 64 covers any single book
+#: and a couple of concurrent builds without becoming a leak.
+_DIGEST_CACHE_MAX = 64
 
 
 def clear_digest_cache():
@@ -195,7 +198,21 @@ def digest_chapter(book, chapter_order, llm_json_fn=None):
     if len(ch.text) <= READ_WHOLE_CHARS:
         return ch.text, "whole"
 
-    key = (id(book), chapter_order, len(ch.text))
+    # KEYED ON CONTENT, NOT ON `id(book)`.
+    #
+    # `id()` returns a memory address, and CPython reuses addresses: a Book
+    # that has been garbage-collected and a new one allocated at the same
+    # address, with the same chapter number and the same text length, produced
+    # the SAME key and served the wrong book's chapter. The old comment here
+    # claimed such a collision was impossible; it is not, it is just rare
+    # enough to be invisible until it corrupts one lesson of one course.
+    #
+    # A hash of the chapter's own text cannot collide by accident, and it
+    # survives re-parsing the same book — which `id()` did not, so a rebuild
+    # re-digested every chapter at full LLM cost.
+    import hashlib as _hl
+    key = (_hl.sha1(ch.text.encode("utf-8", "replace")).hexdigest()[:16],
+           chapter_order)
     if key in _DIGEST_CACHE:
         return _DIGEST_CACHE[key]
     if not llm_json_fn:
@@ -248,6 +265,11 @@ def digest_chapter(book, chapter_order, llm_json_fn=None):
     # was the inconsistency. Re-digesting costs a call the next time round,
     # which is the cheaper mistake.
     if not failed and out[1] == "digested":
+        # BOUNDED. This held full digested text for every chapter of every book
+        # for the life of the process, with no TTL and no cap — on a 24 GB
+        # machine already carrying a 13.5 GB model that is a slow leak.
+        if len(_DIGEST_CACHE) >= _DIGEST_CACHE_MAX:
+            _DIGEST_CACHE.pop(next(iter(_DIGEST_CACHE)), None)
         _DIGEST_CACHE[key] = out
     return out
 

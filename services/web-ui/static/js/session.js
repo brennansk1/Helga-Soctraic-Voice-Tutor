@@ -1127,7 +1127,22 @@ async function transcribeAndSend(blob) {
                 textInput.value = data.text.trim();
                 textInput.dispatchEvent(new Event('input'));
             }
-            sendTextMessage();
+            // Auto-send only where the learner can READ the transcript and
+            // catch a mis-hearing. For a young band the transcript is placed
+            // in the box and the child (or an adult) must confirm it, because
+            // a wrong transcription submitted here would be graded as a wrong
+            // ANSWER — a fact about the microphone recorded as a fact about
+            // the learner.
+            if (window.HELGA_VOICE_AUTOSEND === false) {
+                if (textInput) {
+                    textInput.focus();
+                    textInput.setAttribute('aria-live', 'polite');
+                }
+                const send = document.getElementById('send-btn');
+                if (send) send.classList.add('awaiting-confirm');
+            } else {
+                sendTextMessage();
+            }
         } else {
             console.warn('[voice] no transcript:', (data && data.error) || resp.status);
             if (textInput) textInput.placeholder = (data && data.error) || 'Didn’t catch that — try again';

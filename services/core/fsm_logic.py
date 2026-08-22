@@ -31,7 +31,14 @@ from flask import Flask, request, jsonify
 # Ensure services/common is in path for prompts
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 
+from services.common.learner_behaviour import (
+    classify as _classify_behaviour, describe as _describe_behaviour)
+from services.common.teaching_move import from_turn_state
+from services.common.turn_state import TurnState
 from services.common.prompts import (
+    DEFAULT_GRADE_BAND,
+    _concept_is_arbitrary,
+    is_young_band,
     get_socratic_tutor_prompt,
     get_bridge_prompt,
     get_socratic_grading_prompt,
@@ -297,6 +304,7 @@ class MnemosyneFSM:
         self.conversation_history = []
         self.transcript = []
         self.last_question = ""
+        self.turn_state = TurnState()          # A.2, reset per concept
 
         self.review_queue = []
         self.previous_state = None
@@ -312,7 +320,11 @@ class MnemosyneFSM:
         self.battery_level = 100
 
         # Socratic Question Type Progression
-        self.socratic_type_index = 0  # Index into SOCRATIC_QUESTION_TYPES
+        # Index into the BAND-FILTERED question types (see _question_types()),
+        # not into the full six. This value is persisted in the session blob,
+        # so the filtered list must keep the canonical ORDER -- otherwise a
+        # learner resumes on a different question type than they left on.
+        self.socratic_type_index = 0
         self.socratic_retry_count = 0  # Consecutive low-grade attempts on current type
         self._last_socratic_grade = 3  # Last grade for rule-based mode selection
 
@@ -385,7 +397,10 @@ class MnemosyneFSM:
         self.conn = None  # Legacy compat
 
         # B17.1: grade band resolved from the students row, drives prompts/Bloom
-        self.grade_band = "9-12"
+        # Must match prompts.DEFAULT_GRADE_BAND. It said "9-12" here, so an
+        # adult with no student row got the 110-word rigorous-mentor
+        # register instead of the 6-8 default the spec states.
+        self.grade_band = DEFAULT_GRADE_BAND
         try:
             student_row = self.storage.accounts.get_student(self.student_id)
             if student_row and student_row.get("grade_band"):
@@ -863,7 +878,24 @@ class MnemosyneFSM:
             return
         try:
             from services.common.visual_aids import parse_concept_aids
-            self._concept_aids = parse_concept_aids(self.current_context or "")
+            # Parse from the FULL concept text, not `current_context`.
+            #
+            # `current_context` is `text[:10000]`, a slice taken to bound the
+            # prompt. The `## Visual Aids` section is written at the END of a
+            # concept document, so on a long concept the slice cuts the aids
+            # off entirely: the policy then sees no available slots, can never
+            # return `reuse`, and every diagram built and checked at
+            # course-creation time is invisible to that learner.
+            #
+            # Measured on real course data 2026-08-21: 1 of the 24 concepts
+            # that HAVE aids lost them this way. The proportion grows with
+            # concept length, so the deeper tiers this product sells are the
+            # ones that lose most.
+            full_text = ""
+            if isinstance(self.current_lesson_node, dict):
+                full_text = self.current_lesson_node.get("text") or ""
+            self._concept_aids = parse_concept_aids(
+                full_text or self.current_context or "")
             if self._concept_aids:
                 logging.info(f"Loaded {len(self._concept_aids)} pre-built visual aid(s): "
                              f"{sorted(self._concept_aids)}")
@@ -1096,6 +1128,26 @@ class MnemosyneFSM:
         elif event_type == "SET_CONTEXT":
             uid = event.get("payload", {}).get("course_uid")
             if uid:
+                # WARM THE MODEL WHEN A LESSON OPENS, NOT ON THE FIRST QUESTION.
+                #
+                # `llm_client.warm_up()` exists precisely for this and its
+                # docstring records the cascade it prevents — a cold load takes
+                # ~142s warm and ~9 MINUTES after the Mac sleeps, while every
+                # tutoring call uses a 60s timeout. Two timeouts open the
+                # breaker and fast-fail everything for 15s.
+                #
+                # It was called in exactly ONE place: tools/helgabench.py. The
+                # fix was written for the benchmark after it lost a night of
+                # measurement, and the PRODUCT never got it — so a learner
+                # returning after a break had their first question fail while
+                # the benchmark was protected. Measured tonight: three runs of
+                # five turns each produced nothing but empty responses.
+                #
+                # SET_CONTEXT fires when the learn tab opens a course, which is
+                # seconds before the first question and the right moment to pay
+                # a load nobody is waiting on yet. Backgrounded so opening a
+                # course never blocks on it.
+                self._warm_model_async()
                 prev_uid = self.active_course_uid
                 self.active_course_uid = uid
                 if prev_uid and prev_uid != uid:
@@ -1579,6 +1631,34 @@ class MnemosyneFSM:
             f"spaced review rather than grinding on it")
         return True
 
+    def _get_turn_state(self):
+        """The A.2 turn state, created on demand.
+
+        Lazily rather than relying on __init__: several construction paths
+        (and every test that builds a partial FSM) never run it, and a missing
+        bookkeeping attribute must not be able to raise inside the grading
+        path. The worst case is a fresh, empty state — which renders nothing,
+        exactly as it does on the first turn of any concept.
+        """
+        ts = getattr(self, "turn_state", None)
+        if ts is None:
+            ts = TurnState()
+            self.turn_state = ts
+        return ts
+
+    def _question_types(self):
+        """The question types this learner's band can actually answer.
+
+        Mode B: a five-year-old cannot answer a Mechanism or Synthesis
+        question — those need several elements held in working memory at once,
+        and a 5-year-old holds about four items total. Cycling them through
+        question forms they cannot answer made the mastery gate unreachable.
+
+        Mode A carries no band and gets all six, unchanged.
+        """
+        from services.common.prompts import question_types_for_band
+        return question_types_for_band(getattr(self, "grade_band", None))
+
     def _check_mastery_gate(self):
         """GAP 4 + B17.3: mastery gate — streak, bloom target, and question
         diversity, with thresholds from the student's grade band (a K-2 kid
@@ -1587,7 +1667,10 @@ class MnemosyneFSM:
         band = get_band_profile(self.grade_band)
         need_streak = band["gate_streak"]
         need_questions = band["gate_questions"]
-        need_types = min(band["gate_types"], len(SOCRATIC_QUESTION_TYPES))
+        # Bounded by what this BAND offers, not by all six: a K-1 learner is
+        # offered three concrete types, so a gate of three would demand every
+        # one of them.
+        need_types = min(band["gate_types"], len(self._question_types()))
         streak_met = (self.concept_correct_streak >= need_streak
                       and self.concept_question_count >= need_questions)
         bloom_met = self.current_bloom_level >= min(
@@ -1608,7 +1691,7 @@ class MnemosyneFSM:
 
     def _next_unpassed_type_index(self):
         """Fix 6: Find the first question type not yet passed by the student."""
-        for i, qt in enumerate(SOCRATIC_QUESTION_TYPES):
+        for i, qt in enumerate(self._question_types()):
             if qt["key"] not in self.passed_question_types:
                 return i
         return 0  # All passed — start from beginning
@@ -2022,6 +2105,26 @@ class MnemosyneFSM:
         except Exception as e:
             logging.warning(f"Legacy user_state.json import failed: {e}")
         return {"schema": 1, "courses": {}}
+
+
+    def _warm_model_async(self):
+        """Pay the model's cold load off the critical path. Never raises."""
+        try:
+            import threading
+
+            def _warm():
+                try:
+                    if getattr(self, "llm_client", None):
+                        self.llm_client.warm_up()
+                        logging.info("[WARM] model ready for this lesson")
+                except Exception as e:
+                    logging.debug(f"[WARM] warm-up failed: {e}")
+
+            t = threading.Thread(target=_warm, daemon=True,
+                                 name="helga-model-warmup")
+            t.start()
+        except Exception as e:                # pragma: no cover - defensive
+            logging.debug(f"[WARM] could not start warm-up: {e}")
 
     def _save_current_course_progress(self):
         if not self.active_course_uid:
@@ -2464,7 +2567,7 @@ class MnemosyneFSM:
         # concrete next step instead of being pressed harder. Bloom eases
         # toward the floor so the next question genuinely gets simpler.
         affect_note = None
-        if (self.grade_band in ("K-2", "3-5")
+        if (is_young_band(self.grade_band)
                 and getattr(self, "concept_miss_streak", 0) >= 2):
             floor = self.course_bloom_floor or 1
             if self.current_bloom_level > floor:
@@ -2549,12 +2652,13 @@ class MnemosyneFSM:
         self.user_profile = self._load_user_profile()
 
         # Get current question type
-        q_type_idx = min(self.socratic_type_index, len(SOCRATIC_QUESTION_TYPES) - 1)
-        current_q_type = SOCRATIC_QUESTION_TYPES[q_type_idx]
+        _types = self._question_types()
+        q_type_idx = min(self.socratic_type_index, len(_types) - 1)
+        current_q_type = _types[q_type_idx]
 
         # Broadcast question type to UI
         self.send_status_update(
-            f"QTYPE:{current_q_type['key']}:{q_type_idx}:{len(SOCRATIC_QUESTION_TYPES)}"
+            f"QTYPE:{current_q_type['key']}:{q_type_idx}:{len(_types)}"
         )
 
         # GAP 6 kept, but as a SELECTION rather than a delete list. See
@@ -2611,6 +2715,20 @@ class MnemosyneFSM:
                 # anything, which is a real answer: an invented struggle would
                 # have the tutor open by correcting a mistake never made.
                 learner_history=self._learner_history_note(),
+                # A.2 — what has been ESTABLISHED this session, from graded
+                # answers rather than re-derived from the transcript. Renders
+                # to nothing until something has actually been graded.
+                turn_state=self._get_turn_state(),
+                # A.6 — the move, decided in code from state the system already
+                # tracks. The model writes the turn; it does not choose the
+                # pedagogy while writing it.
+                teaching_move=None,   # A.6 reverted: measured -0.53 on adaptation
+                # A.7 — what kind of learner this is right now, read from how
+                # they write. A bluffer and a silent struggler earn the same
+                # grade and need opposite turns.
+                learner_behaviour=_describe_behaviour(
+                    [p[0] for p in (self.conversation_history or []) if p[0]],
+                    grades=[self._last_socratic_grade or 0]),
             )
         # Tune max_tokens: lectures need more room for explanations, questions are shorter
         token_limit = 500 if teaching_mode == "LECTURE" else 400
@@ -2679,6 +2797,7 @@ class MnemosyneFSM:
             question, prompt, token_limit, context_trigger)
 
         self.last_question = question
+        self._get_turn_state().ask(question)
         self.conversation_history.append((context_trigger, question))
 
         # FIX: The tutor must speak the question!
@@ -2741,7 +2860,16 @@ class MnemosyneFSM:
               # the grounded_claim rule looks back further than the last
               # message before calling an attribution invented.
               "recent_learner": [p[0] for p in
-                                 (self.conversation_history or [])[-3:] if p[0]]}
+                                 (self.conversation_history or [])[-3:] if p[0]],
+              # A.3 — every earlier tutor turn on this concept, so a turn that
+              # merely re-asks one of them is refused. conversation_history
+              # holds (student_text, tutor_text) pairs; the tutor half is [1].
+              "previous_turns": [p[1] for p in
+                                 (self.conversation_history or []) if p[1]],
+              # A.8 — the grader named what the last answer left out. Saying
+              # "Correct." and moving on is what a 2/5 adaptation turn does.
+              "missing_concepts": list(
+                  getattr(self, "_last_missing_concepts", []) or [])}
         try:
             violations = dc.check(question, **kw)
         except Exception as e:
@@ -2994,6 +3122,18 @@ class MnemosyneFSM:
                     f"Question: {self.last_question} | Answer: {text[:50]}... | Grade: {grade} | Reasoning: {result.get('reason', 'N/A')}",
                 )
 
+        # A.8 — remember what the grader said was missing, so the contract can
+        # require the next turn to engage with it.
+        try:
+            self._last_missing_concepts = list(missing_concepts or [])
+        except Exception:
+            self._last_missing_concepts = []
+
+        # A.2 — fold the grader's own verdict into the structured state the
+        # next tutor turn will read. `record` ignores a fallback grade, so an
+        # LLM outage cannot invent a history of half-understanding.
+        self._get_turn_state().record(text, result)
+
         # Store grade for rule-based mode selection (replaces LLM classifier)
         self._last_socratic_grade = grade
 
@@ -3015,8 +3155,9 @@ class MnemosyneFSM:
             self.concept_correct_streak += 1
             self.concept_miss_streak = 0
             # GAP 4: Track which question type categories were passed
-            q_idx = min(self.socratic_type_index, len(SOCRATIC_QUESTION_TYPES) - 1)
-            self.passed_question_types.add(SOCRATIC_QUESTION_TYPES[q_idx]["key"])
+            _types = self._question_types()
+            q_idx = min(self.socratic_type_index, len(_types) - 1)
+            self.passed_question_types.add(_types[q_idx]["key"])
         else:
             self.concept_correct_streak = 0
             self.concept_miss_streak += 1
@@ -3060,8 +3201,9 @@ class MnemosyneFSM:
             if self.socratic_retry_count >= 3:
                 # Fix 2+3: Micro-lecture + verification on SAME type (don't advance)
                 self.socratic_retry_count = 0
-                current_type_name = SOCRATIC_QUESTION_TYPES[
-                    min(self.socratic_type_index, len(SOCRATIC_QUESTION_TYPES) - 1)
+                _t = self._question_types()
+                current_type_name = _t[
+                    min(self.socratic_type_index, len(_t) - 1)
                 ]["name"].lower()
                 logging.info(f"Retry limit reached (grade 1): micro-lecture + verification on {current_type_name}")
                 self.ask_socratic_question(
@@ -3083,8 +3225,9 @@ class MnemosyneFSM:
             if self.socratic_retry_count >= 3:
                 # Fix 2+3: Clarify + verification on SAME type (don't advance)
                 self.socratic_retry_count = 0
-                current_type_name = SOCRATIC_QUESTION_TYPES[
-                    min(self.socratic_type_index, len(SOCRATIC_QUESTION_TYPES) - 1)
+                _t = self._question_types()
+                current_type_name = _t[
+                    min(self.socratic_type_index, len(_t) - 1)
                 ]["name"].lower()
                 logging.info(f"Retry limit reached (grade 2): clarify + verification on {current_type_name}")
                 self.ask_socratic_question(
@@ -3114,11 +3257,12 @@ class MnemosyneFSM:
             self.socratic_retry_count = 0
             # Fix 4: Advance +1, not +2. Student must prove each type.
             # Fix 9: Capture previous type name for transition bridge
-            prev_type_name = SOCRATIC_QUESTION_TYPES[
-                min(self.socratic_type_index, len(SOCRATIC_QUESTION_TYPES) - 1)
+            _t = self._question_types()
+            prev_type_name = _t[
+                min(self.socratic_type_index, len(_t) - 1)
             ]["name"].lower()
             self.socratic_type_index += 1
-            if self.socratic_type_index >= len(SOCRATIC_QUESTION_TYPES):
+            if self.socratic_type_index >= len(self._question_types()):
                 if self._check_mastery_gate():
                     completion_msg = (feedback or "Excellent work.") + " You've mastered this concept. Let's move on to the next one."
                     self.speak(completion_msg)
@@ -3136,7 +3280,7 @@ class MnemosyneFSM:
                     )
             else:
                 # Fix 9: Transition bridge references what student demonstrated
-                next_type = SOCRATIC_QUESTION_TYPES[self.socratic_type_index]
+                next_type = self._question_types()[self.socratic_type_index]
                 feedback_note = f"[SYSTEM NOTE: Student gave an excellent answer. Their feedback: '{feedback}'. " if feedback else "[SYSTEM NOTE: Student answered excellently. "
                 self.ask_socratic_question(
                     feedback_note + f"Briefly affirm what they demonstrated about {prev_type_name} — specifically what they got right. Then build on that by asking a {next_type['name'].lower()} question that extends their reasoning.]"
@@ -3146,11 +3290,12 @@ class MnemosyneFSM:
             self.play_sound("SUCCESS_CHORD")
             self.socratic_retry_count = 0
             # Fix 9: Capture previous type name for transition bridge
-            prev_type_name = SOCRATIC_QUESTION_TYPES[
-                min(self.socratic_type_index, len(SOCRATIC_QUESTION_TYPES) - 1)
+            _t = self._question_types()
+            prev_type_name = _t[
+                min(self.socratic_type_index, len(_t) - 1)
             ]["name"].lower()
             self.socratic_type_index += 1
-            if self.socratic_type_index >= len(SOCRATIC_QUESTION_TYPES):
+            if self.socratic_type_index >= len(self._question_types()):
                 if self._check_mastery_gate():
                     completion_msg = (feedback or "Well done.") + " You've demonstrated solid understanding of this concept. Let's move on."
                     self.speak(completion_msg)
@@ -3168,7 +3313,7 @@ class MnemosyneFSM:
                     )
             else:
                 # Fix 9: Transition bridge references what student demonstrated
-                next_type = SOCRATIC_QUESTION_TYPES[self.socratic_type_index]
+                next_type = self._question_types()[self.socratic_type_index]
                 feedback_note = f"[SYSTEM NOTE: Student answered correctly. Their feedback: '{feedback}'. " if feedback else "[SYSTEM NOTE: Student answered correctly. "
                 self.ask_socratic_question(
                     feedback_note + f"Briefly affirm what they demonstrated about {prev_type_name} — specifically what they got right. Then build on that by asking a {next_type['name'].lower()} question that extends their reasoning.]"

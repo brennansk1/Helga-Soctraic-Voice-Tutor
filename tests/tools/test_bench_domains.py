@@ -18,6 +18,7 @@ The two properties that matter most, and why:
 """
 import json
 import os
+import statistics
 import sys
 
 import pytest
@@ -524,3 +525,303 @@ def test_a_retry_that_fixes_nothing_is_not_shipped(monkeypatch):
                              lecture, "vectors stretch", [],
                              {"concept": "E", "context": "x"})
     assert out == lecture
+
+
+# ------------------------------------------------- per-dimension noise floors
+#
+# The composite floor is necessary and NOT sufficient. Measured on two
+# IDENTICAL mathematics runs (2026-08-20): the composite moved 0.162 while
+# `visual_integration` moved 1.20. A claim like "visual integration improved by
+# a point" can therefore be pure noise while the headline delta looks safe.
+#
+# The reporting half of the same bug: the dimension table printed MEDIANS.
+# Across those two identical runs the visual_integration median went 5 -> 1 --
+# a four-point swing on a five-point scale, from nothing at all.
+
+def _run_with(dim_values):
+    """A result whose per-dialogue scores are exactly `dim_values`."""
+    r = _fake_result()
+    for t in r["topics"]:
+        for p in t["profiles"].values():
+            p["scores"].update(dim_values)
+    return r
+
+
+def test_a_dimension_floor_needs_two_runs():
+    assert bd.dimension_floors([_fake_result()]) == {}
+
+
+def test_dimension_floors_measure_each_dimension_separately():
+    a = _run_with({"socratic": 2, "visual_integration": 5})
+    b = _run_with({"socratic": 2, "visual_integration": 1})
+    floors = bd.dimension_floors([a, b])
+    assert floors["socratic"] == 0.0, "unchanged dimension has no floor"
+    assert floors["visual_integration"] == 4.0
+
+
+def test_judge_prose_is_not_mistaken_for_a_score():
+    """`_visual_note` and friends are strings living inside `scores`."""
+    a = _run_with({"socratic": 2, "_visual_note": "no figure shown"})
+    b = _run_with({"socratic": 3, "_visual_note": "a figure was shown"})
+    floors = bd.dimension_floors([a, b])
+    assert "_visual_note" not in floors
+
+
+def test_the_dimension_table_reports_means_not_medians(capsys):
+    """A median over n=15 bimodal judgements flips on one sample."""
+    r = _fake_result()
+    profiles = [p for t in r["topics"] for p in t["profiles"].values()]
+    for i, p in enumerate(profiles):
+        p["scores"]["socratic"] = 5 if i % 2 else 1
+    vals = [p["scores"]["socratic"] for p in profiles]
+    mean, median = statistics.mean(vals), statistics.median(vals)
+    assert mean != median, "the fixture must distinguish the two statistics"
+
+    bd.summarise(r)
+    line = [ln for ln in capsys.readouterr().out.splitlines()
+            if "socratic " in ln][0]
+    assert f"{mean:.2f}" in line, f"expected the mean {mean:.2f} in: {line}"
+    assert f" {median:.2f} " not in line, f"that is the median: {line}"
+    assert f"range {min(vals)}-{max(vals)}" in line, (
+        "the spread must be visible, not just a point estimate")
+
+
+def test_an_unstable_dimension_is_labelled_in_the_table(capsys):
+    bd.summarise(_fake_result())
+    out = capsys.readouterr().out
+    vi = [ln for ln in out.splitlines() if "visual_integration" in ln][0]
+    assert "unstable" in vi, (
+        "visual_integration swings +/-1.20 on identical runs; the table must "
+        "say so rather than print a confident number")
+
+
+def test_compare_names_which_dimension_moved(tmp_path, capsys):
+    base = _run_with({"accuracy": 2})
+    base_path = tmp_path / "b.json"
+    base_path.write_text(json.dumps([base]))
+    bd.compare([_run_with({"accuracy": 5})], str(base_path), floor=0.162)
+    out = capsys.readouterr().out
+    assert "per dimension:" in out
+    assert "accuracy" in out and "REAL" in out
+
+
+def test_a_dimension_move_inside_its_own_floor_is_called_noise(tmp_path, capsys):
+    """The exact case that nearly shipped: visual_integration +0.93."""
+    base = _run_with({"visual_integration": 3})
+    base_path = tmp_path / "b.json"
+    base_path.write_text(json.dumps([base]))
+    bd.compare([_run_with({"visual_integration": 4})], str(base_path), floor=0.162)
+    line = [ln for ln in capsys.readouterr().out.splitlines()
+            if "visual_integration" in ln][0]
+    assert "noise" in line, f"1.00 < floor 1.20 must read as noise: {line}"
+
+
+def test_a_verdict_does_not_turn_on_the_last_mantissa_bit(tmp_path, capsys):
+    """1.40-1.80 is -0.4000000000000001, which read as REAL against a 0.40
+    floor before the delta was rounded."""
+    base = _run_with({"honest_telling": 1.8})
+    base_path = tmp_path / "b.json"
+    base_path.write_text(json.dumps([base]))
+    bd.compare([_run_with({"honest_telling": 1.4})], str(base_path), floor=0.162)
+    line = [ln for ln in capsys.readouterr().out.splitlines()
+            if "honest_telling" in ln][0]
+    assert "noise" in line, f"exactly at the floor is not movement: {line}"
+
+
+# --------------------------------------------- the self-check must be able to fail
+#
+# `static_check` is a CI gate. It PRINTED the speakable and unspeakable notation
+# scores and set its verdict from neither, so no result could fail it — and its
+# "unspeakable" sample was `$A \perp B$`, which became speakable the day \perp
+# was taught to the converter. It was gating on two passing cases and reporting
+# a pass. A gate that cannot fail is worse than no gate: it is a green light
+# wired to nothing.
+
+def _run_static():
+    import contextlib
+    import io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        result = bd.static_check()
+    return result, buf.getvalue()
+
+
+def test_the_static_check_passes_on_a_working_tree():
+    ok, out = _run_static()
+    assert ok, out
+    assert "Deterministic scorers behave." in out
+
+
+def test_the_static_check_fails_when_the_notation_scorer_is_broken(monkeypatch):
+    monkeypatch.setattr(bd, "score_notation",
+                        lambda turns: {"score": 5, "note": "stub", "unspoken": []})
+    ok, out = _run_static()
+    assert ok is False, "a scorer that calls everything speakable must fail"
+    assert "SCORERS BROKEN" in out
+
+
+def test_the_static_check_fails_when_the_visual_scorer_is_broken(monkeypatch):
+    monkeypatch.setattr(bd, "score_visuals",
+                        lambda turns, topic: {"score": 5, "note": "stub",
+                                              "aids_drawn": 0, "narrated": 0,
+                                              "unstaged_answer": 0,
+                                              "expected_kind": None})
+    ok, out = _run_static()
+    assert ok is False, "a scorer that rewards everything must fail"
+
+
+def test_the_unspeakable_sample_is_actually_unspeakable():
+    """The sample must stay ahead of the speech converter.
+
+    `$A \\perp B$` was the sample until \\perp was taught to the converter, at
+    which point the check compared two speakable strings forever.
+    """
+    r = bd.score_notation([{"role": "tutor",
+                            "text": r"Consider $\oiint_S \mathfrak{X}$."}])
+    assert r["score"] < 5 and r["unspoken"], (
+        "the converter learned this notation; pick a harder sample")
+
+
+# ------------------------------- the bench must measure the system that ships
+#
+# `get_socratic_tutor_prompt` takes 14 inputs. The FSM supplies all of them;
+# this bench supplied FOUR — and the fingerprint did not cover which, so a
+# baseline taken with a different set would have compared as though the two
+# instruments matched.
+#
+# The concrete cost: A.2's turn state is built from graded answers, nothing in
+# the bench produced a grade, so the one intervention aimed at the semantic
+# quality of a question was invisible to the instrument measuring exactly that.
+
+def test_the_fingerprint_covers_which_production_inputs_are_supplied():
+    before = bd.rubric_fingerprint()
+    original = bd.BENCH_PROMPT_INPUTS
+    try:
+        bd.BENCH_PROMPT_INPUTS = original + ("misconceptions",)
+        assert bd.rubric_fingerprint() != before, (
+            "supplying a different set of production inputs measures a "
+            "different system and must refuse to compare against an old "
+            "baseline")
+    finally:
+        bd.BENCH_PROMPT_INPUTS = original
+    assert bd.rubric_fingerprint() == before
+
+
+def test_turn_state_is_among_the_supplied_inputs():
+    assert "turn_state" in bd.BENCH_PROMPT_INPUTS
+
+
+def test_grading_is_declared_in_the_fingerprint():
+    """Turning grading off changes what the tutor is told, so it is an
+    instrument change, not a speed setting."""
+    import json as _json
+    payload = _json.dumps(bd.rubric_fingerprint.__doc__ or "")
+    # the flag itself must be inside the hashed payload, not merely nearby
+    src = open(bd.__file__, encoding="utf-8").read()
+    assert '"grade_answers": True' in src
+
+
+# ------------------------------------------------------- the bench-side grader
+def test_the_grader_returns_the_shape_turn_state_expects(monkeypatch):
+    import helgabench as hb
+    monkeypatch.setattr(hb, "_chat_messages", lambda *a, **k:
+                        '{"grade": 1, "reason": "confused vector with scalar",'
+                        ' "missing_concepts": ["non-zero requirement"]}')
+    topic = {"concept": "Eigenvalues", "context": "Av = lambda v."}
+    g = hb._grade_student_turn("u", "m", topic, "What is it?", "the vector")
+    assert g["grade"] == 1 and g["graded"] is True
+    assert g["missing_concepts"] == ["non-zero requirement"]
+
+    from services.common.turn_state import TurnState
+    ts = TurnState()
+    ts.ask("What is it?")
+    ts.record("the vector", g)
+    assert "STILL WRONG" in ts.render()
+
+
+@pytest.mark.parametrize("reply", ["not json", '{"reason":"no grade"}', ""])
+def test_an_ungradeable_reply_costs_the_state_entry_not_the_dialogue(
+        monkeypatch, reply):
+    import helgabench as hb
+    monkeypatch.setattr(hb, "_chat_messages", lambda *a, **k: reply)
+    topic = {"concept": "X", "context": "y"}
+    assert hb._grade_student_turn("u", "m", topic, "q", "a") is None
+
+
+def test_a_dead_model_does_not_raise_out_of_the_grader(monkeypatch):
+    import helgabench as hb
+
+    def boom(*a, **k):
+        raise RuntimeError("model down")
+    monkeypatch.setattr(hb, "_chat_messages", boom)
+    assert hb._grade_student_turn("u", "m", {"concept": "X"}, "q", "a") is None
+
+
+# ----------------------------------- the last withheld production input
+#
+# One of the five student profiles is defined as holding "ONE specific,
+# confidently-stated misconception". The bench SCORED `misconception_handling`
+# while withholding the concept's misconception list — so the tutor was asked
+# to catch a belief it had no list to check against, and `adaptation` was
+# scored on a learner it could not recognise.
+
+def test_every_topic_declares_its_misconceptions():
+    for key, dom in bd.DOMAINS.items():
+        for t in dom["topics"]:
+            mis = t.get("misconceptions")
+            assert mis, f"{key}/{t['concept']}: no misconceptions declared"
+            assert all(isinstance(m, str) and m.strip() for m in mis)
+
+
+def test_misconceptions_are_beliefs_not_restatements():
+    """A misconception must be something a learner could WRONGLY believe, not
+    a paraphrase of the correct answer."""
+    for key, dom in bd.DOMAINS.items():
+        for t in dom["topics"]:
+            for m in t["misconceptions"]:
+                assert len(m.split()) >= 3, f"{key}/{t['concept']}: '{m}' too thin"
+
+
+def test_misconceptions_are_in_the_fingerprint_via_the_input_set():
+    assert "misconceptions" in bd.BENCH_PROMPT_INPUTS
+
+
+def test_the_bench_actually_supplies_them():
+    """The third instance of 'computed but never passed' would be the fourth
+    bug of that shape in this repository."""
+    import os
+    src = open(os.path.join(_ROOT, "tools/helgabench.py"), encoding="utf-8").read()
+    assert 'misconceptions=topic.get("misconceptions")' in src
+
+
+# ------------------------- the judge must not change when the tutor does
+#
+# One client drove both the tutor and the judge until 2026-08-21. Setting
+# OLLAMA_MODEL to compare models therefore swapped the JUDGE too — changing
+# the instrument and the subject at the same time, which makes any comparison
+# meaningless. It surfaced as `JUDGE MISCALIBRATED` when a 12B was tried, which
+# is the harness catching it; a model that happened to pass calibration would
+# have produced a plausible and worthless number instead.
+
+def test_no_judged_call_uses_the_tutor_client():
+    import inspect
+    import re
+    src = inspect.getsource(bd.run_domain)
+    on_tutor = (re.findall(r"_median_judged\(\s*client", src)
+                + re.findall(r"hb\.judge\(client", src))
+    assert not on_tutor, (
+        f"{len(on_tutor)} judged call(s) still use the tutor's client; a model "
+        f"comparison would move the judge with the subject")
+
+
+def test_the_judge_model_is_part_of_the_fingerprint():
+    before = bd.rubric_fingerprint()
+    original = bd.JUDGE_MODEL
+    try:
+        bd.JUDGE_MODEL = "some-other-judge"
+        assert bd.rubric_fingerprint() != before, (
+            "a different judge is a different instrument and must refuse to "
+            "compare against an old baseline")
+    finally:
+        bd.JUDGE_MODEL = original
+    assert bd.rubric_fingerprint() == before

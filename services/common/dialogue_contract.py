@@ -191,11 +191,211 @@ def attribution_is_grounded(turn, learner_said, recent_learner=None):
     for q in quoted:
         if _content_words(q) & said:
             return True
-    return len(_content_words(turn) & said) >= MIN_GROUNDING_WORDS
+    # A terse answer cannot supply two content words. "it stretches" reduces to
+    # {stretches}, so a perfectly grounded "You said it stretches" was being
+    # reported as an invented attribution. Terse answers are the norm for
+    # students who are stuck, and for young learners a single word IS the
+    # expected answer -- so the bar cannot exceed what the learner actually
+    # said.
+    need = min(MIN_GROUNDING_WORDS, len(said))
+    return len(_content_words(turn) & said) >= need
+
+
+# --- A.5: a question with framing, not a lecture with a question on the end --
+#
+# THE GAP THIS CLOSES. The contract already enforces <=60 words and
+# ends-with-a-question, and compliance on both went to ~100%. `socratic` did
+# not move. Measuring the transcripts shows why: the mean tutor turn carries
+# **2.53 declarative sentences** before its question, and **45% carry three or
+# more** (measured on the history run, n=60 turns). A turn that explains for
+# four sentences and then asks something is a lecture with a question stapled
+# to it -- and it satisfies every rule we had.
+#
+# That is the judge's stated complaint almost verbatim: "delivers
+# mini-lectures", "lectures heavily on the stack analogy and asks a leading
+# question". The rubric scores `socratic` on whether the tutor "drew reasoning
+# OUT of the student with questions, rather than lecturing", and explicitly
+# says "long explanatory monologues score low" -- monologue, not word count.
+#
+# The tutoring literature points the same way from the other side: TeachLM's
+# headline result is INCREASING STUDENT TALK TIME, and MathDial's is reducing
+# premature solution disclosure. Both are about who is doing the talking, which
+# is what this measures and the word cap does not.
+
+#: Declarative sentences a turn may carry before it asks. Two is "a sentence of
+#: framing and a sentence of setup"; three or more is exposition.
+MAX_STATEMENTS = 2
+
+_SENTENCE = re.compile(r"(?<=[.!?])\s+")
+
+
+def statements(text):
+    """The non-question sentences in a turn, aid fence excluded."""
+    stripped = re.sub(r"```aid\s*.+?```", " ", text or "", flags=re.S)
+    out = []
+    for sentence in _SENTENCE.split(stripped):
+        sentence = sentence.strip()
+        # A fragment with no letters ("3.") is not a sentence of exposition.
+        if sentence and not sentence.endswith("?") and _WORD.search(sentence):
+            out.append(sentence)
+    return out
+
+
+# --- A.3: do not ask the same thing twice ---------------------------------
+#
+# The most frequent complaint in the judge's own words, across every domain:
+#
+#   "repeats the exact same dictionary analogy and question verbatim"
+#   "repeats the definition of zero-based indexing verbatim"
+#   "repeated the same calculation (1,024 items -> 10 steps)"
+#   "the tutor's final turn repeats the exact same question about the third
+#    item's index without addressing the student's specific confusion"
+#   "ignored the student's explicit request to move on"
+#
+# It is also what the tutoring literature predicts: MathTutorBench reports that
+# "tutoring becomes more challenging in longer dialogs, where simpler
+# questioning strategies begin to fail" -- a model that has run out of moves
+# falls back on the one it already made.
+#
+# This is deterministically checkable, which is the whole reason to put it
+# here. Prompt-only enforcement measures 0/5 in this repository; a correction
+# that NAMES the offending turn measures 5/5.
+
+#: Content-word overlap at or above which two tutor turns are "the same
+#: question again". Deliberately high: a tutor legitimately reuses the
+#: concept's vocabulary every turn, so only near-duplicates should trip. Tuned
+#: so that rephrasing the same question still fires while a genuinely new
+#: question about the same concept does not.
+REPEAT_SIMILARITY = 0.72
+
+
+def _final_question(text):
+    """The question the turn actually asks — its last sentence ending in '?'."""
+    stripped = re.sub(r"```aid\s*.+?```", " ", text or "", flags=re.S)
+    qs = re.findall(r"[^.!?]*\?", stripped)
+    return " ".join(qs[-1].split()) if qs else ""
+
+
+def _similarity(a, b):
+    """Jaccard overlap on content words.
+
+    Whole words, never substrings: "war" inside "aware" has cost this codebase
+    four separate bugs and this rule would be the fifth.
+    """
+    wa, wb = _content_words(a), _content_words(b)
+    if not wa or not wb:
+        return 0.0
+    return len(wa & wb) / len(wa | wb)
+
+
+def repeats_earlier_turn(turn, previous_turns, threshold=REPEAT_SIMILARITY):
+    """The earlier tutor turn this one merely repeats, or None.
+
+    Compares the whole turn AND the final question separately: a turn can add
+    new framing around an identical question, which still reads to the student
+    as being asked the same thing twice.
+    """
+    if not turn or not previous_turns:
+        return None
+    q_now = _final_question(turn)
+    for earlier in reversed(list(previous_turns)):
+        if not earlier:
+            continue
+        if _similarity(turn, earlier) >= threshold:
+            return earlier
+        q_before = _final_question(earlier)
+        if q_now and q_before:
+            if q_now.lower() == q_before.lower():
+                return earlier
+            if _similarity(q_now, q_before) >= threshold:
+                return earlier
+    return None
+
+
+# --- A.8: say what they missed, not just "correct" -------------------------
+#
+# FOUND BY READING OUR OWN TRANSCRIPTS, which is why this rule is shaped the
+# way it is. Comparing dialogues the judge scored `adaptation` 5 against ones
+# it scored 2, the difference is not length, not question form, and not the
+# move chosen. It is DIAGNOSTIC SPECIFICITY.
+#
+# A 5/5 turn:
+#   "You correctly identified that you gave value, but missed that your friend
+#    gave none."
+#   "You are right; I overloaded you with too many terms. Let us focus on one."
+#
+# A 2/5 turn, three times in a row:
+#   "Correct. The eigenvalue lambda=3 describes the stretch. However..."
+#   "Correct. The stretch factor is independent of the vector's length..."
+#   "Correct. Reversing direction keeps it an eigenvector..."
+#
+# The content of the low one is accurate. What it never does is tell the
+# student what THEY specifically showed, or what they left out. "Correct." is
+# an acknowledgement, not feedback, and a turn that could follow any student's
+# answer is the script `adaptation` punishes.
+#
+# The grader already returns `missing_concepts` for every answer and A.2 puts
+# them in the prompt as "NOT YET COVERED". Nothing required the turn to USE
+# them. This does.
+#
+# DELIBERATELY NARROW, because A.6 taught the cost of the alternative:
+# dictating the whole turn every turn removed variation and drove `adaptation`
+# DOWN by 0.53. This constrains ONE element — that a named gap gets named —
+# and leaves the rest of the turn free.
+
+#: Bare acknowledgements that carry no information about what the learner did.
+_GENERIC_ACK = re.compile(
+    r"^\s*(correct|right|exactly|yes|good|great|nice|perfect|well done|"
+    r"that'?s (right|correct)|absolutely|indeed)\b[.!,]?\s*", re.I)
+
+
+def opens_with_generic_praise(turn):
+    """Does the turn open with a bare acknowledgement and nothing specific?"""
+    return bool(_GENERIC_ACK.match(turn or ""))
+
+
+#: Scaffolding the grader wraps a gap in. "Explanation of the mathematical
+#: relationship Av = lambda v" is really about `Av = lambda v`; matching on
+#: "explanation" or "relationship" would pass a turn that addressed nothing.
+#: Measured on live grader output: gaps come back as noun phrases with this
+#: framing on the front, so without stripping it the rule quietly never fires.
+_GAP_SCAFFOLD = frozenset("""
+explanation definition context understanding description discussion
+mention identification recognition awareness relationship concept idea
+notion aspect element factor point detail issue matter question topic
+""".split())
+
+
+def addresses_gap(turn, missing_concepts):
+    """Does the turn engage with at least one gap the grader named?
+
+    Matches on the SUBSTANTIVE words of the gap, with the grader's scaffolding
+    stripped. Whole words only, never substrings: this codebase has been bitten
+    four separate times by `"war" in "aware"`.
+
+    A gap whose every word is scaffolding carries no testable substance, so it
+    is treated as addressed rather than failing a turn on a phrase that says
+    nothing.
+    """
+    gaps = [g for g in (missing_concepts or []) if (g or "").strip()]
+    if not gaps:
+        return True                      # nothing was named; nothing to address
+    said = _content_words(turn)
+    testable = 0
+    for gap in gaps:
+        substance = _content_words(gap) - _GAP_SCAFFOLD
+        if not substance:
+            continue                     # nothing testable in this phrase
+        testable += 1
+        if substance & said:
+            return True
+    return testable == 0
 
 
 def check(turn, learner_said="", concept_terms=None, already_seen=None,
-          is_opening=False, max_words=MAX_WORDS, recent_learner=None):
+          is_opening=False, max_words=MAX_WORDS, recent_learner=None,
+          previous_turns=None, max_statements=MAX_STATEMENTS,
+          missing_concepts=None):
     """Every rule this turn breaks, in the order worth fixing.
 
     Returns [] for a compliant turn. An empty or missing turn returns no
@@ -241,6 +441,42 @@ def check(turn, learner_said="", concept_terms=None, already_seen=None,
                "they have not said anything yet")
             + ". Either quote their exact words, or drop the claim and ask "
               "instead."))
+
+    # A.5 — a question with framing, not a lecture with a question on the end.
+    # This is the rule the word cap could not express: a four-sentence
+    # explanation can sit well under 60 words.
+    said = statements(turn)
+    if len(said) > max_statements:
+        out.append(Violation(
+            "mostly_question",
+            f"{len(said)} statements before the question (limit {max_statements})",
+            f"Your last reply made {len(said)} statements and then asked a "
+            f"question. That is a short lecture, not a Socratic turn. Keep at "
+            f"most {max_statements} sentences of setup and let the QUESTION do "
+            f"the work — the student should be the one explaining."))
+
+    # A.3 — do not ask the same thing twice.
+    repeated = repeats_earlier_turn(turn, previous_turns)
+    if repeated:
+        out.append(Violation(
+            "no_repeat",
+            "repeats an earlier turn",
+            f'You already asked this: "{" ".join(repeated.split()[:20])}". '
+            f'Asking it again in different words has already failed. Change '
+            f'the approach — give a worked example, break it into a smaller '
+            f'step, or move to what they DO understand and build from there.'))
+
+    # A.8 — the grader named what the answer left out; the turn must engage
+    # with at least one of those, rather than saying "Correct." and moving on.
+    if missing_concepts and not addresses_gap(turn, missing_concepts):
+        named = ", ".join(str(g) for g in list(missing_concepts)[:2])
+        out.append(Violation(
+            "addresses_gap",
+            f"ignores the named gap: {named}",
+            f"Your last reply did not mention what the student's answer "
+            f"actually left out: {named}. Say specifically what they got right "
+            f"AND what is still missing, then ask about the missing part. "
+            f'"Correct." tells them nothing about their own answer.'))
 
     intro = new_terms(turn, concept_terms, already_seen)
     if len(intro) > MAX_NEW_TERMS:

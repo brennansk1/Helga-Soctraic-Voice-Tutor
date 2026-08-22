@@ -13,6 +13,16 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/aids.css') }}?v=3">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/trust.css') }}">
 <script src="{{ url_for('static', filename='js/aids.js') }}?v=3"></script>
+<script>
+  /* Voice answer handling depends on whether the learner can read a
+     correction. For an adult, auto-sending the transcript is convenient. For a
+     pre-reader it is unsafe: a mis-transcription would be submitted and GRADED
+     as a wrong answer, and the child cannot read the text to catch it. Child
+     ASR word-error rate is 20-40% at ages 5-6 (Yeung & Alwan 2018), so this is
+     the common case, not the edge case. */
+  window.HELGA_VOICE_AUTOSEND = {{ 'true' if voice_autosend is not defined or voice_autosend else 'false' }};
+  window.HELGA_GRADE_BAND = "{{ grade_band|default('', true) }}";
+</script>
 <script src="{{ url_for('static', filename='js/session.js') }}?v=10"></script>
 {% endblock %}
 

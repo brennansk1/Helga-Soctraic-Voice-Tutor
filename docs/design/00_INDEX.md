@@ -23,10 +23,19 @@ Read **01** and **02** first — they are the shared foundation every other spec
 | 09 | `09_BILLING.md` | B20 | Seat-metered Stripe plan; Checkout/portal; webhook handlers; seat enforcement; grant invoices; entitlement gate |
 | 10 | `10_DEPLOYMENT_SCALING.md` | B23, B27 | GPU fair-queue; capacity model; Postgres migration; multi-worker; topology; backups; observability |
 | 11 | `11_IA_ONBOARDING_NOTIFICATIONS.md` | I, FE5-8, B24 | Tab restructure (8→4 kid tabs); role routing; onboarding flows; notifications |
+| 12 | `12_YOUNG_LEARNER_DELIVERY.md` | B17.4-7 | K-1/2-3 direct-instruction-first loop (TELL→SHOW→TRY→CHECK); closed-response capture + the no-ASR-grading rule; shortened hint ladder; TTS + segment highlighting; AI disclosure |
+| 13 | `13_READING_FLUENCY_PLACEMENT.md` | B18 (diagnostic) | WCPM read-aloud on the non-gating diagnostic; `delivery_profile` (pre_reader/transitional/reader); noise handling — asymmetry, hysteresis, parent override |
+| 14 | `14_OFF_SCREEN_AND_PHYSICAL.md` | B16, B19 | Epistemic × enactment-channel taxonomy; build-time auto-classification + human review; kits/video/parent-guided activity; debrief verification; capped FSRS signal; offline materials manifest |
+| 15 | `15_AGE_ADAPTIVE_SHELL.md` | FE5, B25 | Tab count by band (0/2/4); tap targets, type scale, choice counts, no-scroll at K-1; accessibility built into the one mode |
+| 16 | `16_INTERESTS_AND_ELECTIVES.md` | — | Child interest calibration (entry → safety → parent approval → non-cringey use in tutoring); elective choice with parent approval and grade-matched course build |
 
 ## Research basis (verbatim source reports)
 - `docs/UTAH_K12_CURRICULUM_REFERENCE.md` — Utah Core Standards map (curriculum source-of-truth for spec 04).
 - `docs/GAMIFICATION_RESEARCH.md` — gamification evidence base (philosophy + guardrails for spec 07).
+- `docs/research/MODE_B_RESEARCH_BRIEF.md` + `docs/research/MODE_B_RESEARCH_FINDINGS.md` — the K-12 pedagogy/UX
+  evidence base for specs **12–15** (and the re-banding already landed in `prompts.py`). **Read the FINDINGS
+  "Caveats" section before treating any number in 12–15 as settled** — several strong-sounding conclusions are
+  flagged by the research itself as extrapolation.
 
 ## Cross-spec dependency map
 - **Everything depends on 01** (table names) and on **03/B15** (the `student_id` isolation key + auth) landing first — that's why B15 is the R0/R1 foundation.
@@ -38,7 +47,13 @@ Read **01** and **02** first — they are the shared foundation every other spec
 
 ## Glossary (canonical terms — use verbatim)
 - **parent** (`par_…`) — billing owner / guardian account. **student** (`stu_…`) — a learner; `students.id` is the system-wide isolation key.
-- **grade_band** — one of `K-2 | 3-5 | 6-8 | 9-12`. **catalog course** — curated, standards-tagged, `is_catalog=1`, `catalog_status='published'`. **elective** — user-generated course behind parent approval.
+- **grade_band** — one of `K-1 | 2-3 | 4-5 | 6-8 | 9-12` (re-banded 2026-08-21; the old `K-2`/`3-5` names resolve
+  through `LEGACY_GRADE_BANDS` in `services/common/prompts.py`). Specs 01–11 still carry the old four names in
+  places — read them as the legacy mapping. **delivery_profile** — `pre_reader | transitional | reader`, the
+  *presentation* axis set by reading fluency (spec 13); distinct from `grade_band`, which sets *content*.
+  **enactment_channel** — what a concept physically needs (spec 14 §1.2). **catalog course** — curated,
+  standards-tagged, `is_catalog=1`, `catalog_status='published'`. **elective** — user-generated course behind
+  parent approval.
 - **enrollment** — a student↔course link with progress + approval status. **standard_code** — official Utah strand/standard code (e.g. `6.RP`).
 - **FSM registry** — per-student `MnemosyneFSM` instance pool replacing the global singleton. **student room** — `student:{id}` Socket.IO room.
 

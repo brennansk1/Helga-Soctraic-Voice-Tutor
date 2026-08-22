@@ -248,3 +248,255 @@ def test_the_correction_tells_the_model_what_to_do_about_it():
     viol = [x for x in v if x.rule == "grounded_claim"][0]
     assert "quote their exact words" in viol.instruction
     assert "eigenvectors keep their direction" in viol.instruction
+
+
+# ---------------------------------------------- A.3: do not ask it twice
+#
+# The most frequent complaint in the judge's own words, across every domain:
+# "repeats the exact same dictionary analogy and question verbatim",
+# "repeats the definition of zero-based indexing verbatim", "the tutor's final
+# turn repeats the exact same question about the third item's index".
+#
+# MathTutorBench reports the same thing from the other side: tutoring gets
+# harder in longer dialogues, "where simpler questioning strategies begin to
+# fail" — a model out of moves repeats the one it already made.
+
+PREV = ["Where does the vector land after the transform?"]
+
+
+def test_a_verbatim_repeat_is_caught():
+    assert dc.repeats_earlier_turn(PREV[0], PREV) is not None
+
+
+def test_a_reworded_repeat_is_caught():
+    """The judge counts "in slightly different words" as repetition too."""
+    assert dc.repeats_earlier_turn(
+        "So where does that vector land after the transform?", PREV) is not None
+
+
+def test_a_genuinely_new_question_is_not_caught():
+    """The rule must not punish staying on topic."""
+    assert dc.repeats_earlier_turn(
+        "What stays fixed when the matrix acts?", PREV) is None
+
+
+def test_reusing_the_concept_vocabulary_is_not_repetition():
+    """Every turn of an eigenvalue lesson says 'eigenvalue'. That is normal."""
+    prev = ["An eigenvalue scales its eigenvector — what does that mean here?"]
+    assert dc.repeats_earlier_turn(
+        "Can an eigenvalue ever be negative for a real matrix?", prev) is None
+
+
+def test_the_same_question_wrapped_in_new_framing_is_still_a_repeat():
+    """New words around an identical question still reads as being asked
+    the same thing twice."""
+    prev = ["Think about a list of 1024 items. How many halvings to reach one?"]
+    turn = ("Let us try a different angle, using a dictionary instead. "
+            "How many halvings to reach one?")
+    assert dc.repeats_earlier_turn(turn, prev) is not None
+
+
+def test_it_searches_all_earlier_turns_not_just_the_last():
+    prev = ["Where does the vector land after the transform?",
+            "What does the scale factor tell you?"]
+    assert dc.repeats_earlier_turn(
+        "Where does the vector land after the transform?", prev) is not None
+
+
+def test_the_aid_fence_is_not_compared():
+    """Two turns sharing a diagram are not therefore the same question."""
+    aid = '```aid\n{"kind":"plot","title":"the very same long title here"}\n```'
+    prev = ["What is the slope at that point?" + aid]
+    turn = "Why does the curve flatten near the origin?" + aid
+    assert dc.repeats_earlier_turn(turn, prev) is None
+
+
+def test_no_previous_turns_means_nothing_to_repeat():
+    assert dc.repeats_earlier_turn("Anything at all?", []) is None
+    assert dc.repeats_earlier_turn("Anything at all?", None) is None
+    assert dc.repeats_earlier_turn("", PREV) is None
+
+
+def test_similarity_is_not_substring_matching():
+    """Fifth place this bug class would have landed."""
+    assert dc._similarity("war", "aware warranty") < 0.5
+
+
+# ------------------- A.5: a question with framing, not a lecture with a question
+#
+# The contract already forced <=60 words and ends-with-a-question, compliance
+# hit ~100%, and `socratic` did not move. Measuring real transcripts showed
+# why: the mean tutor turn carries 2.53 declarative sentences before its
+# question and 45% carry three or more. A turn that explains for four sentences
+# then asks something satisfied every rule we had — and is exactly what the
+# judge calls a mini-lecture.
+
+LECTURE = ("An eigenvalue is a scalar. It scales its eigenvector. "
+           "The vector keeps its direction. This is why they matter. "
+           "What happens when it is negative?")
+
+
+def test_a_mini_lecture_is_counted():
+    assert len(dc.statements(LECTURE)) == 4
+    assert len(dc.statements(LECTURE)) > dc.MAX_STATEMENTS
+
+
+def test_brief_framing_before_a_question_is_allowed():
+    """Two sentences of setup is Socratic form, not exposition."""
+    turn = "You said it stretches. The matrix acts on it. Does direction change?"
+    assert len(dc.statements(turn)) <= dc.MAX_STATEMENTS
+
+
+def test_a_bare_question_carries_no_statements():
+    assert dc.statements("Does the direction change?") == []
+
+
+def test_the_aid_fence_is_not_exposition():
+    """A diagram's JSON is not sentences the student reads."""
+    turn = ('What changes here?\n```aid\n{"kind":"plot","title":"A. B. C. D."}\n```')
+    assert dc.statements(turn) == []
+
+
+def test_a_numeric_fragment_is_not_a_sentence():
+    """"3." is a list marker, not a sentence of explanation."""
+    assert dc.statements("3. 42. Why?") == []
+
+
+def test_word_count_and_statement_count_are_different_measures():
+    """The whole point: this catches turns the word cap does not.
+
+    A four-sentence lecture can sit well under 60 words.
+    """
+    assert dc.word_count(LECTURE) < dc.MAX_WORDS
+    assert len(dc.statements(LECTURE)) > dc.MAX_STATEMENTS
+
+
+# ------------------- A.8: say what they missed, not just "Correct."
+#
+# Found by reading our own transcripts. Comparing dialogues the judge scored
+# `adaptation` 5 against ones it scored 2, the difference is not length, not
+# question form, and not the teaching move. It is DIAGNOSTIC SPECIFICITY.
+#
+#   5/5: "You correctly identified that you gave value, but missed that your
+#         friend gave none."
+#   2/5: "Correct. The eigenvalue lambda=3 describes the stretch. However..."
+#        — three turns in a row opening with a bare "Correct."
+#
+# The low one is accurate. It just never tells the student what THEY showed or
+# left out, and a turn that could follow any student's answer is the script
+# `adaptation` punishes.
+
+GAPS = ["non-zero requirement", "mutual exchange of value"]
+
+
+def test_a_bare_acknowledgement_is_recognised():
+    for turn in ("Correct. The eigenvalue describes the stretch. And now?",
+                 "Right, so what happens next?",
+                 "Exactly! Why is that?",
+                 "Good. What about the reverse case?"):
+        assert dc.opens_with_generic_praise(turn), turn
+
+
+def test_a_specific_opening_is_not_generic():
+    for turn in ("You got the scaling right but missed the non-zero part. Why?",
+                 "You said it flips — does that hold for every vector?"):
+        assert not dc.opens_with_generic_praise(turn), turn
+
+
+def test_ignoring_a_named_gap_is_caught():
+    turn = "Correct. The eigenvalue describes the stretch. What happens next?"
+    v = dc.check(turn, learner_said="stretch", missing_concepts=GAPS)
+    assert any(x.rule == "addresses_gap" for x in v)
+
+
+def test_engaging_with_the_gap_passes():
+    turn = ("You got the scaling right but missed the non-zero requirement. "
+            "Why must it be non-zero?")
+    v = dc.check(turn, learner_said="scaling", missing_concepts=GAPS)
+    assert not any(x.rule == "addresses_gap" for x in v)
+
+
+def test_addressing_ANY_named_gap_is_enough():
+    """One turn, one idea — the contract already forbids piling them up."""
+    turn = "You showed value passed one way, but was there mutual exchange?"
+    assert dc.addresses_gap(turn, GAPS)
+
+
+def test_no_named_gap_means_no_rule():
+    """The grader found nothing missing; there is nothing to demand."""
+    turn = "Correct. What happens next?"
+    for gaps in ([], None, [""]):
+        assert not any(x.rule == "addresses_gap"
+                       for x in dc.check(turn, learner_said="x",
+                                         missing_concepts=gaps))
+
+
+def test_gap_matching_is_not_substring_matching():
+    """Fifth place this bug class would have landed."""
+    assert not dc.addresses_gap("Are you aware of the warranty?", ["war"])
+
+
+def test_the_correction_names_the_gap_and_says_what_to_do():
+    turn = "Correct. Next question?"
+    v = [x for x in dc.check(turn, learner_said="x", missing_concepts=GAPS)
+         if x.rule == "addresses_gap"][0]
+    assert "non-zero requirement" in v.instruction
+    assert "what they got right" in v.instruction.lower()
+    assert '"Correct." tells them nothing' in v.instruction
+
+
+def test_A8_constrains_one_element_not_the_whole_turn():
+    """The lesson from A.6: dictating every turn removed variation and drove
+    `adaptation` DOWN 0.53. Two turns that both address the gap may otherwise
+    look completely different, and both must pass."""
+    a = "You missed the non-zero requirement — why does zero break it?"
+    b = ("Your exchange point was right. Nothing was given back though. "
+         "What does mutual exchange of value require here?")
+    for turn in (a, b):
+        assert not any(x.rule == "addresses_gap"
+                       for x in dc.check(turn, learner_said="value",
+                                         missing_concepts=GAPS)), turn
+
+
+# ------------------ A.8 must discriminate, not pass on a shared filler word
+#
+# Live grader output comes back as scaffolded noun phrases:
+#   "Explanation of the mathematical relationship Av = lambda v"
+#   "Context of how the eigenvalue acts on an eigenvector"
+#
+# Matching on ANY shared content word meant a turn saying "what is the
+# relationship here" passed by hitting "relationship" — addressing nothing.
+# That is a silent non-firing, which is the failure mode this repository keeps
+# finding: a rule that looks active and enforces nothing.
+
+REAL_GAPS = ["Explanation of the mathematical relationship Av = lambda v",
+             "Context of how the eigenvalue acts on an eigenvector"]
+
+
+def test_matching_only_the_graders_scaffolding_does_not_count():
+    assert not dc.addresses_gap(
+        "What is the relationship here, in your own explanation?", REAL_GAPS)
+
+
+def test_naming_the_substance_counts():
+    assert dc.addresses_gap(
+        "You missed how the eigenvalue acts on it — how does it?", REAL_GAPS)
+
+
+def test_a_gap_with_no_substance_is_not_enforced():
+    """"Explanation of the concept" is all scaffolding — it names nothing a
+    turn could be required to mention, so failing a turn on it would be
+    arbitrary."""
+    assert dc.addresses_gap("anything at all", ["Explanation of the concept"])
+
+
+def test_scaffolding_stripping_does_not_reintroduce_substring_matching():
+    assert not dc.addresses_gap("Are you aware of the warranty?", ["war"])
+
+
+def test_a_real_generic_turn_still_fails_against_real_gaps():
+    """The case this rule exists for, using verbatim live grader output."""
+    turn = "Correct. What happens if it is negative?"
+    v = dc.check(turn, learner_said="it gets bigger",
+                 missing_concepts=REAL_GAPS)
+    assert any(x.rule == "addresses_gap" for x in v)

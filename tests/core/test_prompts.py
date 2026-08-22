@@ -285,3 +285,83 @@ def test_prompts_return_message_list():
         for msg in result:
             assert "role" in msg, f"{func.__name__} messages need 'role'"
             assert "content" in msg, f"{func.__name__} messages need 'content'"
+
+
+# ------------------------------------------------- C.1: say the arbitrary thing
+#
+# `honest_telling` measured 1.40/5 on mathematics and 1.00 in five of seven
+# domains. The rubric scores 1 as "withheld it, asked them to guess, or hinted
+# at a fact that cannot be deduced" — which is rule 1 ("Never give away the
+# final answer", marked non-negotiable) applied to content with no derivation.
+#
+# The failure mode of this fix is a tutor that starts telling everything, so
+# the scoping is tested as hard as the behaviour.
+
+def _sys(context):
+    from services.common.prompts import get_socratic_tutor_prompt
+    return get_socratic_tutor_prompt(context, [])[0]["content"]
+
+
+ARBITRARY_CONTEXTS = [
+    "The curly d is a convention for the partial derivative sign.",
+    "This rule is called the doctrine of consideration.",
+    "The element is named after the town where it was discovered.",
+    "In this language the plural is formed by a suffix; the terminology is fixed.",
+]
+
+DERIVABLE_CONTEXTS = [
+    "A matrix scales certain vectors without rotating them; the factor is the eigenvalue.",
+    "Pressure falls as the fluid speeds up, because energy is conserved along a streamline.",
+    "Binary search halves the interval each step, so the cost grows logarithmically.",
+]
+
+
+def test_arbitrary_content_suspends_the_never_tell_rule():
+    for ctx in ARBITRARY_CONTEXTS:
+        assert "SUSPENDS RULE 1" in _sys(ctx), f"not injected for: {ctx}"
+
+
+def test_derivable_content_keeps_the_never_tell_rule():
+    """The failure mode of C.1 is a tutor that tells everything."""
+    for ctx in DERIVABLE_CONTEXTS:
+        assert "SUSPENDS RULE 1" not in _sys(ctx), f"wrongly injected for: {ctx}"
+
+
+def test_the_base_rules_always_survive():
+    """Suspending rule 1 must not drop rules 2-8."""
+    for ctx in ARBITRARY_CONTEXTS[:1] + DERIVABLE_CONTEXTS[:1]:
+        s = _sys(ctx)
+        assert "SOCRATIC PEDAGOGY RULES" in s
+        assert "ONE focused question" in s
+        assert "Affirm only what is ACTUALLY correct" in s
+
+
+def test_the_instruction_forbids_the_measured_failure():
+    """The rubric's own words for a 1: guessing, hinting, withholding."""
+    s = _sys(ARBITRARY_CONTEXTS[0])
+    assert "State the fact plainly" in s
+    assert "No hinting" in s
+    assert "must be about that reasoning" in s.lower()
+
+
+def test_it_still_demands_a_question_about_something_reasonable():
+    """Telling must not become lecturing: the turn still ends in a question
+    about what CAN be reasoned about."""
+    s = _sys(ARBITRARY_CONTEXTS[0])
+    assert "why this convention exists" in s
+    assert "ONE question" in s
+
+
+def test_the_detector_shares_the_aid_policy_definition():
+    """Two definitions of 'arbitrary' would let the diagram policy and the
+    telling policy disagree about the same concept."""
+    from services.common import prompts
+    from services.common.aid_policy import is_arbitrary
+    for ctx in ARBITRARY_CONTEXTS + DERIVABLE_CONTEXTS:
+        assert prompts._concept_is_arbitrary(ctx) == is_arbitrary(ctx)
+
+
+def test_a_detector_failure_costs_the_instruction_not_the_turn():
+    from services.common import prompts
+    assert prompts._concept_is_arbitrary(None) is False
+    assert "SOCRATIC PEDAGOGY RULES" in _sys(None or "")

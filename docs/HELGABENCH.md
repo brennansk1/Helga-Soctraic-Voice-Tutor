@@ -123,6 +123,120 @@ Therefore:
   floor is a score manufactured from silence
 - no gate may be set on a single run
 
+### The bench now supplies the turn state (fixed 2026-08-21)
+
+`run_dialogue` calls the production prompt builder, and its comment claimed it
+used "the REAL production prompt". That was **not accurate**, and the gap was
+found on 2026-08-21 while trying to measure A.2.
+
+`get_socratic_tutor_prompt` takes 14 inputs. The FSM supplies all 14. The
+benchmark supplied **four**: `context_text`, `conversation_history`,
+`bloom_level`, `aid_policy`. Current state:
+
+| production input | supplied? |
+|---|---|
+| `context_text`, `conversation_history`, `bloom_level`, `aid_policy` | yes, always |
+| `turn_state` | **yes, since 2026-08-21** — see below |
+| `learner_history` | no, and correctly so: a simulated student has no past sessions |
+| `misconceptions` | **no — and the bench scores `misconception_handling` while withholding the list production provides** |
+| `grade_band`, `style_modifier`, `user_profile` | no — the personalisation machinery `adaptation` is meant to measure |
+| `system_note`, `analogies`, `prior_concepts`, `health_strand6` | no |
+
+So every score published before 2026-08-21 — `socratic` ~2.14, `adaptation`
+1.33–2.80 — describes a **stripped-down tutor**, not the shipped one. This does
+not mean the product was secretly better; it means the instrument and the
+product were not the same system, and those figures inherit that caveat.
+
+**`turn_state` is now supplied.** The bench grades each simulated student answer
+with the production grading prompt (`_grade_student_turn`) and feeds the result
+into `TurnState`, exactly as the FSM does. This was blocking: A.2's structured
+turn state is built from graded answers, nothing in the bench produced a grade,
+so the one intervention aimed at the semantic quality of a question was
+invisible to the instrument measuring it.
+
+`misconceptions` is the next one worth supplying, because the bench scores a
+dimension it withholds the input for.
+
+**The fingerprint hole is closed.** `rubric_fingerprint()` covered the rubric
+text and judge prompts but **not which production inputs the bench supplies**,
+so changing what the tutor is told would have compared two different systems
+while claiming they matched. `BENCH_PROMPT_INPUTS` is now part of the hashed
+payload, with a test asserting that adding an input changes the fingerprint.
+Supplying the turn state moved it from `c98fa5eb86455db5` to `a21992105fe9aad7`,
+correctly invalidating every earlier baseline.
+
+Note the distinction this rests on. Changing the **dialogue contract's rules**
+is a change to the PRODUCT — the contract runs in `fsm_logic` too, and the bench
+applies it because production does — so it does not bump the fingerprint, and a
+before/after comparison across it is exactly what the benchmark is for. Changing
+**which inputs the bench supplies** is a change to the INSTRUMENT and does bump
+it. Getting that backwards would either block a valid measurement or licence an
+invalid one.
+
+### What `socratic` is NOT measuring
+
+Measured 2026-08-21 across five domain runs, 11 dialogues scored `socratic` >= 4
+against 58 scored <= 2:
+
+| feature of the tutor's turns | high (>=4) | low (<=2) |
+|---|---|---|
+| declarative statements per turn | 2.32 | 2.62 |
+| words per turn | 40.3 | 43.8 |
+| ends with a question | 0.98 | 1.00 |
+| repeats an earlier turn | 0.00 | 0.02 |
+| open-stem questions (why/how/what-if) | 0.50 | **0.61** |
+| question length in words | 17.5 | 17.1 |
+
+**No surface feature of a tutor turn predicts the score**, and the open-question
+hypothesis runs backwards. An apparent signal in student word count is an
+artifact of the student PROFILE: `silent_struggler` averages 8.3 words and
+`confident_bluffer` 63.2, a spread that swamps the 6.5-word gap between the
+groups.
+
+This matters for anyone reading the scores. `socratic` has a floor of **0.00
+across three identical runs** — the most reproducible dimension in the
+instrument — so it is not arbitrary. It is measuring something **semantic**:
+whether the question follows from what this particular student just reasoned.
+A turn can be short, end in a question, avoid repetition and use an open stem
+and still be generic.
+
+The practical consequence: this dimension **cannot be moved by surface rules**,
+and interventions that target turn shape should not be expected to move it. Two
+did not (A4.1a, A.1) before this was measured.
+
+### The floor is per-dimension, not just per-score
+
+A single composite floor is necessary and **not sufficient**. Two identical
+mathematics runs (n=15 dialogues each, `nail-35b-a3b-ctx`, 2026-08-20) moved
+the composite by only 0.162 while individual dimensions moved much further:
+
+| dimension | swing between identical runs |
+|---|---|
+| visual_integration | **1.20** — cannot support a one-point claim at n=15 |
+| progression | 0.47 |
+| honest_telling | 0.40 |
+| visual_policy | 0.27 |
+| misconception_handling | 0.23 |
+| accuracy, adaptation, notation_rigour, notation_speakable | 0.13 |
+| socratic | 0.00 |
+
+So a per-dimension claim resting on the composite floor can be pure noise. The
+floors live in `DIMENSION_FLOORS`, `compare()` labels every dimension REAL or
+noise against its own floor, and `--noise-floor a.json b.json` regenerates them
+rather than leaving them a hand-copied constant.
+
+### Means, not medians, in every reported figure
+
+Dimensions are the **median of N judge samples** for one dialogue — that is
+sampling noise reduction and it stays. But **aggregation across dialogues is a
+mean.** Reporting a median across dialogues was a real defect in this tool:
+across the two identical runs above, the `visual_integration` median went
+**5 → 1** — a four-point swing on a five-point scale, from nothing at all —
+while its mean moved 3.27 → 2.07. The composite was always built from means, so
+the headline was sound while the table beneath it was not. The dimension table
+now prints mean, n, and observed range, and labels any dimension whose own
+floor exceeds 1.0 as unstable.
+
 The judge ships a **calibration self-check** with three planted transcripts: a
 tutor that accepts a misconception must score ≤ 2, one that corrects clearly
 must score ≥ 4, and a dialogue where the student never erred must return

@@ -5,7 +5,34 @@ either backed by a command you can re-run, or marked as unverified. Nothing here
 is a status someone typed in by hand and forgot to update — if a row claims
 VERIFIED, the command beside it produced that result.
 
-Last measured: 2026-08-20 (see "Closed 2026-08-20"; sections below still carry their 2026-08-04 measurements unless marked).
+Last measured: 2026-08-21 (see "Publication readiness"; sections below still
+carry their 2026-08-04 measurements unless marked).
+
+> ## Publication readiness — 2026-08-21
+>
+> Work toward putting this on GitHub as a **public** repository. Four findings,
+> all of which would otherwise have shipped:
+>
+> | | before | after |
+> |---|---|---|
+> | CI on every push | **red** — ran `pytest tests/verification/`, a directory that does not exist | full suite + a deterministic benchmark gate |
+> | tests CI actually ran | 1,679 of 2,382 — nothing from `tests/common`, `tests/tools`, `tests/web`, `tests/ops` | all of them |
+> | LICENSE | absent, while the README advertised **MIT** | Apache-2.0, README matches |
+> | README architecture | "Qwen 3 14B (~9.5 GB)", "6 services", a tab list matching no navigation | the model actually configured, 5 containers + 3 host services, the real tabs |
+>
+> The CI failure is the one worth remembering: the workflow had a step pointing
+> at a directory that has never existed here, so **every push to main was red**
+> — and a red CI nobody reads is indistinguishable from no CI. The 703
+> uncovered tests were exactly where the recent work lives.
+>
+> **`.gitignore` excluded `*.png` with no exception**, so README screenshots
+> would have been silently dropped by `git add`. Fixed, and verified with
+> `git add --dry-run` rather than `git check-ignore` — the latter exits 0 when
+> a *negation* rule matches, which reads as "still ignored" if you only check
+> the exit code.
+>
+> Still open for publication: screenshots not yet captured; voice end-to-end
+> (criterion 2) still never exercised.
 
 > ## What changed on 2026-08-04 — the grounding chain
 >

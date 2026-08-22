@@ -429,7 +429,26 @@ def create_course_custom():
 
 @app.route('/learn')
 def learn_page():
-    return render_template('learn.html')
+    # The template needs the band so the client can decide whether a voice
+    # transcript may be auto-sent. A young learner cannot read a correction, so
+    # a mis-transcription must never reach the grader unconfirmed — see
+    # `voice_autosend` in learn.html and docs/design/12_YOUNG_LEARNER_DELIVERY.md.
+    #
+    # Never fails the page: an unknown band resolves to the adult default,
+    # which keeps today's behaviour.
+    band = None
+    try:
+        band = (_get_storage().accounts.get_student(session.get('student_id'))
+                or {}).get('grade_band')
+    except Exception:
+        band = None
+    try:
+        from services.common.prompts import is_young_band
+        young = is_young_band(band)
+    except Exception:
+        young = False
+    return render_template('learn.html', grade_band=band or '',
+                           voice_autosend=(not young))
 
 # --- A5.1: Practice — one surface, three states -----------------------------
 # Quiz, Review and Schedule were three top-level tabs for the same activity at
@@ -2358,7 +2377,10 @@ def create_student():
     grade_band = data.get('grade_band') or '6-8'
     if not name:
         return jsonify({'error': 'display_name required'}), 400
-    if grade_band not in ('K-2', '3-5', '6-8', '9-12'):
+    # Current bands plus the pre-2026-08-21 names, which existing records
+    # still carry. Rejecting either would make a real student uncreatable.
+    if grade_band not in ('K-1', '2-3', '4-5', '6-8', '9-12',
+                          'K-2', '3-5'):
         return jsonify({'error': 'invalid grade_band'}), 400
     st = _get_storage()
     # B20.3 seat enforcement: active students may not exceed the seat allowance

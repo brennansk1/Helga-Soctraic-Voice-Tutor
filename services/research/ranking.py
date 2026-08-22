@@ -49,11 +49,67 @@ def build_search_queries(title: str, module_title: str, mastery: int = 1):
     return queries
 
 
+
+# --- Official documentation ---------------------------------------------------
+#
+# For a technical concept the authoritative source is the project's own
+# documentation, and nothing else comes close. "What does dbt's ref() do at
+# compile time" is answered definitively by docs.getdbt.com and approximately
+# by everything else; there is no textbook and no paper, and the Wikipedia
+# article is a stub.
+#
+# Without this, every such page is scored as a generic "web" result at 0.20
+# capped at 0.40 — the LOWEST weight — so a computer-science concept grounded
+# in three pages of primary documentation scores below a history concept
+# grounded in one Wikipedia article. That is backwards, and it is why CS
+# concepts came out of research with confidence near the 0.5 floor.
+#
+# Matched on host suffix so subdomains and language paths work
+# (docs.python.org, three.docs.rs, /en/stable/...). Deliberately a REGISTRY of
+# known-authoritative hosts rather than a heuristic like "contains /docs/":
+# a marketing site with a /docs/ path is not primary documentation, and a
+# false positive here manufactures confidence, which is the failure mode this
+# whole function exists to avoid.
+_DOC_HOSTS = (
+    # languages and runtimes
+    "docs.python.org", "docs.oracle.com", "doc.rust-lang.org", "docs.rs",
+    "pkg.go.dev", "go.dev", "developer.mozilla.org", "docs.ruby-lang.org",
+    "cppreference.com", "en.cppreference.com", "learn.microsoft.com",
+    "docs.swift.org", "kotlinlang.org", "php.net", "docs.julialang.org",
+    # data / analytics engineering
+    "docs.getdbt.com", "docs.snowflake.com", "docs.databricks.com",
+    "airflow.apache.org", "docs.dagster.io", "iceberg.apache.org",
+    "duckdb.org", "spark.apache.org", "kafka.apache.org",
+    "docs.sqlalchemy.org", "postgresql.org", "dev.mysql.com",
+    "sqlite.org", "docs.pola.rs", "pandas.pydata.org", "numpy.org",
+    # infra and tooling
+    "docs.docker.com", "kubernetes.io", "developer.hashicorp.com",
+    "git-scm.com", "docs.github.com", "docs.gitlab.com",
+    # standards bodies — the primary source for a spec
+    "w3.org", "whatwg.org", "ietf.org", "rfc-editor.org", "iso.org",
+    "unicode.org", "ecma-international.org",
+)
+
+
+def is_documentation(url):
+    """Is this URL official documentation from a known-authoritative host?"""
+    try:
+        host = (url or "").split("//", 1)[-1].split("/", 1)[0].lower()
+        host = host.split("@")[-1].split(":")[0]
+        if host.startswith("www."):
+            host = host[4:]
+        return any(host == d or host.endswith("." + d) for d in _DOC_HOSTS)
+    except Exception:                    # pragma: no cover - defensive
+        return False
+
+
 def compute_confidence(has_wikipedia: bool, web_source_count: int,
                        primary_source_count: int = 0,
-                       textbook_count: int = 0) -> float:
+                       textbook_count: int = 0,
+                       documentation_count: int = 0) -> float:
     """Heuristic grounding confidence in [0, 1], weighted BY KIND.
 
+        official documentation (see _DOC_HOSTS) 0.30 each, cap 0.60
         open textbook (Wikibooks/Wikiversity)  0.30 each, cap 0.60
         primary literature (DOI / arXiv)       0.25 each, cap 0.50
         secondary web page                     0.20 each, cap 0.40
@@ -73,6 +129,13 @@ def compute_confidence(has_wikipedia: bool, web_source_count: int,
     point of the textbook work — the source kind a COURSE most wants — counted
     for exactly nothing.
 
+    Third kind, added 2026-08-21: official documentation. It is weighted level
+    with textbooks for the same reason they outweigh papers — for a tool or a
+    language, the project's own documentation IS the settled canon, and it is
+    the only source that is definitively correct about version-specific
+    behaviour. The caller was changed in the same commit; if you add a fourth
+    kind, change both or you will make this mistake a third time.
+
     WHY TEXTBOOKS OUTWEIGH PAPERS HERE. This score grades material for building
     a course, not for advancing a field. A textbook chapter is the settled
     canon, already selected, sequenced and explained for a learner; a paper is
@@ -89,6 +152,7 @@ def compute_confidence(has_wikipedia: bool, web_source_count: int,
     evidence profile that looks strong and teaches badly.
     """
     confidence = 0.4 if has_wikipedia else 0.0
+    confidence += min(documentation_count * 0.30, 0.6)
     confidence += min(textbook_count * 0.30, 0.6)
     confidence += min(primary_source_count * 0.25, 0.5)
     confidence += min(web_source_count * 0.2, 0.4)

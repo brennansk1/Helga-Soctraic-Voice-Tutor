@@ -1,28 +1,64 @@
-# Helga: Socratic AI Tutor
+# Helga — a Socratic tutor that runs on your own machine
 
-**Helga** is a self-hosted AI tutor that uses Socratic dialogue to teach any subject. It generates courses from topics, asks probing questions, adapts to your understanding via Bloom's taxonomy tracking, and schedules reviews with FSRS spaced repetition.
+**Helga teaches by asking, not by telling.** Give it a topic and it builds a
+course from researched sources, then works through that course with you in
+dialogue — probing what you actually understand, drawing a diagram when a
+picture carries what words cannot, and scheduling the review before you forget
+it.
 
-Built for **Mac Mini M4 Pro 24GB** with Ollama + Qwen 3 14B. Runs entirely locally — no API keys, no cloud dependencies.
+It runs **entirely offline**. No API keys, no accounts, no telemetry, nothing
+leaves the machine. The model, the search index, the speech synthesis and your
+learning history all live on your hardware.
+
+<!-- SCREENSHOT:hero -->
+
+---
+
+## Why it is different
+
+|  | Helga |
+|---|---|
+| **Asks before it tells** | A tutor turn is capped and must end in a question. Claims about what *you* said are checked against the transcript before the turn ships. |
+| **Knows you across sessions** | FSRS tracks stability, difficulty and lapses per concept. The tutor reads your own record — "you have missed this twice" — rather than modelling you as a percentage. |
+| **Shows its sources** | Courses are built from Wikipedia, open textbooks and primary literature, with a visible grounding confidence rather than whatever the model remembered. |
+| **Draws when it helps** | Fifteen figure kinds, including code listings with blanked lines. A diagram is staged so it cannot hand over the answer you are being asked for. |
+| **Measured, not asserted** | Teaching quality is scored by [HelgaBench](docs/HELGABENCH.md) across seven domains, against a published noise floor. |
 
 ---
 
 ## Architecture
 
-```
-Mac Mini M4 Pro 24GB
-  Ollama (native)         Qwen 3 14B Q4_K_M (~9.5GB)
-  :11434                  ~20-25 tok/s on M4 Pro
+Three things run **natively on the host** because they need the GPU or the
+Neural Engine, which a Linux container on macOS cannot reach. Everything else
+is a container.
 
-  Docker Compose (6 services)
-    web-ui    :5050   Flask + Socket.IO dashboard
-    core-logic :5003  FSM, course creation, tutoring
-    rag-engine :5002  SQLite, embeddings, search
-    tts        :5005  Kokoro TTS (on-demand audio)
-    searxng     :8080  Self-hosted web search
-    research   :5006  Content augmentation service
+```
+HOST (native)
+  Ollama   :11434   inference — nail-35b-a3b-ctx (13.7 GB, 16k context)
+  TTS      :5005    Kokoro-82M on MLX
+  STT      :5001    Nemotron-3.5-ASR on MLX / ANE
+
+DOCKER COMPOSE (5 services)
+  web-ui     :5050  Flask + Socket.IO dashboard
+  core-logic :5003  FSM, course creation, tutoring
+  rag-engine :5002  SQLite, FTS5 search, flashcards
+  research   :5006  build-time content augmentation
+  searxng          self-hosted web search (internal)
 ```
 
-**Stack:** Python 3.11, Flask, SQLite (WAL mode), sentence-transformers (all-MiniLM-L6-v2), Kokoro TTS, SearXNG, py-fsrs v6.
+> **The model is a local GGUF import, not a registry pull**, and the stack asks
+> for the **`-ctx` variant** specifically — the base model ships with a 4096
+> token context, which is too small for course building and fails *silently*
+> with `400 — request exceeds available context size`. See
+> [docs/MODEL.md](docs/MODEL.md). `./deploy.sh` creates the variant for you if
+> the base model is present.
+
+**Stack:** Python 3.11, Flask, SQLite (WAL + FTS5), sentence-transformers
+(all-MiniLM-L6-v2), Kokoro TTS, Nemotron ASR, SearXNG, FSRS-5.
+
+**Hardware:** developed on a Mac Mini M4 Pro (24 GB). The 24 GB figure is not
+incidental — the model alone holds ~13.7 GB resident, and the containers share
+what is left.
 
 ---
 
@@ -72,60 +108,132 @@ work through the list.
 ### Verify
 
 ```bash
-make health    # Check all 6 services
-make test      # Run test suite
-make backup    # Backup SQLite database
+make health    # host services + all 5 containers
+make test      # run the test suite
+make backup    # back up the SQLite database
 ```
 
 ---
 
 ## Features
 
-### Socratic Tutoring
-- Adaptive questioning with 6 question types (clarification, probing, evidence, viewpoints, implications, application)
-- Bloom's taxonomy tracking (Remember through Create)
-- Mastery requires multiple correct answers, not just one lucky guess
-- Micro-lecture fallback after 3 consecutive failures
-- Full conversation history in LLM prompts
+### Socratic tutoring
 
-### Course Creation
-- **Quick Create**: Enter a topic + depth level, get a full course in minutes
-- **Custom Wizard**: Build courses step-by-step with module/concept suggestions
-- Web search augmentation via SearXNG for source-backed content
-- Self-consistency verification (3-pass factual claim checking)
-- Per-concept metadata: misconceptions, analogies, key terms, examples
+<!-- SCREENSHOT:learn -->
 
-### Spaced Repetition
-- FSRS v6 scheduling (99.6% superiority over SM-2)
-- Reviews use Socratic dialogue, not Anki-style flashcards
-- Grades inferred from dialogue quality
+- Six question types — clarification, probing, evidence, viewpoints,
+  implications, application — chosen per turn rather than cycled
+- Bloom's taxonomy tracking, Remember through Create
+- Mastery needs repeated correct answers, so one lucky guess does not pass
+- **A turn contract enforced in code, not requested in a prompt.** Every tutor
+  turn must be under 60 words, must end in a question, must engage with what
+  you actually said, and may introduce only one new idea. A turn that breaks a
+  rule is regenerated against the *named* violation
+- **Claims about you are checked against the transcript.** If a turn says "you
+  said X" and you did not say X, it does not ship
+- Micro-lecture fallback after three consecutive failures
+- On content that genuinely cannot be derived — a convention, a name, a date —
+  the tutor states it plainly instead of inviting you to guess
 
-### Gamification
-- XP system with level progression
-- Daily streaks and goals
-- 13 achievement badges
-- Mastery badges per concept (Seedling through Edelweiss)
-- Optional — can be toggled off in Settings
+### Diagrams that are part of the teaching
 
-### Text-to-Speech
-- Kokoro TTS (82M params, 14 voices)
-- On-demand play buttons on tutor messages
-- Audio caching for instant replay
+<!-- SCREENSHOT:diagram -->
+
+Fifteen figure kinds: number line, geometry, plot, bars, graph, timeline,
+table, venn, cycle, steps, fraction, code, and more. Two properties matter:
+
+- **Staged.** Any element can be hidden until you have answered, so the figure
+  can pose the question without giving away the answer
+- **Policy-driven.** A per-turn policy decides whether a figure helps at all,
+  prefers one already built and checked at course-creation time, and withholds
+  the diagram grammar entirely when the answer is no
+
+For code, a listing can blank the line you are being asked about and show a
+hint in its place — the difference between a listing that asks and one that
+tells.
+
+### Course creation, from researched sources
+
+<!-- SCREENSHOT:courses -->
+
+- **Quick create** — a topic and a depth level
+- **Custom wizard** — build it module by module
+- **Your own material** — EPUB, PDF, Markdown and plain text, including
+  figures extracted from the book
+- Research runs at both skeleton and hydration time, so *what the course is
+  made of* is decided from evidence rather than from one model call
+- A syllabus-realism check compares the outline against a real syllabus and
+  records a coverage verdict on the course
+
+### Spaced repetition that drives the whole system
+
+- FSRS-5 scheduling on both flashcards and concepts, persisting stability,
+  difficulty and lapses per concept
+- Reviews are Socratic dialogue, not Anki cards; the grade is inferred from
+  how you answered
+- The tutor reads that history: "you have forgotten this twice" is a claim
+  about *you*, from your own record
+
+### Degree planning
+
+<!-- SCREENSHOT:degree -->
+
+Stack courses into a credit-bearing programme on the Carnegie standard
+(1 credit = 45 hours; 60 for an associate, 120 for a bachelor's). General
+education is include, transfer-in, or skip — nobody should have to take
+English to finish a D&D degree.
+
+### Voice, in both directions
+
+- **Speech in** — Nemotron-3.5-ASR on the Neural Engine
+- **Speech out** — Kokoro TTS, 82M parameters, 14 voices, cached for replay
+- Mathematical notation is converted to speakable English, so a voice learner
+  hears "lambda" and "x hat" rather than raw LaTeX
+
+### Optional gamification
+
+XP and levels, daily streaks, 13 achievement badges, per-concept mastery
+badges. All of it can be switched off in Settings.
 
 ---
 
-## Tabs
+## The tabs
 
 | Tab | Purpose |
 |-----|---------|
-| Home | Dashboard, stats, resume learning |
-| Courses | Browse, create (Quick/Custom), delete |
-| Learn | Socratic dialogue sessions |
-| Quiz | Adaptive testing across courses |
-| Review | FSRS-scheduled spaced repetition |
-| Schedule | Review calendar view |
-| Status | Service health monitoring |
-| Settings | Profile, theme, voice, gamification |
+| Home | Dashboard, stats, resume where you stopped |
+| Courses | Browse, create, delete; quick create and the custom wizard |
+| Degree | Plan a credit-bearing programme from your courses |
+| Library | Search archives and bring in your own books |
+| Practice | Socratic sessions, quizzes and FSRS-scheduled review |
+| Progress | Mastery, streaks, the review calendar |
+| Test | Adaptive testing across courses |
+| Settings | Profile, theme, voice, gamification, system health |
+
+---
+
+## Is it any good? — HelgaBench
+
+Teaching quality is measured rather than asserted.
+[HelgaBench](docs/HELGABENCH.md) scores tutoring across seven domains —
+mathematics, science, computer science, medicine, law, history, language and
+literature — on dimensions traced to the tutoring literature (Bloom, Chi &
+Wylie's ICAP, the Koedinger–Aleven assistance dilemma, VanLehn).
+
+Two things distinguish it from asking a model to rate a transcript:
+
+- **Half the score is deterministic.** Whether a figure gave away the answer,
+  whether notation is speakable, whether the tutor drew where nothing needed
+  drawing — computed from the transcript, no judge involved
+- **It publishes its own noise floor.** Identical runs disagree, so every
+  comparison is made against a measured floor and deltas inside it are
+  reported as *no change*. A two-run floor was found to understate the spread
+  by up to 7×, so floors are derived from three or more runs
+
+```bash
+python3 tools/bench_domains.py --static-only          # deterministic half, no model
+python3 tools/bench_domains.py --domain mathematics   # full run
+```
 
 ---
 
@@ -260,4 +368,21 @@ make clean
 
 ## License
 
-MIT
+[Apache License 2.0](LICENSE) — © 2026 Brennan Kelley.
+
+Permissive: use, modify and redistribute, including commercially. Adds an
+explicit patent grant over MIT, and asks that you keep the notice and state
+what you changed.
+
+### Third-party components
+
+Helga runs several models and services under their own terms, which this
+licence does not cover. Check them before redistributing a bundle:
+
+| Component | Role |
+|---|---|
+| Ollama + the configured model | inference |
+| Kokoro-82M | text to speech |
+| Nemotron-3.5-ASR | speech to text |
+| SearXNG | self-hosted web search |
+| sentence-transformers `all-MiniLM-L6-v2` | embeddings |

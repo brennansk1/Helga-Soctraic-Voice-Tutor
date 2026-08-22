@@ -234,20 +234,80 @@ unexpected (young bands aren't told "do X to earn badge Y" in advance).
 
 | id | name | scope | criteria | xp |
 |---|---|---|---|---|
-| `bdg_first_answer` | Curious Mind | special | `{"type":"first_event","params":{"event":"answer"}}` | 25 |
-| `bdg_self_corrector` | Self-Corrector | special | `{"type":"epistemic_count","params":{"n":5}}` | 80 |
-| `bdg_perfect_concept` | Ace | special | `{"type":"perfect_concept","params":{}}` | 75 |
-| `bdg_streak_3` | On a Roll | streak | `{"type":"streak_days","params":{"n":3}}` | 100 |
-| `bdg_streak_7` | Week Warrior | streak | `{"type":"streak_days","params":{"n":7}}` | 200 |
-| `bdg_streak_30` | Monthly Master | streak | `{"type":"streak_days","params":{"n":30}}` | 500 |
-| `bdg_concepts_10` | Explorer | special | `{"type":"concept_count","params":{"n":10}}` | 150 |
-| `bdg_concepts_50` | Scholar | special | `{"type":"concept_count","params":{"n":50}}` | 300 |
-| `bdg_std_6rp` | Ratio Wrangler | standard | `{"type":"standard_mastery","params":{"standard_code":"6.RP"}}` | 120 |
-| `bdg_strand_geometry` | Shape Shifter | strand | `{"type":"strand_mastery","params":{"subject":"math","strand":"Geometry"}}` | 250 |
-| `bdg_bloom_5` | Evaluator | special | `{"type":"bloom_reached","params":{"level":5}}` | 250 |
-| `bdg_exam_summative` | Final Boss | special | `{"type":"exam_pass","params":{"kind":"summative"}}` | 300 |
+| `bdg_first_answer` | **First Steps** | special | `{"type":"first_event","params":{"event":"answer"}}` | 25 |
+| `bdg_self_corrector` | **Sure Footing** | special | `{"type":"epistemic_count","params":{"n":5}}` | 80 |
+| `bdg_perfect_concept` | **Clean Line** | special | `{"type":"perfect_concept","params":{}}` | 75 |
+| `bdg_streak_3` | **Three Days on the Trail** | streak | `{"type":"streak_days","params":{"n":3}}` | 100 |
+| `bdg_streak_7` | **A Week Above the Treeline** | streak | `{"type":"streak_days","params":{"n":7}}` | 200 |
+| `bdg_streak_30` | **A Month of Clear Mornings** | streak | `{"type":"streak_days","params":{"n":30}}` | 500 |
+| `bdg_concepts_10` | **Ten Waypoints** | special | `{"type":"concept_count","params":{"n":10}}` | 150 |
+| `bdg_concepts_50` | **Fifty Waypoints** | special | `{"type":"concept_count","params":{"n":50}}` | 300 |
+| `bdg_std_6rp` | **Ratio Ridge** | standard | `{"type":"standard_mastery","params":{"standard_code":"6.RP"}}` | 120 |
+| `bdg_strand_geometry` | **The Geometry Traverse** | strand | `{"type":"strand_mastery","params":{"subject":"math","strand":"Geometry"}}` | 250 |
+| `bdg_bloom_5` | **The Long View** | special | `{"type":"bloom_reached","params":{"level":5}}` | 250 |
+| `bdg_exam_summative` | **Summit** | special | `{"type":"exam_pass","params":{"kind":"summative"}}` | 300 |
 
 (Legacy 13 achievements map 1:1; e.g. `streak_3`→`bdg_streak_3`.)
+
+### 4.2b The alpine vocabulary — why these names and not the others
+
+The brand is stated in `design-system.css:65`: **"Helga is alpine: snow, stone,
+forest, and a Bavarian-sky blue."** The badge names it shipped with were
+generic edtech — *Week Warrior, Monthly Master, Shape Shifter, Final Boss*.
+"Final Boss" is video-game language in a product themed on a mountain, and
+"Monthly Master" is the kind of phrase that makes a fourteen-year-old close the
+tab.
+
+The ascent metaphor is not decoration. It is **the most accurate description of
+what the product actually does**, and it earns its place three ways:
+
+1. **Altitude is not lost.** You do not un-climb a mountain. That is exactly the
+   claim the mastery model makes and the XP counter does not — which is why §5
+   makes the mastery map the primary surface. The metaphor and the invariant
+   agree.
+2. **A route has waypoints, not scores.** A concept is a waypoint; a module is a
+   col; a summative exam is a summit. Progression is *positional*, so a learner
+   can see how far they have come without a number telling them how they rank.
+3. **It scales down and up without becoming childish or becoming cute.** §8's
+   hardest requirement is that a motivated sixteen-year-old gets a
+   "purposeful tool", not a reward loop. An **expedition log** and an
+   **altimeter** are tools. A friendly hike with a companion is the same
+   mountain for a six-year-old.
+
+**Naming rules, so this does not drift back:**
+
+- **Places and conditions, not accolades.** "A Week Above the Treeline" names
+  where you are. "Week Warrior" names how impressive you are — a claim about the
+  child, which is exactly the person-praise the research says backfires
+  (Brummelman et al. 2014, and §9).
+- **No combat, no bosses, no conquest.** You do not defeat a mountain.
+- **No exclamation marks anywhere in badge copy.**
+- **Understatement over enthusiasm.** Alpine register is dry. "Clean Line" is
+  what a climber says about a good ascent; it carries more than "Ace" does.
+- **A name must survive being read aloud by TTS** to a K-1 learner, since
+  `tts_default` is on for young bands.
+
+### 4.2c The vocabulary, applied across the system
+
+One rename table so the surfaces agree rather than each inventing its own words:
+
+| concept | current | alpine |
+|---|---|---|
+| XP | "XP" | **elevation** (gained, never lost) |
+| level | "Level 7" | **altitude**, shown as a band name (Foothills → Treeline → Ridge → Summit) |
+| skill tree / mastery map | "skill tree" | **the route** |
+| a node | "node" | **waypoint** |
+| module complete | — | **col** (the pass between two peaks) |
+| daily quest | "quest" | **today's stage** (a stage is a day's leg of a long route) |
+| streak | "streak" | **days on the trail** |
+| level-up | "level up" | **gained altitude** |
+| the dashboard, 9-12 | "stats" | **expedition log** |
+| the progress readout, 9-12 | "XP counter" | **altimeter** |
+
+> **The one place to be careful.** `--brand-gradient-warm` exists and the
+> palette has a sunrise register. Use it for *arrival* moments (a summit, a
+> col) and never for streak pressure. A warm colour that means "you are about
+> to lose something" is a dark pattern wearing the brand.
 
 ### 4.3 Evaluation hook
 

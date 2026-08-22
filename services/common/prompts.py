@@ -12,10 +12,13 @@ This makes the system model-agnostic — Ollama applies the correct chat templat
 for whichever model is configured.
 """
 
+import logging
 import uuid
 import re
 
 from services.common.concept_doc import tutor_context
+
+logger = logging.getLogger(__name__)
 
 # Generate a session-unique hash
 session_hash = str(uuid.uuid4())
@@ -50,6 +53,55 @@ SOCRATIC_SYSTEM_RULES = """SOCRATIC PEDAGOGY RULES (non-negotiable):
 8. Promote metacognition: periodically ask the student to reflect on their reasoning process (e.g., "How did you arrive at that?", "What assumption are you making?")."""
 
 
+# C.1 — the exception rule 1 has to have.
+#
+# `honest_telling` measured 1.40/5 on mathematics and 1.00 in five of seven
+# domains. The rubric defines 1 as "withheld it, asked them to guess, or hinted
+# at a fact that cannot be deduced" — which is rule 1 above ("Never give away
+# the final answer", marked non-negotiable) applied to content that has no
+# derivation. Why the symbol is a curly d, what a statute is called, which year
+# Hastings was: there is no reasoning path, so "guide them to discover it"
+# becomes an invitation to guess, and the turn teaches nothing.
+#
+# This is NOT the "Socratises everything" failure. The maths run measured
+# derivable socratic 2.00 against arbitrary honest_telling 1.40 — weak at both,
+# not miscalibrated between them. So the fix must not turn into permission to
+# start telling everything: it is scoped by `aid_policy.is_arbitrary`, which is
+# narrow by construction, and the gate on it is that derivable `socratic` must
+# not fall.
+ARBITRARY_CONTENT_RULE = """ARBITRARY CONTENT — THIS CONCEPT SUSPENDS RULE 1:
+This concept is true by convention, by naming, or as a contingent fact. There is no chain of reasoning that leads to it, so the student CANNOT work it out and must not be asked to.
+
+- State the fact plainly, in your first sentence. No hinting, no "what do you think it might be", no narrowing the answer space.
+- Do not apologise for telling them, and do not dress the statement up as a question.
+- THEN spend the rest of the turn on what genuinely can be reasoned about: why this convention exists, what it lets people do, what would break or become ambiguous without it, how it compares to the alternative that was not chosen.
+- Your ONE question must be about that reasoning — never about the arbitrary fact you just stated.
+
+Telling them promptly is the correct Socratic move here. Withholding it is the failure."""
+
+
+# C.1b — the same rule AFTER the fact has already been stated once.
+#
+# Measured cost of not having this, on computer science 2026-08-21: C.1 raised
+# `honest_telling` 1.40 -> 3.00 and `adaptation` fell 2.80 -> 2.07 in the SAME
+# run. The judge named the mechanism exactly — "repeats the definition of
+# zero-based indexing verbatim", "repeats the exact same dictionary analogy and
+# question verbatim" — and the complaints cluster on the arbitrary topic ("why
+# Python lists index from zero").
+#
+# The cause: the rule above says "state the fact plainly, in your first
+# sentence" with nothing scoping it to the FIRST TURN. So the tutor restated
+# the convention every turn — telling, correctly, forever. Stating a fact the
+# student already has is not honesty, it is a loop.
+ARBITRARY_CONTENT_RULE_STATED = """ARBITRARY CONTENT — YOU HAVE ALREADY STATED THE FACT:
+This concept is true by convention and you have already told the student what it is. Telling them again teaches nothing and reads as though you are not listening.
+
+- Do NOT restate the convention, the definition, or the analogy you already used. They have it.
+- Do NOT re-ask a question they have already answered.
+- Spend this turn on what CAN be reasoned about: why the convention exists, what it enables, what breaks without it, what the alternative would have cost.
+- If the student has signalled they understand — or asked to move on — take them forward rather than confirming it again."""
+
+
 # B13 — visual teaching aids, offered through an inline fence rather than a tool
 # call. That choice is about latency: a fenced block rides in the SAME
 # generation as the message, so a diagram costs zero extra LLM round-trips on a
@@ -60,8 +112,24 @@ SOCRATIC_SYSTEM_RULES = """SOCRATIC PEDAGOGY RULES (non-negotiable):
 # answer converts a Socratic turn into a lecture with pictures, so the default
 # posture is "draw the situation, withhold the result" — which is what `stage`
 # exists for.
-VISUAL_AID_RULES = """DRAWING A DIAGRAM (optional — most turns need none):
-If a picture would make your question askable in a way words cannot, include ONE fenced block anywhere in your reply:
+#: B.1 — the posture is split from the grammar.
+#:
+#: On the production path `_aid_prompt_block` emits this text ONLY when the
+#: policy has already returned `generate`. So the model read "optional — most
+#: turns need none" and "No diagram is better than a pointless one" in exactly
+#: the situation where those cautions are wrong: the cost had already been
+#: weighed, and weighing it a second time is what `visual_policy` 1.00 in six
+#: of seven domains looks like — the policy asked, and nothing was drawn.
+#:
+#: The grammar below is identical either way. Only the framing differs, and it
+#: is chosen by the caller from the decision rather than hardcoded here.
+_AID_POSTURE_OPTIONAL = """DRAWING A DIAGRAM (optional — most turns need none):
+If a picture would make your question askable in a way words cannot, include ONE fenced block anywhere in your reply:"""
+
+_AID_POSTURE_REQUESTED = """DRAWING A DIAGRAM (this turn needs one):
+This concept has structure a figure carries and words do not, and that judgement is already made — do not re-weigh whether a diagram is worth it here. Include ONE fenced block anywhere in your reply:"""
+
+_AID_GRAMMAR = """
 
 ```aid
 {"kind":"geometry","title":"...","caption":"...","points":{"A":[0,0],"B":[4,0],"C":[0,3]},"segments":[{"from":"A","to":"B","label":"4"},{"from":"B","to":"C","label":"?","stage":1}],"polygons":[{"vertices":["A","B","C"]}],"angles":[{"at":"A","from":"B","to":"C","right":true}]}
@@ -74,7 +142,7 @@ The "caption" is a LABEL for the figure, not a second question — it sits direc
 kind must be one of: number_line · geometry · plot · bars · graph (concept maps, flowcharts, causal chains) · timeline · table · venn · cycle · steps · fraction · code
 
 WHEN TO DRAW: a relationship the student must SEE to reason about — a shape whose proportions matter, a trend, how ideas connect, where a value sits relative to others, a part-whole.
-WHEN NOT TO: decoration; restating what you just wrote; anything that hands over the answer you are leading them toward. No diagram is better than a pointless one.
+WHAT NOT TO DRAW: decoration; a restatement of what you just wrote; anything that hands over the answer you are leading them toward — stage that instead.
 
 HIDE THE ANSWER: give any element "stage": 1 and it stays invisible until the student has answered. Label the unknown side "?" at stage 0 and reveal its value at stage 1 — never draw the result you are asking them to find.
 ONE diagram per message, maximum. Plain JSON only, no comments or trailing commas.
@@ -97,6 +165,23 @@ CODE. Use `blanks` to WITHHOLD the line you are asking about — that is what ma
 For "what changed when you fixed it?", add `compare_to` with the second version and the two are shown side by side."""
 
 
+def aid_rules(requested=False):
+    """The diagram grammar, framed for whether the policy has already ruled.
+
+    `requested=True` is used on a `generate` decision: the cost/benefit call is
+    made, so the prompt states what to draw rather than asking again whether to
+    draw at all.
+    """
+    posture = _AID_POSTURE_REQUESTED if requested else _AID_POSTURE_OPTIONAL
+    return posture + _AID_GRAMMAR
+
+
+#: Backwards-compatible name. Callers that have not been taught about the
+#: policy (aid_probe, older tests) get the cautious framing, which is right for
+#: them: nothing has weighed the decision on their behalf.
+VISUAL_AID_RULES = aid_rules(requested=False)
+
+
 def _aid_prompt_block(decision):
     """The diagram grammar, included only when the policy asked for one.
 
@@ -114,7 +199,9 @@ def _aid_prompt_block(decision):
         return ""
     from services.common.aid_policy import prompt_nudge
     nudge = prompt_nudge(decision)
-    return f"\n\n{VISUAL_AID_RULES}" + (f"\n\nTHIS TURN: {nudge}" if nudge else "")
+    # requested=True: reaching here MEANS the policy returned `generate`.
+    return f"\n\n{aid_rules(requested=True)}" + (
+        f"\n\nTHIS TURN: {nudge}" if nudge else "")
 
 
 def visual_aids_enabled():
@@ -294,19 +381,46 @@ SOCRATIC_QUESTION_TYPES = [
 # prompt builders (persona/register/output caps), the FSM (Bloom bounds +
 # mastery gate), and course hydration (band-appropriate content).
 GRADE_BAND_PROFILES = {
-  "K-2":  dict(persona="a warm, playful learning guide for a very young child",
-              max_words=25, max_sentences=2, new_ideas=1,
-              bloom_floor=1, bloom_ceiling=3, gate_streak=2, gate_questions=2, gate_types=2,
+  # --- K-1: pre/emergent readers -------------------------------------------
+  # Split out of the old "K-2" band on research advice. The discontinuity that
+  # matters is reading fluency ("learning to read" -> "reading to learn"),
+  # which lands around the end of grade 2, so a kindergartener and a
+  # second-grader were being treated as one user and are not.
+  #
+  # Direct instruction dominates here, and NOT because guided dialogue fails
+  # young children -- it demonstrably helps them (Alexander's dialogic-teaching
+  # RCT). It is because (a) they are novices in every standard they meet, where
+  # explicit instruction beats minimal guidance (Kirschner/Sweller/Clark 2006;
+  # Stockard et al. 2018, 328 studies), and (b) the MECHANICS defeat dialogue:
+  # ~4-item working memory at age 5, no typing, and 20-40% ASR word-error on
+  # 5-6 year-old speech.
+  "K-1":  dict(persona="a warm, playful learning guide for a very young child",
+              max_words=15, max_sentences=1, new_ideas=1,
+              bloom_floor=1, bloom_ceiling=2, gate_streak=2, gate_questions=2, gate_types=1,
               register="Use only simple everyday words. If you must use a new word, say what it means in kid terms. "
-                       "Talk about things the child can see or touch. Be cheerful and encouraging.",
-              answer_expectation="A single word or a short phrase is a great answer.",
+                       "Talk about things the child can see or touch. Tell them the answer plainly and warmly rather "
+                       "than making them guess; then let them try it. "
+                       "Praise the EFFORT and the specific thing they did ('you counted every one of them'), never "
+                       "the child ('you're so smart') and never with empty superlatives ('amazing!').",
+              answer_expectation="A tap or a single word is a complete answer.",
               tts_default=True, allow_emoji=True, allow_markdown=False),
-  "3-5":  dict(persona="a friendly, encouraging coach", max_words=45, max_sentences=3, new_ideas=1,
+  # --- 2-3: beginning readers, roughly 60-100 words correct per minute -----
+  "2-3":  dict(persona="a friendly, encouraging coach", max_words=30, max_sentences=2, new_ideas=1,
+              bloom_floor=1, bloom_ceiling=3, gate_streak=2, gate_questions=3, gate_types=2,
+              register="Use clear everyday language in short sentences. Introduce at most one new term per turn and "
+                       "explain it. Use concrete examples. "
+                       "Praise the effort and the specific thing they did, not the child, and never with empty "
+                       "superlatives.",
+              answer_expectation="A word or a short phrase is enough.",
+              tts_default=True, allow_emoji=False, allow_markdown=False),
+  # --- 4-5: reading to learn; dialogue becomes viable ----------------------
+  "4-5":  dict(persona="a friendly, encouraging coach", max_words=50, max_sentences=3, new_ideas=1,
               bloom_floor=1, bloom_ceiling=4, gate_streak=2, gate_questions=3, gate_types=3,
               register="Use clear everyday language. Introduce at most one new term per turn and explain it. "
-                       "Use concrete examples; you may begin gentle 'what if' thinking.",
-              answer_expectation="One sentence is enough.",
-              tts_default=True, allow_emoji=False, allow_markdown=False),
+                       "Use concrete examples; you may begin gentle 'what if' thinking. "
+                       "Praise effort and specific reasoning rather than the person.",
+              answer_expectation="One sentence with a reason is ideal.",
+              tts_default=False, allow_emoji=False, allow_markdown=False),
   "6-8":  dict(persona="a curious thinking-partner", max_words=70, max_sentences=4, new_ideas=2,
               bloom_floor=2, bloom_ceiling=5, gate_streak=2, gate_questions=3, gate_types=3,
               register="Use grade-appropriate academic vocabulary, briefly defining technical terms. "
@@ -337,9 +451,88 @@ HEALTH_STRAND6_FRAMING = (
 )
 
 
+#: Bands that existed before the 2026-08-21 re-banding, mapped to their
+#: closest successor. Student records were written with these values, and
+#: WITHOUT this map `get_band_profile("K-2")` would miss and fall back to the
+#: 6-8 default -- handing a five-year-old a 70-word adult register. A silent
+#: fallback is the worst possible failure here because nothing errors.
+#:
+#: "K-2" spanned the reading-fluency discontinuity, so it maps DOWN to K-1:
+#: under-serving a second-grader is recoverable, over-facing a kindergartener
+#: is not.
+LEGACY_GRADE_BANDS = {
+    "K-2": "K-1",
+    "3-5": "4-5",
+}
+
+
+#: Bands where the learner is a young child. Used for the stricter safety
+#: word-list, the higher diagram budget, and the encouragement scaffold.
+#:
+#: MODE B ONLY. Mode A (adult, self-directed) carries no band and resolves to
+#: the 6-8 default, so nothing here reaches the adult tutor.
+YOUNG_BANDS = ("K-1", "2-3", "K-2", "3-5")     # legacy names included on purpose
+
+
+def is_young_band(grade_band):
+    """True for a young-child band, tolerating the pre-2026-08-21 names.
+
+    One definition, imported everywhere. It was previously an inline
+    `grade_band in ("K-2", "3-5")` tuple repeated in five modules, which meant
+    the re-banding would have silently stopped matching in every one of them --
+    a young child would have quietly got the adult profanity list and the adult
+    diagram budget, with nothing failing.
+    """
+    return (grade_band or "") in YOUNG_BANDS
+
+
+# --- Which question types a child of this age can actually answer ------------
+#
+# The six Socratic types are an adult design. Research on the K-12 mode is
+# specific about which survive contact with a young child:
+#
+#   SCENARIO, APPLICATION, CONTRAST  concrete and here-and-now; available early
+#   MECHANISM, SYNTHESIS             require holding several elements in working
+#                                    memory at once — grade 4+ (a 5-year-old
+#                                    holds ~4 items, an adolescent 6-7)
+#   EDGE_CASE                        requires knowing a rule well enough to see
+#                                    its boundary — grade 5+
+#
+# This is why the K-1 mastery gate asks for only ONE distinct type: one or two
+# concrete types is all that is developmentally on offer, and the old gate of
+# three was unreachable without cycling a five-year-old through question forms
+# they cannot answer.
+_CONCRETE_TYPES = ("SCENARIO", "APPLICATION", "CONTRAST")
+
+BAND_QUESTION_TYPES = {
+    "K-1": _CONCRETE_TYPES,
+    "2-3": _CONCRETE_TYPES,
+    "4-5": _CONCRETE_TYPES + ("MECHANISM", "SYNTHESIS", "EDGE_CASE"),
+    "6-8": None,        # None = all of them
+    "9-12": None,
+}
+
+
+def question_types_for_band(grade_band):
+    """The question types appropriate for this band, in the canonical order.
+
+    Returns the full list for older bands and for Mode A, which carries no
+    band at all — so the adult tutor is untouched by this.
+    """
+    band = grade_band or DEFAULT_GRADE_BAND
+    band = LEGACY_GRADE_BANDS.get(band, band)
+    allowed = BAND_QUESTION_TYPES.get(band, None)
+    if allowed is None:
+        return list(SOCRATIC_QUESTION_TYPES)
+    return [q for q in SOCRATIC_QUESTION_TYPES if q["key"] in allowed] \
+        or list(SOCRATIC_QUESTION_TYPES)
+
+
 def get_band_profile(grade_band):
     """Resolve a band profile; unknown/missing bands fall back to 6-8."""
-    return GRADE_BAND_PROFILES.get(grade_band or DEFAULT_GRADE_BAND,
+    band = grade_band or DEFAULT_GRADE_BAND
+    band = LEGACY_GRADE_BANDS.get(band, band)
+    return GRADE_BAND_PROFILES.get(band,
                                    GRADE_BAND_PROFILES[DEFAULT_GRADE_BAND])
 
 
@@ -348,7 +541,9 @@ def get_typed_socratic_prompt(question_type_key, context_text, conversation_hist
                                system_note=None, misconceptions=None, analogies=None,
                                style_modifier=None, user_profile=None, bloom_level=1,
                                prior_concepts=None, grade_band=None, health_strand6=False,
-                               learner_history=None):
+                               learner_history=None, turn_state=None, teaching_move=None,
+                              learner_behaviour=None, concept_kind=None,
+                              figure_facts=None):
     """
     Generates a Socratic prompt with a specific question TYPE instruction injected.
 
@@ -379,10 +574,57 @@ def get_typed_socratic_prompt(question_type_key, context_text, conversation_hist
         grade_band=grade_band,
         health_strand6=health_strand6,
         learner_history=learner_history,
+        turn_state=turn_state,
+        teaching_move=teaching_move,
+        learner_behaviour=learner_behaviour,
+        # THE FSM CALLS THIS FUNCTION, NOT `get_socratic_tutor_prompt`.
+        # Both were added to the latter and neither was forwarded from here, so
+        # the domain guidance and the figure facts were unreachable in
+        # production — written, tested against the wrong entry point, and never
+        # once seen by a learner.
+        concept_kind=concept_kind,
+        figure_facts=figure_facts,
     )
 
 
-def get_socratic_tutor_prompt(context_text, conversation_history, aid_policy=None, system_note=None, misconceptions=None, analogies=None, style_modifier=None, user_profile=None, bloom_level=1, prior_concepts=None, grade_band=None, health_strand6=False, learner_history=None):
+def _concept_is_arbitrary(context_text):
+    """Whether this concept is convention/naming/contingent fact (C.1).
+
+    Never raises: a detector failure must cost the plain-telling instruction,
+    not the turn. Falling back to False keeps the pre-C.1 behaviour.
+    """
+    try:
+        from services.common.aid_policy import is_arbitrary
+        return is_arbitrary(context_text or "")
+    except Exception:                       # pragma: no cover - defensive
+        logger.warning("arbitrary-content detection failed", exc_info=True)
+        return False
+
+
+#: Marks where the reusable prefix ends and per-turn content begins.
+#:
+#: WHY THE ORDER OF THIS PROMPT MATTERS MORE THAN ITS CONTENT.
+#:
+#: Measured on this hardware: prefill runs at ~65 tok/s, so a ~2450-token
+#: tutoring prompt costs ~37s before the first token appears — roughly 80% of a
+#: 47s turn. Across a 20-turn lesson that is ~600s spent re-reading text that
+#: did not change. An isolated test cut time-to-first-token from 27.66s to
+#: 0.88s (31.6x) purely by reusing a cached prefix.
+#:
+#: A KV prefix cache only helps up to the FIRST TOKEN THAT DIFFERS. The old
+#: order put every per-turn block — turn state, teaching move, detected
+#: behaviour, the figure just drawn — BEFORE the concept document, which is the
+#: largest block in the prompt. So the prefix diverged early and the concept doc
+#: was re-prefilled every single turn.
+#:
+#: Now: everything stable within a lesson comes first (rules, persona, strategy,
+#: output rules, register, style, profile, misconceptions, analogies, notes,
+#: and the CONCEPT DOCUMENT), then this marker, then everything that changes per
+#: turn. The stable half is ~1800 tokens and is identical for the whole lesson.
+_PREFIX_END = "\n--- PER-TURN CONTEXT (changes every turn) ---\n"
+
+
+def get_socratic_tutor_prompt(context_text, conversation_history, aid_policy=None, system_note=None, misconceptions=None, analogies=None, style_modifier=None, user_profile=None, bloom_level=1, prior_concepts=None, grade_band=None, health_strand6=False, learner_history=None, turn_state=None, teaching_move=None, learner_behaviour=None, figure_facts=None, concept_kind=None):
     """
     Generates a Socratic question or response as a messages array.
 
@@ -412,6 +654,106 @@ def get_socratic_tutor_prompt(context_text, conversation_history, aid_policy=Non
     learner_str = ""
     if learner_history:
         learner_str = "\n" + str(learner_history)
+
+    # A.2 — what has been ESTABLISHED this session, from graded answers.
+    #
+    # Distinct from learner_history above, which is the record across PAST
+    # sessions. This is the current dialogue, and it exists because
+    # `adaptation` measured 1.33-2.80 across seven domains: the model was
+    # re-deriving the state of the conversation from prose on every turn,
+    # while also teaching, and derived it badly. The grader produced this as
+    # data all along.
+    # A.6 — the teaching MOVE, decided in code. Same pattern as B.1: a
+    # deterministic policy weighs the moment and the prompt states what to do,
+    # rather than asking the model to weigh it again while also writing the
+    # turn. B.1 measured +0.53 to +1.20 on `visual_policy` across five domains
+    # doing exactly this for diagrams.
+    # A.7 — the learner's current BEHAVIOUR, detected from how they write.
+    # The judge scores `adaptation` on level AND behaviour; the system tracked
+    # level everywhere and behaviour nowhere, so a bluffer and a silent
+    # struggler with the same grade got the same next turn.
+    behaviour_str = ""
+    if learner_behaviour:
+        _b = str(learner_behaviour)
+        if _b:
+            behaviour_str = "\n\n" + _b
+
+    # A.9 — demonstrate adaptation rather than describing it. Every other
+    # instruction in this prompt states the principle in the abstract; nothing
+    # shows the model what adapting to THIS learner looks like.
+    exemplar_str = ""
+    try:
+        from services.common.adaptation_examples import exemplars_for
+        _ex = exemplars_for(bloom_level=bloom_level)
+        if _ex:
+            exemplar_str = "\n\n" + _ex
+    except Exception:
+        exemplar_str = ""
+
+    move_str = ""
+    if teaching_move is not None:
+        line = (teaching_move.prompt_line()
+                if hasattr(teaching_move, "prompt_line") else str(teaching_move))
+        if line:
+            move_str = "\n\n" + line
+
+    state_str = ""
+    if turn_state:
+        rendered = (turn_state.render() if hasattr(turn_state, "render")
+                    else str(turn_state))
+        if rendered:
+            state_str = "\n\n" + rendered
+
+    # The tutor's OWN figure, restated as facts. Measured failure: having drawn
+    # a plot with the peak at (0,0) and Point A at (2,0), the tutor later said
+    # moving from x=0 to x=2 got "closer to the peak" — contradicting both its
+    # figure and its own earlier turn, and scoring 1/5 on accuracy. By that turn
+    # the aid is buried several turns back in the transcript and the model is
+    # re-deriving it from prose. Same diagnosis as turn_state, same remedy:
+    # state it rather than making the model re-read for it.
+    figure_str = ""
+    if figure_facts:
+        figure_str = "\n\n" + str(figure_facts).strip()
+
+    # WHAT KIND of knowledge this is, and therefore how to teach it.
+    #
+    # Until now the prompt distinguished exactly two things: arbitrary-vs-
+    # derivable (C.1) and grade band. So "what is a model", "write a select
+    # statement" and "why dbt uses Jinja" all got the same Socratic posture —
+    # and for the first two that is the C.1 failure one level down. Asking a
+    # student to DERIVE syntax they have never been shown is asking them to
+    # guess, and guessing teaches nothing.
+    #
+    # Renders NOTHING for an unrecognised kind: a tutor told confidently that a
+    # mechanism is "syntax" withholds the reasoning that was the whole lesson.
+    kind_str = ""
+    if concept_kind:
+        try:
+            # Routed through the DOMAIN REGISTRY, not imported directly: the
+            # kinds and their teaching guidance are computer-science answers,
+            # and a history course must not inherit them. `concept_kind` may
+            # arrive as a bare string (the kind) or as (domain_key, kind).
+            from services.domains.registry import for_domain
+            # (domain, kind) or nothing. A BARE kind used to default to
+            # "computer_science", which meant any future domain passing a bare
+            # string silently received programming guidance — a history lesson
+            # told to "show the real form as a code block".
+            if isinstance(concept_kind, (tuple, list)) and len(concept_kind) == 2:
+                dk, kind = concept_kind
+            else:
+                dk, kind = None, None
+            ext = for_domain(dk)
+            # `figure_facts` carries the mined pair block when there is one, so
+            # the guidance can stand down where the material is specific.
+            _has_pair = bool(figure_facts and "THIS TURN" in str(figure_facts))
+            try:
+                line = ext.prompt_line(kind, has_pair=_has_pair) if ext else ""
+            except TypeError:
+                line = ext.prompt_line(kind) if ext else ""
+            if line:
+                kind_str = "\n\n" + line
+        except Exception:
+            kind_str = ""
 
     analog_str = ""
     if analogies:
@@ -485,8 +827,21 @@ def get_socratic_tutor_prompt(context_text, conversation_history, aid_policy=Non
     # ~400 tokens off every turn that does not want a picture.
     aid_str = _aid_prompt_block(aid_policy)
 
+    # C.1: content that cannot be derived gets rule 1 suspended. Scoped by the
+    # same narrow detector the aid policy uses to suppress diagrams, so the two
+    # decisions cannot disagree about what "arbitrary" means.
+    rules = SOCRATIC_SYSTEM_RULES
+    if _concept_is_arbitrary(context_text):
+        # C.1b: state it plainly ONCE. After the first exchange the fact is
+        # already theirs, and restating it every turn is what drove
+        # `adaptation` down while `honest_telling` went up.
+        already_stated = bool(conversation_history)
+        extra = (ARBITRARY_CONTENT_RULE_STATED if already_stated
+                 else ARBITRARY_CONTENT_RULE)
+        rules = f"{SOCRATIC_SYSTEM_RULES}\n\n{extra}"
+
     # Build system prompt
-    system_content = f"""{SOCRATIC_SYSTEM_RULES}
+    system_content = f"""{rules}
 
 {persona_str}
 
@@ -524,11 +879,40 @@ STRICT OUTPUT RULES:
 - NEVER include meta-commentary ("Let's explore", "Great question", "That's interesting").
 - NEVER repeat the context material verbatim.
 - NEVER prefix your response with a role label like "Tutor:" or "Lecturer:".
-{band_register}{style_constraint}{profile_str}{learner_str}{misc_str}{analog_str}{bloom_str}{prior_str}{hook_str}{notes_str}{aid_str}
+{band_register}{style_constraint}{profile_str}{misc_str}{analog_str}{notes_str}
 
 INSTRUCTOR NOTES (pedagogical guidance only — the student has NOT seen any of this material):
 "{context_text}" """
 
+    # PER-TURN CONTENT LEAVES THE SYSTEM MESSAGE ENTIRELY.
+    #
+    # Reordering inside the system block was necessary but not sufficient.
+    # Measured: the real production system message caches at 14.5x (10.76s ->
+    # 0.74s) when it is byte-identical between calls, and at 1.0x when it is
+    # not. llama.cpp caches on the TOKEN SEQUENCE — it has no notion of where I
+    # think a prefix ends, so a per-turn block anywhere inside the system
+    # message invalidates the whole thing.
+    #
+    # `kind_str`, `state_str`, `behaviour_str`, `bloom_str` and the rest all
+    # change between turns of one lesson. Kept inside, they cost ~10s EVERY
+    # turn. Moved to a trailing system message, the big block stays identical
+    # for the whole lesson and only the small volatile part is re-read.
+    #
+    # `system_note` already rides as a trailing system message, so this is the
+    # mechanism this codebase already uses rather than a new invention.
+    per_turn = "".join([learner_str, state_str, figure_str, kind_str, move_str,
+                        behaviour_str, exemplar_str, bloom_str, prior_str,
+                        hook_str, aid_str]).strip()
+
+    # ONE system message, per-turn content appended after the stable half.
+    #
+    # A two-message split was tried and reverted: `fsm_logic._stream_llm_response`
+    # concatenates every system message into a single string before sending
+    # (fsm_logic.py:553-555), so the split was a no-op in production while
+    # adding a shape the rest of the code did not expect. The ORDER is what
+    # survives that concatenation, and the order is what this preserves.
+    if per_turn:
+        system_content = system_content + _PREFIX_END + per_turn
     messages = [{"role": "system", "content": system_content}]
 
     # Add conversation history
@@ -594,7 +978,7 @@ def get_socratic_grading_prompt(concept, question, user_answer, context_text="",
     # B17.2: calibrate the rubric to the learner's grade band so young kids
     # aren't failed for terse-but-correct answers.
     band_calibration = ""
-    if grade_band in ("K-2", "3-5"):
+    if is_young_band(grade_band):
         profile = get_band_profile(grade_band)
         band_calibration = (
             f"\nGRADE CALIBRATION: This is a {grade_band} learner. "
@@ -791,7 +1175,10 @@ def get_hint_prompt(card_title, card_text, attempts, grade_band=None):
     """
     # B17.4: effective ladder step — younger learners fall through to the
     # worked example sooner instead of being pressed with more probing.
-    ladder_skip = {"K-2": 2, "3-5": 1}.get(grade_band or "", 0)
+    # Keyed on the CURRENT band names, with the legacy ones mapped, so the
+    # re-banding cannot silently restore the adult ladder for a five-year-old.
+    _b = LEGACY_GRADE_BANDS.get(grade_band or "", grade_band or "")
+    ladder_skip = {"K-1": 3, "2-3": 2, "4-5": 1}.get(_b, 0)
     attempts = attempts + ladder_skip if attempts >= 2 else attempts
 
     profile = get_band_profile(grade_band)

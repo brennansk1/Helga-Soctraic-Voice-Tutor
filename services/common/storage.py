@@ -1142,10 +1142,27 @@ class CourseStore:
     def __init__(self, courses_dir: str, data_dir: str):
         self.courses_dir = courses_dir
         self.data_dir = data_dir
+        # BOUNDED. This held whole structure.json blobs for every course
+        # touched, for process lifetime, with no cap — and deep-copied on
+        # every read, so it cost CPU on hits as well as RAM. On a 24 GB
+        # machine already carrying a 13.5 GB model, an unbounded blob cache
+        # is the wrong thing to be unbounded.
         self._cache = {}
+        self._cache_max = 8
         # Set by StorageManager to the search index's upserter. Left None here
         # so a CourseStore built standalone (tests, scripts) still works.
         self.on_content_saved = None
+
+    def _evict_if_full(self):
+        """Drop the oldest entry once the cache is full.
+
+        Insertion-ordered dict, so the first key is the least recently ADDED.
+        Not a true LRU — a course being actively taught is re-read constantly
+        and would survive either policy, and a real LRU here would cost more
+        bookkeeping than it saves on a cache of eight.
+        """
+        while len(self._cache) >= self._cache_max:
+            self._cache.pop(next(iter(self._cache)), None)
 
     def _get_db(self) -> sqlite3.Connection:
         """Thread-local connection to the same helga.db every other store uses.
@@ -1298,6 +1315,7 @@ class CourseStore:
         with open(path, "r") as f:
             course = json.load(f)
             import copy
+            self._evict_if_full()
             self._cache[uid] = copy.deepcopy(course)
             return course
 
@@ -1307,6 +1325,7 @@ class CourseStore:
         course_dict["updated_at"] = datetime.utcnow().isoformat()
         
         import copy
+        self._evict_if_full()
         self._cache[uid] = copy.deepcopy(course_dict)
         
         path = os.path.join(self.courses_dir, uid, "structure.json")
