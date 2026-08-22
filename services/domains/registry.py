@@ -53,7 +53,10 @@ def available():
 REQUIRED = ("DOMAIN", "LABEL", "classify", "rank", "guidance", "prompt_line")
 #: Optional, each independently. Absence disables that feature for the domain,
 #: it does not disable the domain.
-OPTIONAL = ("SHAPE", "example_for", "attach_to_course", "KEYWORDS")
+#: `pair_block` turns a build-time mined pair into a tutor instruction.
+#: Optional because a domain may have no notion of a teachable pair.
+OPTIONAL = ("SHAPE", "example_for", "attach_to_course", "KEYWORDS",
+            "pair_block")
 
 
 def contract_report(module):

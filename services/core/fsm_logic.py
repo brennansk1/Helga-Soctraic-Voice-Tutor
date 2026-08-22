@@ -896,11 +896,51 @@ class MnemosyneFSM:
                 full_text = self.current_lesson_node.get("text") or ""
             self._concept_aids = parse_concept_aids(
                 full_text or self.current_context or "")
+            # THE DOMAIN'S OWN CODE AID.
+            #
+            # `parse_concept_aids` reads the concept's MARKDOWN. A domain code
+            # example is attached to the concept in structure.json instead, so
+            # it is invisible here — built, vetted, deduplicated course-wide at
+            # build time, and never shown to anybody.
+            #
+            # It belongs in the `worked_example` slot: a real snippet from the
+            # source IS a worked example, and that slot is also what the policy
+            # reaches for when the learner is stuck — the moment prose has
+            # failed and showing code is the whole point.
+            #
+            # Only fills an EMPTY slot: an aid authored for this concept was
+            # written deliberately and outranks a mined one.
+            self._load_domain_code_aid()
+
             if self._concept_aids:
                 logging.info(f"Loaded {len(self._concept_aids)} pre-built visual aid(s): "
                              f"{sorted(self._concept_aids)}")
         except Exception as e:
             logging.warning(f"Could not load pre-built aids for this concept: {e}")
+
+    def _load_domain_code_aid(self):
+        """Put the concept's build-time code example in the worked-example slot.
+
+        Never raises: a missing aid must cost a diagram, never the lesson.
+        """
+        try:
+            node = self.current_lesson_node
+            if not isinstance(node, dict):
+                return
+            example = node.get("code_example")
+            if not example or self._concept_aids.get("worked_example"):
+                return
+            from services.common.visual_aids import normalize_aid
+            aid, err = normalize_aid(dict(example), default_tier="authored")
+            if not aid:
+                logging.info(f"Domain code aid rejected: {err}")
+                return
+            aid["slot"] = "worked_example"
+            aid.setdefault("id", f"code:{node.get('uid') or 'concept'}")
+            self._concept_aids["worked_example"] = aid
+            logging.info("[DOMAIN] code example loaded into worked_example slot")
+        except Exception as e:
+            logging.warning(f"Domain code aid unavailable: {e}")
 
     def _aid_moment(self, teaching_mode):
         """Snapshot the state the policy reasons about."""
@@ -1524,6 +1564,57 @@ class MnemosyneFSM:
             "llm_fallback": bool(concept.get("llm_fallback")),
         }
 
+    def _domain_teaching(self):
+        """(concept_kind, pair_block) for the current concept, or (None, None).
+
+        WHY THIS EXISTS
+        The domain layer decides HOW a concept is taught: a syntax concept and
+        a mechanism concept need opposite turns, and a mined error/fix pair is
+        the strongest Socratic move available without a sandbox. All of it is
+        computed at build time and stored on the concept.
+
+        None of it reached a learner before this: the prompt call site passed
+        neither argument, so every CS course was taught generically while the
+        build faithfully computed guidance nothing read. The kinds were
+        measured working only because the test harness called the prompt
+        function directly — which is not the path a learner takes.
+
+        Returns (None, None) for every non-CS course, which is most of them.
+        """
+        node = self.current_lesson_node or {}
+        kind = node.get("concept_kind")
+        pair = node.get("teaching_pair")
+        if not kind and not pair:
+            return None, None
+
+        # Through the REGISTRY only. The core builds any course and must not
+        # name a domain: an import of `domains.computer_science` here is what
+        # stops a second domain being added later, and tests/domains asserts
+        # its absence.
+        domain, module = None, None
+        try:
+            from services.domains.registry import domain_of, for_domain
+            course = self.storage.courses.get_course(self.active_course_uid)
+            domain = domain_of(course or {})
+            module = for_domain(domain) if domain else None
+        except Exception as e:
+            logging.debug(f"domain lookup failed: {e}")
+        if not domain:
+            return None, None
+
+        kind_arg = (domain, kind) if kind else None
+
+        block = None
+        if pair and module is not None:
+            fn = getattr(module, "pair_block", None)   # optional contract
+            if fn:
+                try:
+                    block = fn(pair) or None
+                except Exception as e:
+                    # A pair is a bonus. Losing it must never cost the turn.
+                    logging.debug(f"pair block failed: {e}")
+        return kind_arg, block
+
     def _grounding_note(self):
         """Tell the tutor how well-sourced THIS concept actually is.
 
@@ -1926,6 +2017,13 @@ class MnemosyneFSM:
                 "bloom_level": concept_details.get("bloom_level"),
                 "learning_objectives": concept_details.get("learning_objectives", []),
                 "complexity_role": concept_details.get("complexity_role", ""),
+                # Domain teaching data, attached at BUILD time. Carried here
+                # because this dict is all the tutor sees at teaching time —
+                # dropping these silently downgrades a CS concept to generic
+                # teaching, with nothing failing to show it.
+                "concept_kind": concept_details.get("concept_kind"),
+                "teaching_pair": concept_details.get("teaching_pair"),
+                "code_example": concept_details.get("code_example"),
             }
             self.current_context = self.current_lesson_node["text"][:10000]
             self.syllabus_queue = []  # Clear existing queue when navigating
@@ -2681,6 +2779,13 @@ class MnemosyneFSM:
         if grounding:
             redacted_context = f"{grounding}\n\n{redacted_context}"
 
+        # Domain teaching guidance and any mined code pair for THIS concept.
+        # (None, None) for non-CS courses.
+        _domain_kind, _domain_pair = self._domain_teaching()
+        if _domain_kind or _domain_pair:
+            logging.info(f"[DOMAIN] kind={_domain_kind} "
+                         f"pair={'yes' if _domain_pair else 'no'}")
+
         # SELECT PROMPT BASED ON MODE
         if teaching_mode == "LECTURE":
             prompt = get_micro_lecture_prompt(
@@ -2729,6 +2834,11 @@ class MnemosyneFSM:
                 learner_behaviour=_describe_behaviour(
                     [p[0] for p in (self.conversation_history or []) if p[0]],
                     grades=[self._last_socratic_grade or 0]),
+                # The domain layer, finally on the path a learner takes. Both
+                # are None for non-CS courses, which leaves this turn exactly
+                # as it was.
+                concept_kind=_domain_kind,
+                figure_facts=_domain_pair,
             )
         # Tune max_tokens: lectures need more room for explanations, questions are shorter
         token_limit = 500 if teaching_mode == "LECTURE" else 400

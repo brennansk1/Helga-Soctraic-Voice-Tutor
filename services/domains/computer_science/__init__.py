@@ -17,6 +17,9 @@ from services.domains.computer_science.code_examples import (  # noqa: F401
 from services.domains.computer_science.classify import (  # noqa: F401
     classify_course as classify_concepts,
 )
+from services.domains.computer_science.code_pairs import (  # noqa: F401
+    best_pair, pairs_in, prompt_block as pair_block,
+)
 from services.domains.computer_science.devdocs import (  # noqa: F401
     classify_subject, pages_for as devdocs_pages, find as devdocs_find,
     TECHNOLOGY, TOOL, CONCEPT,

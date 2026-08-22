@@ -93,7 +93,7 @@ Two properties this must keep:
 | **name concepts** | `book_source.attach_concepts` | named by READING the page, via `llm_generate_json` |
 | **classify** | *(new)* `classify_course` | LLM fills the kinds patterns cannot — 25 of 40 dbt lessons |
 | **assets** | `code_examples.attach_to_course` | one vetted example per code-shaped concept, deduplicated course-wide |
-| **tutor** | `prompts.get_socratic_tutor_prompt` | `concept_kind` guidance, routed through the domain registry |
+| **tutor** | `fsm_logic._domain_teaching` → `prompts.get_typed_socratic_prompt` | `concept_kind` guidance **and** the mined pair, routed through the domain registry |
 
 ---
 
@@ -111,3 +111,63 @@ front of a learner, which is the failure mode this whole design avoids.
 **No cross-domain defaults.** `registry.for_subject` returns None for history,
 and None means "use the generic path". A domain without a specialist is the
 normal case.
+
+
+---
+
+## 5. The wiring, and why it gets its own section
+
+Everything above is computed at **build time** and stored on the concept:
+`concept_kind`, `code_example`, `teaching_pair`. None of it does anything until
+the tutor reads it, and reading it is a single call site:
+
+    services/core/fsm_logic.py   _domain_teaching()  ->  (concept_kind, figure_facts)
+
+**This was broken, silently, for the whole first implementation.** The builder
+classified every concept correctly, the guidance was written and reviewed, the
+pair miner worked — and `fsm_logic` passed neither argument to
+`get_typed_socratic_prompt`, so every CS course was taught generically.
+Twenty-seven measured tutor turns reported the guidance working, because the
+test harness supplied the arguments itself. A harness that calls the prompt
+builder directly cannot detect that nothing else does.
+
+This is the sixth instance of one failure mode in this system:
+
+| # | component | what fired instead |
+|---|-----------|--------------------|
+| 1 | model warm-up | only inside the benchmark |
+| 2 | `concept_kind` | wired to a prompt function the FSM does not call |
+| 3 | two-system-message split | flattened by `_stream_llm_response` |
+| 4 | DevDocs lookup | behind an early `return` in `resolve()` |
+| 5 | LLM domain classifier | never passed to `for_subject()` |
+| 6 | `concept_kind` + `teaching_pair` | never passed by `fsm_logic` |
+| 7 | `code_example` | aid loader reads MARKDOWN; the example is in structure.json |
+
+The shape is always the same: **the component works, the path does not fire,
+and nothing fails.** Unused data is silent, so no test built around the
+component can catch it.
+
+Instance 7 was found by auditing for it deliberately — listing every field the
+builder writes onto a concept and grepping for a READER outside the writer:
+
+    grep -rn "<field>" services/ --include="*.py"
+
+`code_example` came back with exactly one mention, inside the module that
+writes it. One vetted, deduplicated code example per code-shaped concept, mined
+from the source at build time, shown to nobody. It now fills the
+`worked_example` slot — which the aid policy also selects when the learner is
+stuck, the moment prose has failed and showing code is the entire point. An aid
+authored for the concept still outranks a mined one.
+
+`tests/domains/test_domain_reaches_the_tutor.py` asserts the wiring rather than
+the components — including reading `fsm_logic`'s own source to confirm the call
+site still names both arguments. That test fails if the arguments are dropped
+again.
+
+**The boundary holds through the registry.** `_domain_teaching` imports
+`services.domains.registry` and nothing else; the pair block arrives via an
+optional `pair_block` contract function on the domain module. The first version
+of this fix imported `domains.computer_science` straight into `fsm_logic` and
+was caught by `tests/domains/test_domain_separation.py` — which is the test
+earning its place, since that import is exactly what would stop a second domain
+being added.
