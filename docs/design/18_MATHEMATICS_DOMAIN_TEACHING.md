@@ -316,6 +316,31 @@ prompt layer moves that. It needs a different model, longer dialogues than four
 turns, or a re-examination of whether 3.5 is the right number for this system —
 a question worth asking, given no subject has ever come within 1.2 of it.
 
+### The judge is reliable — a correction
+
+The claim above that the instrument cannot resolve change was half right, and
+the wrong half mattered.
+
+Rescoring the SAME 15 transcripts three times:
+
+    run means            2.00 / 2.13 / 2.13      spread 0.13
+    per-dialogue spread  0.33 mean; 10 of 15 identical all three times
+
+The judge agrees with itself. The 0.40 run-to-run floor is GENERATION variance
+— every run is a different conversation — not judging variance. So the
+adaptation scores are a real and reproducible judgement about the tutor, and
+the earlier suggestion that the 3.5 gate be re-examined because the numbers
+were unreliable does not stand.
+
+The gate is a genuine target. What remains true is that comparing two
+CONFIGURATIONS by re-running generation is nearly useless at n=15; comparisons
+should rescore fixed transcripts instead.
+
+And the open question is sharper than before: the judge reliably separates a 1
+from a 4 while no mechanical feature does. It is seeing something semantic that
+none of length, variance, question rate, learner-echo or stuck-handling
+captures.
+
 ### What is verified regardless of the judge
 
 These are computed, not scored, and none depends on a rubric:

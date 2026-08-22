@@ -107,6 +107,28 @@ Children are not consenting adults and the bar is higher:
 >
 > Reaching 3.5 needs a different model, dialogues longer than four turns, or a
 > different number. It is not reachable at the prompt layer.
+>
+> **CORRECTION 2026-08-22, after testing the judge itself.** The suggestion
+> above that the gate be re-examined rested on the scores being unreliable.
+> THEY ARE NOT. Rescoring the SAME 15 transcripts three times gives run means
+> of 2.00 / 2.13 / 2.13 — a spread of 0.13 — with 10 of 15 dialogues scored
+> identically every time and the rest differing by exactly one point.
+>
+> So the judge is consistent, and the 0.40 run-to-run floor is almost entirely
+> GENERATION variance: every run is a different conversation (tutor and student
+> turns repeat at 0.062 similarity across runs). The low adaptation scores are a
+> real, reproducible judgement about the tutor's behaviour.
+>
+> Two things follow. **The gate is a genuine target**, not a measurement
+> artifact — the case for revising the number is much weaker than stated above.
+> And **the methodology should change**: compare configurations by rescoring
+> FIXED transcripts, not by re-running generation, which is where the noise is.
+>
+> Also worth noting: across 75 dialogues, no mechanical feature separates the 34
+> scoring 1 from the 11 scoring 4+ — length, variance, question rate, echoing
+> the learner's words, handling a stuck learner are all indistinguishable. The
+> judge reliably tells them apart and surface metrics cannot. Whatever it is
+> seeing is semantic, and finding it is the actual path to the gate.
 
 Medicine and language & literature are the 2026-08-20 baselines; they have not
 been re-measured since B.1/C.1/C.1b/B.2, all of which improved every domain they
