@@ -59,11 +59,25 @@ OPTIONAL = ("SHAPE", "example_for", "attach_to_course", "KEYWORDS",
             "pair_block")
 
 
+#: Required names that must be CALLABLE, not merely present.
+#:
+#: `hasattr` is not enough. The computer-science package had a submodule named
+#: `classify.py`, and importing it bound `computer_science.classify` to the
+#: MODULE — shadowing the contract function of the same name. `ext.classify(...)`
+#: raised "module object is not callable", while this report happily said
+#: nothing was missing. A contract check that passes the wrong object is worse
+#: than no check, because it is trusted.
+_CALLABLE_REQUIRED = ("classify", "rank", "guidance", "prompt_line")
+
+
 def contract_report(module):
     """What a domain module implements and what it is missing."""
+    missing = [f for f in REQUIRED if not hasattr(module, f)]
+    shadowed = [f for f in _CALLABLE_REQUIRED
+                if hasattr(module, f) and not callable(getattr(module, f))]
     return {
         "domain": getattr(module, "DOMAIN", None),
-        "missing_required": [f for f in REQUIRED if not hasattr(module, f)],
+        "missing_required": missing + [f"{f} (not callable)" for f in shadowed],
         "has_optional": [f for f in OPTIONAL if hasattr(module, f)],
     }
 

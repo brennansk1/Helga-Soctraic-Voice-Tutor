@@ -14,7 +14,12 @@ from services.domains.computer_science.concept_kind import (  # noqa: F401
 from services.domains.computer_science.code_examples import (  # noqa: F401
     example_for, attach_to_course, blocks_in, choose_blank,
 )
-from services.domains.computer_science.classify import (  # noqa: F401
+# NAMED `concept_classifier`, NOT `classify`. Importing a submodule binds it
+# as an attribute of the package, so a module called `classify.py` SHADOWED the
+# `classify` function this domain must expose under the registry contract —
+# `ext.classify(...)` returned a module object. `contract_report` still passed
+# it, because `hasattr` was satisfied by the wrong thing.
+from services.domains.computer_science.concept_classifier import (  # noqa: F401
     classify_course as classify_concepts,
 )
 from services.domains.computer_science.code_pairs import (  # noqa: F401

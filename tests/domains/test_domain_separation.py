@@ -47,8 +47,23 @@ def test_the_cs_domain_package_exists():
     assert (CS / "__init__.py").exists()
 
 
-def test_shared_pipeline_does_not_import_the_cs_domain_directly():
-    """The core builds ANY course. It must not name a specific domain."""
+def _domain_packages():
+    """Every domain package on disk, discovered the way the registry does."""
+    base = ROOT / "services" / "domains"
+    return sorted(p.name for p in base.iterdir()
+                  if p.is_dir() and (p / "__init__.py").exists()
+                  and not p.name.startswith("_"))
+
+
+def test_shared_pipeline_does_not_import_ANY_domain_directly():
+    """The core builds ANY course. It must not name a specific domain.
+
+    Generalised when mathematics was added: the original only checked for
+    computer_science, so a core module importing `domains.mathematics` would
+    have passed. The rule is about the boundary, not about one domain.
+    """
+    domains = _domain_packages()
+    assert len(domains) >= 2, f"expected several domains, found {domains}"
     offenders = []
     for area in (("services", "core"), ("services", "common"),
                  ("services", "research"), ("services", "rag")):
@@ -57,22 +72,68 @@ def test_shared_pipeline_does_not_import_the_cs_domain_directly():
             if rel in ALLOWED_TO_IMPORT_CS:
                 continue
             for name in _imports(path):
-                if "domains.computer_science" in name:
-                    offenders.append(f"{rel} imports {name}")
+                for d in domains:
+                    if f"domains.{d}" in name:
+                        offenders.append(f"{rel} imports {name}")
     assert not offenders, (
-        "the shared pipeline reached into the CS domain directly, which is "
-        "exactly what stops a second domain being added:\n  "
+        "the shared pipeline reached into a domain package directly, which is "
+        "exactly what stops another domain being added:\n  "
         + "\n  ".join(offenders))
 
 
-def test_the_cs_domain_does_not_import_another_domain():
+def test_every_domain_satisfies_the_registry_contract():
+    """A domain missing a required hook fails at teaching time, not import."""
+    from services.domains import registry
+
+    for key in registry.available():
+        module = registry.for_domain(key)
+        report = registry.contract_report(module)
+        assert not report["missing_required"], f"{key}: {report}"
+
+
+def test_domains_do_not_share_concept_kinds():
+    """Kinds are domain answers, and borrowing them is the bug this prevents.
+
+    `SYNTAX` is a real distinction about code and meaningless about
+    mathematics; `THEOREM` is the reverse. If two domains ever agree on their
+    whole kind vocabulary, one of them is using the other's answers.
+    """
+    from services.domains import registry
+
+    # Kind constants are exported as module attributes whose value is their
+    # own name (SYNTAX = "SYNTAX"). RANK itself is internal to each domain's
+    # concept_kind module and is deliberately not part of the contract, so
+    # this reads the public surface rather than reaching inside.
+    vocabularies = {}
+    for key in registry.available():
+        module = registry.for_domain(key)
+        kinds = {n for n in dir(module)
+                 if n.isupper() and getattr(module, n, None) == n}
+        kinds -= {"UNKNOWN", "DOMAIN", "LABEL"}
+        if kinds:
+            vocabularies[key] = frozenset(kinds)
+    assert len(vocabularies) >= 2
+    seen = list(vocabularies.items())
+    for i in range(len(seen) - 1):
+        for j in range(i + 1, len(seen)):
+            (ka, va), (kb, vb) = seen[i], seen[j]
+            assert va != vb, f"{ka} and {kb} share one kind vocabulary"
+
+
+def test_no_domain_imports_another_domain():
     """Domains must not depend on each other, or they cannot ship separately."""
     offenders = []
-    for path in CS.rglob("*.py"):
-        for name in _imports(path):
-            if "services.domains." in name and "computer_science" not in name:
-                if not name.rstrip(".").endswith("services.domains"):
-                    offenders.append(f"{path.name} imports {name}")
+    base = ROOT / "services" / "domains"
+    for domain in _domain_packages():
+        for path in (base / domain).rglob("*.py"):
+            for name in _imports(path):
+                if "services.domains." not in name:
+                    continue
+                if domain in name:
+                    continue
+                if name.rstrip(".").endswith("services.domains"):
+                    continue
+                offenders.append(f"{domain}/{path.name} imports {name}")
     assert not offenders, offenders
 
 

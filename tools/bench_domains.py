@@ -44,6 +44,7 @@ is what makes this usable in CI.
 """
 import argparse
 import json
+import logging
 import os
 import re
 import statistics
@@ -694,6 +695,11 @@ JUDGE_MODEL = os.environ.get("HELGA_JUDGE_MODEL", "nail-35b-a3b-ctx")
 BENCH_PROMPT_INPUTS = (
     "context_text", "conversation_history", "bloom_level", "aid_policy",
     "turn_state", "misconceptions",
+    # Production routes the concept's KIND through the domain registry, and
+    # the per-kind guidance is the whole mechanism by which a domain teaches
+    # differently. Without it this bench measured production-minus-domain —
+    # the same shape of invalid comparison `turn_state` caused.
+    "concept_kind",
 )
 
 #: Production inputs that are supplied by the bench from the moment they exist.
@@ -1000,6 +1006,33 @@ def make_aid_decider(topic):
 
 
 # ----------------------------------------------------------------- the run
+def _kind_for(domain_key, topic):
+    """(domain, kind) for a bench topic, or None — as production derives it.
+
+    Routed through the registry, so a bench domain with no specialist package
+    (history, law, medicine) gets None and is measured exactly as it ships.
+    The kind is CLASSIFIED from the concept rather than hand-written into the
+    topic table, because that is what the builder does: hard-coding it here
+    would measure a classification the product never performs.
+
+    Never raises: a benchmark that dies because a domain package is missing
+    measures nothing at all.
+    """
+    try:
+        from services.domains import registry
+        module = registry.for_domain(domain_key)
+        if module is None:
+            return None
+        concept = topic.get("concept") or ""
+        kind = module.classify(concept, topic.get("context", "")[:600], None)
+        if not kind or kind == getattr(module, "UNKNOWN", "UNKNOWN"):
+            return None
+        return (domain_key, kind)
+    except Exception as exc:            # pragma: no cover - defensive
+        logging.debug(f"kind lookup failed for {domain_key}: {exc}")
+        return None
+
+
 def run_domain(domain_key, profiles=None, turns=4, samples=3,
                url=None, model=None, static_only=False, verbose=False,
                generate_only=False):
@@ -1083,6 +1116,7 @@ def run_domain(domain_key, profiles=None, turns=4, samples=3,
 
         for pk in profiles:
             d = hb.run_dialogue(client, pk, topic, turns=turns,
+                                concept_kind=_kind_for(domain_key, topic),
                                 url=url, model=model, verbose=verbose,
                                 aid_decider=make_aid_decider(topic),
                                 # A4.1a. Without it this measures the bare

@@ -472,7 +472,8 @@ def _apply_contract(url, model, messages, turn, learner_said, transcript, topic,
 
 def run_dialogue(client, profile_key, topic, turns, verbose=False,
                  url=DEFAULT_OLLAMA_URL, model=DEFAULT_MODEL, aid_decider=None,
-                 enforce_contract=False, grade_answers=False):
+                 enforce_contract=False, grade_answers=False,
+                 concept_kind=None):
     """Run one tutor<->simulated-student dialogue. Returns the transcript.
 
     `aid_decider(turn_index, transcript) -> AidDecision | None` reproduces the
@@ -578,6 +579,16 @@ def run_dialogue(client, profile_key, topic, turns, verbose=False,
                 # Measured failure: peak at (0,0) in its own plot, then
                 # "moving toward x=2 gets closer to the peak" five turns later.
                 figure_facts=_figure_facts(transcript),
+                # WHAT KIND OF KNOWLEDGE THIS IS, routed through the domain
+                # registry exactly as `fsm_logic._domain_teaching` does.
+                #
+                # Production has supplied this since the domain layer was
+                # wired; this bench did not, so every baseline taken before now
+                # measured production-MINUS-domain-guidance — a system that
+                # does not ship. That is the same defect `turn_state` had, and
+                # it is why "concept_kind" belongs in the fingerprint rather
+                # than in BENCH_INPUTS_SINCE_INCEPTION.
+                concept_kind=concept_kind,
             )
         except Exception as e:
             return {"error": f"prompt build failed: {e}", "transcript": transcript}
