@@ -249,10 +249,29 @@ def attach_to_course(course, book, status_callback=None):
             #
             # `teaching_move` is also already taken: services/common/
             # teaching_move.py is an unrelated (reverted) A.6 mechanism.
+            # ALTERNATIVES, so the tutor can adapt at teaching time.
+            #
+            # One move per concept means the same turn for every learner, which
+            # is what `adaptation` scores as "following a script". A bluffer
+            # and someone who has given up need OPPOSITE moves — an error to
+            # commit to, versus a complete solution shown outright — and that
+            # cannot be decided at build time because it depends on what the
+            # learner does.
+            #
+            # Nested INSIDE `teaching_pair` rather than a new top-level field:
+            # a domain writing material under a name the FSM does not read is
+            # the defect this file already caused once.
+            alts = [m for m in moves
+                    if m is not move and m.get("kind") != move.get("kind")][:2]
             concept["teaching_pair"] = {
                 "kind": move["kind"],
                 "first": move.get("first", "")[:900],
                 "second": move.get("second", "")[:900],
+                "alternatives": [
+                    {"kind": m["kind"],
+                     "first": (m.get("first") or "")[:900],
+                     "second": (m.get("second") or "")[:900]}
+                    for m in alts],
             }
             tally["moves"] += 1
             if move.get("steps"):

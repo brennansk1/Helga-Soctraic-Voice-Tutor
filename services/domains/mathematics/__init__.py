@@ -25,7 +25,7 @@ from services.domains.mathematics.concept_kind import (  # noqa: F401
     APPLICATION, ESTIMATION, MISCONCEPTION, UNKNOWN, AIDED_KINDS_ORDER,
 )
 from services.domains.mathematics.teaching_moves import (  # noqa: F401
-    from_examples, best_move, prompt_block as pair_block,
+    from_examples, best_move, choose_move, prompt_block as pair_block,
     ERROR_HUNT, WORKED_STEP, COMPARE, PREDICT,
 )
 from services.domains.mathematics.mathml import (  # noqa: F401

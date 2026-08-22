@@ -248,3 +248,76 @@ def test_every_domain_attaches_under_the_field_the_tutor_reads():
             f"`fsm_logic` never reads; it must use {TUTOR_READS!r}")
         checked += 1
     assert checked >= 1, "no domain exposed attach_to_course"
+
+
+# ---------------------------------------------------------------------------
+# ADAPTING THE MATERIAL TO THE LEARNER.
+#
+# `adaptation` — the release gate — asks whether the tutor adjusted to THIS
+# student rather than following a script. Choosing material purely from the
+# concept's kind IS a script: same concept, same turn, whoever is sitting
+# there. The learner's behaviour was already computed every turn and nothing
+# used it to decide what to SHOW.
+# ---------------------------------------------------------------------------
+
+STORED = {
+    "kind": "WORKED_STEP", "first": "problem", "second": "solution",
+    "alternatives": [{"kind": "ERROR_HUNT", "first": "flawed",
+                      "second": "fixed"}],
+}
+
+
+def _maths_fsm(behaviour, pair=None):
+    t = fsm_logic.MnemosyneFSM.__new__(fsm_logic.MnemosyneFSM)
+    t.storage = _Storage({"uid": "c1", "teaching_domain": "mathematics"})
+    t.active_course_uid = "c1"
+    t.current_lesson_node = {"concept_kind": "PROCEDURE",
+                             "teaching_pair": pair or dict(STORED)}
+    t.conversation_history = [(behaviour or "hello", None)]
+    t._last_socratic_grade = 2
+    return t
+
+
+def test_the_fsm_asks_the_domain_to_choose_the_move():
+    """The wiring assertion. Instance 9 was a domain writing material the FSM
+    never read; this is the same seam, one step later."""
+    src = inspect.getsource(fsm_logic.MnemosyneFSM._domain_teaching)
+    assert "choose_move" in src
+    assert "_current_behaviour" in src
+
+
+def test_behaviour_selects_opposite_material_for_opposite_learners():
+    from services.domains.mathematics import teaching_moves as tm
+    assert tm.choose_move(STORED, behaviour="BLUFFING")["kind"] == "ERROR_HUNT"
+    assert tm.choose_move(STORED, behaviour="GIVING_UP")["kind"] == "WORKED_STEP"
+
+
+def test_no_behaviour_keeps_the_build_time_default():
+    """On a first turn nothing is known, and guessing is not adapting."""
+    from services.domains.mathematics import teaching_moves as tm
+    assert tm.choose_move(STORED, behaviour=None)["kind"] == "WORKED_STEP"
+
+
+def test_choose_move_never_raises_and_falls_back():
+    from services.domains.mathematics import teaching_moves as tm
+    for bad in (None, "x", {}, {"kind": "X"}, {"alternatives": "nope"}):
+        tm.choose_move(bad, behaviour="BLUFFING")
+    assert tm.choose_move({"kind": "K"}, behaviour="BLUFFING")["kind"] == "K"
+
+
+def test_a_domain_without_choose_move_is_unaffected():
+    """Optional contract: computer science has no such hook and must still
+    produce its block."""
+    t = fsm_logic.MnemosyneFSM.__new__(fsm_logic.MnemosyneFSM)
+    t.storage = _Storage({"uid": "c1", "teaching_domain": "computer_science"})
+    t.active_course_uid = "c1"
+    t.current_lesson_node = {"concept_kind": "DEBUGGING", "teaching_pair": PAIR}
+    t.conversation_history = []
+    t._last_socratic_grade = 0
+    kind, block = t._domain_teaching()
+    assert kind and block
+
+
+def test_behaviour_classification_never_breaks_the_turn():
+    t = fsm_logic.MnemosyneFSM.__new__(fsm_logic.MnemosyneFSM)
+    assert t._current_behaviour() is None       # no history at all

@@ -1606,6 +1606,16 @@ class MnemosyneFSM:
             logging.debug(f"figure facts unavailable: {e}")
             return ""
 
+    def _current_behaviour(self):
+        """What kind of learner this is RIGHT NOW, or None. Never raises."""
+        try:
+            answers = [p[0] for p in (self.conversation_history or []) if p[0]]
+            return _classify_behaviour(
+                answers, grades=[self._last_socratic_grade or 0])
+        except Exception as e:
+            logging.debug(f"behaviour classify failed: {e}")
+            return None
+
     def _domain_teaching(self):
         """(concept_kind, pair_block) for the current concept, or (None, None).
 
@@ -1651,7 +1661,24 @@ class MnemosyneFSM:
             fn = getattr(module, "pair_block", None)   # optional contract
             if fn:
                 try:
-                    block = fn(pair) or None
+                    # WHICH move suits THIS learner, where the domain offers a
+                    # choice. `adaptation` — the release gate — asks whether
+                    # the tutor adjusted to this student rather than following
+                    # a script, and choosing material purely from the
+                    # concept's kind IS a script: same concept, same turn,
+                    # whoever is sitting there.
+                    behaviour = self._current_behaviour()
+                    chooser = getattr(module, "choose_move", None)
+                    if chooser and isinstance(pair, dict):
+                        try:
+                            pair = chooser(pair, behaviour=behaviour) or pair
+                        except Exception as e:
+                            logging.debug(f"move choice failed: {e}")
+                    try:
+                        block = fn(pair, beginner=(behaviour in
+                                                   ("GIVING_UP", "TERSE"))) or None
+                    except TypeError:
+                        block = fn(pair) or None
                 except Exception as e:
                     # A pair is a bonus. Losing it must never cost the turn.
                     logging.debug(f"pair block failed: {e}")

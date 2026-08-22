@@ -251,19 +251,95 @@ def _comparable(examples):
     return best
 
 
-def best_move(moves, kind=None, allow_compare=False):
-    """The single most teachable move, or None.
+#: Which move fits WHICH LEARNER, right now.
+#:
+#: THE POINT OF THIS TABLE.
+#: `adaptation` — the release gate — asks "did the tutor adjust to THIS
+#: student's demonstrated level and behaviour, rather than following a
+#: script?". Choosing the move purely from the concept's KIND is by definition
+#: a script: the same concept produces the same turn whoever is sitting there.
+#:
+#: The learner's behaviour is already computed every turn
+#: (`services/common/learner_behaviour`) and nothing used it to decide WHAT TO
+#: SHOW. These are opposite needs and they were getting the same material:
+#:
+#:   BLUFFING     fluent and wrong. Do not accept fluency — an ERROR_HUNT
+#:                forces a commitment that fluency cannot fake, and PREDICT
+#:                asks for a claim that can be checked against the source.
+#:   GIVING_UP    they have said they do not know. Stop questioning: show a
+#:                complete worked solution rather than another puzzle.
+#:   TERSE        few words. PREDICT can be answered in a few words;
+#:                "which line is first wrong" cannot.
+#:   HEDGING      reasoning but unsure, and close. COMPARE resolves the
+#:                specific thing they are hedging about.
+#:   AHEAD        believe them and raise difficulty — COMPARE is the harder
+#:                move and the one that needs prior knowledge.
+_MOVE_FOR_BEHAVIOUR = {
+    "BLUFFING": (ERROR_HUNT, PREDICT, WORKED_STEP),
+    "GIVING_UP": (WORKED_STEP, COMPARE, PREDICT),
+    "TERSE": (PREDICT, WORKED_STEP, ERROR_HUNT),
+    "HEDGING": (COMPARE, WORKED_STEP, PREDICT),
+    "AHEAD": (COMPARE, ERROR_HUNT, PREDICT),
+}
+
+
+def best_move(moves, kind=None, allow_compare=False, behaviour=None):
+    """The most teachable move for THIS learner, or None.
+
+    `behaviour` is a behaviour name from `services.common.learner_behaviour`.
+    When given, it decides the ORDER of preference; the default ranking (a real
+    error first) applies when nothing is known about the learner, which is the
+    honest state on a first turn.
 
     `allow_compare` is False by default: comparison depends on prior knowledge
     (Rittle-Johnson & Star), so it is wrong for a learner's first contact with
-    a concept and right once they have met one of the methods.
+    a concept. A learner the system has read as HEDGING or AHEAD has already
+    demonstrated that knowledge, so their preference overrides the default.
     """
     found = list(moves or [])
     if kind:
         found = [m for m in found if m["kind"] == kind]
+    if not found:
+        return None
+
+    order = _MOVE_FOR_BEHAVIOUR.get((behaviour or "").upper())
+    if order:
+        if COMPARE in order[:1]:
+            allow_compare = True
+        for want in order:
+            if want == COMPARE and not allow_compare:
+                continue
+            for m in found:
+                if m["kind"] == want:
+                    return m
+
     if not allow_compare:
         found = [m for m in found if m["kind"] != COMPARE]
     return found[0] if found else None
+
+
+def choose_move(stored, behaviour=None):
+    """Pick the stored move that suits THIS learner, or the default.
+
+    `stored` is a concept's `teaching_pair`, whose `alternatives` were mined
+    from the same lesson at build time. Selection happens HERE, at teaching
+    time, because it depends on what the learner has just done — which is the
+    difference between adapting and following a script.
+
+    Never raises: a choice failure must fall back to the stored default, not
+    cost the turn its material.
+    """
+    try:
+        if not isinstance(stored, dict):
+            return stored
+        alts = stored.get("alternatives") or []
+        if not alts or not behaviour:
+            return stored
+        candidates = [stored] + [a for a in alts if isinstance(a, dict)]
+        picked = best_move(candidates, behaviour=behaviour, allow_compare=True)
+        return picked or stored
+    except Exception:                    # pragma: no cover - defensive
+        return stored
 
 
 def prompt_block(move, beginner=False):

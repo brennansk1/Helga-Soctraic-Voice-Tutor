@@ -301,7 +301,47 @@ material about its own concept, the tutor stops restating a mismatched problem.
 
 ---
 
-## 11. What is deliberately not built
+## 11. Adapting the material, not just the wording
+
+`adaptation` is the release gate, and its rubric is: *"Did the tutor adjust to
+THIS student's demonstrated level and behaviour, rather than following a
+script?"*
+
+Choosing material from the concept's KIND alone **is** a script — the same
+concept produces the same turn whoever is sitting there. Worse, the mined
+blocks in §5 impose a fixed turn shape ("show this, then ask that"), so the
+domain layer was arguably making the tutor *more* scripted, not less.
+
+The learner's behaviour was already computed on every turn
+(`services/common/learner_behaviour`) and **nothing used it to decide what to
+show**. A bluffer and someone who has given up need opposite moves and were
+getting identical material:
+
+| behaviour | move | why |
+|---|---|---|
+| BLUFFING | ERROR_HUNT, then PREDICT | forces a commitment fluency cannot fake |
+| GIVING_UP | WORKED_STEP | stop questioning; show the whole solution |
+| TERSE | PREDICT | answerable in a few words; "which line is wrong" is not |
+| HEDGING | COMPARE | resolves the specific thing they are unsure about |
+| AHEAD | COMPARE | believe them, raise difficulty |
+
+So the build now stores **alternatives** alongside the default — nested inside
+`teaching_pair`, not under a new top-level key, because a domain writing
+material the FSM does not read is the defect this file already caused once
+(§10). Selection happens at teaching time via the optional `choose_move`
+contract hook, since it depends on what the learner has just done.
+
+**Measured deterministically**, through `fsm_logic._domain_teaching`, on a
+real built course: **5 of 5 concepts give a bluffer and a learner who has
+given up different material** — ERROR_HUNT versus the complete worked
+solution.
+
+This does not depend on the judge, which is the point: the benchmark cannot
+resolve an effect this size (§9), and a deterministic check can.
+
+---
+
+## 12. What is deliberately not built
 
 **No solver and no marker.** Adding one would change the pedagogy entirely and
 is a substantial build. Until it exists the product teaches reasoning *about*
