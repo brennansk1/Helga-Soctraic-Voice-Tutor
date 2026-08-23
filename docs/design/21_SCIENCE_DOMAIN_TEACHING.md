@@ -271,53 +271,83 @@ fingerprint, same topics, same judge.
 **The domain layer did not improve the composite.** The difference is a
 twentieth of the noise floor — not a small gain, not a small loss, nothing.
 
-Per dimension, against the floors re-derived from four runs:
+Per dimension, ranked the way `DIMENSION_FLOORS` says to rank them — by
+MULTIPLE of the floor, because that block's own instruction is to "prefer a
+dimension that moved several times its floor over one that just cleared it":
 
-| dimension | with | without | Δ | floor | |
+| dimension | with | without | Δ | floor | × floor |
 |---|---|---|---|---|---|
-| accuracy | 3.73 | 4.60 | **−0.87** | 0.73 | exceeds |
-| misconception_handling | 4.71 | 3.88 | **+0.83** | 0.75 | exceeds |
-| socratic | 2.03 | 2.53 | **−0.50** | 0.47 | exceeds |
-| visual_integration | 2.87 | 2.33 | +0.54 | 1.33 | noise |
-| adaptation | 2.10 | 2.27 | −0.17 | 0.40 | noise |
-| honest_telling | 3.80 | 2.60 | +1.20 | — | no floor |
+| **honest_telling** | 3.80 | 2.60 | **+1.20** | 0.40 | **3.00×** |
+| progression | 2.50 | 3.00 | −0.50 | 0.40 | 1.25× |
+| accuracy | 3.73 | 4.60 | −0.87 | 0.73 | 1.19× |
+| misconception_handling | 4.71 | 3.88 | +0.83 | 0.75 | 1.11× |
+| socratic | 2.03 | 2.53 | −0.50 | 0.47 | 1.06× |
+| visual_policy | 3.00 | 2.73 | +0.27 | 0.53 | 0.51× |
+| adaptation | 2.10 | 2.27 | −0.17 | 0.40 | 0.42× |
+| visual_integration | 2.87 | 2.33 | +0.54 | 1.33 | 0.41× |
 | mechanism_over_recall | 3.33 | 2.80 | +0.53 | — | no floor |
-| progression | 2.50 | 3.00 | −0.50 | — | no floor |
 
-Read plainly: the layer appears to **help** misconception handling and its own
-`mechanism_over_recall`, and to **hurt** accuracy and socratic questioning. The
-gains and the losses roughly cancel, which is why the composite does not move.
+**The only supportable per-dimension claim is `honest_telling` +1.20, at three
+times its floor — and it is a GAIN from the domain layer.** Everything between
+1.0× and 1.3× is a dimension that "just cleared it", which this instrument
+explicitly says not to trust.
 
-### How much of this to believe
+### A reading I got wrong, recorded because it is the recurring one
 
-**One run per arm, n=15 each.** The floors above came from four runs; clearing
-one on a single pair of runs is suggestive, not established. This project has
-already retracted three single-run over-reads — run C's "floor-beating gains",
-the `visual_policy` "regression", and a "monotonic decline" that dissolved when
-a fourth run landed. Detecting effects below 0.4 needs roughly n=60 per arm.
+My first pass called accuracy (−0.87), misconception_handling (+0.83) and
+socratic (−0.50) "exceeds floor" and concluded the layer hurt accuracy and did
+not help. Three things were wrong with that:
 
-Three dimensions have **no recorded floor at all** (`honest_telling`,
-`mechanism_over_recall`, `progression`), so the +1.20 on honest_telling is the
-largest number in the table and the least interpretable one.
+1. **Barely clearing a floor is not clearing it.** Those three are 1.06–1.19×.
+   `DIMENSION_FLOORS` says in its own comment to treat the floors as lower
+   bounds and prefer multiples.
+2. **`accuracy`'s measured identical-run spread IS 0.87** — the exact size of
+   the observed delta. The same comment block records accuracy spanning
+   4.13/4.27/5.00 across three identical runs, which is why its floor is the
+   second highest in the table.
+3. **I said `honest_telling` had no floor.** It has one, 0.40, and at 3× it is
+   the strongest signal in the whole comparison — I dismissed the one result
+   that was actually supportable.
 
-### The finding worth acting on
+The paired statistics agree: across the 15 matched dialogues the accuracy delta
+is mean −0.87 with sd 2.17, giving a 95% interval of roughly **−1.96 to +0.23**,
+which crosses zero. Nine of fifteen pairs are identical; the mean is carried by
+five drops.
 
-`accuracy` falling 0.87 with the domain layer present is the result to chase,
-because it is the one that would make the module actively harmful. A plausible
-mechanism — untested — is crowding: the science block is the largest any domain
-emits (standing rule, then a Johnstone level line, then per-kind guidance, then
-POE material), and this codebase has already measured a 600-character cap
-truncating a behaviour instruction into silence. If the concept's own material
-is being displaced, accuracy is exactly what would fall.
+### And those drops are one learner profile
 
-That is a hypothesis. It has not been tested, and it should be before this
-module is trusted in front of learners.
+Three of the five are `confident_bluffer`, which scored **1 on all three topics
+with the domain layer and 5 on all three without**. Reading that transcript
+inverts the conclusion:
 
-## 8. Not measured
+> **with the layer** — the tutor asks a gardener/selection question, the bluffer
+> answers with "genetic drift favoring the most robust alleles", and the tutor
+> replies: *"Genetic drift is random change, not the deterministic selection you
+> described."* Correct, specific, and exactly the right move. **Scored 1.**
+>
+> **without** — the tutor asks an easier beetle question, the bluffer happens to
+> answer correctly, and the tutor affirms it. **Scored 5.**
 
-* The crowding hypothesis above.
-* Floors for `honest_telling`, `mechanism_over_recall` and `progression`.
-* Anything at n>15 per arm.
+The tutor was more accurate in the arm that scored lower. What differed was the
+STUDENT: the harder question elicited a florid bluff, and the dialogue then
+contained false statements. This looks like the same class of instrument defect
+already recorded for `contested_interpretation` on FACT topics — a dimension
+measuring something other than what it names — and it should be checked before
+any accuracy claim is made from a bluffing profile.
+
+## 8. What the ablation actually supports
+
+* The composite does not move: **−0.017 against a 0.376 floor.** On the
+  headline number, this layer earns nothing.
+* One dimension moves several times its floor: **honest_telling +1.20**.
+* Nothing else is distinguishable from noise at n=15 on one run per arm.
+
+## 9. Not measured
+
+* Whether `accuracy` is contaminated by simulated-student content on bluffing
+  profiles. The strongest lead here, and cheap to check.
+* Any floor for `mechanism_over_recall`, this domain's own dimension.
+* Anything at n>15 per arm. Detecting effects below 0.4 needs roughly n=60.
 * **Chemistry yield** is one pair per six pages. Unexplained.
 * **The `LEVEL_BRIDGE` move** is defined and has a prompt block, but nothing
   mines one yet — it is reachable only if a caller constructs it by hand.
