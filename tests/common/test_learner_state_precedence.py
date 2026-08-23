@@ -65,12 +65,41 @@ def test_the_precedence_is_declared_not_merely_implied():
     assert "ignore instructions to show material" in text
 
 
-def test_a_bluffing_learner_does_not_displace_the_material():
-    """Only DECISIVE states take precedence. A bluffer should still be shown
-    the error — the material IS the right response to them."""
+def test_a_bluffing_learner_ALSO_displaces_the_material():
+    """REVERSED ON EVIDENCE. This test previously asserted the opposite.
+
+    The original reasoning was a priori: "a bluffer should still be shown the
+    error — the material IS the right response to them." No measurement backed
+    it, and the judge's rationales contradict it three times over, on the
+    dialogues scoring lowest on adaptation:
+
+        "The tutor accepts the student's nonsensical justification for why the
+         slopes are identical without challenging"
+
+    Measured: the bluffing instruction landed at position 6534 while the mined
+    material sat at 5173 opening "THIS TURN OVERRIDES THE GENERAL GUIDANCE
+    ABOVE". The queued example won and the instruction to challenge lost —
+    exactly the defect already fixed for a stuck learner.
+
+    Showing a worked example to someone producing fluent nonsense rewards the
+    bluff. Challenge outranks material.
+    """
     text = _system(FLUENT)
-    if "THIS TURN OVERRIDES" in text and "fluently" in text:
-        assert text.index("THIS TURN OVERRIDES") < text.index("fluently")
+    assert "Do not accept it" in text, "the bluffer must be detected at all"
+    assert text.index("Do not accept it") < text.index("THIS TURN OVERRIDES")
+    assert "OVERRIDES EVERYTHING BELOW" in text
+
+
+def test_a_merely_hedging_learner_does_NOT_displace_the_material():
+    """Not every state is decisive. A learner who is unsure but reasoning is
+    close, and the material is the right response to them."""
+    hedged = describe(
+        ["I think maybe it is the slope, but I am not sure about the rest.",
+         "Perhaps it relates to the tangent line somehow, though I could be "
+         "wrong about how exactly that works in this particular case."],
+        grades=[2, 2])
+    text = _system(hedged)
+    assert "OVERRIDES EVERYTHING BELOW" not in text
 
 
 def test_no_behaviour_leaves_the_order_untouched():

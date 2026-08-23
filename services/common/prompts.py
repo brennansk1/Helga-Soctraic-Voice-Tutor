@@ -690,7 +690,20 @@ def get_socratic_tutor_prompt(context_text, conversation_history, aid_policy=Non
     #:
     #: Precedence is now: what the LEARNER is doing > what the CONCEPT needs >
     #: the general kind. The first two were the wrong way round.
-    _DECISIVE_BEHAVIOUR = ("do not know", "Stop questioning")
+    #
+    # BLUFFING IS DECISIVE TOO, and was left out when GIVING_UP was promoted.
+    # Measured: the bluffing instruction lands at position 6534 while the mined
+    # material sits at 5173 opening "THIS TURN OVERRIDES THE GENERAL GUIDANCE
+    # ABOVE" — so the queued example wins and the instruction to challenge
+    # loses, exactly as it did for a stuck learner before that case was fixed.
+    #
+    # The judge names the consequence three times in the dialogues scoring
+    # lowest on adaptation: "The tutor accepts the student's nonsensical
+    # justification ... without challenging". A learner producing fluent
+    # nonsense needs challenging whatever material happens to be queued —
+    # showing them a worked example while they are bluffing rewards the bluff.
+    _DECISIVE_BEHAVIOUR = ("do not know", "Stop questioning",
+                           "Do not accept it")
 
     behaviour_first = False
     if learner_behaviour:
