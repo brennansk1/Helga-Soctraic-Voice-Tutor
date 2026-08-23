@@ -485,3 +485,59 @@ The layer does not move the composite. On the two dimensions where a science
 module should show up — telling the truth about what is settled, and pushing
 for mechanism over labels — it shows gains, one of them well clear of its
 floor. Every "harm" I reported dissolved on measurement.
+
+---
+
+## 12. Three runs — and the only surviving effect is this domain's own dimension
+
+A third identical A run gives every dimension its first three-run spread.
+
+| dimension | A1 / A2 / A3 | spread | A mean | B | Δ | × spread |
+|---|---|---|---|---|---|---|
+| **mechanism_over_recall** | 3.33 / 3.47 / 3.60 | **0.27** | 3.47 | 2.80 | **+0.67** | **2.5×** |
+| visual_policy | 3.00 / 3.53 / 3.40 | 0.53 | 3.31 | 2.73 | +0.58 | 1.1× |
+| adaptation | 2.10 / 1.80 / 2.00 | 0.30 | 1.97 | 2.27 | −0.30 | 1.0× |
+| misconception_handling | 4.71 / 4.00 / 4.90 | 0.90 | 4.54 | 3.88 | +0.66 | 0.7× |
+| socratic | 2.03 / 1.93 / 2.47 | 0.54 | 2.14 | 2.53 | −0.39 | 0.7× |
+| honest_telling | 3.80 / 3.80 / **2.60** | **1.20** | 3.40 | 2.60 | +0.80 | 0.7× |
+| progression | 2.50 / 2.53 / 3.07 | 0.57 | 2.70 | 3.00 | −0.30 | 0.5× |
+| visual_integration | 2.87 / 2.87 / 2.20 | 0.67 | 2.65 | 2.33 | +0.32 | 0.5× |
+| accuracy | 3.73 / 5.00 / 4.47 | 1.27 | 4.40 | 4.60 | −0.20 | 0.2× |
+
+### `honest_telling` is withdrawn, and it is the most instructive withdrawal
+
+Section 11 called `honest_telling` **+1.20 at three times its floor, identical
+across both A runs (spread 0.00)** — "the strongest result in the comparison".
+
+The third run scored **2.60**. Its spread is **1.20**, the exact size of the
+"gain".
+
+This is precisely the failure `DIMENSION_FLOORS` documents in its own comment:
+accuracy's two-run estimate was 0.13 before a third run made it 0.87, and
+"everything claimed against the two-run floors had to be withdrawn". I quoted
+that warning in section 8 and then made the same mistake two sections later,
+because 0.00 across two runs looks like certainty and is not — two samples
+estimate the gap between two draws, not a spread.
+
+### What actually survives
+
+**One dimension: `mechanism_over_recall`, +0.67 at 2.5× its three-run spread.**
+
+That is this domain's OWN dimension — did the tutor push toward the causal
+mechanism rather than settle for the correct label. It is the single thing this
+module was built to move, and it is the single thing that moved.
+
+Nothing else clears 1.1×. Every apparent harm — accuracy, socratic,
+progression, adaptation — is inside the noise.
+
+### Is that "the quality of the other ones"?
+
+In KIND, yes, and this is the right shape for a domain layer: it moves its own
+dimension and leaves the rest alone. The mathematics ablation has the same
+shape — `misconception_handling` fell 2.25 when its layer was withheld, three
+times that dimension's floor.
+
+In MAGNITUDE, no: 0.67 against maths's 2.25. Science's layer does its job, and
+does it about a third as strongly as the best one here.
+
+The composite does not move for either of them.
