@@ -939,6 +939,36 @@ INSTRUCTOR NOTES (pedagogical guidance only — the student has NOT seen any of 
     #
     # `system_note` already rides as a trailing system message, so this is the
     # mechanism this codebase already uses rather than a new invention.
+    # ONE AUTHORITY PER TURN.
+    #
+    # Promoting the learner's state was not enough. Measured on a real
+    # bluffing dialogue: the system prompt ran 10,906 characters and contained
+    # TWO blocks, 386 apart, each claiming final authority and giving OPPOSITE
+    # instructions —
+    #
+    #   5194  "THIS LEARNER'S STATE OVERRIDES EVERYTHING BELOW"  (challenge)
+    #   5580  "THIS TURN OVERRIDES THE GENERAL GUIDANCE ABOVE"   (show the
+    #                                                             worked error)
+    #
+    # The reordering ADDED a claim rather than resolving the conflict, and the
+    # model was left to pick. The judge's complaint on exactly these dialogues
+    # is that it picked the material: "accepts the student's nonsensical
+    # justification without challenging".
+    #
+    # So when the learner's state is decisive, the material's own override
+    # claim is withdrawn and it is reframed as available rather than
+    # mandatory. The material stays in the prompt — it is still the best thing
+    # to teach FROM — it simply stops competing for command of the turn.
+    if behaviour_first and figure_str:
+        figure_str = figure_str.replace(
+            "THIS TURN OVERRIDES THE GENERAL GUIDANCE ABOVE.",
+            "MATERIAL AVAILABLE THIS TURN (use it only in the way the "
+            "learner's state above requires; it does NOT override that):")
+        figure_str = figure_str.replace(
+            "THIS TURN OVERRIDES THE GENERAL GUIDANCE ABOVE",
+            "MATERIAL AVAILABLE THIS TURN, subordinate to the learner's state "
+            "above")
+
     # ORDER IS PRECEDENCE. When the learner's state is decisive it goes FIRST;
     # otherwise the concept's material leads, as before.
     if behaviour_first:

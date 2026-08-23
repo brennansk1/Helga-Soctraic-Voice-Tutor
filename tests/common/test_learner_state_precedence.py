@@ -54,7 +54,8 @@ def _system(behaviour, figure_facts=MINED):
 def test_a_stuck_learner_outranks_the_mined_material():
     """The regression this file exists for."""
     text = _system(STUCK)
-    assert text.index("Stop questioning") < text.index("THIS TURN OVERRIDES")
+    assert "Stop questioning" in text
+    assert text.index("Stop questioning") < text.index("MATERIAL AVAILABLE")
 
 
 def test_the_precedence_is_declared_not_merely_implied():
@@ -86,7 +87,7 @@ def test_a_bluffing_learner_ALSO_displaces_the_material():
     """
     text = _system(FLUENT)
     assert "Do not accept it" in text, "the bluffer must be detected at all"
-    assert text.index("Do not accept it") < text.index("THIS TURN OVERRIDES")
+    assert text.index("Do not accept it") < text.index("MATERIAL AVAILABLE")
     assert "OVERRIDES EVERYTHING BELOW" in text
 
 
@@ -112,8 +113,35 @@ def test_the_concept_material_still_reaches_the_prompt_when_overridden():
     """Precedence is ordering, not deletion: the material must still be there
     for the tutor to explain FROM."""
     text = _system(STUCK)
+    assert "MATERIAL AVAILABLE" in text
+    assert "SHOW THE FLAWED" in text or "PROCEDURE" in text
+
+
+def test_exactly_one_block_claims_authority_when_the_state_is_decisive():
+    """The defect this closes.
+
+    Promoting the learner's state was not enough. Measured on a real bluffing
+    dialogue: a 10,906-character system prompt containing TWO blocks 386 apart,
+    each claiming final authority and giving OPPOSITE instructions —
+
+        "THIS LEARNER'S STATE OVERRIDES EVERYTHING BELOW"   challenge them
+        "THIS TURN OVERRIDES THE GENERAL GUIDANCE ABOVE"    show the worked error
+
+    The reordering ADDED a claim rather than resolving the conflict, and the
+    judge's complaint on exactly these dialogues is that the model picked the
+    material: "accepts the student's nonsensical justification without
+    challenging".
+    """
+    text = _system(STUCK)
+    assert text.count("OVERRIDES") == 1, (
+        "two blocks are competing for command of the turn")
+
+
+def test_the_material_keeps_its_authority_when_nothing_is_decisive():
+    """The subordination is conditional. With no decisive learner state the
+    mined material IS the turn's instruction and must say so."""
+    text = _system(None)
     assert "THIS TURN OVERRIDES" in text
-    assert "PROCEDURE" in text
 
 
 def test_junk_never_raises():
