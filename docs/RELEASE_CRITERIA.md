@@ -108,6 +108,34 @@ Children are not consenting adults and the bar is higher:
 > Reaching 3.5 needs a different model, dialogues longer than four turns, or a
 > different number. It is not reachable at the prompt layer.
 >
+> ## DECISION 2026-08-22: mathematics ships with the gate unmet
+>
+> **Accepted at ~2.41 against a 3.5 gate, by the owner's decision.** Recorded
+> here so nobody later reads the shipped state as a claim that the gate was
+> reached — it was not.
+>
+> What was established across ten runs:
+>
+> | | |
+> |---|---|
+> | before / after the one real fix | 2.13 → 2.41 |
+> | source of the gain | a plumbing defect, not a teaching idea |
+> | five subsequent changes | all measured as noise |
+> | best adaptation ever recorded, any domain | 2.30 |
+> | judge reliability | high — identical transcripts rescore to 2.00/2.13/2.13 |
+>
+> The gain came from `turn_state.render()`: "CHANGE YOUR APPROACH" was reaching
+> **1 prompt in 60**, keyed to a counter a rewording resets and then truncated
+> away by a 600-character cap. Nothing invented afterwards moved the number.
+>
+> **For whoever picks this up.** The judge is trustworthy per-transcript, so the
+> target is real, not an artifact. But run-to-run variance is ~0.40 because every
+> run is a different conversation (0.062 text similarity), so **detecting
+> anything smaller than 0.4 needs about n=60 per arm — four runs a side, ~2.3
+> hours each.** Budget that before attempting an increment, and prefer
+> ablations: removing the domain layer dropped `misconception_handling` by 2.25,
+> three times its floor, and is the only floor-beating result the work produced.
+>
 > **CORRECTION 2026-08-22, after testing the judge itself.** The suggestion
 > above that the gate be re-examined rested on the scores being unreliable.
 > THEY ARE NOT. Rescoring the SAME 15 transcripts three times gives run means

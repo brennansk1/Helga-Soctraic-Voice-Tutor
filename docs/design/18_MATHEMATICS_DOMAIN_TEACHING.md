@@ -2,7 +2,10 @@
 
 **Status:** built 2026-08-22. Second domain, after computer science.
 **CLOSED 2026-08-22** at the owner's direction, with the benchmark gate
-knowingly unmet — see §9. Four of five release clauses are verified; the
+knowingly unmet and ACCEPTED at ~2.41 against 3.5 — see §9. The decision was
+made on the evidence below, not by running out of ideas quietly: ten runs, one
++0.28 gain from a plumbing defect, five subsequent changes all measuring as
+noise, and no domain in this repository's history ever exceeding 2.30. Four of five release clauses are verified; the
 `adaptation` gate of 3.5 is not reached and is not reachable at the prompt
 layer on `nail-35b-a3b-ctx`. Re-open if the gate is revised or the model
 changes.
