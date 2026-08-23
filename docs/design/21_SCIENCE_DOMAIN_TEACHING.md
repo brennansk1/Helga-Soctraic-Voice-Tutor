@@ -353,3 +353,71 @@ any accuracy claim is made from a bluffing profile.
   mines one yet — it is reachable only if a caller constructs it by hand.
 * The classifier's LLM path is untested against a real build; only the pattern
   path has been measured.
+
+---
+
+## 10. An instrument defect, found while chasing the accuracy delta
+
+The `accuracy` dimension is **unstable on adversarial transcripts and stable
+everywhere else**. Measured by re-judging transcripts from the run above, each
+a median-of-3 exactly as the benchmark scores them:
+
+| profile | recorded | re-judged medians-of-3 |
+|---|---|---|
+| `fast_learner` | 5 | 5, 5, 5 |
+| `confused_beginner` | 5 | 5, 5, 5 |
+| **`confident_bluffer`** | **1** | **5, 3, 3, 3** |
+
+Five independent measurements of one identical transcript spanning 1 to 5, with
+the benchmark's own recorded value at the extreme low end — while two other
+transcripts from the same run reproduce perfectly.
+
+### Why that transcript in particular
+
+All four tutor turns in it are factually correct. The clearest is:
+
+> "Genetic drift is random change, not the deterministic selection you
+> described."
+
+and later, unprompted, the exact anti-teleology move the biology education
+literature identifies as the central difficulty:
+
+> "Selection acts on individuals, not populations with goals."
+
+What distinguishes this dialogue is the STUDENT: a confident bluffer emitting
+fluent, jargon-dense falsehoods ("genetic drift favoring the most robust
+alleles"). `JUDGE_RUBRIC` anticipates exactly this —
+
+> "The STUDENT in this transcript is a simulation and is SUPPOSED to say false
+> things … A student error is NEVER evidence against accuracy."
+
+— and the instruction is not sufficient. The judge sometimes charges the
+student's errors to the tutor anyway.
+
+### What this invalidates, and what it does not
+
+**Invalidated:** any PER-DIALOGUE accuracy claim. That includes the pattern this
+document previously reported — `confident_bluffer` scoring 1 with the domain
+layer and 5 without, on all three topics — which is indistinguishable from
+three draws of an unstable judge. Withdrawn.
+
+**Not invalidated:** the aggregate. `accuracy`'s floor of 0.73 was derived from
+run-to-run variation of the MEAN over 15 dialogues, which damps this, and the
+composite is a mean of means. The headline result — the layer moves the
+composite by −0.017 against a 0.376 floor — stands.
+
+**Scope:** one profile in five, so roughly a fifth of dialogues carry the
+unstable measurement. This is not a science finding; it applies to every
+domain's accuracy number, including the recorded mathematics, history and
+computer-science runs.
+
+### The fix, and why it is not applied here
+
+Structural rather than instructional: score `accuracy` on the tutor's turns
+alone, with student turns elided. That removes the contamination by
+construction instead of asking the judge to ignore what is in front of it.
+
+**It would change `rubric_fingerprint()`,** which is the mechanism that stops
+runs being compared across instrument changes. Every recorded baseline for
+every domain would have to be re-taken. That is the owner's call, not a change
+to make while a comparison is in flight.
