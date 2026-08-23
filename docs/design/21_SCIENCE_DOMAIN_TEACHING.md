@@ -421,3 +421,67 @@ construction instead of asking the judge to ignore what is in front of it.
 runs being compared across instrument changes. Every recorded baseline for
 every domain would have to be re-taken. That is the owner's call, not a change
 to make while a comparison is in flight.
+
+---
+
+## 11. A second identical run, and the accuracy claim finally dies
+
+`A2` repeats `A1` exactly — same config, same fingerprint, nothing withheld.
+
+| dimension | A1 | A2 | **spread on IDENTICAL runs** |
+|---|---|---|---|
+| **accuracy** | 3.73 | 5.00 | **1.27** |
+| misconception_handling | 4.71 | 4.00 | 0.71 |
+| visual_policy | 3.00 | 3.53 | 0.53 |
+| adaptation | 2.10 | 1.80 | 0.30 |
+| mechanism_over_recall | 3.33 | 3.47 | 0.14 |
+| socratic | 2.03 | 1.93 | 0.10 |
+| progression | 2.50 | 2.53 | 0.03 |
+| honest_telling | 3.80 | 3.80 | 0.00 |
+| visual_integration | 2.87 | 2.87 | 0.00 |
+
+**`accuracy` moved 1.27 between two runs that differ in nothing.** That is 1.7×
+its own recorded floor, and larger than the 0.87 this document originally
+attributed to the domain layer. Averaging the two A runs against B gives an
+accuracy delta of **−0.23**, or 0.32× floor.
+
+The claim that the science layer harms accuracy is dead. It was never an
+effect; it was one draw of the noisiest dimension in the instrument.
+
+### What survives with A averaged over two runs
+
+| dimension | A mean | B | Δ | floor | × floor |
+|---|---|---|---|---|---|
+| **honest_telling** | 3.80 | 2.60 | **+1.20** | 0.40 | **3.00×** |
+| **mechanism_over_recall** | 3.40 | 2.80 | **+0.60** | none | A-spread 0.14 |
+| progression | 2.52 | 3.00 | −0.49 | 0.40 | 1.22× |
+| socratic | 1.98 | 2.53 | −0.55 | 0.47 | 1.17× |
+| visual_policy | 3.27 | 2.73 | +0.53 | 0.53 | 1.00× |
+| visual_integration | 2.87 | 2.33 | +0.54 | 1.33 | 0.41× |
+| adaptation | 1.95 | 2.27 | −0.32 | 0.40 | 0.80× |
+| accuracy | 4.37 | 4.60 | −0.23 | 0.73 | 0.32× |
+
+Two gains stand up and no harm does:
+
+* **`honest_telling` +1.20 at three times its floor**, and identical across both
+  A runs (spread 0.00). The strongest result in the comparison.
+* **`mechanism_over_recall` +0.60** — this domain's OWN dimension, the one that
+  says whether it does its specific job, with an A-spread of 0.14.
+
+The two apparent losses, `socratic` and `progression`, clear their floors by
+17% and 22%. This instrument says not to trust that, and their A-spreads
+(0.10, 0.03) come from two runs, which the same comment block warns is a bad
+lower bound — accuracy's two-run estimate was 0.13 before a third run made it
+0.87.
+
+**`mechanism_over_recall` still has no proper floor.** Its 0.14 is a two-run
+gap, exactly the estimate type that has already misled this project once. A
+third A run would settle whether +0.60 is real. Until then it is the most
+promising number here and not an established one.
+
+### The honest summary of the whole exercise
+
+The layer does not move the composite. On the two dimensions where a science
+module should show up — telling the truth about what is settled, and pushing
+for mechanism over labels — it shows gains, one of them well clear of its
+floor. Every "harm" I reported dissolved on measurement.
