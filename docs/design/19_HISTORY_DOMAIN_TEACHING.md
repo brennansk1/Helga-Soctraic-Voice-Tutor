@@ -141,7 +141,76 @@ domain exists to prevent.
 
 ---
 
-## 7. Not yet done
+## 7. Measured on the benchmark — and a problem with the dimension
+
+Two runs, n=15 each, fingerprint `4faf5407715a9e4d`:
+
+| dimension | A | B |
+|---|---|---|
+| **contested_interpretation** | **1.47** | **1.33** |
+| adaptation | 1.80 | 2.13 |
+| socratic | 2.27 | 2.47 |
+| progression | 2.27 | 2.73 |
+| visual_integration | 1.93 | 2.87 |
+| misconception_handling | 4.29 | 4.67 |
+| honest_telling | 3.40 | 3.40 |
+| accuracy | 4.40 | 4.07 |
+
+**The domain's own dimension did not move**, while several others did.
+
+### The dimension does not reward what the domain produces
+
+`contested_interpretation` by topic in run B:
+
+    The causes of the First World War    1.80
+    The sequence of the July Crisis      1.20
+    The date of the Battle of Hastings   1.00
+
+Hastings is a **FACT** topic. There is no historiographical debate to present —
+the date is not disputed, and the benchmark itself marks it `derivable: False`.
+
+The guidance added for exactly this case IS being followed. Measured on run B's
+Hastings dialogues: the one student who stated a wrong year was corrected
+(1/1), and 3 of 5 turns said explicitly that the date is settled. And the topic
+scored **1.00**, the floor.
+
+So the tutor does the right thing and scores the minimum. The rubric defines a
+penalty for *inventing* a controversy but **no positive behaviour for a
+genuinely settled question**, which leaves the dimension unmeasurable on a
+third of this domain's topics.
+
+**That is feedback for the instrument, not for the tutor.** Either the FACT
+topic should not be scored on `contested_interpretation`, or the rubric needs
+to say what a good answer looks like when nothing is contested — "says plainly
+that this is settled and does not manufacture a debate" would do.
+
+### What IS verified, independently of that dimension
+
+* build from a real textbook: 9/9 concepts classified, 0 unknown
+* the LLM classifier fires in the real pipeline
+* material pairing correct by kind after the fix in §8
+* every FACT concept given no material at all
+* 8 turns: 0 guessed facts, 2/2 facts stated outright, 2/2 contested questions
+  with two named positions, 0 debates resolved
+
+## 8. Two defects only a real build could show
+
+**Provenance vocabulary missed memoranda.** A source reading "Memorandum from
+the German Chancellor to the Foreign Office, Berlin, 1912" was refused for
+having no provenance — the exact attribution a `SOURCE_CHECK` interrogates.
+Widened to the document types diplomatic history actually uses.
+
+**Material matched by vocabulary instead of kind.** Two concepts came out
+swapped: "Timeline of July Crisis" (`CHRONOLOGY`) took the `HISTORIOGRAPHY`
+move because Albertini's position mentions "the last week of **July**", leaving
+the real `CONTESTED` concept with a source extract.
+
+A concept's KIND states what it NEEDS; its vocabulary only says what it
+MENTIONS. Kind affinity now decides, word overlap is the fallback. This refines
+the equivalent mathematics fix rather than repeating it: mathematics needed
+matching at all, history needed it keyed on the right signal.
+
+## 9. Not yet done
 
 * the LLM concept classifier for thin titles (both other domains have one)
 * a course built end to end from a real history textbook
