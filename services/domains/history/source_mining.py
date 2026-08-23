@@ -96,15 +96,80 @@ def _best_for(concept, moves):
     return moves[0]
 
 
-def attach_to_course(course, book, status_callback=None):
+#: How many primary documents one course may fetch. Each is a search plus a
+#: revision fetch against a rate-limited host, so this is a build-time cost cap,
+#: not a quality judgement.
+MAX_DOCUMENTS = 12
+
+
+def _document_move(concept, documents_fn, budget):
+    """A SOURCE_CHECK built from a real primary document, or None.
+
+    WHY THIS IS NEEDED AT ALL
+    -------------------------
+    `sources_in_text` recovers a labelled source block from chapter prose. That
+    works on the hand-built fixtures it was written against and does not work
+    on a real textbook. Measured on U.S. History (American YAWP), 14 pages
+    sampled across the whole book, 69,065 characters:
+
+        labelled source blocks ("Source A: ...")   0
+        historian attributions ("<Name> argues")   0
+
+    A narrative survey does not print labelled primary sources, so on any real
+    history book this domain's central move had nothing to attach. Loosening
+    the regex until something matched would manufacture sources out of ordinary
+    narration, which is the failure `contested_interpretation` punishes.
+
+    So the document comes from an archive that publishes documents WITH their
+    attribution, and the provenance is read from a header field rather than
+    guessed from prose.
+    """
+    if budget <= 0 or documents_fn is None:
+        return None
+    title = (concept.get("title") or "").strip()
+    if not title:
+        return None
+    try:
+        docs = documents_fn(title, limit=1)
+    except Exception as e:
+        logger.info(f"[HIST] document lookup failed for {title!r}: {e}")
+        return None
+    if not docs:
+        return None
+    d = docs[0]
+    return {
+        "kind": tm.SOURCE_CHECK,
+        # The attribution goes FIRST because sourcing is a question about it —
+        # Wineburg's finding is that historians read the attribution before the
+        # document and students read it last, if at all.
+        "first": f"{d['provenance']}. {(d.get('notes') or '').strip()}".strip(),
+        "second": (d.get("text") or "")[:900],
+        "source_url": d.get("url", ""),
+    }
+
+
+def attach_to_course(course, book, status_callback=None, documents_fn=None):
     """Attach a mined source or historiographical debate to each aided concept.
 
     The registry contract's optional `attach_to_course` hook. Mutates `course`
     in place and returns a tally. Never raises: an asset failure must cost the
     asset, not the build.
+
+    `documents_fn` is the primary-document lookup, defaulting to Wikisource and
+    injectable so tests need no network. It is consulted only where the BOOK
+    yields nothing — the textbook is still the first source, and the archive
+    covers what a narrative survey structurally cannot supply.
     """
+    if documents_fn is None:
+        try:
+            from services.research.wikisource import documents as documents_fn
+        except Exception as e:                   # pragma: no cover - defensive
+            logger.info(f"[HIST] wikisource unavailable: {e}")
+            documents_fn = None
+
     tally = {"moves": 0, "sources": 0, "debates": 0, "skipped": 0,
-             "chapters": 0}
+             "chapters": 0, "documents": 0}
+    doc_budget = MAX_DOCUMENTS
     aided = set(AIDED_KINDS_ORDER)
     lessons = [l for m in (course.get("modules") or [])
                for u in (m.get("units") or [])
@@ -121,19 +186,22 @@ def attach_to_course(course, book, status_callback=None):
             text = ""
         if not text:
             text = lesson.get("source_text") or ""
-        if not text:
-            continue
 
-        tally["chapters"] += 1
-        try:
-            moves = tm.from_text(text)
-        except Exception as e:
-            logger.warning(f"[HIST] mining failed for "
-                           f"{lesson.get('title','')!r}: {e}")
-            continue
-        if not moves:
-            continue
+        moves = []
+        if text:
+            tally["chapters"] += 1
+            try:
+                moves = tm.from_text(text)
+            except Exception as e:
+                logger.warning(f"[HIST] mining failed for "
+                               f"{lesson.get('title','')!r}: {e}")
+                moves = []
 
+        # NO `continue` HERE, AND THAT IS THE POINT. This used to skip the
+        # whole lesson when the book yielded no moves — which, measured on a
+        # real narrative survey, is every lesson. The concepts were therefore
+        # never reached, so the archive fallback below could never have fired
+        # and the domain's central move was unreachable on any real book.
         for concept in (lesson.get("concepts") or []):
             kind = concept.get("concept_kind") or UNKNOWN
             if kind == FACT:
@@ -147,6 +215,15 @@ def attach_to_course(course, book, status_callback=None):
                 continue
 
             move = _best_for(concept, moves)
+            from_archive = False
+            if not move:
+                # The book had nothing for this concept. Ask the archive for a
+                # primary document instead — see `_document_move`.
+                move = _document_move(concept, documents_fn, doc_budget)
+                if move:
+                    from_archive = True
+                    doc_budget -= 1
+                    tally["documents"] += 1
             if not move:
                 tally["skipped"] += 1
                 continue
@@ -170,12 +247,19 @@ def attach_to_course(course, book, status_callback=None):
                      "second": (m.get("second") or "")[:900]}
                     for m in alts],
             }
+            # Provenance for a document the learner may want to read whole.
+            if move.get("source_url"):
+                concept["teaching_pair"]["source_url"] = move["source_url"]
             tally["moves"] += 1
             if move["kind"] == tm.HISTORIOGRAPHY:
                 tally["debates"] += 1
             elif move["kind"] in (tm.SOURCE_CHECK, tm.CORROBORATE):
                 tally["sources"] += 1
-            moves = [m for m in moves if m is not move]
+            # Only book-mined moves are consumed from the pool. An archive
+            # document was never in it, and removing by identity would silently
+            # drop nothing while reading as if it had.
+            if not from_archive:
+                moves = [m for m in moves if m is not move]
 
         if status_callback and i % 5 == 0:
             try:
@@ -185,5 +269,6 @@ def attach_to_course(course, book, status_callback=None):
 
     logger.info(f"[HIST] attached {tally['moves']} move(s): "
                 f"{tally['debates']} debate(s), {tally['sources']} source(s), "
+                f"{tally['documents']} from the archive, "
                 f"skipped {tally['skipped']}")
     return tally

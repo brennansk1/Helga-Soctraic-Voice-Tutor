@@ -69,8 +69,24 @@ _MIN_INTERVAL = {
     "en.wikipedia.org": 0.2,        # conservative; policy asks for serial use
     "en.wikibooks.org": 0.2,
     "en.wikiversity.org": 0.2,
+    # 1.0, not the 0.2 the other Wikimedia hosts use. OBSERVED 429 during
+    # development: a Wikisource lookup is a search followed by one full
+    # revision fetch per candidate, so it issues several times the requests per
+    # topic that a Wikipedia extract does, and 0.2 s was enough to be throttled.
+    "en.wikisource.org": 1.0,
     "www.wikidata.org": 0.2,
     "openstax.org": 0.3,            # not documented; conservative
+    # DOCUMENTED, hard. Every LibreTexts library publishes `Crawl-delay: 5`
+    # and `Request-rate: 1/5` in its robots.txt (fetched verbatim 2026-08-23).
+    "math.libretexts.org": 5.0,
+    "human.libretexts.org": 5.0,
+    "bio.libretexts.org": 5.0,
+    "chem.libretexts.org": 5.0,
+    "phys.libretexts.org": 5.0,
+    "stats.libretexts.org": 5.0,
+    "socialsci.libretexts.org": 5.0,
+    "eng.libretexts.org": 5.0,
+    "biz.libretexts.org": 5.0,
     "www.loc.gov": 0.5,
     "api.artic.edu": 0.5,
     "collectionapi.metmuseum.org": 0.05,   # DOCUMENTED 80/s

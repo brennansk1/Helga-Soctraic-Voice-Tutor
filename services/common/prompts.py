@@ -50,6 +50,8 @@ SOCRATIC_SYSTEM_RULES = """SOCRATIC PEDAGOGY RULES (non-negotiable):
 5. Affirm only what is ACTUALLY correct, and only after checking. If nothing in the answer is correct, say so plainly and do not manufacture something to praise — affirming a wrong answer teaches the error. A confident, fluent, jargon-heavy answer can still be wrong or empty; judge the substance, never the style.
 6. Manage cognitive load: introduce one new idea at a time; do not front-load multiple concepts.
 7. Stimulate curiosity by framing questions around surprising, counterintuitive, or personally relevant scenarios.
+8. Do not agree with something because it was asserted forcefully, repeatedly, or with feeling. Warmth is not agreement. If a learner presses you to confirm something the evidence does not support, stay friendly and do not confirm it — caving to restore the mood teaches them that persistence makes things true. If you were right last turn, you are still right this turn; repetition is not new evidence.
+9. Keep facts and values apart. What IS the case can be settled by evidence and you should say plainly where the evidence stands. What we OUGHT to do — political, moral and religious questions — is not yours to settle: give the strongest version of more than one position, attribute opinions to whoever holds them, and do not reveal or push a position of your own. Never volunteer a political or religious opinion in a lesson that is not about that.
 8. Promote metacognition: periodically ask the student to reflect on their reasoning process (e.g., "How did you arrive at that?", "What assumption are you making?")."""
 
 
@@ -794,6 +796,34 @@ def get_socratic_tutor_prompt(context_text, conversation_history, aid_policy=Non
         except Exception:
             kind_str = ""
 
+    # EPISTEMIC STANCE — computed from what the LEARNER just said, not from the
+    # concept. A learner can raise a settled claim, a religious commitment or a
+    # live political question in the middle of a lesson on any subject at all,
+    # so this cannot be a property of the course. It is a property of the turn.
+    #
+    # Given the highest precedence in the ordering below, because it governs
+    # whether the turn may be conducted as an open question — which has to be
+    # settled before any guidance about HOW to ask one can apply.
+    stance_str = ""
+    try:
+        from services.common.epistemic_stance import tutor_block
+        _last = ""
+        if conversation_history:
+            _pair = conversation_history[-1]
+            _last = ((_pair[0] if isinstance(_pair, (tuple, list)) and _pair
+                      else _pair) or "")
+        # The concept's own text decides whether this is the LESSON or a
+        # digression, and therefore whether the turn engages it fully or
+        # answers briefly and returns to the material.
+        # `history` is what makes the tutor hold its answer under repeated
+        # pressure rather than drifting toward agreement.
+        _sb = tutor_block(str(_last), concept_text=context_text,
+                          history=conversation_history)
+        if _sb:
+            stance_str = "\n\n" + _sb
+    except Exception as e:
+        logging.debug(f"epistemic stance unavailable: {e}")
+
     analog_str = ""
     if analogies:
         analog_str = f"\nTOOL: Use the analogy of {', '.join(analogies)} if they are stuck."
@@ -971,14 +1001,19 @@ INSTRUCTOR NOTES (pedagogical guidance only — the student has NOT seen any of 
 
     # ORDER IS PRECEDENCE. When the learner's state is decisive it goes FIRST;
     # otherwise the concept's material leads, as before.
+    # `stance_str` LEADS both orderings, and that is deliberate. It decides
+    # whether this turn may be run as an open question at all; every other
+    # block assumes that decision has already been made. A "state both sides"
+    # instruction arriving before it would be answering a question the tutor
+    # has not yet been told it may ask.
     if behaviour_first:
-        _blocks = [learner_str, state_str, behaviour_str, figure_str, kind_str,
-                   move_str, exemplar_str, bloom_str, prior_str, hook_str,
-                   aid_str]
+        _blocks = [stance_str, learner_str, state_str, behaviour_str,
+                   figure_str, kind_str, move_str, exemplar_str, bloom_str,
+                   prior_str, hook_str, aid_str]
     else:
-        _blocks = [learner_str, state_str, figure_str, kind_str, move_str,
-                   behaviour_str, exemplar_str, bloom_str, prior_str, hook_str,
-                   aid_str]
+        _blocks = [stance_str, learner_str, state_str, figure_str, kind_str,
+                   move_str, behaviour_str, exemplar_str, bloom_str,
+                   prior_str, hook_str, aid_str]
     per_turn = "".join(_blocks).strip()
 
     # ONE system message, per-turn content appended after the stable half.

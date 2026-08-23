@@ -19,7 +19,11 @@ bands here would let the model produce a lopsided course and call it faithful
 to the subject. So this domain declines the override — which is the registry
 contract working: `SHAPE` is optional, and absence means the shared default.
 """
-from services.domains.mathematics.concept_kind import (  # noqa: F401
+import logging
+
+logger = logging.getLogger(__name__)
+
+from services.domains.mathematics.concept_kind import (  # noqa: F401,E402
     classify, rank, guidance, prompt_line,
     DEFINITION, NOTATION, THEOREM, PROOF, PROCEDURE, REPRESENTATION,
     APPLICATION, ESTIMATION, MISCONCEPTION, UNKNOWN, AIDED_KINDS_ORDER,
@@ -62,23 +66,61 @@ KEYWORDS = (
 )
 
 
-def source_for(subject):
+def source_for(subject, doc_resolver=None, **_):
     """Where this mathematics subject's material should come from.
 
-    Returns (kind, titles, meta):
+    Returns `(kind, pages, meta)` — the registry's optional source hook, in the
+    shape `book_skeleton` already consumes from the computer-science domain.
 
-      "openstax"   -> OpenStax publishes a book at the right level. `titles`
-                      are the candidates, best first. The CONTENT must come
-                      from a local copy: OpenStax `robots.txt` disallows
-                      /apps/archive and /contents, so the book is not crawled.
-      "researched" -> OpenStax has no book at the right level. Named
-                      explicitly rather than silently substituting a
-                      wrong-level one: the generic relevance matcher answers
-                      "linear algebra" with *Algebra 1*, a high-school text for
-                      a university subject, and a course built from that is
-                      wrong in a way no structural check would catch.
+      "TEXTBOOK"   -> a LibreTexts book was found and its pages are returned.
+      "researched" -> no edited book at the right level. Named explicitly
+                      rather than silently substituting a wrong-level one: the
+                      generic relevance matcher answers "linear algebra" with
+                      *Algebra 1*, a high-school text for a university subject,
+                      and a course built from that is wrong in a way no
+                      structural check would catch.
+
+    WHY THIS CHANGED
+    ----------------
+    It used to return `("openstax", titles, {"content": "local copy
+    required"})` — the right book, NAMED but unreadable, because OpenStax
+    `robots.txt` disallows `/contents` and `/apps/archive` for every agent.
+    Nothing downstream could act on a title, so `worked_examples` fell through
+    to `lesson["source_text"]`, a key nothing in production ever wrote, and the
+    whole mining layer sat behind a source that could not arrive.
+
+    LibreTexts republishes the same edited textbooks — Calculus (OpenStax),
+    Precalculus 2e, Abstract Algebra (Judson), Trench's Differential Equations
+    — on a host whose robots.txt permits reading content pages. So the OpenStax
+    titles are still what this domain WANTS; they are now also reachable.
+
+    TWO SIGNATURE BUGS FIXED HERE
+    -----------------------------
+    `book_skeleton` calls this as `source_for(subject, doc_resolver=...)`. The
+    old signature took `subject` only, so the call raised TypeError into that
+    site's `except Exception`, was logged as "domain source lookup failed", and
+    the domain silently supplied nothing. `**_` keeps that from recurring if
+    the caller grows another keyword.
     """
+    from services.research import libretexts as lt
+    try:
+        # NOT hardcoded to "math". LibreTexts keeps statistics in its own
+        # library, and forcing `lib="math"` answered "statistics" with *Math
+        # For Liberal Art Students*. This domain still CLAIMS the subject; the
+        # library follows the subject.
+        lib = lt.library_for(subject) or "math"
+        pages, meta = lt.pages_for(subject, lib=lib)
+    except Exception as e:
+        logger.warning(f"[MATHS] LibreTexts lookup failed for {subject!r}: {e}")
+        pages, meta = [], {}
+    if pages:
+        # The OpenStax titles this domain would have named anyway, recorded so
+        # provenance still shows what the ideal source was.
+        meta = dict(meta, preferred_titles=list(book_for(subject) or ()))
+        return "TEXTBOOK", pages, meta
     titles = book_for(subject)
-    if titles:
-        return "openstax", list(titles), {"content": "local copy required"}
-    return "researched", [], {"reason": "no OpenStax book at this level"}
+    return "researched", [], {
+        "reason": ("no readable edited book found"
+                   if titles else "no book at this level"),
+        "preferred_titles": list(titles or ()),
+    }

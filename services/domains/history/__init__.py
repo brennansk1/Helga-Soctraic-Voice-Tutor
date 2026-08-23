@@ -26,7 +26,11 @@ scores no better than one that settles everything, which is why
 live — a hedge ("some historians argue") appears just as readily in front of a
 settled question and is not evidence of anything.
 """
-from services.domains.history.concept_kind import (  # noqa: F401
+import logging
+
+logger = logging.getLogger(__name__)
+
+from services.domains.history.concept_kind import (  # noqa: F401,E402
     classify, rank, guidance, prompt_line, NEVER_QUIZ,
     FACT, CHRONOLOGY, CONTESTED, CAUSATION, SOURCE, CONTEXT, SIGNIFICANCE,
     CONTINUITY, MISCONCEPTION, UNKNOWN, AIDED_KINDS_ORDER,
@@ -61,3 +65,52 @@ KEYWORDS = (
     "world war", "civil war", "cold war", "colonial", "reformation",
     "antiquity", "archaeology", "dynasty", "monarchy", "crusades",
 )
+
+
+def source_for(subject, doc_resolver=None, **_):
+    """Where this history subject's material should come from.
+
+    Returns `(kind, pages, meta)` — the registry's optional source hook, in the
+    shape `book_skeleton` already consumes from the other two domains.
+
+    WHY THIS EXISTS AT ALL
+    ----------------------
+    It did not, and that was the defect. `source_mining.attach_to_course`
+    reads `lesson["book_chapter"]` or `lesson["source_text"]` and attaches
+    nothing when both are absent — and with no `source_for`, this domain was
+    never asked where a book might come from, so on any course not built from
+    an uploaded file both were always absent. Every mined source extract and
+    every historiographical debate this module can produce was unreachable
+    except by upload.
+
+    WHY LIBRETEXTS
+    --------------
+    Its History shelf carries edited university survey texts — U.S. History
+    (American YAWP, 339 pages), World History I and II (OpenStax), Western
+    Civilization (Brooks) — on a host whose robots.txt permits reading content
+    pages. Narrative history of that kind is what `historians_in_text` needs:
+    it looks for a NAMED historian taking a position, and a survey text
+    attributes its interpretations where an encyclopaedia summary does not.
+
+    WHAT THIS DOES NOT SOLVE
+    ------------------------
+    `SOURCE_CHECK` wants primary documents WITH provenance and refuses an
+    extract that has none. A survey textbook quotes primary sources but does
+    not reliably print their attribution in a form `_PROVENANCE` can read.
+    Wikisource carries the documents themselves with author and date, and
+    wiring it is the obvious next step — deliberately NOT claimed here,
+    because it is not built.
+    """
+    from services.research import libretexts as lt
+    try:
+        # `shelf="History"` matters: the humanities library holds Art,
+        # Literature and Philosophy on the same shelf tree, and unconstrained
+        # this domain's own subjects selected art books — "US History"
+        # returned *Art History II (Lumen)*.
+        pages, meta = lt.pages_for(subject, lib="human", shelf="History")
+    except Exception as e:
+        logger.warning(f"[HIST] LibreTexts lookup failed for {subject!r}: {e}")
+        pages, meta = [], {}
+    if pages:
+        return "TEXTBOOK", pages, meta
+    return "researched", [], {"reason": "no readable edited history book found"}

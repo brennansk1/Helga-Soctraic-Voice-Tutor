@@ -1179,6 +1179,33 @@ class SkeletonBuilder:
         Now writes to JSON structure instead of KuzuDB.
         Protected by _build_lock to prevent concurrent course builds.
         """
+        # EPISTEMIC GATE, before anything is written.
+        #
+        # Two outcomes, and the distinction is the whole design. A REFUSAL
+        # stops the build and says why — a very short list, about operational
+        # capability to hurt people, not about ideas. Everything else — a
+        # fringe claim, a partisan title, a religious question — is REFRAMED
+        # and still built, because a course EXAMINING the flat-earth argument
+        # teaches more physics than a refusal ever could, and refusing hands a
+        # believer the best evidence they could ask for that the answer cannot
+        # survive being given.
+        self.epistemic_frame = ""
+        self.epistemic_stance = "ORDINARY"
+        try:
+            from services.common.epistemic_stance import course_frame, REFUSE
+            _stance, _instr = course_frame(topic)
+            if _stance == REFUSE:
+                logger.warning(f"[EPISTEMIC] refused {topic!r}: {_instr}")
+                if self.status_callback:
+                    self.status_callback(f"ERROR: {_instr}")
+                return None
+            self.epistemic_stance = _stance
+            self.epistemic_frame = _instr or ""
+            if _instr:
+                logger.info(f"[EPISTEMIC] {topic!r} framed as {_stance}")
+        except Exception as e:                   # pragma: no cover - defensive
+            logger.warning(f"[EPISTEMIC] stance check failed: {e}")
+
         # Durable record so the UI survives navigation and can lock itself.
         # Best-effort throughout: recording progress must never break a build.
         try:
@@ -1325,8 +1352,14 @@ class SkeletonBuilder:
         self._evidence_block = _syllabus_evidence_block
 
         # Structured prompt with explicit progression schedule
+        # THE FRAME LEADS. A course whose topic is a settled-against claim or a
+        # partisan proposition has to be shaped as an examination BEFORE the
+        # module plan exists — module titles are where "Why X is true" becomes
+        # a curriculum, and no later pass can unpick that.
+        _frame = getattr(self, "epistemic_frame", "") or ""
         prompt = (
-            f"Topic: {topic}\n"
+            (f"{_frame}\n\n{'=' * 60}\n\n" if _frame else "")
+            + f"Topic: {topic}\n"
             f"Scope: {self.scope}/5 ({cp['scope_label']} — {cp['scope_desc']})\n"
             f"Mastery Target: {self.mastery}/5 ({cp['mastery_label']}) — student wants to reach Bloom level {bloom_ceiling} ({bloom_labels.get(bloom_ceiling, 'Apply')})\n"
             f"Student Background: {self.starting_from}/5 ({cp['starting_label']}) — starting at Bloom level {bloom_floor} ({bloom_labels.get(bloom_floor, 'Remember')})\n"
