@@ -224,10 +224,12 @@ class TurnState:
             head.append(f"  They have now failed this point {self.misses} "
                         f"times in a row. CHANGE YOUR APPROACH — asking it "
                         f"again in different words has already failed twice. "
-                        f"Work the answer through for them, and if a figure "
-                        f"was requested this turn make that figure carry the "
-                        f"worked answer rather than skipping it. Then ask "
-                        f"something different about it.")
+                        f"Drop the difficulty sharply: give them a concrete "
+                        f"choice between two options, or a much smaller "
+                        f"question they can answer in a few words. Do NOT "
+                        f"simply hand over the full answer — that is the "
+                        f"other way to fail this. If a figure was requested "
+                        f"this turn, use it to carry the easier question.")
 
         lines = ["WHAT THIS STUDENT HAS DEMONSTRATED "
                  "(from graded answers — this is fact, not your impression):"]

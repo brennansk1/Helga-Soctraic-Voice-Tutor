@@ -263,5 +263,24 @@ def test_the_stuck_instruction_does_not_cancel_a_requested_figure():
     s.record("still dunno", _graded(1))
     out = s.render()
     assert "CHANGE YOUR APPROACH" in out
-    assert "make that figure carry" in out
-    assert "skipping it" in out
+    assert "carry the easier question" in out, (
+        "the instruction must route through a requested figure, not around it")
+
+
+def test_the_stuck_instruction_scaffolds_down_rather_than_telling():
+    """The judge penalises BOTH sides of this, and the first version of the
+    instruction landed on the wrong one.
+
+    Its rationale for one uncovered failure: "The tutor provided the answer
+    directly after the student said 'idk' instead of using a guiding question
+    to help the student derive the meaning." So re-asking is a failure AND
+    handing over the answer is a failure; the move that works is dropping the
+    difficulty — a concrete choice, or a much smaller question.
+    """
+    s = TurnState()
+    s.ask("Why must it be non-zero?")
+    s.record("dunno", _graded(1))
+    s.record("still dunno", _graded(1))
+    out = s.render()
+    assert "concrete choice between two options" in out
+    assert "Do NOT simply hand over the full answer" in out
