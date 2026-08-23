@@ -342,6 +342,27 @@ asked for ("provided the answer directly … instead of using a guiding
 question"). It scored 2.47 against 2.53, well inside the floor. It is kept on
 principle, not on evidence.
 
+### Ten runs: the final picture
+
+    A=2.00 B=2.13 C=2.40 D=2.00 | E=2.53 F=2.53 G=2.47 H=2.27 I=2.20 J=2.47
+
+    before the plumbing fix (A-D)   mean 2.13
+    after (E-J, six runs)           mean 2.41
+
+**One gain, +0.28, from a plumbing fix.** Five subsequent changes, all
+well-reasoned, all measuring as noise.
+
+**A decline that was not there.** E through I read 2.53, 2.53, 2.47, 2.27,
+2.20 — monotonically non-increasing over five runs, which looks like
+cumulative damage from the changes stacked on top of the fix. A revert of all
+three was written before it was tested. J, on the identical configuration as I,
+came back 2.47 and dissolved the pattern.
+
+That revert would have removed three principled changes on the strength of a
+trend that did not exist, and would have felt entirely justified. The only
+thing that prevented it was replicating before acting — the same rule that made
+E and F believable in the first place.
+
 ### Where it plateaus
 
     A=2.00 B=2.13 C=2.40 D=2.00 | E=2.53 F=2.53 G=2.47 H=2.27
