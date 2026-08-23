@@ -261,11 +261,63 @@ instructs the tutor to withhold the outcome; the tutor lectures anyway. Nothing
 in §3 predicted that, and no amount of better mining fixes it — the pairs were
 present and were not used as intended.
 
-## 7. Not measured
+## 7. The ablation, which does not flatter this module
 
-* Whether the domain layer HELPED. The ablation arm
-  (`HELGA_BENCH_NO_DOMAIN=1`) is the only thing that answers it, and it must be
-  run under this same fingerprint.
+`HELGA_BENCH_NO_DOMAIN=1` withholds the concept kind and nothing else, same
+fingerprint, same topics, same judge.
+
+    composite   WITH 3.164   WITHOUT 3.181   delta -0.017   noise floor 0.376
+
+**The domain layer did not improve the composite.** The difference is a
+twentieth of the noise floor — not a small gain, not a small loss, nothing.
+
+Per dimension, against the floors re-derived from four runs:
+
+| dimension | with | without | Δ | floor | |
+|---|---|---|---|---|---|
+| accuracy | 3.73 | 4.60 | **−0.87** | 0.73 | exceeds |
+| misconception_handling | 4.71 | 3.88 | **+0.83** | 0.75 | exceeds |
+| socratic | 2.03 | 2.53 | **−0.50** | 0.47 | exceeds |
+| visual_integration | 2.87 | 2.33 | +0.54 | 1.33 | noise |
+| adaptation | 2.10 | 2.27 | −0.17 | 0.40 | noise |
+| honest_telling | 3.80 | 2.60 | +1.20 | — | no floor |
+| mechanism_over_recall | 3.33 | 2.80 | +0.53 | — | no floor |
+| progression | 2.50 | 3.00 | −0.50 | — | no floor |
+
+Read plainly: the layer appears to **help** misconception handling and its own
+`mechanism_over_recall`, and to **hurt** accuracy and socratic questioning. The
+gains and the losses roughly cancel, which is why the composite does not move.
+
+### How much of this to believe
+
+**One run per arm, n=15 each.** The floors above came from four runs; clearing
+one on a single pair of runs is suggestive, not established. This project has
+already retracted three single-run over-reads — run C's "floor-beating gains",
+the `visual_policy` "regression", and a "monotonic decline" that dissolved when
+a fourth run landed. Detecting effects below 0.4 needs roughly n=60 per arm.
+
+Three dimensions have **no recorded floor at all** (`honest_telling`,
+`mechanism_over_recall`, `progression`), so the +1.20 on honest_telling is the
+largest number in the table and the least interpretable one.
+
+### The finding worth acting on
+
+`accuracy` falling 0.87 with the domain layer present is the result to chase,
+because it is the one that would make the module actively harmful. A plausible
+mechanism — untested — is crowding: the science block is the largest any domain
+emits (standing rule, then a Johnstone level line, then per-kind guidance, then
+POE material), and this codebase has already measured a 600-character cap
+truncating a behaviour instruction into silence. If the concept's own material
+is being displaced, accuracy is exactly what would fall.
+
+That is a hypothesis. It has not been tested, and it should be before this
+module is trusted in front of learners.
+
+## 8. Not measured
+
+* The crowding hypothesis above.
+* Floors for `honest_telling`, `mechanism_over_recall` and `progression`.
+* Anything at n>15 per arm.
 * **Chemistry yield** is one pair per six pages. Unexplained.
 * **The `LEVEL_BRIDGE` move** is defined and has a prompt block, but nothing
   mines one yet — it is reachable only if a caller constructs it by hand.
