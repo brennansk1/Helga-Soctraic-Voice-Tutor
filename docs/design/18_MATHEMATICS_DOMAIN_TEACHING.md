@@ -342,6 +342,35 @@ asked for ("provided the answer directly … instead of using a guiding
 question"). It scored 2.47 against 2.53, well inside the floor. It is kept on
 principle, not on evidence.
 
+### Where it plateaus
+
+    A=2.00 B=2.13 C=2.40 D=2.00 | E=2.53 F=2.53 G=2.47 H=2.27
+
+Four runs after the mechanism fix, mean 2.45. Two further changes were made on
+top of it, both well-reasoned and both **neutral**:
+
+| change | run | result |
+|---|---|---|
+| scaffold down rather than hand over the answer | G | 2.47 vs 2.53 |
+| make BLUFFING decisive, as GIVING_UP already was | H | 2.27 vs 2.51 |
+
+The second was a real defect — the bluffing instruction sat at position 6534
+while the mined material sat at 5173 opening "THIS TURN OVERRIDES THE GENERAL
+GUIDANCE ABOVE", so the queued example won and the instruction to challenge
+lost. Identical to the stuck-learner defect already fixed. The judge names its
+consequence three times. And its target profile moved 1.11 → 1.33, which is
+nothing, while unrelated profiles swung by more than a point in both
+directions at n=3 each.
+
+**Both are kept on principle and labelled as such.** Neither earned its keep by
+measurement, and saying so is the point: an instruction that is demonstrably in
+the wrong place is worth moving whether or not a ±0.40 instrument can see it,
+but that is a different claim from "this improved the tutor".
+
+**The honest summary of the whole effort: one +0.40 gain, from plumbing, and
+nothing since.** Everything invented measured as noise; the only thing that
+moved the number was finding an instruction that never reached the model.
+
 ### What is left is a different class of problem
 
 The remaining low scorers are led by:
