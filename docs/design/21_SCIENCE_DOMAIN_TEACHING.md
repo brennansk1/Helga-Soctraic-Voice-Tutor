@@ -541,3 +541,46 @@ In MAGNITUDE, no: 0.67 against maths's 2.25. Science's layer does its job, and
 does it about a third as strongly as the best one here.
 
 The composite does not move for either of them.
+
+### Correcting "a third as strongly"
+
+Section 12 compared science's +0.67 against mathematics' 2.25 and concluded the
+layer works "about a third as strongly". **That comparison is invalid**, and it
+is the same error this document spent four sections correcting elsewhere:
+comparing raw magnitudes across dimensions with different variances.
+
+`--noise-floor` over the three A runs gives science's own floors, in the same
+units as `DIMENSION_FLOORS`:
+
+    composite floor: 0.354
+    "accuracy": 1.27,   <-- cannot support a 1-point claim
+    "honest_telling": 1.20,   <-- cannot support a 1-point claim
+    "misconception_handling": 0.90,
+    "mechanism_over_recall": 0.27,
+
+(The tool independently marks `accuracy` and `honest_telling` as unable to
+support a 1-point claim — which is exactly what this document tried to make of
+each of them before withdrawing both.)
+
+Expressed properly, in multiples of each dimension's own noise:
+
+| domain | dimension moved | Δ | floor | × floor |
+|---|---|---|---|---|
+| mathematics | misconception_handling | 2.25 | 0.75 | 3.0× |
+| **science** | mechanism_over_recall | 0.67 | 0.27 | **2.5×** |
+
+2.5× against 3.0× — not a third as strong, about five-sixths as strong.
+
+And the comparison set matters: the mathematics ablation is on record in this
+project as **the only floor-beating result** among the domains tested, meaning
+the computer-science and history layers showed no effect clearing their floors
+at all. That is a recorded claim from earlier work rather than something
+re-measured here, and it should be re-verified before being leaned on.
+
+If it holds, the ranking by "does this layer demonstrably do anything" is:
+
+    mathematics 3.0x  >  science 2.5x  >  computer science, history (no effect)
+
+Science is second of four, above two domains whose layers show nothing
+measurable. On the standard that actually matters for a domain module — does it
+move its own dimension, clear of that dimension's noise — this one qualifies.
