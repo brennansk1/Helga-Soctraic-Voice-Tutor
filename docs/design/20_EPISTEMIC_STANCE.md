@@ -258,6 +258,29 @@ must beat the nearest legitimate one. Final measurement:
 | paraphrased fringe claims caught | **7 / 7** |
 | legitimate questions flagged | **0 / 14** |
 
+### What it costs
+
+| | |
+|---|---|
+| ordinary turn (lexical gate rejects) | **0.014 ms** |
+| loaded-topic turn, steady state | **50 ms** |
+| first loaded-topic turn in a process | **1.5 s** |
+
+The gate is what makes this affordable: a maths lesson never reaches the
+network at all, and `test_lexical_gate_skips_the_network_for_ordinary_text`
+asserts the embedder is not even called.
+
+The first-call figure was **9.4 s** before the exemplars were disk-cached —
+paid by whichever learner first mentioned a loaded topic, as a nine-second
+pause mid-lesson. The exemplars are static text; paying to embed them on every
+process start was pure waste. What remains is Ollama warming the embedding
+model, which is shared with the rest of the system.
+
+A biology course on evolution will trip the gate on most turns and pay the
+50 ms. Against a ~47 s turn that is roughly a tenth of a percent, and the
+contrastive layer means those turns get no spurious blocks — measured above as
+0/14.
+
 ---
 
 ## 10. Limits — stated plainly

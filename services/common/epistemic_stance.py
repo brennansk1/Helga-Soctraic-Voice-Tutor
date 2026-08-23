@@ -872,10 +872,43 @@ def _cosine(a, b):
     return (dot / (na * nb)) if na and nb else 0.0
 
 
+#: Bumped whenever EXEMPLARS or NEUTRAL_EXEMPLARS change, so a stale disk
+#: cache is never mixed with new phrasings.
+_EXEMPLAR_VERSION = 1
+
+
+def _disk_key():
+    return f"stance:exemplars:v{_EXEMPLAR_VERSION}:{os.getenv('EMBED_MODEL', 'bge-m3')}"
+
+
 def _exemplar_vectors(embed_fn):
-    """Embed the exemplars once per process."""
+    """Embed the exemplars once — per process, and then once per machine.
+
+    MEASURED: the first call cost 9.42 s, against 50 ms steady state. The
+    exemplars are static text, so paying that on every process start is pure
+    waste, and it landed on whichever learner first mentioned a loaded topic —
+    a 9-second pause in the middle of a lesson, on a machine where turn latency
+    is already the acute defect.
+
+    Disk-cached, so it is paid once. The remaining cold cost is Ollama loading
+    the embedding model, which is shared with the rest of the system.
+    """
     if _exemplar_cache:
         return _exemplar_cache
+
+    key = _disk_key()
+    try:
+        import os as _os
+        from diskcache import Cache
+        _dc = Cache(_os.environ.get("HELGA_CACHE_DIR", "/tmp/helga-doc-cache"))
+        hit = _dc.get(key)
+        if hit:
+            _exemplar_cache.update(hit)
+            return _exemplar_cache
+    except Exception as e:
+        logger.debug(f"[STANCE] exemplar cache unavailable: {e}")
+        _dc = None
+
     flat, index = [], []
     for key, phrasings in EXEMPLARS.items():
         for p in phrasings:
@@ -885,8 +918,13 @@ def _exemplar_vectors(embed_fn):
         flat.append(p)
         index.append(_NEUTRAL)
     vectors = embed_fn(flat)
-    for key, vec in zip(index, vectors):
-        _exemplar_cache.setdefault(key, []).append(vec)
+    for k, vec in zip(index, vectors):
+        _exemplar_cache.setdefault(k, []).append(vec)
+    if _dc is not None:
+        try:
+            _dc.set(key, dict(_exemplar_cache))
+        except Exception:
+            pass
     return _exemplar_cache
 
 
