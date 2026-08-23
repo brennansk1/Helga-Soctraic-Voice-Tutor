@@ -123,7 +123,17 @@ GUIDANCE = {
         "is a quiz with the answer withheld, and it teaches them that history "
         "is trivia. Once it is stated, the whole turn is available for the "
         "part that DOES carry reasoning: why this fact is worth knowing, what "
-        "it lets you place, or what people commonly confuse it with."),
+        "it lets you place, or what people commonly confuse it with.\n"
+        "IF THE LEARNER STATES IT WRONGLY, CORRECT THEM PLAINLY AND AT ONCE. "
+        "Measured failure on this exact concept: a student said the Battle of "
+        "Hastings was 1065 and the tutor let it stand. A wrong date left "
+        "uncorrected is the worst outcome available here — worse than never "
+        "raising it — because the learner leaves more confident and wrong.\n"
+        "AND SAY THAT IT IS SETTLED. This is not a matter historians dispute, "
+        "and saying so briefly is part of teaching it honestly: a learner who "
+        "cannot tell which parts of history are settled and which are argued "
+        "over has not understood the subject. Do not manufacture a debate "
+        "about a date."),
 
     CHRONOLOGY: (
         "This concept is an ORDERED SEQUENCE, and the order is the content — "

@@ -31,6 +31,9 @@ from services.domains.history.concept_kind import (  # noqa: F401
     FACT, CHRONOLOGY, CONTESTED, CAUSATION, SOURCE, CONTEXT, SIGNIFICANCE,
     CONTINUITY, MISCONCEPTION, UNKNOWN, AIDED_KINDS_ORDER,
 )
+from services.domains.history.concept_classifier import (  # noqa: F401
+    classify_course as classify_concepts,
+)
 from services.domains.history.source_mining import (  # noqa: F401
     attach_to_course,
 )

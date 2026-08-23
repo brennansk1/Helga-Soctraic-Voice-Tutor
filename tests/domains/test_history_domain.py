@@ -186,3 +186,37 @@ def test_mining_junk_never_raises():
 def test_prompt_block_of_none_is_empty():
     assert tm.prompt_block(None) == ""
     assert tm.prompt_block("nonsense") == ""
+
+
+def test_the_FACT_guidance_requires_correcting_a_misstated_fact():
+    """Measured on the history benchmark, Hastings topic: a student said the
+    battle was 1065 and the tutor let it stand.
+
+    A wrong date left uncorrected is the worst outcome available on a FACT
+    concept — worse than never raising it — because the learner leaves more
+    confident and wrong. The original guidance said only "TELL IT" and said
+    nothing about what to do when the learner supplies a wrong version.
+    """
+    text = hk.guidance(hk.FACT)
+    assert "CORRECT THEM PLAINLY AND AT ONCE" in text
+
+
+def test_the_FACT_guidance_says_the_fact_is_settled():
+    """`contested_interpretation` penalises inventing controversy as hard as
+    flattening it, and it is scored on FACT topics too — the Hastings topic
+    averaged 1.80 of 5.
+
+    A learner who cannot tell which parts of history are settled and which are
+    argued over has not understood the subject, so saying briefly that a date
+    is not in dispute is part of teaching it honestly.
+    """
+    text = hk.guidance(hk.FACT)
+    assert "SAY THAT IT IS SETTLED" in text
+    assert "Do not manufacture a debate" in text
+
+
+def test_the_FACT_guidance_still_forbids_asking():
+    """The additions must not weaken the original constraint."""
+    text = hk.guidance(hk.FACT)
+    assert "TELL IT" in text
+    assert "do not ask the learner to guess" in text.lower()
