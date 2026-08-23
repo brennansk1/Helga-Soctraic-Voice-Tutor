@@ -243,3 +243,25 @@ def test_a_stuck_learner_alone_is_not_an_empty_state():
     s = TurnState()
     s.misses = 2
     assert not s.is_empty()
+
+
+def test_the_stuck_instruction_does_not_cancel_a_requested_figure():
+    """The instruction must not read as "explain in prose instead".
+
+    Kept on PRINCIPLE, not on evidence. One run suggested this line suppressed
+    diagrams — missed figures 20-33% -> 47%, visual_policy down 0.63 past its
+    floor — and the next run on the identical pre-fix config produced 7%, the
+    best of any run. The regression did not exist.
+
+    The wording stays because a worked answer IS a better figure than a
+    paragraph, and an instruction open to the prose reading is worth closing
+    whether or not it has yet done harm.
+    """
+    s = TurnState()
+    s.ask("Why must it be non-zero?")
+    s.record("dunno", _graded(1))
+    s.record("still dunno", _graded(1))
+    out = s.render()
+    assert "CHANGE YOUR APPROACH" in out
+    assert "make that figure carry" in out
+    assert "skipping it" in out

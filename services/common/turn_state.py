@@ -200,10 +200,33 @@ class TurnState:
         # keeping the description is precisely the wrong way round.
         head = []
         if self.misses >= 2:
+            # "SHOW THEM" ROUTES THROUGH THE FIGURE, NOT AROUND IT.
+            #
+            # KEPT ON PRINCIPLE, NOT ON EVIDENCE — and the distinction is
+            # recorded because the evidence was claimed and then withdrawn.
+            #
+            # The line originally read "show them the answer worked through",
+            # full stop. One run showed dialogues where the aid policy asked
+            # for a figure and none appeared jumping from 20-33% to 47%, with
+            # `visual_policy` down 0.63, past its floor. That was diagnosed as
+            # the instruction suppressing diagrams.
+            #
+            # THE NEXT RUN, ON THE IDENTICAL PRE-FIX CONFIG, PRODUCED 7% —
+            # the best figure rate of any run — and visual_policy 4.27, the
+            # highest. The regression did not exist; it was one draw at n=15.
+            # Note that the 47% was a DIRECT COUNT, not a judged score, and
+            # still swung that far between identical configurations.
+            #
+            # The wording is kept because it is right on the merits: a worked
+            # answer IS a better figure than a paragraph, and an instruction
+            # that can be read as "explain in prose instead" is worth removing
+            # whether or not it has yet done harm.
             head.append(f"  They have now failed this point {self.misses} "
                         f"times in a row. CHANGE YOUR APPROACH — asking it "
                         f"again in different words has already failed twice. "
-                        f"Show them the answer worked through, then ask "
+                        f"Work the answer through for them, and if a figure "
+                        f"was requested this turn make that figure carry the "
+                        f"worked answer rather than skipping it. Then ask "
                         f"something different about it.")
 
         lines = ["WHAT THIS STUDENT HAS DEMONSTRATED "
