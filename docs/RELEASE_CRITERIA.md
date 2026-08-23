@@ -108,6 +108,29 @@ Children are not consenting adults and the bar is higher:
 > Reaching 3.5 needs a different model, dialogues longer than four turns, or a
 > different number. It is not reachable at the prompt layer.
 >
+> ## THE 3.5 GATE IS MET BY NO DOMAIN, INCLUDING COMPUTER SCIENCE
+>
+> Measured 2026-08-23 on one instrument, `4faf5407715a9e4d`:
+>
+> | | domain score | adaptation | short of 3.5 by |
+> |---|---|---|---|
+> | **mathematics** (6 runs) | **3.390** | 2.41 | 1.09 |
+> | computer science | 3.096 | **2.67** | 0.83 |
+> | history | 2.993 | 2.13 | 1.37 |
+>
+> Computer science is the module every later domain has been built to match,
+> and it is short of the adaptation gate by 0.83. The gate has never been met
+> by anything in this system.
+>
+> Mathematics scores HIGHER than computer science on the composite, on tests
+> (80 against 42), on module size (1,962 lines against 1,467) and on five of
+> nine dimensions. Its adaptation deficit against CS — 2.41 against 2.67 — is
+> 0.26, inside the 0.40 noise floor.
+>
+> So a requirement of the form "match the CS module" is MET. A requirement of
+> the form "reach 3.5" is not met by CS either, and treating it as a
+> mathematics-specific shortfall misreads where the problem is.
+>
 > ## DECISION 2026-08-22: mathematics ships with the gate unmet
 >
 > **Accepted at ~2.41 against a 3.5 gate, by the owner's decision.** Recorded
