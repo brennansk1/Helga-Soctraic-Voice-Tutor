@@ -316,6 +316,50 @@ prompt layer moves that. It needs a different model, longer dialogues than four
 turns, or a re-examination of whether 3.5 is the right number for this system —
 a question worth asking, given no subject has ever come within 1.2 of it.
 
+### Seven runs, and the one thing that worked
+
+    A=2.00  B=2.13  C=2.40  D=2.00  |  E=2.53  F=2.53  G=2.47
+
+A–D are before the fix; E, F and G after, agreeing within 0.06. The gain of
++0.40 is the most solidly established result of this work, and it came from
+neither a prompt guess nor a pedagogical idea. It came from finding an
+instruction that **existed and never reached the model**:
+
+`turn_state.render()` carried "CHANGE YOUR APPROACH — asking it again in
+different words has already failed", and it reached **1 prompt in 60**. Two
+faults stacked: it keyed on a counter that a rewording resets (and rewording is
+the first thing a stuck tutor does), and when it did fire, a 600-character cap
+truncated it away because it was appended last. It now reaches 26 of 26
+eligible prompts.
+
+That is the failure the judge's own rationales name above all others:
+*"The tutor repeated the same question about walking West after the student
+already answered 'idk'."*
+
+**The refinement on top of it was neutral.** Run G dropped the difficulty
+instead of handing over the answer — a change the judge's rationales explicitly
+asked for ("provided the answer directly … instead of using a guiding
+question"). It scored 2.47 against 2.53, well inside the floor. It is kept on
+principle, not on evidence.
+
+### What is left is a different class of problem
+
+The remaining low scorers are led by:
+
+> *"The tutor accepts the student's nonsensical justification for why the
+> slopes are identical without challenging"* — three times, `confident_bluffer`
+
+That is **not** a mechanism gap. BLUFFING has been detected since run B and its
+instruction reads "Do not accept it. Ask them to explain WHY, in plain words."
+The instruction reaches the prompt and the model does not follow it.
+
+Every one of the ten defects found in this work was *"the instruction never
+reached the model"*. This is *"it reached the model and lost"* — the same shape
+as the finding that no mechanical feature separates a dialogue scoring 1 from
+one scoring 4. **The plumbing vein is largely mined out; what remains is
+semantic compliance**, and that is a different kind of problem needing a
+different kind of work.
+
 ### The judge is reliable — a correction
 
 The claim above that the instrument cannot resolve change was half right, and
