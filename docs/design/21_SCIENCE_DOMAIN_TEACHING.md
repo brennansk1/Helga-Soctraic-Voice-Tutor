@@ -150,6 +150,22 @@ concept with no pair falls back to per-kind guidance, which is a worse turn.
 A concept with a *bad* pair produces a turn that asks a learner to predict a
 definition, which is worse than no turn at all.
 
+### The zero is the book, not the miner
+
+Thermodynamics returning nothing was worth checking rather than assuming.
+Tatum's *Heat and Thermodynamics* yields **3 conditional candidates in 21,712
+characters, and none survives the filters** — because they are not physics:
+
+    "Once we have accepted that heat is but a form of energy, → and the joule
+     will serve for both."
+    "Because of these difficulties, I am choosing not to use the … → and I am
+     hoping that the context will make it clear"
+
+It is a first-person text about notation and pedagogy. The filters rejected
+authorial asides correctly; there was no POE material to find. Some books are
+simply the wrong genre for this move, and the honest response is a course built
+on per-kind guidance rather than a manufactured prediction.
+
 ---
 
 ## 4. Sources
@@ -196,8 +212,7 @@ reaches the tutor through the registry.
 * **Benchmark scores.** Nothing here says a 9B model teaches science better —
   only that the domain detects, mines and emits what it claims to. The maths
   and history modules both looked good at this stage too.
-* **Chemistry and thermodynamics yield.** One pair and zero pairs respectively
-  from six pages. Whether that is the books or the miner is unknown.
+* **Chemistry yield** is one pair per six pages. Unexplained.
 * **The `LEVEL_BRIDGE` move** is defined and has a prompt block, but nothing
   mines one yet — it is reachable only if a caller constructs it by hand.
 * The classifier's LLM path is untested against a real build; only the pattern
