@@ -209,28 +209,57 @@ class TestOpenStaxSource(unittest.TestCase):
         assert archive == "/apps/archive/x"
         assert "live" in books and "old" not in books
 
-    def test_numbering_wrappers_never_become_chapter_titles(self):
-        """Titles arrive as markup; a naive tag strip yields '1 Whole Numbers',
-        and a bare 'Chapter 3' node is a wrapper, not a topic."""
-        tree = {"tree": {"contents": [
-            {"title": '<span class="os-number">1</span><span class="os-text">Whole Numbers</span>'},
-            {"title": "Chapter 3"},
-            {"title": '<span class="os-text">Index</span>'},   # apparatus
-        ]}}
-        with mock.patch.object(ss, "_get_json", return_value=tree):
-            ch = ss._openstax_chapters("/a", "u", "v")
-        assert ch == ["Whole Numbers"], ch
+    # WHAT REPLACED THE ARCHIVE-PARSER TESTS, AND WHY.
+    #
+    # Two tests here used to exercise `_openstax_chapters` stripping
+    # `os-number`/`os-text` markup and descending into Biology's "Unit 2. The
+    # Cell" wrappers. That parser is gone: the JSON it parsed came from
+    # `openstax.org/apps/archive/.../contents/...`, and OpenStax's robots.txt
+    # disallows BOTH `/apps/archive` and `/contents` for the WILDCARD agent.
+    # The tests described the old behaviour accurately; the old behaviour was
+    # a violation on every call.
+    #
+    # The concern they encoded — a chapter list must not carry positional
+    # numbering into concept titles — still holds, and is asserted against the
+    # replacement source in
+    # `tests/research/test_libretexts.py::test_chapters_for_strips_positional_numbers`.
 
-    def test_unit_grouped_books_are_descended_into(self):
-        """Biology's top level is 'Unit 2. The Cell' — a shelf label. Taking it
-        verbatim gave 11 vague headings for a book with ~50 chapters."""
-        unit = lambda n, kids: {
-            "title": '<span class="os-text">Unit %d</span>' % n,
-            "contents": [{"title": '<span class="os-text">%s</span>' % k}
-                         for k in kids]}
-        tree = {"tree": {"contents": [unit(1, ["The Study of Life", "Macromolecules"]),
-                                      unit(2, ["Cell Structure", "Metabolism"])]}}
-        with mock.patch.object(ss, "_get_json", return_value=tree):
-            ch = ss._openstax_chapters("/a", "u", "v")
-        assert ch == ["The Study of Life", "Macromolecules",
-                      "Cell Structure", "Metabolism"], ch
+    def test_openstax_chapters_makes_no_request_to_openstax(self):
+        """The endpoint is disallowed. Nothing may reach it, ever."""
+        called = []
+        with mock.patch.object(ss, "_get_json",
+                               side_effect=lambda *a, **k: called.append(a)):
+            ss._openstax_chapters("/apps/archive/x", "uid", "1",
+                                  title="Calculus Volume 1")
+        assert called == [], "a request was made to the disallowed endpoint"
+
+    def test_openstax_chapters_needs_a_title_to_look_up(self):
+        """The book's NAME is the key now, not its uuid. Without one the
+        lookup cannot be made, and it must return nothing rather than guess."""
+        assert ss._openstax_chapters("/a", "u", "v") == []
+        assert ss._openstax_chapters("/a", "u", "v", title=None) == []
+
+    def test_openstax_chapters_reads_libretexts(self):
+        import services.research.libretexts as lt
+        with mock.patch.object(lt, "chapters_for",
+                               return_value=["Whole Numbers",
+                                             "The Language of Algebra"]):
+            ch = ss._openstax_chapters("/a", "u", "v", title="Prealgebra")
+        assert ch == ["Whole Numbers", "The Language of Algebra"]
+
+    def test_openstax_chapters_survives_a_dead_lookup(self):
+        """A source failure must cost the outline, not the build."""
+        import services.research.libretexts as lt
+        with mock.patch.object(lt, "chapters_for",
+                               side_effect=OSError("network down")):
+            assert ss._openstax_chapters("/a", "u", "v", title="X") == []
+
+    def test_the_disallowed_request_shape_refuses_to_run(self):
+        """Retained deliberately, so the next person who wants chapter data
+        sees that the obvious endpoint was tried and is not permitted."""
+        try:
+            ss._openstax_chapters_DISALLOWED("/a", "u", "v")
+        except RuntimeError as e:
+            assert "robots.txt" in str(e)
+        else:
+            raise AssertionError("the disallowed shape did not refuse")
