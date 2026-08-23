@@ -45,6 +45,14 @@ MIN_ANSWERS = 2
 #: headroom so an ordinary short-but-complete answer does not trip it.
 TERSE_WORDS = 12
 
+#: A grade at or above this counts as getting it right. Defined HERE rather
+#: than imported from `turn_state`: referencing an undefined PASS_GRADE in
+#: `classify` raised NameError, and this module's defensive
+#: `except Exception: return None` swallowed it — every behaviour silently
+#: became "none detected" across 90 dialogues, which reads exactly like a
+#: quiet classifier rather than a broken one.
+PASS_GRADE = 3
+
 #: Mean words at or above which an answer is long enough that saying nothing
 #: with them is meaningful. Set from the measured 63.2-word confident-bluffer
 #: mean, with margin: the benchmark's simulated students are capped at 200
@@ -104,9 +112,29 @@ _INSTRUCTION = {
     HEDGING: ("This learner is reasoning but unsure. They are close. Affirm "
               "the specific part that is right, then ask one question that "
               "resolves the part they are hedging about."),
-    AHEAD: ("This learner has said they already understand and want to move "
-            "on. Believe them. Do not re-check it. Raise the difficulty or "
-            "move to the next idea."),
+    # "DO NOT RE-CHECK IT" WAS REMOVED, DELIBERATELY.
+    #
+    # AHEAD now also fires on DEMONSTRATED mastery — sustained passes at
+    # length — because a learner who is genuinely ahead answers well rather
+    # than announcing it, and the announcement-only rule fired zero times in
+    # 90 dialogues.
+    #
+    # But grades cannot separate "ahead" from "confidently wrong about one
+    # thing while right about the rest": across 90 dialogues the
+    # misconception_holder profile trips this nearly as often as fast_learner
+    # (11 vs 14 on a two-grade window, 9 vs 10 on three, 6 vs 7 on four). No
+    # threshold separates them, because the signal is not in the grades.
+    #
+    # So the instruction must be SAFE UNDER THAT OVERLAP. Telling the tutor
+    # not to re-check would suppress misconception handling — currently this
+    # benchmark's strongest dimension at 5.00 — for a learner who may be
+    # holding one. Raising difficulty is safe; forbidding a check is not.
+    AHEAD: ("This learner is answering correctly and at length. Do not "
+            "re-explain what they have already shown they understand, and do "
+            "not slow down for them. Raise the difficulty or move to the next "
+            "idea. If they have said something that contradicts a known "
+            "misconception for this concept, still address that — being ahead "
+            "on the rest does not make a wrong belief safe to leave."),
 }
 
 
@@ -138,6 +166,32 @@ def classify(answers, grades=None):
             return GIVING_UP
 
         # Asking to move on, and not wrong about it.
+        #
+        # AHEAD FIRES ON AN ANNOUNCEMENT ONLY, AND THAT IS DELIBERATE.
+        #
+        # An audit of 90 real dialogues found AHEAD firing ZERO times, and the
+        # obvious reading was the pattern this file has hit three times: a
+        # detector demanding a marker the target behaviour does not emit.
+        # BLUFFING required the absence of connectives that bluffers use; the
+        # change-approach counter reset on the rewording a stuck tutor reaches
+        # for first.
+        #
+        # So AHEAD was extended to fire on DEMONSTRATED mastery — two
+        # consecutive passes at length. That was wrong, and the existing test
+        # `test_an_ordinary_answer_gets_no_label` caught it: two passing
+        # answers is a learner DOING FINE, not a learner who is ahead, and
+        # telling the tutor to raise the difficulty every time someone answers
+        # correctly is a worse failure than never firing.
+        #
+        # Grades cannot carry this signal at all. Across the same 90 dialogues
+        # the misconception_holder profile tripped the demonstrated rule nearly
+        # as often as fast_learner (11 vs 14 on two grades, 9 vs 10 on three,
+        # 6 vs 7 on four) — being right about most things looks identical to
+        # being ahead.
+        #
+        # Being ahead is a CLAIM THE LEARNER MAKES. A rare block is not
+        # automatically a broken one, which is the correction to the audit
+        # rather than to this code.
         if _MOVE_ON.search(last) and (not grades or grades[-1] >= 3):
             return AHEAD
 
