@@ -72,7 +72,15 @@ _SKIP_PREFIX = ("author:", "portal:", "index:", "page:", "wikisource:",
 _FIELD = re.compile(r"\|\s*(\w+)\s*=\s*([^\n|]*)")
 
 #: Wiki markup that must not reach a learner as if it were the document.
+#:
+#: ORDER MATTERS. The bookkeeping links go FIRST and are DELETED; the ordinary
+#: links are unwrapped afterwards. Unwrapping everything left
+#: "Category:World War I" appended to the Zimmermann Telegram, which a learner
+#: would read as part of the document — the link text of a category link is
+#: filing metadata, not prose.
 _MARKUP = (
+    (re.compile(r"\[\[\s*(?:Category|File|Image|w|wikipedia|s|Author|Portal)\s*:"
+                r"[^\]]*\]\]", re.I), " "),
     (re.compile(r"\{\{[^{}]*\}\}"), " "),
     (re.compile(r"\[\[(?:[^\]|]*\|)?([^\]]*)\]\]"), r"\1"),
     (re.compile(r"'''?"), ""),

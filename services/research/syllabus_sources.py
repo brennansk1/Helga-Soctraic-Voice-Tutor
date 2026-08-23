@@ -424,63 +424,60 @@ def _openstax_catalogue():
             if isinstance(b, dict) and b.get("cnx_id") and b.get("title")}
 
 
-def _openstax_chapters(archive, uid, version, cap=60):
-    """Chapter titles for one book, apparatus removed.
+def _openstax_chapters(archive, uid, version, cap=60, title=None):
+    """Chapter titles for one book.
 
-    Titles arrive as markup — `<span class="os-number">1</span>...<span
-    class="os-text">Whole Numbers</span>` — so stripping tags naively yields
-    "1 Whole Numbers" with stray newlines, and that number would become part of
-    a concept title downstream. Prefer the os-text span and fall back to a
-    cleaned strip.
+    ROBOTS — WHY THIS NO LONGER FETCHES FROM OPENSTAX
+    -------------------------------------------------
+    This used to GET `openstax.org{archive}/contents/{uid}@{version}.json`.
+    OpenStax's robots.txt disallows BOTH `/apps/archive` AND `/contents` for
+    the WILDCARD user-agent — not merely for GPTBot — so that request was a
+    violation on every call. Nothing caught it because the rule lived in a
+    comment instead of in code.
+
+    LibreTexts republishes the same OpenStax books and permits reading content
+    pages, and the chapter names are already in its sitemap. So the outline is
+    obtainable without the violation and without any page fetch at all.
+
+    `title` is the book's name and is what LibreTexts is asked for. The other
+    arguments are kept because callers pass them and they still identify the
+    edition in logs.
+
+    The positional number is stripped ("05: Integration" -> "Integration") for
+    the same reason the old markup path preferred the `os-text` span: a number
+    left in place ends up inside a concept title downstream.
     """
-    if not archive or not uid or not version:
+    if not title:
         return []
-    data = _get_json(f"https://openstax.org{archive}/contents/{uid}@{version}.json",
-                     None, timeout=30)
-    if not isinstance(data, dict):
+    try:
+        from services.research.libretexts import chapters_for
+    except ImportError:  # container (flat)
+        try:
+            from libretexts import chapters_for
+        except ImportError:
+            logger.info("[OPENSTAX] libretexts reader unavailable; no outline")
+            return []
+    try:
+        chapters = chapters_for(title)[:cap]
+    except Exception as e:
+        logger.info(f"[OPENSTAX] chapter lookup failed for {title!r}: {e}")
         return []
-    def _clean(node):
-        raw = node.get("title") or ""
-        m = re.search(r'class="os-text"[^>]*>([^<]+)', raw)
-        t = (m.group(1) if m
-             else re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", raw))).strip()
-        # "Chapter 3" / "Unit 7" with no text span is a numbering wrapper.
-        if not t or re.fullmatch(r"(chapter|unit|part)?\s*[\d.]+", t.lower()):
-            return ""
-        return t
+    if chapters:
+        logger.info(f"[OPENSTAX] {title!r}: {len(chapters)} chapters via "
+                    f"LibreTexts (the archive endpoint is robots-disallowed)")
+    return chapters
 
-    top = [n for n in ((data.get("tree") or {}).get("contents") or [])
-           if isinstance(n, dict)]
 
-    # Some books (Biology) group chapters under UNITS, so the top level is
-    # "Unit 2. The Cell" — a shelf label, not a syllabus. Descend one level when
-    # the top looks like unit grouping, or the outline is 11 vague headings
-    # where the book actually has 47 chapters.
-    def _is_unit(n):
-        # Either an explicit "Unit 3. Genetics" heading, or a wrapper whose own
-        # title is pure numbering ("Unit 1") and therefore cleans to nothing
-        # while still holding the real chapters. The second kind would otherwise
-        # yield a book with zero chapters rather than a book with fifty.
-        t = _clean(n)
-        if not t:
-            return bool(n.get("contents"))
-        return re.match(r"^\s*unit\b", t.lower()) is not None
+def _openstax_chapters_DISALLOWED(archive, uid, version, cap=60):
+    """RETAINED AS A RECORD OF WHAT MUST NOT BE DONE. Never call this.
 
-    if top and sum(1 for n in top if _is_unit(n)) >= max(2, len(top) // 2):
-        descended = []
-        for n in top:
-            kids = [k for k in (n.get("contents") or []) if isinstance(k, dict)]
-            descended.extend(kids if kids else [n])
-        top = descended or top
-
-    out = []
-    for node in top:
-        title = _clean(node)
-        if title and _is_content_chapter(title) and title not in out:
-            out.append(title)
-        if len(out) >= cap:
-            break
-    return out
+    Kept so the next person who wants chapter data can see that the obvious
+    endpoint was already tried and is not permitted, rather than re-adding it
+    from a stale example — which is exactly how it got here.
+    """
+    raise RuntimeError(
+        "openstax.org/apps/archive + /contents are disallowed by robots.txt "
+        "for ALL agents. Use _openstax_chapters, which reads LibreTexts.")
 
 
 def _openstax_outline(topic, broader_subjects=None, mastery=None, min_chapters=4):
@@ -519,7 +516,9 @@ def _openstax_outline(topic, broader_subjects=None, mastery=None, min_chapters=4
 
     scored = []
     for _, uid, title in prelim[:3]:
-        chapters = _openstax_chapters(archive, uid, versions[uid])
+        # `title` is now the lookup key — see `_openstax_chapters`. Omitting it
+        # returns [] silently, which would drop OpenStax from every outline.
+        chapters = _openstax_chapters(archive, uid, versions[uid], title=title)
         if len(chapters) >= min_chapters:
             scored.append((_relevance(topic, title, chapters,
                                       subjects=broader_subjects, mastery=mastery),

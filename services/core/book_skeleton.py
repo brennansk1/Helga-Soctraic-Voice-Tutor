@@ -654,6 +654,29 @@ def build_from_docs(subject_or_url, storage, course_title=None, llm_json_fn=None
     course["source_kind"] = "documentation"
     course["doc_material"] = mat
     course["doc_sequencing"] = seq_report
+
+    # PROVENANCE — which book this course was actually built from.
+    #
+    # Recorded because a single book sets a course's whole account of a
+    # subject and nothing persisted which one. That matters most exactly where
+    # it is most contested: a history course built from one survey text carries
+    # that text's historiographical posture, and a learner who can see "built
+    # from U.S. History (American YAWP)" can weigh it for themselves. The
+    # honest answer to "why does this course read that way" is the source, and
+    # finding it should not require reading the logs.
+    if domain_meta:
+        course["source_provenance"] = {
+            "source": domain_meta.get("source"),
+            "book": domain_meta.get("name"),
+            "url": domain_meta.get("url"),
+            "library": domain_meta.get("library"),
+            "licence": domain_meta.get("licence"),
+            "pages_used": len(domain_pages),
+            "pages_available": domain_meta.get("available_pages"),
+        }
+        _say(f"DOCS:SOURCE:{domain_meta.get('source')}:"
+             f"{domain_meta.get('name')}")
+
     if scope:
         course["doc_scope"] = scope
     course["_book"] = book

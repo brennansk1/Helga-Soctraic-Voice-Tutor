@@ -55,8 +55,15 @@ REQUIRED = ("DOMAIN", "LABEL", "classify", "rank", "guidance", "prompt_line")
 #: it does not disable the domain.
 #: `pair_block` turns a build-time mined pair into a tutor instruction.
 #: Optional because a domain may have no notion of a teachable pair.
+#: `source_for` and `classify_concepts` are CALLED by `book_skeleton` and were
+#: not declared here, so `contract_report` could not see them and a domain that
+#: implemented one wrongly looked complete. That is how the mathematics domain
+#: shipped a `source_for(subject)` whose signature did not match the call site
+#: `source_for(subject, doc_resolver=...)`: the TypeError went into that site's
+#: `except Exception`, was logged as "domain source lookup failed", and the
+#: report said nothing was missing.
 OPTIONAL = ("SHAPE", "example_for", "attach_to_course", "KEYWORDS",
-            "pair_block")
+            "pair_block", "source_for", "classify_concepts")
 
 
 #: Required names that must be CALLABLE, not merely present.

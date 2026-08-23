@@ -516,6 +516,40 @@ def extract(html):
     return title, text.strip()
 
 
+def chapters_for(subject, lib=None, cap=60):
+    """Top-level chapter titles for the best-matching book, in reading order.
+
+    Exists so `syllabus_sources` can build an OpenStax outline WITHOUT fetching
+    `openstax.org/apps/archive/.../contents/...`, which that site's robots.txt
+    disallows for every agent. LibreTexts republishes the same books — Calculus
+    (OpenStax), U.S. History (OpenStax), Precalculus 2e — and permits reading
+    content pages, so the chapter list is obtainable without the violation.
+
+    Costs no page fetches: the chapter names are already in the sitemap.
+    """
+    path, urls, lib = find(subject, lib=lib)
+    if not path or not urls:
+        return []
+    depth = len(path.split("/"))
+    seen, out = set(), []
+    for u in sorted(urls, key=lambda x: urllib.parse.unquote(x)):
+        segs = urllib.parse.unquote(u).split("/Bookshelves/", 1)[-1].split("/")
+        if len(segs) <= depth:
+            continue
+        chapter = segs[depth]
+        if chapter.startswith(_MATTER) or chapter in seen:
+            continue
+        seen.add(chapter)
+        # "05: Integration" -> "Integration". The number is positional and
+        # would end up inside a concept title downstream.
+        clean = re.sub(r"^\d+\s*[:.]\s*", "", chapter.replace("_", " ")).strip()
+        if clean:
+            out.append(clean)
+        if len(out) >= cap:
+            break
+    return out
+
+
 def pages_for(subject, lib=None, max_pages=MAX_PAGES, shelf=None):
     """Fetch a book's pages for `subject`.
 
