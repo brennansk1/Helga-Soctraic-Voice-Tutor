@@ -70,8 +70,17 @@ _SOURCE_HEAD = re.compile(
 #: Provenance: who, when, to whom. Without this an extract cannot be sourced.
 _PROVENANCE = re.compile(
     r"("
-    r"\b(letter|diary|despatch|dispatch|memoir|speech|telegram|report|"
-    r"editorial|proclamation|treaty|minutes)\b[^.]{0,80}\b(from|by|of)\b"
+    # THE DOCUMENT TYPES DIPLOMATIC HISTORY ACTUALLY USES.
+    # "Memorandum" was missing, and a memorandum is a staple of the period
+    # this domain will most often be asked about — measured on a fixture
+    # chapter, Source A ("Memorandum from the German Chancellor to the Foreign
+    # Office, Berlin, 1912") was refused for having no provenance, which is
+    # exactly the attribution the move is built to interrogate.
+    r"\b(letter|diary|journal|despatch|dispatch|memoir|memorandum|memo|"
+    r"speech|address|telegram|cable|report|editorial|leader|proclamation|"
+    r"treaty|protocol|communiqu\u00e9|communique|circular|minutes|minute|note|"
+    r"decree|order|petition|testimony|deposition|interview|broadcast|"
+    r"despatches|pamphlet|placard)\b[^.]{0,80}\b(from|by|of|to)\b"
     r"|\bwritten (by|in)\b"
     r"|\bspeaking (to|in)\b"
     r"|\b(1[0-9]{3}|20[0-2][0-9])\b[^.]{0,30}\b(to|by|from)\b"

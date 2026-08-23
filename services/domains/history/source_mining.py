@@ -45,17 +45,42 @@ _STOP = {"history", "historical", "the", "and", "for", "with", "from",
          "introduction", "overview", "study", "reading", "sources", "source"}
 
 
+#: WHICH MOVE SUITS WHICH KIND. Consulted BEFORE word overlap.
+#:
+#: Word matching alone swapped two concepts on a real build: "Timeline of July
+#: Crisis" (CHRONOLOGY) took the HISTORIOGRAPHY move because Albertini's
+#: position mentions "the last week of JULY", and by the time the actual
+#: CONTESTED concept was reached that move was gone — so the debate concept
+#: got a source extract and the timeline concept got a debate.
+#:
+#: A concept's KIND states what it needs. Vocabulary only says what it mentions.
+_KIND_WANTS = {
+    "CONTESTED": (tm.HISTORIOGRAPHY, tm.CORROBORATE),
+    "CAUSATION": (tm.COUNTERFACTUAL, tm.HISTORIOGRAPHY),
+    "SIGNIFICANCE": (tm.HISTORIOGRAPHY, tm.CORROBORATE),
+    "SOURCE": (tm.SOURCE_CHECK, tm.CORROBORATE),
+    "MISCONCEPTION": (tm.SOURCE_CHECK, tm.CORROBORATE),
+    "CHRONOLOGY": (tm.CORROBORATE, tm.SOURCE_CHECK),
+}
+
+
 def _best_for(concept, moves):
     """The move that is ABOUT this concept, or the next available.
 
-    Matching on title vocabulary, for the reason the mathematics domain
-    learned by measurement: popping moves in order gave every concept its
-    NEIGHBOUR's material — integration by parts taught from a power-rule
-    example — and every pairing was wrong in a way a learner notices before
-    the tutor does.
+    KIND FIRST, then title vocabulary. The mathematics domain learned by
+    measurement that popping moves in order gives every concept its
+    NEIGHBOUR's material; this domain then learned that word overlap alone is
+    not enough either, because a concept can MENTION what another concept IS.
     """
     if not moves:
         return None
+
+    wants = _KIND_WANTS.get(concept.get("concept_kind") or "")
+    if wants:
+        for want in wants:
+            for m in moves:
+                if m.get("kind") == want:
+                    return m
     words = {w.lower() for w in _TITLE_WORD.findall(concept.get("title") or "")}
     words -= _STOP
     if words:

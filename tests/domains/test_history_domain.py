@@ -220,3 +220,78 @@ def test_the_FACT_guidance_still_forbids_asking():
     text = hk.guidance(hk.FACT)
     assert "TELL IT" in text
     assert "do not ask the learner to guess" in text.lower()
+
+
+# ---------------------------------------------------- kind drives the match
+
+def test_material_is_matched_by_KIND_before_vocabulary():
+    """MEASURED on a real build. "Timeline of July Crisis" (CHRONOLOGY) took
+    the HISTORIOGRAPHY move because Albertini's position mentions "the last
+    week of JULY" — and by the time the actual CONTESTED concept was reached
+    that move was gone, so the debate concept got a source extract and the
+    timeline concept got a debate.
+
+    A concept's KIND states what it needs; its vocabulary only says what it
+    mentions.
+    """
+    from services.domains.history import source_mining as sm
+
+    class _Ch:
+        def __init__(self):
+            self.order, self.text = 1, CHAPTER
+
+    class _Bk:
+        def chapter(self, order):
+            return _Ch() if order == 1 else None
+
+    course = {"modules": [{"units": [{"lessons": [{
+        "title": "L", "book_chapter": 1,
+        "concepts": [
+            # deliberately ordered so vocabulary alone would mis-assign
+            {"title": "Timeline of the July Crisis", "concept_kind": hk.CHRONOLOGY},
+            {"title": "Debates on responsibility", "concept_kind": hk.CONTESTED},
+            {"title": "Reading the telegram", "concept_kind": hk.SOURCE},
+        ],
+    }]}]}]}
+    sm.attach_to_course(course, _Bk())
+    got = {c["title"]: (c.get("teaching_pair") or {}).get("kind")
+           for c in course["modules"][0]["units"][0]["lessons"][0]["concepts"]}
+    assert got["Debates on responsibility"] == tm.HISTORIOGRAPHY, got
+    assert got["Reading the telegram"] == tm.SOURCE_CHECK, got
+    assert got["Timeline of the July Crisis"] != tm.HISTORIOGRAPHY, got
+
+
+def test_a_FACT_concept_is_given_no_material_at_all():
+    """A date needs stating. A source exercise on it invites the
+    reasoning-toward-a-fact this domain forbids outright."""
+    from services.domains.history import source_mining as sm
+
+    class _Ch:
+        def __init__(self):
+            self.order, self.text = 1, CHAPTER
+
+    class _Bk:
+        def chapter(self, order):
+            return _Ch() if order == 1 else None
+
+    course = {"modules": [{"units": [{"lessons": [{
+        "title": "L", "book_chapter": 1,
+        "concepts": [{"title": "The date of Hastings", "concept_kind": hk.FACT}],
+    }]}]}]}
+    tally = sm.attach_to_course(course, _Bk())
+    concept = course["modules"][0]["units"][0]["lessons"][0]["concepts"][0]
+    assert concept.get("teaching_pair") is None
+    assert tally["skipped"] == 1
+
+
+def test_a_memorandum_counts_as_provenance():
+    """Measured: Source A of a fixture chapter — "Memorandum from the German
+    Chancellor to the Foreign Office, Berlin, 1912" — was refused for having
+    no provenance, which is exactly the attribution the move interrogates.
+    Memoranda are a staple of the period this domain is most asked about."""
+    for line in ("Memorandum from the Chancellor to the Foreign Office, 1912.",
+                 "Minute by the Permanent Under-Secretary, London, 1914.",
+                 "Communique issued by the Foreign Ministry, Vienna, 1914."):
+        assert tm._PROVENANCE.search(line), line
+    assert not tm._PROVENANCE.search(
+        "An unattributed fragment with nothing identifying it at all.")
