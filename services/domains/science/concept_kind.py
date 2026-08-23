@@ -270,9 +270,32 @@ _PATTERNS = (
     (MODEL, r"\b(model|idealis|idealiz|approximation|assumption|"
             r"simplif|bohr|ideal gas|point (?:mass|charge)|"
             r"frictionless|perfectly elastic)\b"),
-    (MECHANISM, r"\b(mechanism|why (?:does|do|is|are)|explain(?:s|ing)? "
-                r"(?:why|how)|cause of|process by which|how .{0,20} works|"
-                r"pathway|reaction mechanism|underlying)\b"),
+    # SPECIFIC OBSERVATION PHRASES, ahead of MECHANISM's generic causal verbs.
+    #
+    # The table's rule is most-specific-first, and widening MECHANISM broke it:
+    # "Observing the colour change" became MECHANISM because "change" matched
+    # as a causal verb, when it is plainly a noun there. Rather than teach the
+    # regex English grammar, the unambiguous observation phrases are matched
+    # before the ambiguous verbs get a chance.
+    (OBSERVATION, r"\b(observ\w*|colou?r change|precipitate forms?|"
+                  r"what happens when|demonstration|phenomen\w*)"),
+
+    # `\bwhy\b` BARE, not `why (?:does|do|is|are)`. Measured on the benchmark's
+    # own topics: "Why ice floats on water" classified as UNKNOWN because there
+    # is no auxiliary after "why" — and "Why X" is the most natural way a
+    # science concept gets titled. A "why" question IS the request for a
+    # mechanism; the auxiliary was never the signal.
+    #
+    # The causal verbs catch the other miss. "Natural selection" is a bare noun
+    # phrase no title pattern can read, but its CONTEXT says heritable
+    # variation "changes allele frequencies" — process language, which is what
+    # a mechanism is. MECHANISM sits second-to-last here, so anything more
+    # specific still wins first.
+    (MECHANISM, r"\b(mechanism|why|explain(?:s|ing)? (?:why|how)|cause of|"
+                r"process by which|how .{0,20} works|pathway|"
+                r"reaction mechanism|underlying|results? in|leads? to|"
+                r"gives? rise to|(?:change|produce|cause|drive|trigger)[sd]?)"
+                r"\w*"),
     (OBSERVATION, r"\b(observ|phenomen|what happens when|demonstration|"
                   r"appears?|colour change|color change|precipitate forms|"
                   r"is seen|behaviour of|behavior of)\w*"),
