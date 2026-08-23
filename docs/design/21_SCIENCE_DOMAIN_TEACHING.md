@@ -207,11 +207,65 @@ reaches the tutor through the registry.
 
 ---
 
-## 6. Not measured
+## 6. Measured on the benchmark
 
-* **Benchmark scores.** Nothing here says a 9B model teaches science better —
-  only that the domain detects, mines and emits what it claims to. The maths
-  and history modules both looked good at this stage too.
+Fingerprint `4faf5407715a9e4d` — the same instrument the maths and history runs
+were taken under, so these are comparable.
+
+    === Science — DOMAIN SCORE 3.164/5 ===
+      right_move        2.47   accuracy      3.73
+      domain_dimension  3.33   presentation  3.62   dialogue  2.73
+
+| dimension | science | n |
+|---|---|---|
+| notation_speakable | 5.00 | 15 |
+| misconception_handling | 4.71 | 7 |
+| honest_telling | 3.80 | 5 |
+| accuracy | 3.73 | 15 |
+| **mechanism_over_recall** | **3.33** | 15 |
+| visual_policy | 3.00 | 15 |
+| visual_integration | 2.87 | 15 (unstable ±1.33) |
+| progression | 2.50 | 15 |
+| adaptation | 2.10 | 15 |
+| socratic | 2.03 | 15 |
+
+### Where it sits
+
+| domain | score |
+|---|---|
+| mathematics | 3.390 (6 runs) |
+| **science** | **3.164** |
+| computer science | 3.096 |
+| history | 2.993 |
+
+Second of four on its first run, which answers "at the quality of the other
+ones" on the composite. It does **not** clear the 3.5 release gate — no domain
+in this system does, including the computer-science module the others were
+asked to match.
+
+### The two findings that matter more than the composite
+
+**`adaptation` is 2.10 — the lowest of all four domains** (CS 2.67, maths 2.41,
+history 2.13). Whatever this module does well, adapting to the learner in front
+of it is not it, and that is now the weakest dimension in every domain built so
+far. It is a property of the system, not of any one domain.
+
+**The instrument names the failure directly:**
+
+    derivable socratic 1.80  vs  arbitrary honest_telling 3.80
+    -> Tells indiscriminately: it lectures where it should ask.
+
+A `socratic` of 2.03 on a domain whose entire premise is *the learner predicts
+first* is the uncomfortable result here. The module supplies POE material and
+instructs the tutor to withhold the outcome; the tutor lectures anyway. Nothing
+in §3 predicted that, and no amount of better mining fixes it — the pairs were
+present and were not used as intended.
+
+## 7. Not measured
+
+* Whether the domain layer HELPED. The ablation arm
+  (`HELGA_BENCH_NO_DOMAIN=1`) is the only thing that answers it, and it must be
+  run under this same fingerprint.
 * **Chemistry yield** is one pair per six pages. Unexplained.
 * **The `LEVEL_BRIDGE` move** is defined and has a prompt block, but nothing
   mines one yet — it is reachable only if a caller constructs it by hand.
