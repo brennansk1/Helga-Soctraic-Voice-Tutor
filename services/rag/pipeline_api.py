@@ -191,6 +191,52 @@ def _writing_standard(mastery):
 def create_pipeline_blueprint(storage):
     bp = Blueprint("pipeline", __name__)
 
+    @bp.route("/api/pipeline", methods=["GET"])
+    def describe():
+        """What this surface can do, in one request.
+
+        A model arriving here has no way to know the shape of an API it was
+        not trained on, and guessing costs a round trip per guess. So the
+        surface describes itself: the stages, the routes, which of them write,
+        and the one rule that governs all of them.
+        """
+        return jsonify({
+            "surface": "helga pipeline",
+            "stages": list(STAGES),
+            "rule": ("Content authored here is judged by the same depth "
+                     "contract as content written by the local model, and "
+                     "refused with its problems if it falls short. Read "
+                     "/api/pipeline/contract before writing."),
+            "routes": {
+                "GET /api/pipeline": "this description",
+                "GET /api/pipeline/presets": "preset -> scope, mastery, starting_from",
+                "GET /api/pipeline/contract?mastery=&domain=&topic=":
+                    "the bar a body must clear, before writing it",
+                "GET /api/pipeline/course/<uid>":
+                    "per-concept state: content, words, kind, author",
+                "GET /api/pipeline/course/<uid>/concept/<cuid>":
+                    "one concept, its context, and the bar for it",
+                "POST /api/pipeline/course":
+                    "a whole course — structure and bodies — in one request",
+                "PUT /api/pipeline/course/<uid>/concept/<cuid>": "take over one concept",
+                "PUT /api/pipeline/course/<uid>/concepts": "take over many at once",
+                "POST /api/pipeline/course/<uid>/concept/<cuid>/asset":
+                    "attach a diagram or image (licence required)",
+                "POST /api/pipeline/course/<uid>/finalize":
+                    "judge every body, set the status from the verdict",
+                "POST /api/pipeline/course/<uid>/resume":
+                    "hand the remaining concepts back to the local model",
+                "POST /api/pipeline/program": "hand in a whole degree plan",
+                "GET /api/pipeline/program/<uid>": "a degree and how much exists",
+            },
+            "handback": ("Content is optional per concept. Write what you "
+                         "want, leave the rest, and POST resume — the local "
+                         "hydrator skips anything that already has a body, so "
+                         "no coordination is needed."),
+            "authentication": ("None. This service has no auth and this "
+                               "blueprint can write course content."),
+        })
+
     # ---------------------------------------------------------------- presets
 
     @bp.route("/api/pipeline/presets", methods=["GET"])
