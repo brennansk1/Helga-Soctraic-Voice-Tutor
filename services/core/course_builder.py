@@ -1641,6 +1641,11 @@ class SkeletonBuilder:
             "uid": course_uid,
             "title": topic,
             "teaching_style": self.teaching_style,
+            # PERSISTED, not just used once. The brief shaped the modules
+            # minutes ago; hydration runs for hours afterwards, and a resume
+            # or a handback runs in a different process entirely. Without this
+            # the course knows what it is called and not what it is for.
+            "learner_context": self.learner_context,
             "status": "skeleton",
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "scope": self.scope,
@@ -4390,6 +4395,25 @@ class SkeletonBuilder:
         return module_structure
 
 
+# HOW LONG RESEARCH IS ACTUALLY ALLOWED TO TAKE.
+#
+# This was 15s for the first attempt and 20s for the broaden. Measured against
+# the live service on 2026-08-24, cold (uncached) concepts came back in 4s, 10s
+# and 37s, and two concurrent ones took ~85s. So the ceiling sat below the real
+# distribution and research was abandoned on exactly the concepts that needed
+# it most — the obscure ones that take longest to find material for.
+#
+# What made it worse: the service does NOT stop working when the client gives
+# up. It finished those requests and cached them. The hydrator threw away
+# results that had already been paid for, wrote the concept from the model's
+# own knowledge, and marked it llm-only — the "zero citations" outcome, caused
+# by a timeout rather than by an absence of sources.
+#
+# Raising the ceiling does not slow the common case: a 4s call still takes 4s.
+# It only stops discarding the slow ones.
+RESEARCH_TIMEOUT_S = int(os.getenv("HELGA_RESEARCH_TIMEOUT", "90"))
+
+
 class ContentHydrator:
     def __init__(
         self,
@@ -4400,8 +4424,12 @@ class ContentHydrator:
         storage: StorageManager = None,
         mastery: int = None,
         should_cancel=None,
+        learner_context: str = None,
     ):
         self.db_path = db_path
+        # What the learner said they wanted, in their own words. Usually left
+        # None here and read off the course in hydrate() — see the note there.
+        self.learner_context = (learner_context or "").strip()
         self.provider = None  # Content providers removed — LLM-only generation
         self.status_callback = status_callback
         self.course_depth = course_depth
@@ -4468,6 +4496,21 @@ class ContentHydrator:
             return
 
         course_title = course.get("title", "General Knowledge")
+
+        # READ OFF THE COURSE, for the same reason the supplementary sources
+        # below are: the builder that took the brief and the hydrator that
+        # needs it are different objects, and hydration frequently runs later
+        # and in another process — a resume, a handback, a rebuild of the
+        # concepts an external author left behind. Threading it through every
+        # ContentHydrator call site instead would mean seven places to forget,
+        # and the one that mattered most is the handback, where the local
+        # model is finishing somebody else's course and has the least context
+        # of all. An explicit constructor argument still wins if given.
+        if not self.learner_context:
+            self.learner_context = (course.get("learner_context") or "").strip()
+        if self.learner_context:
+            logger.info("  [BRIEF] hydrating to the learner's own brief "
+                        "(%d chars)", len(self.learner_context))
 
         # Which sources were classified SUPPLEMENTARY at skeleton time.
         #
@@ -4640,7 +4683,7 @@ class ContentHydrator:
                         # mastery>=3/>=4 queries never fired during creation).
                         "mastery": self.mastery_level,
                     },
-                    timeout=15,
+                    timeout=RESEARCH_TIMEOUT_S,
                 )
                 if research_resp.status_code == 200:
                     research_data = research_resp.json()
@@ -4687,7 +4730,7 @@ class ContentHydrator:
                             "mastery": self.mastery_level,
                             "broaden": True,
                         },
-                        timeout=20,
+                        timeout=RESEARCH_TIMEOUT_S,
                     )
                     if broad.status_code == 200:
                         bd = broad.json()
@@ -5848,9 +5891,16 @@ class ContentHydrator:
         bloom_labels = {1: "Remember", 2: "Understand", 3: "Apply", 4: "Analyze", 5: "Evaluate", 6: "Create"}
         bloom_label = bloom_labels.get(bloom_level, "Apply")
 
+        brief = getattr(self, "learner_context", "")
         sys_prompt = (
             f"Expert Educational Content Architect specializing in {course_title}. "
-            f"Writing level: {depth_desc}. {writing_guide} "
+            + (f"The learner said what they want from this course, in their own "
+               f"words: \"{brief}\" Let it decide which sense of the subject "
+               f"this concept is taught in, which examples are worth the space, "
+               f"and what to leave out. It does not lower the bar and it does "
+               f"not change the required depth. "
+               if brief else "")
+            + f"Writing level: {depth_desc}. {writing_guide} "
             f"Target cognitive level: Bloom {bloom_level} ({bloom_label}). "
             "Calibrate all content to this level. "
             "Build a Teaching Guide using ONLY real, established knowledge. "

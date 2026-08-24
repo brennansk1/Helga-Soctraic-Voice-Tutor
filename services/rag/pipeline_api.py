@@ -229,6 +229,17 @@ def create_pipeline_blueprint(storage):
                 "POST /api/pipeline/program": "hand in a whole degree plan",
                 "GET /api/pipeline/program/<uid>": "a degree and how much exists",
             },
+            "structure": (
+                "FREE. Modules, units, lessons and concepts are taken as "
+                "given: any number of modules, any number of concepts per "
+                "module, uneven sizes, and units/lessons omitted entirely "
+                "where you think in modules-and-concepts. The presets' counts "
+                "size a LOCAL build, which has to guess how much a subject can "
+                "carry before it has written any of it; a caller holding the "
+                "whole curriculum in one context should not be made to pad a "
+                "module to a target or split one that is genuinely large. "
+                "Nothing is refused, truncated or padded for its shape — only "
+                "content is judged, and only against the depth contract."),
             "handback": ("Content is optional per concept. Write what you "
                          "want, leave the rest, and POST resume — the local "
                          "hydrator skips anything that already has a body, so "
@@ -623,6 +634,13 @@ def create_pipeline_blueprint(storage):
             "description": data.get("description", ""),
             "teaching_style": data.get("teaching_style", ""),
             "teaching_domain": data.get("teaching_domain"),
+            # THE HANDBACK IS THE WHOLE POINT OF THIS FIELD. Write the twenty
+            # concepts you care about and leave seventy; the local model then
+            # writes those seventy knowing only their titles unless the course
+            # itself says what it is for. `hydrate()` reads this off the
+            # course, so storing it here is the entire wiring.
+            "learner_context": (data.get("context")
+                                or data.get("learner_context") or "").strip(),
             "scope": scope, "mastery": mastery, "starting_from": starting_from,
             "authored_by": model,
             "status": "building",

@@ -10,6 +10,22 @@ import re
 import uuid
 from services.common.storage import StorageManager, DEFAULT_STUDENT_ID
 
+# THIS SERVICE WAS LOGGING NOTHING BELOW WARNING.
+#
+# librarian.py configured no handler at all, so the root logger's default
+# (WARNING) applied and every logger.info in the RAG service — and in
+# course_builder when it runs HERE, which is where a resume and every external
+# handback run — was discarded. Measured while debugging a handback: the
+# hydrator's "[RESUME] finished with status", "[BRIEF]", "[SOURCES]" and
+# "[MARKDOWN] Structuring" lines were all absent, so a hydration that wrote
+# nothing looked identical to one that never started. core configures this and
+# rag did not, which is why the same code is loud in one service and silent in
+# the other.
+logging.basicConfig(
+    level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO),
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
 logger = logging.getLogger(__name__)
 
 # Env Vars
