@@ -158,3 +158,60 @@ class TestFinalize:
         assert d["status"] == "partial"
         assert d["below_contract"] == 1
         assert d["failures"][0]["problems"]
+
+
+class TestDegrees:
+    """A degree is refused for the reasons a degree is actually unteachable.
+
+    `program.validate` catches three failures that are invisible until a
+    learner walks into them — a prerequisite cycle, a prerequisite that is not
+    in the programme, and one scheduled no earlier than the course needing it.
+    An externally authored plan faces the same function, so "authored
+    elsewhere" cannot mean "checked less".
+    """
+
+    def _plan(self, courses):
+        return {"subject": "Data Science", "template": "associate",
+                "model": "test-model", "courses": courses}
+
+    def test_a_sound_plan_is_accepted(self, client):
+        r = client.post("/api/pipeline/program", json=self._plan([
+            {"title": "Intro to SQL", "term": 1, "slot": 1},
+            {"title": "Data Modelling", "term": 2, "slot": 1,
+             "prerequisites": ["Intro to SQL"]},
+        ]))
+        assert r.status_code == 201, r.get_json()
+        d = r.get_json()
+        assert d["courses"] == 2 and d["terms"] == 2 and d["validated"] is True
+
+    def test_a_prerequisite_cycle_is_refused(self, client):
+        r = client.post("/api/pipeline/program", json=self._plan([
+            {"title": "A", "term": 1, "slot": 1, "prerequisites": ["B"]},
+            {"title": "B", "term": 2, "slot": 1, "prerequisites": ["A"]},
+        ]))
+        assert r.status_code == 400
+        assert r.get_json().get("not_degree_shaped") is True
+
+    def test_a_prerequisite_outside_the_programme_is_refused(self, client):
+        r = client.post("/api/pipeline/program", json=self._plan([
+            {"title": "Advanced SQL", "term": 1, "slot": 1,
+             "prerequisites": ["A Course That Is Not Here"]},
+        ]))
+        assert r.status_code == 400
+        assert "reason" in r.get_json()
+
+    def test_a_duplicate_course_is_refused(self, client):
+        r = client.post("/api/pipeline/program", json=self._plan([
+            {"title": "SQL", "term": 1, "slot": 1},
+            {"title": "sql", "term": 2, "slot": 1},
+        ]))
+        assert r.status_code == 400
+
+    def test_the_plan_reads_back_with_its_author(self, client):
+        uid = client.post("/api/pipeline/program", json=self._plan([
+            {"title": "Intro to SQL", "term": 1, "slot": 1},
+        ])).get_json()["program_uid"]
+        d = client.get(f"/api/pipeline/program/{uid}").get_json()
+        assert d["subject"] == "Data Science"
+        assert d["counts"]["courses"] == 1
+        assert d["counts"]["unbuilt"] == 1

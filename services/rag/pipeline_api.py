@@ -674,6 +674,132 @@ def create_pipeline_blueprint(storage):
                         f"resume_url to let the local model write them"),
         }), 201
 
+    # ----------------------------------------------------------------- degrees
+
+    @bp.route("/api/pipeline/program", methods=["POST"])
+    def create_program_plan():
+        """Hand in a whole degree, planned elsewhere.
+
+        `/api/program` plans a degree ITSELF — it consults the curriculum
+        sources and the local model and returns what it decided. That is the
+        right default and the wrong ceiling: a degree is the artefact where
+        holding the whole thing in one context matters most, because the
+        constraint that makes it a degree rather than a course list is the
+        prerequisite graph, and a graph is exactly what a model reasons about
+        badly one course at a time.
+
+        So this accepts a finished plan. The shape is the planner's own —
+        `{subject, template, courses: [{title, term, slot, requires}]}` —
+        and it is checked by `program.validate`, the same function that judges
+        a locally planned degree. A plan with a prerequisite cycle, a
+        prerequisite that is not in the programme, or one scheduled no earlier
+        than the course needing it is refused with the reason, because every
+        one of those is invisible until a learner walks into it.
+        """
+        data = request.get_json(silent=True) or {}
+        subject = (data.get("subject") or "").strip()
+        courses = data.get("courses")
+        if not subject:
+            return jsonify({"error": "subject is required"}), 400
+        if not isinstance(courses, list) or not courses:
+            return jsonify({"error": "courses must be a non-empty list of "
+                                     "{title, term, slot, requires}"}), 400
+
+        try:
+            from services.core.program import validate, ProgramError
+        except Exception:
+            try:
+                from program import validate, ProgramError
+            except Exception as e:
+                logger.error("degree validator unavailable: %s", e)
+                return jsonify({"error": "degree validation unavailable"}), 503
+
+        normalised = []
+        for i, c in enumerate(courses, 1):
+            if isinstance(c, str):
+                c = {"title": c}
+            if not (c.get("title") or "").strip():
+                return jsonify({"error": f"course {i} has no title"}), 400
+            # THE PLANNER'S KEY IS `requires`, NOT `prerequisites`.
+            #
+            # Normalising to `prerequisites` wrote a field `program.validate`
+            # never reads, so a plan with a prerequisite CYCLE validated
+            # cleanly and was stored — the exact failure the validator exists
+            # to prevent, defeated by a name. `prerequisites` is still
+            # accepted from callers because it is the obvious word; it is
+            # translated here rather than downstream.
+            normalised.append({
+                "title": c["title"].strip(),
+                "term": c.get("term", 1),
+                "slot": c.get("slot", i),
+                "requires": (c.get("requires") or c.get("prerequisites") or []),
+                "kind": c.get("kind", "core"),
+                "description": c.get("description", ""),
+            })
+
+        try:
+            validate(normalised)
+        except ProgramError as e:
+            # The same refusal a locally planned degree gets, for the same
+            # reasons, with the reason said out loud.
+            return jsonify({"error": "the plan is not a teachable degree",
+                            "reason": str(e),
+                            "not_degree_shaped": True}), 400
+        except Exception as e:
+            logger.error("degree validation blew up: %s", e)
+            return jsonify({"error": f"could not validate the plan: {e}"}), 500
+
+        import uuid as _uuid
+        uid = data.get("program_uid") or f"prog_{_uuid.uuid4().hex[:8]}"
+        plan = {
+            "uid": uid,
+            "subject": subject,
+            "template": data.get("template", "associate"),
+            "gen_ed": data.get("gen_ed", "include"),
+            "authored_by": data.get("model") or AUTHOR_EXTERNAL,
+            "courses": normalised,
+        }
+        try:
+            storage.programs.create(uid, plan)
+        except Exception as e:
+            logger.error("program create failed for %s: %s", uid, e)
+            return jsonify({"error": f"could not save the programme: {e}"}), 500
+
+        logger.info("[PIPELINE] programme %s (%s, %d courses) authored by %r",
+                    uid, subject, len(normalised), plan["authored_by"])
+        return jsonify({
+            "program_uid": uid,
+            "subject": subject,
+            "courses": len(normalised),
+            "terms": len({c["term"] for c in normalised}),
+            "validated": True,
+            "note": ("The programme is planned, not built. Each course is "
+                     "built when the learner reaches it, or can be authored "
+                     "here via POST /api/pipeline/course."),
+        }), 201
+
+    @bp.route("/api/pipeline/program/<program_uid>", methods=["GET"])
+    def program_state(program_uid):
+        """A degree's plan and how much of it actually exists yet."""
+        try:
+            plan = storage.programs.get(program_uid)
+        except Exception as e:
+            logger.error("program read failed for %s: %s", program_uid, e)
+            return jsonify({"error": "could not read the programme"}), 500
+        if not plan:
+            return jsonify({"error": "no such programme"}), 404
+        courses = plan.get("courses") or []
+        built = sum(1 for c in courses if c.get("built") or c.get("course_uid"))
+        return jsonify({
+            "program_uid": program_uid,
+            "subject": plan.get("subject"),
+            "template": plan.get("template"),
+            "authored_by": plan.get("authored_by"),
+            "counts": {"courses": len(courses), "built": built,
+                       "unbuilt": len(courses) - built},
+            "courses": courses,
+        })
+
     # ------------------------------------------------------------------ assets
 
     @bp.route("/api/pipeline/course/<course_uid>/concept/<concept_uid>/asset",
