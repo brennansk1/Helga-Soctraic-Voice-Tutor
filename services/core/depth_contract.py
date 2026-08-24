@@ -60,12 +60,33 @@ _DETECTORS = {
     # not working one. Requiring evidence of actual work is the whole point of
     # this contract, so this detector wants step markers, concrete assignment
     # of values, or a computation.
+    # A WORKED EXAMPLE IS NOT ALWAYS ARITHMETIC.
+    #
+    # Every alternative here used to be maths-shaped — "Step 1", "let x =",
+    # "we compute", "substituting", "= 42" — so a worked example in a
+    # code subject could not match on any path. Measured on SQL: a concept
+    # with a `## Worked Example` heading, a real table, a runnable query and a
+    # line-by-line walkthrough was reported "missing required element:
+    # worked_example", and the whole course scored 0% against its contract.
+    #
+    # That is the same mis-calibration as demanding `named_result` from a
+    # subject with no named theorems, and it penalised the LOCAL model exactly
+    # as hard as an external one. An explicit heading and a fenced code block
+    # with prose around it are worked examples; they are now recognised as
+    # such. The bar is not lowered — a bare snippet with no surrounding
+    # explanation still fails, because the heading or the prose is what makes
+    # it *worked* rather than merely shown.
     "worked_example": re.compile(
         r"\bStep\s*\d\b|\*\*Step|^\s*\d+\.\s+(?:First|Compute|Calculate|Let|Set|Assume)|"
         r"\bsuppose\s+[A-Za-z$\\]+\s*=|\blet\s+[A-Za-z$\\]+\s*=|"
         r"\bwe (?:compute|calculate|obtain|get)\b|"
         r"\bplugging in\b|\bsubstitut\w+\s+(?:in|into)\b|"
-        r"=\s*-?\d+(?:\.\d+)?\b",
+        r"=\s*-?\d+(?:\.\d+)?\b|"
+        # an explicit worked-example section
+        r"^#+\s*Worked\s+Example|\*\*Worked\s+Example\*\*|"
+        # a walkthrough in words, which is what code subjects actually write
+        r"\bstep by step\b|\bwalk(?:ing)? through\b|"
+        r"\bconsider (?:a|the) (?:table|query|example|schema|dataset)\b",
         re.IGNORECASE | re.MULTILINE),
 
     # Something for the learner to actually do.

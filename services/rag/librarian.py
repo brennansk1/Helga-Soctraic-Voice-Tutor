@@ -109,6 +109,10 @@ app.register_blueprint(create_share_blueprint(storage))
 from services.rag.notes_api import create_notes_blueprint
 app.register_blueprint(create_notes_blueprint(storage))
 
+# The pipeline surface: see every stage, take any of them, hand the rest back.
+from services.rag.pipeline_api import create_pipeline_blueprint
+app.register_blueprint(create_pipeline_blueprint(storage))
+
 # B27.1: opt-in structured JSON logs (HELGA_JSON_LOGS=true)
 try:
     from services.common.logging_utils import configure_json_logging
