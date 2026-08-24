@@ -76,7 +76,7 @@ except ImportError:  # pragma: no cover
 MAX_AIDS_PER_CONCEPT = 2      # the runtime policy shows at most 3; 2 pre-built
                               # plus the generate fallback covers a concept well
 MAX_ASSETS_PER_COURSE = 90
-IMAGE_WORKERS = 4
+IMAGE_WORKERS = int(os.getenv("IMAGE_WORKERS", "2"))
 DEFAULT_TIMEOUT = 90
 
 # Subjects where a PHOTOGRAPH is the right answer and a diagram would be a lie:
@@ -194,8 +194,8 @@ class AssetCollector:
         if self.status_callback:
             try:
                 self.status_callback(message)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Status callback failed in asset collector: {e}")
 
     def _stage(self, pct, message):
         self._say(f"ASSET:PROGRESS:{int(pct)}:{message}")

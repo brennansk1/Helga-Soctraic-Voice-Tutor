@@ -46,12 +46,14 @@ import time
 try:  # container (flat)
     from syllabus_sources import (
         WIKIBOOKS_API, WIKIVERSITY_API, _chapters_of, _get_json, _search_book,
-        fetch_stats, fetch_stats_reset, subject_outline,
+        discover_broader_subjects, fetch_stats, fetch_stats_reset,
+        subject_outline, vocabulary_line,
     )
 except ImportError:  # imported as a package
     from services.research.syllabus_sources import (
         WIKIBOOKS_API, WIKIVERSITY_API, _chapters_of, _get_json, _search_book,
-        fetch_stats, fetch_stats_reset, subject_outline,
+        discover_broader_subjects, fetch_stats, fetch_stats_reset,
+        subject_outline, vocabulary_line,
     )
 
 try:
@@ -172,6 +174,13 @@ def curriculum_brief(topic, mastery=3, scope=3, starting_from=1,
 
     Returns a dict the builder turns into a prompt. Never raises: an empty
     brief means the builder generates unguided, and says so.
+
+    `broader_subjects` are parent disciplines to search when the topic itself
+    has no textbook of its own. Pass them if you already know them (the
+    skeleton builder asks the model); otherwise they are discovered from
+    Wikipedia's categories, but only after the narrow search has actually
+    failed — a topic that has its own book should be described by that book,
+    not by its discipline's.
     """
     # `use_cache=False` bypasses the disk cache entirely. Needed by anything
     # asserting on the LIVE source behaviour — a cached success would otherwise
@@ -195,7 +204,8 @@ def curriculum_brief(topic, mastery=3, scope=3, starting_from=1,
         "level": prof["name"],
         "preset": preset_label,
         "mastery": mastery, "scope": scope, "starting_from": starting_from,
-        "syllabi": [], "courses": [], "canonical_texts": [], "found": False,
+        "syllabi": [], "courses": [], "canonical_texts": [],
+        "vocabulary": [], "broadened_to": [], "found": False,
     }
 
     # 1. Open-textbook syllabi — the strongest structural evidence.
@@ -211,6 +221,19 @@ def curriculum_brief(topic, mastery=3, scope=3, starting_from=1,
     try:
         outline = subject_outline(topic, broader_subjects=broader_subjects,
                                   mastery=mastery)
+        if not outline.get("outlines"):
+            wider = [b for b in (broader_subjects or []) if b]
+            if not wider:
+                try:
+                    wider = discover_broader_subjects(topic)
+                except Exception as e:
+                    logger.debug(f"curriculum_brief: broadening failed: {e}")
+            if wider:
+                logger.info(
+                    f"curriculum_brief({topic!r}): no book of its own — "
+                    f"broadening to {wider}")
+                brief["broadened_to"] = wider
+                outline = subject_outline(topic, broader_subjects=wider)
         brief["syllabi"] = outline.get("outlines", [])
         brief["vocabulary"] = outline.get("vocabulary", [])
     except Exception as e:
@@ -307,6 +330,16 @@ def format_brief(brief, max_items=30):
             yr = f" ({t['year']})" if t.get("year") else ""
             L.append(f"  - {t['title']}{yr}")
         L.append("")
+
+    # The brief has always collected `vocabulary` and never rendered it: the
+    # only formatter that did was syllabus_sources.format_for_prompt, which
+    # nothing called. Terminology is weak evidence for STRUCTURE — encyclopedic
+    # headings are not a syllabus — but it is real evidence for the words a
+    # subject uses, which is what stops a generated module list drifting into
+    # paraphrase.
+    vocab = vocabulary_line(brief.get("vocabulary"))
+    if vocab:
+        L += [f"[Terms] {vocab}", ""]
 
     L += [
         "HOW TO USE THIS — SYNTHESISE, DO NOT COPY.",

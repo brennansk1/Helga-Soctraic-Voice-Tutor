@@ -128,7 +128,23 @@ def _read_vm_stat():
         if ":" in line:
             k, v = line.split(":", 1)
             vals[k.strip()] = int(v.strip().rstrip("."))
-    free_pages = vals.get("Pages free", 0) + vals.get("Pages speculative", 0)
+    # INACTIVE PAGES ARE AVAILABLE. They hold file cache the kernel will
+    # reclaim the instant anything asks for memory, and on macOS they are
+    # where most of "free" memory actually lives — measured on this host with
+    # one model resident:
+    #
+    #     free + speculative          0.37 GB      <- what this used to report
+    #     free + speculative + inactive  6.24 GB   <- what psutil reports
+    #     kernel                      51% free
+    #
+    # Excluding them made the fallback path disagree with the psutil path by
+    # 17x on the same machine at the same moment, and always in the direction
+    # that stops work. Purgeable is counted too: it is discardable by
+    # definition.
+    free_pages = (vals.get("Pages free", 0)
+                  + vals.get("Pages speculative", 0)
+                  + vals.get("Pages inactive", 0)
+                  + vals.get("Pages purgeable", 0))
     total_bytes = int(subprocess.run(["sysctl", "-n", "hw.memsize"],
                                      capture_output=True, text=True,
                                      timeout=5).stdout.strip())
@@ -236,6 +252,25 @@ def pressure_reason(snap=None):
         # level 4 is where we stand down.
         if lvl >= 4:
             return f"macOS reports CRITICAL memory pressure (level {lvl})"
+        # The free-byte floor stays, and a measurement is why. It was briefly
+        # removed here on the theory that it fires during ordinary model
+        # loading — a `model_gate` run had just failed with "only 0.1 GB free
+        # (floor 1.5 GB)" on every call while the kernel reported NORMAL.
+        #
+        # Sampling an actual 7.5 GB load every 3s says otherwise:
+        #
+        #     t=0s  8.63 GB   t=18s  6.37 GB   t=73s  6.37 GB
+        #     kernel level 1 throughout; minimum available 6.34 GB
+        #
+        # A healthy load never approaches the floor. The 0.1 GB readings came
+        # from a machine that was genuinely exhausted — a 13.5 GB model still
+        # resident and 8.6 GB of swap in use — where refusing more work was
+        # the CORRECT answer. The guard was right and the benchmark was
+        # started at the wrong moment.
+        #
+        # Hence `tools/model_sweep.sh` waits for headroom between candidates
+        # instead: the fix belongs in what schedules the work, not in the
+        # thing that measures whether there is room for it.
         if s.available_gb < MIN_FREE_GB:
             return (f"only {s.available_gb:.1f} GB free "
                     f"(floor {MIN_FREE_GB:.1f} GB)")

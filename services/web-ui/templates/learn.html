@@ -11,8 +11,9 @@
      Loaded BEFORE session.js, which calls into window.HelgaAids while rendering
      each message. No vendor library — the renderer is self-contained. -->
 <link rel="stylesheet" href="{{ url_for('static', filename='css/aids.css') }}?v=3">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/trust.css') }}">
-<script src="{{ url_for('static', filename='js/aids.js') }}?v=3"></script>
+<!-- A5 trust surface: sources + grounding confidence on the concept view. -->
+<link rel="stylesheet" href="{{ url_for('static', filename='css/trust.css') }}?v=3">
+<script src="{{ url_for('static', filename='js/aids.js') }}?v=4"></script>
 <script>
   /* Voice answer handling depends on whether the learner can read a
      correction. For an adult, auto-sending the transcript is convenient. For a
@@ -23,7 +24,7 @@
   window.HELGA_VOICE_AUTOSEND = {{ 'true' if voice_autosend is not defined or voice_autosend else 'false' }};
   window.HELGA_GRADE_BAND = "{{ grade_band|default('', true) }}";
 </script>
-<script src="{{ url_for('static', filename='js/session.js') }}?v=10"></script>
+<script src="{{ url_for('static', filename='js/session.js') }}?v=12"></script>
 {% endblock %}
 
 {% block body_class %}page-learn{% endblock %}
@@ -62,7 +63,12 @@
         child here became a full-height column and shoved the whole path
         sideways. It also belongs above the scroll area so it stays visible
         while the learner scrolls the path. #}
-    <div class="path-legend-bar path-topbar">
+    <!-- Course-level build verdict. Rendered ONLY for the loud case (a failed
+         fact check or depth contract) — see renderCourseQualityBanner(). A
+         learner who deep-linked straight here never saw the course card, and
+         this is the one verdict they should not have to go looking for. -->
+    <div id="path-quality-banner" class="path-quality-banner hidden" role="status"></div>
+        <div class="path-legend-bar path-topbar">
         {#  Course progress lives here, above the scroll area, because a
             percentage placed on the path itself is 10,000px from wherever the
             learner happens to be standing. The counts are filled in by
@@ -128,6 +134,32 @@
              rather than here so the element stays silent while it is empty. -->
         <div id="mastery-progress-wrap" class="mastery-progress hidden" aria-hidden="true">
             <div id="mastery-progress-fill" class="mastery-progress-fill"></div>
+        </div>
+
+        <!-- A5 trust surface: where this concept's content came from.
+             Populated by updateTrustSurface() in session.js from the concept
+             markdown that already ships in state.graph_node.text. Collapsed and
+             quiet when the concept is well grounded; opens itself, tinted, when
+             the content leans on the model's own knowledge. -->
+        <div id="trust-surface" class="trust-surface hidden" data-state="grounded">
+            <button type="button" id="trust-toggle" class="trust-toggle"
+                    aria-expanded="false" aria-controls="trust-detail">
+                <span class="trust-dot" aria-hidden="true"></span>
+                <span class="i i-warning trust-warn-icon" aria-hidden="true"></span>
+                <span class="trust-label" id="trust-label"></span>
+                <span class="trust-count" id="trust-count"></span>
+                <span class="i i-arrow-right trust-chevron" aria-hidden="true"></span>
+            </button>
+            <div id="trust-detail" class="trust-detail hidden">
+                <p class="trust-caveat" id="trust-caveat"></p>
+                <!-- The build's other verdicts for this concept (fact check,
+                     depth contract). Filled by _renderTrustChecks() from
+                     /api/course_quality; stays empty on a course that predates
+                     those checks, which is reported as "not assessed" rather
+                     than left to read as a pass. -->
+                <ul class="trust-checks hidden" id="trust-checks"></ul>
+                <ul class="trust-sources" id="trust-sources"></ul>
+            </div>
         </div>
 
         <!-- Hero (hidden after first message) -->
@@ -795,6 +827,63 @@
             };
         }
 
+        // --- Build-time quality verdicts -------------------------------------
+        // The builder runs four checks over a finished course and records every
+        // verdict in structure.json. /api/course_structure does not carry any
+        // of them — it rebuilds its response from four hard-coded keys, which
+        // is also why the low-confidence badge below has never had a value to
+        // test. /api/course_quality reads the same file first-hand.
+        //
+        // Parked on `window` because session.js's trust surface needs the
+        // per-concept verdicts, and it is driven by the 2-second state poll
+        // rather than by anything this page calls.
+        async function loadCourseQuality() {
+            try {
+                const res = await fetch('/api/course_quality?uid=' +
+                                        encodeURIComponent(courseUid));
+                if (!res.ok) return;             // path renders without verdicts
+                const data = await res.json();
+                if (data && data.available !== false) window.__courseQuality = data;
+            } catch (e) {
+                console.warn('[learn] quality verdicts unavailable:', e);
+            }
+        }
+
+        /* The path's own source of truth for per-concept confidence. The
+         * structure response has no `source_confidence` field at all, so the
+         * value has to come from the quality payload. */
+        function conceptConfidence(concept) {
+            if (typeof concept.source_confidence === 'number') {
+                return concept.source_confidence;   // if rag ever starts sending it
+            }
+            const q = window.__courseQuality;
+            if (!q) return null;
+            const per = (q.concepts || {})[concept.uid];
+            return per && typeof per.source_confidence === 'number'
+                ? per.source_confidence : null;
+        }
+
+        /* Only the loud verdict is shown on the path. A learner who arrived by
+         * deep link never passed the course card, and "this course failed its
+         * fact check" is the one thing they must not have to go looking for.
+         * Caution and not-assessed stay on the courses page: repeating every
+         * caveat above every path would train people to scroll past it. */
+        function renderCourseQualityBanner() {
+            const host = document.getElementById('path-quality-banner');
+            if (!host) return;
+            const q = window.__courseQuality;
+            if (!q || q.verdict !== 'failed') {
+                host.classList.add('hidden');
+                host.innerHTML = '';
+                return;
+            }
+            host.className = 'path-quality-banner';
+            host.innerHTML =
+                '<span class="i i-warning" aria-hidden="true"></span>' +
+                '<span>' + escapeHtml(q.headline || '') +
+                '. Individual concepts show what was found.</span>';
+        }
+
         // Palace walks THIS course; without the uid it would open whatever the
         // FSM last had in context, which is how "same course, different mode"
         // turns into "wrong course, no warning".
@@ -844,8 +933,13 @@
             // the path but must never delay or block it. If it fails or is
             // slow, nodes render without review badges rather than not at all.
             const reviewReady = loadReviewState();
+            // Same rule as review state: fetched concurrently, awaited before
+            // the first render so the nodes get their confidence badges, but a
+            // failure only costs the badges, never the path.
+            const qualityReady = loadCourseQuality();
             const res = await fetch(`/api/course_structure?uid=${courseUid}`, { signal: controller.signal });
             await reviewReady;
+            await qualityReady;
             clearTimeout(loadTimeout);
             if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
@@ -853,6 +947,7 @@
             if (data && data.structure) {
                 if (courseTitleEl) courseTitleEl.textContent = data.title || 'Course';
                 cachedStructure = data.structure;
+                renderCourseQualityBanner();
                 renderStructure(data.structure);
 
                 // Send SET_CONTEXT immediately so the FSM switches course
@@ -925,11 +1020,11 @@
         // Task #66: Mastery badge mapping based on bloom level and completion
         function getMasteryBadge(bloomLevel, completed) {
             bloomLevel = bloomLevel || 0;
-            if (bloomLevel >= 5 && completed) return { emoji: '\u2B50', label: 'Edelweiss' };
-            if (bloomLevel >= 4) return { emoji: '\uD83C\uDFD4\uFE0F', label: 'Summit' };
-            if (bloomLevel >= 3) return { emoji: '\uD83C\uDF32', label: 'Rooted' };
-            if (bloomLevel >= 2) return { emoji: '\uD83C\uDF3F', label: 'Growing' };
-            if (bloomLevel >= 1) return { emoji: '\uD83C\uDF31', label: 'Seedling' };
+            if (bloomLevel >= 5 && completed) return { icon: 'i-star', label: 'Edelweiss' };
+            if (bloomLevel >= 4) return { icon: 'i-mountain', label: 'Summit' };
+            if (bloomLevel >= 3) return { icon: 'i-tree', label: 'Rooted' };
+            if (bloomLevel >= 2) return { icon: 'i-sprout', label: 'Growing' };
+            if (bloomLevel >= 1) return { icon: 'i-dot', label: 'Seedling' };
             return null;
         }
 
@@ -1135,7 +1230,11 @@
                             const badge = getMasteryBadge(concept.bloom_level, concept.completed);
 
                             // Task #51: Low-confidence indicator
-                            const srcConf = concept.source_confidence;
+                            // Read through conceptConfidence(): the structure
+                            // endpoint carries no source_confidence, so reading
+                            // concept.source_confidence directly was always
+                            // undefined and this badge never rendered once.
+                            const srcConf = conceptConfidence(concept);
                             // A2: aligned with the builder's HELGA_CONFIDENCE_FLOOR
                             // (0.5). At the old 0.3 threshold most weakly-sourced
                             // concepts showed no marker at all — in the sample
@@ -1144,6 +1243,20 @@
                             const isLowConfidence = (typeof srcConf === 'number' && srcConf < 0.5);
                             if (isLowConfidence) {
                                 nodeEl.classList.add('low-confidence');
+                            }
+
+                            // A confirmed-false claim that survived the
+                            // corrective rewrite. Marked on the node itself
+                            // because it is the one build verdict a learner
+                            // would want to know BEFORE opening the concept,
+                            // and because it outranks thin sourcing: weak
+                            // grounding means unsupported, this means wrong.
+                            const conceptVerdicts = (window.__courseQuality
+                                && (window.__courseQuality.concepts || {})[concept.uid]) || {};
+                            const factFailed = !!(conceptVerdicts.fact
+                                && conceptVerdicts.fact.state === 'fail');
+                            if (factFailed) {
+                                nodeEl.classList.add('fact-flagged');
                             }
 
                             // A5.3 — the title is a PERMANENT label, not a
@@ -1486,6 +1599,13 @@
             // FSM clears its state and streams the new concept content.
             window.navigatingToNode = true;
             window._navClearanceSeen = false;
+
+            // Clear the trust surface for the same reason the transcript is
+            // suppressed: until the FSM hands back the NEW concept's markdown,
+            // any verdict on screen belongs to the previous concept. Showing
+            // "well grounded" over a concept that is not is the exact failure
+            // this feature exists to prevent.
+            if (window.resetTrustSurface) window.resetTrustSurface();
 
             // Disable the text input during navigation so the user can't
             // type into a concept that isn't ready yet.

@@ -40,6 +40,7 @@ core_deps = {
 }
 
 with patch.dict('sys.modules', core_deps):
+    import services.core.fsm_logic as fsm_logic
     from services.core.fsm_logic import MnemosyneFSM
 
 
@@ -211,6 +212,58 @@ class TestSetContext(unittest.TestCase):
             'payload': {'course_uid': 'course_missing'}
         })
         self.assertEqual(self.fsm.active_course_uid, 'course_missing')
+
+
+
+class TestConciseTutorB3(unittest.TestCase):
+    def setUp(self):
+        with patch.object(MnemosyneFSM, '__init__', lambda self, *a, **kw: None):
+            self.fsm = MnemosyneFSM.__new__(MnemosyneFSM)
+            self.fsm.state = 'SOCRATIC_LOOP'
+            self.fsm.current_concept_uid = 'c1'
+            self.fsm.current_lesson_node = {'title': 'Test Concept'}
+            self.fsm.grade_band = '9-12'
+            self.fsm.user_profile = None
+            self.fsm.conversation_history = [("hello", "hi")]
+            self.fsm.current_misconceptions = []
+            self.fsm.current_analogies = []
+            self.fsm.current_teaching_style = ""
+            self.fsm.socratic_type_index = 0
+            self.fsm.current_bloom_level = 2
+            self.fsm.prior_concepts_summary = []
+            self.fsm.current_context = "context"
+            self.fsm._visual_aids_enabled = False
+            self.fsm.last_interaction_time = time.time()
+            self.fsm._last_socratic_grade = 3
+            self.fsm.socratic_retry_count = 0
+            self.fsm.student_id = "test"
+            self.fsm.transcript = []
+            self.fsm.send_status_update = MagicMock()
+            self.fsm._decide_visual_aid = MagicMock(return_value="none")
+            self.fsm._load_user_profile = MagicMock(return_value=None)
+            self.fsm._current_concept_is_hd = MagicMock(return_value=False)
+            self.fsm._grounding_note = MagicMock(return_value="")
+            self.fsm.llm_client = MagicMock()
+
+    def test_strict_budget_off_preserves_behavior(self):
+        with patch.object(fsm_logic, 'get_typed_socratic_prompt') as mock_prompt, \
+             patch.object(self.fsm, '_call_llm_stream', return_value="test response"), \
+             patch.dict(os.environ, {"HELGA_STRICT_SOCRATIC_BUDGET": "0"}):
+            mock_prompt.return_value = [{"role": "system", "content": "mock"}]
+            self.fsm.ask_socratic_question("answer")
+            kwargs = mock_prompt.call_args.kwargs
+            system_note = kwargs.get('system_note')
+            if system_note:
+                self.assertNotIn("Keep your response to no more than a few sentences.", system_note)
+
+    def test_strict_budget_on_injects_bounds(self):
+        with patch.object(fsm_logic, 'get_typed_socratic_prompt') as mock_prompt, \
+             patch.object(self.fsm, '_call_llm_stream', return_value="test response"), \
+             patch.dict(os.environ, {"HELGA_STRICT_SOCRATIC_BUDGET": "1"}):
+            mock_prompt.return_value = [{"role": "system", "content": "mock"}]
+            self.fsm.ask_socratic_question("answer")
+            kwargs = mock_prompt.call_args.kwargs
+            self.assertIn("Keep your response to no more than a few sentences.", kwargs.get('system_note', ''))
 
 
 if __name__ == '__main__':

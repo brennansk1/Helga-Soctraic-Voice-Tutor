@@ -23,7 +23,8 @@ sys.path.insert(0, os.path.join(_ROOT, "services/research"))
 # concept grounded in three pages of primary documentation scored BELOW a
 # history concept grounded in one Wikipedia article.
 
-from ranking import compute_confidence, is_documentation  # noqa: E402
+from ranking import (  # noqa: E402
+    SOURCE_KIND_WEIGHTS, confidence_from_sources, is_documentation)
 
 
 def test_known_documentation_hosts_are_recognised():
@@ -56,41 +57,64 @@ def test_malformed_urls_do_not_raise():
         assert is_documentation(bad) is False
 
 
+def _sources(**kinds):
+    """Source dicts, which is what the scorer now reads."""
+    out = []
+    for kind, n in kinds.items():
+        out += [{"type": kind}] * n
+    return out
+
+
+# THE CALL SHAPE CHANGED; THE CLAIMS DID NOT.
+#
+# These asserted against `compute_confidence(..., documentation_count=N)`.
+# Grounding confidence is now read off the SOURCE DICTS through one weights
+# table (ranking.SOURCE_KIND_WEIGHTS), because a hand-maintained list of kinds
+# in the CALLER was the same defect three times over. Every assertion below is
+# the original one, restated against the table.
+
+
 def test_documentation_outweighs_the_generic_web_bucket():
     """The whole point: three doc pages must beat three blog posts."""
-    docs = compute_confidence(False, 0, documentation_count=3)
-    web = compute_confidence(False, 3)
+    docs = confidence_from_sources(_sources(documentation=3))
+    web = confidence_from_sources(_sources(web=3))
     assert docs > web, (docs, web)
 
 
 def test_documentation_is_weighted_level_with_textbooks():
     """Both are the settled canon for their subject."""
-    assert (compute_confidence(False, 0, documentation_count=2)
-            == compute_confidence(False, 0, textbook_count=2))
+    assert (confidence_from_sources(_sources(documentation=2))
+            == confidence_from_sources(_sources(textbook=2)))
 
 
 def test_documentation_is_capped_like_every_other_kind():
     """Without caps this rewards COUNT, and a pile of pages manufactures
     confidence rather than measuring it."""
-    assert compute_confidence(False, 0, documentation_count=99) <= 0.6
+    assert confidence_from_sources(_sources(documentation=99)) <= 0.6
 
 
 def test_a_cs_concept_can_now_reach_full_confidence():
     """Before: Wikipedia stub + 3 doc pages = 0.80, capped by the web bucket.
     A tool's own documentation could never earn full grounding."""
-    assert compute_confidence(True, 0, documentation_count=2) >= 1.0
+    assert confidence_from_sources(
+        _sources(wikipedia=1, documentation=2)) >= 1.0
 
 
-def test_the_caller_passes_the_new_kind():
-    """This function has been the site of the same bug twice: a kind the
-    CALLER does not pass does not exist. Guard the wiring, not just the math."""
+def test_documentation_is_a_registered_kind():
+    """An unregistered kind scores on the conservative default and is merely
+    logged, so a typo here would be silent."""
+    assert "documentation" in SOURCE_KIND_WEIGHTS
+
+
+def test_the_caller_actually_assigns_the_kind():
+    """This has been the site of the same bug three times: a kind the CALLER
+    never assigns does not exist. `is_documentation` knew, and nothing asked
+    it at the point the kind was decided. Guard the wiring, not just the math.
+    """
     import os
-    import re
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
     src = open(os.path.join(root, "services/research/research_server.py"),
                encoding="utf-8").read()
-    idx = src.index("confidence = compute_confidence(")
-    call = src[idx:idx + 300]
-    assert "doc_sources" in call, (
-        "documentation is computed but never passed — the third instance of "
-        "this exact bug")
+    assert '"documentation"' in src and "is_documentation(result[" in src, (
+        "documentation is registered in the weights table but never assigned "
+        "to a source — a dead table entry")

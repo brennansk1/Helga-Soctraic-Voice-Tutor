@@ -1,0 +1,336 @@
+{% extends "base.html" %}
+{% block title %}Select Mode — Helga Socratic Voice Tutor{% endblock %}
+{% block content %}
+<div class="mode-select-container">
+    <div class="mode-select-header">
+        <h1 class="mode-title">Choose Your Learning Mode</h1>
+        <p class="mode-subtitle">Select how you want to experience Helga Socratic Voice Tutoring</p>
+    </div>
+
+    <!-- Active Hardware Status Banner -->
+    <div class="hardware-banner">
+        <span class="pulse-dot"></span>
+        <span>Single-User Hardware Allocation: Active & Reserved for Your Account</span>
+    </div>
+
+    <div class="mode-cards-grid">
+        <!-- Personal / Scholar Mode Card (ACTIVE) -->
+        <div class="mode-card active-mode-card" id="card-personal">
+            <div class="mode-card-badge active-badge">
+                <span class="i i-check"></span> Active Mode
+            </div>
+            <div class="mode-icon-circle personal-icon">
+                <span class="i i-graduation"></span>
+            </div>
+            <h2 class="mode-card-title">Personal / Scholar Mode</h2>
+            <p class="mode-card-desc">
+                Self-directed learning for adults and advanced scholars. Upload EPUB/PDF books, build custom mastery courses, and experience sub-second Socratic voice tutoring.
+            </p>
+            <ul class="mode-features">
+                <li><span class="i i-check-circle"></span> Full Socratic Voice & Text Dialogue (`qwen3.5:4b`)</li>
+                <li><span class="i i-check-circle"></span> Custom Course Builder & 5-Tier Bloom Progression (`qwen3.5:9b`)</li>
+                <li><span class="i i-check-circle"></span> EPUB & PDF Book Import with extracted figures</li>
+                <li><span class="i i-check-circle"></span> Memory Palace & FSRS Spaced Repetition</li>
+            </ul>
+            <button class="btn btn-primary mode-launch-btn" id="launch-personal-btn">
+                <span>Enter Personal / Scholar Mode</span>
+                <span class="i i-arrow-right"></span>
+            </button>
+        </div>
+
+        <!-- Student / Guided Mode Card (PLACEHOLDER) -->
+        <div class="mode-card placeholder-mode-card" id="card-student">
+            <div class="mode-card-badge coming-soon-badge">
+                <span class="i i-lock"></span> Coming Soon
+            </div>
+            <div class="mode-icon-circle student-icon">
+                <span class="i i-users"></span>
+            </div>
+            <h2 class="mode-card-title">Student / Guided Mode</h2>
+            <p class="mode-card-desc">
+                Structured K-12 curriculum pathways, parent/teacher monitoring, PIN locks, and age-adapted grade band tutoring.
+            </p>
+            <ul class="mode-features muted-features">
+                <li><span class="i i-circle"></span> Grade Band Adaptations (K–2, 3–5, 6–8, 9–12)</li>
+                <li><span class="i i-circle"></span> Parent Oversight & Analytics Dashboard</li>
+                <li><span class="i i-circle"></span> Automated Progress Reports & Certificates</li>
+                <li><span class="i i-circle"></span> Gamified Badges & Skill Trees</li>
+            </ul>
+            <button class="btn btn-secondary mode-launch-btn placeholder-btn" id="launch-student-btn">
+                <span>Student Mode (Coming Soon)</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Placeholder Modal -->
+<div class="modal-overlay" id="placeholder-modal" hidden>
+    <div class="modal-card">
+        <div class="modal-icon">
+            <span class="i i-info"></span>
+        </div>
+        <h3 class="modal-title">Student / Guided Mode Coming Soon</h3>
+        <p class="modal-desc">
+            Student Guided Mode with K-12 grade-band curriculum monitoring is currently under active development for Release 2.
+            <br><br>
+            <strong>Personal / Scholar Mode is 100% active</strong> for your account with full Socratic voice tutoring, custom course building, and book imports.
+        </p>
+        <div class="modal-actions">
+            <button class="btn btn-primary" id="modal-proceed-btn">Proceed to Personal Mode</button>
+            <button class="btn btn-ghost" id="modal-close-btn">Close</button>
+        </div>
+    </div>
+</div>
+
+<style>
+.mode-select-container {
+    max-width: 960px;
+    margin: 4vh auto;
+    padding: 0 1.5rem;
+}
+.mode-select-header {
+    text-align: center;
+    margin-bottom: 1.5rem;
+}
+.mode-title {
+    font-size: 2.25rem;
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    margin: 0 0 0.5rem;
+}
+.mode-subtitle {
+    font-size: 1rem;
+    color: var(--text-muted, #6b7280);
+    margin: 0;
+}
+.hardware-banner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    padding: 0.6rem 1.2rem;
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 20px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #10b981;
+    margin: 0 auto 2.5rem;
+    max-width: max-content;
+}
+.pulse-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #10b981;
+    box-shadow: 0 0 10px #10b981;
+    animation: pulse 2s infinite;
+}
+@keyframes pulse {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+    70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+.mode-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 2rem;
+}
+.mode-card {
+    position: relative;
+    padding: 2.25rem 2rem;
+    border-radius: 20px;
+    background: var(--surface-glass, rgba(255, 255, 255, 0.85));
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 2px solid var(--border-color, rgba(229, 231, 235, 0.8));
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.active-mode-card {
+    border-color: var(--brand-primary, #4f46e5);
+    box-shadow: 0 16px 32px rgba(79, 70, 229, 0.15);
+}
+.active-mode-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 20px 40px rgba(79, 70, 229, 0.25);
+}
+.placeholder-mode-card {
+    opacity: 0.85;
+    border-style: dashed;
+}
+@media (prefers-color-scheme: dark) {
+    .mode-card {
+        background: rgba(18, 24, 38, 0.85);
+        border-color: rgba(255, 255, 255, 0.08);
+    }
+    .active-mode-card {
+        border-color: var(--brand-primary, #6366f1);
+        box-shadow: 0 16px 32px rgba(99, 102, 241, 0.2);
+    }
+}
+.mode-card-badge {
+    position: absolute;
+    top: 1.25rem;
+    right: 1.25rem;
+    padding: 0.35rem 0.85rem;
+    border-radius: 12px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.active-badge {
+    background: rgba(79, 70, 229, 0.12);
+    color: var(--brand-primary, #4f46e5);
+    border: 1px solid rgba(79, 70, 229, 0.3);
+}
+.coming-soon-badge {
+    background: rgba(156, 163, 175, 0.15);
+    color: var(--text-muted, #6b7280);
+    border: 1px solid rgba(156, 163, 175, 0.3);
+}
+.mode-icon-circle {
+    width: 64px;
+    height: 64px;
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.85rem;
+    margin-bottom: 1.25rem;
+}
+.personal-icon {
+    background: linear-gradient(135deg, var(--brand-primary, #4f46e5), #818cf8);
+    color: white;
+    box-shadow: 0 8px 16px rgba(79, 70, 229, 0.3);
+}
+.student-icon {
+    background: var(--surface-subtle, #f3f4f6);
+    color: var(--text-muted, #9ca3af);
+}
+@media (prefers-color-scheme: dark) {
+    .student-icon { background: rgba(255, 255, 255, 0.05); }
+}
+.mode-card-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin: 0 0 0.6rem;
+}
+.mode-card-desc {
+    font-size: 0.925rem;
+    color: var(--text-muted, #4b5563);
+    line-height: 1.5;
+    margin: 0 0 1.5rem;
+    flex-grow: 1;
+}
+.mode-features {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1.75rem;
+}
+.mode-features li {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.875rem;
+    margin-bottom: 0.6rem;
+    color: var(--text-color, #1f2937);
+}
+.mode-features li span {
+    color: var(--brand-primary, #4f46e5);
+}
+.muted-features li span { color: var(--text-muted, #9ca3af); }
+.mode-launch-btn {
+    width: 100%;
+    padding: 0.9rem;
+    font-size: 1rem;
+    font-weight: 700;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+.placeholder-btn {
+    cursor: pointer;
+    background: var(--surface-subtle, #e5e7eb);
+    color: var(--text-muted, #4b5563);
+    border: none;
+}
+
+/* Modal Styling */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 1rem;
+}
+.modal-card {
+    background: var(--surface, #fff);
+    border-radius: 20px;
+    padding: 2rem;
+    max-width: 440px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.2);
+}
+@media (prefers-color-scheme: dark) {
+    .modal-card { background: #1a202c; color: #edf2f7; }
+}
+.modal-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: rgba(79, 70, 229, 0.1);
+    color: var(--brand-primary, #4f46e5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    margin: 0 auto 1rem;
+}
+.modal-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin: 0 0 0.75rem;
+}
+.modal-desc {
+    font-size: 0.9rem;
+    color: var(--text-muted, #4a5568);
+    line-height: 1.5;
+    margin-bottom: 1.5rem;
+}
+.modal-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+</style>
+
+<script>
+document.getElementById('launch-personal-btn').addEventListener('click', () => {
+    window.location.href = '/courses';
+});
+
+const modal = document.getElementById('placeholder-modal');
+document.getElementById('launch-student-btn').addEventListener('click', () => {
+    modal.hidden = false;
+});
+document.getElementById('modal-close-btn').addEventListener('click', () => {
+    modal.hidden = true;
+});
+document.getElementById('modal-proceed-btn').addEventListener('click', () => {
+    window.location.href = '/courses';
+});
+</script>
+{% endblock %}

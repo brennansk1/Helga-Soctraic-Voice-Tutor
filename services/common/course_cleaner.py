@@ -3,31 +3,34 @@ import shutil
 import json
 import sqlite3
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
 # Courses with these statuses did not finish building.
 #
-# THEY ARE NOT AUTOMATICALLY GARBAGE. Hydration is resumable — it skips every
-# concept that already has content — so a course stopped at 60 of 100 concepts
+# TWO INDEPENDENT FIXES FOR THE SAME DANGER, AND BOTH ARE KEPT.
+#
+# This set used to include "building" and "skeleton", which is what a LIVE
+# build looks like — a course sits in "skeleton" for the whole of hydration —
+# so a librarian restart mid-build deleted the course out from under the
+# running hydrator. Narrowing the set to genuinely terminal states fixes that.
+#
+# But status alone is still not enough. Hydration is resumable: it skips every
+# concept that already has content, so a course stopped at 60 of 100 concepts
 # is hours of model time that only needs finishing, and the courses list now
-# offers a "Resume build" button to finish it.
-#
-# This module used to delete all four states outright, directory and SQLite row,
-# every time the RAG service imported. Two things followed, both measured:
-#
-#   * The resume button was unreachable for most of them. The course was gone
-#     before anyone could click it.
-#   * An interrupted build was destroyed by the very mechanism meant to rescue
-#     it: the stale-build reaper marks an abandoned build "failed" so it stops
-#     showing as in progress, and the next RAG start then deleted it.
+# offers a "Resume build" button to finish it. Deleting a "failed" course
+# throws that away and makes the button unreachable — and the stale-build
+# reaper MARKS abandoned builds "failed", so the mechanism meant to rescue an
+# interrupted build was feeding it to the one that destroyed it.
 #
 # On 2026-08-24 a 101-concept course sat at "skeleton" for five and a half
-# hours while it hydrated. Starting the stack during that window would have
-# deleted all of it, silently, with no prompt and no backup.
+# hours while it hydrated. Under the old set, starting the stack during that
+# window would have deleted all of it, silently, with no prompt and no backup.
 #
-# So the status alone no longer decides. See `_has_recoverable_work`.
-INCOMPLETE_STATUSES = {"failed", "hydration_failed", "building", "skeleton"}
+# So: only terminal states are collectable at all, and among those, only the
+# ones with nothing to lose. See `_has_recoverable_work`.
+INCOMPLETE_STATUSES = {"failed", "hydration_failed"}
 
 
 def _has_recoverable_work(course_dir):
@@ -94,9 +97,24 @@ def clean_failed_courses(data_dir: str = "/app/data"):
                     # Unknown status — preserve but log warning
                     logger.warning(f"Course '{name}' has unknown status '{status}', preserving.")
             except (json.JSONDecodeError, IOError) as e:
-                # Corrupted structure.json — remove
-                should_remove = True
+                # An unparseable structure.json is NOT evidence that the course
+                # is junk. The likeliest cause is a torn write — the file was
+                # being rewritten at the instant we read it — and every concept
+                # markdown under content/ is still perfectly good. Deleting the
+                # whole directory on that signal destroys a finished course.
+                # An IOError is weaker still: transient (permissions, EMFILE)
+                # and says nothing at all about the contents.
+                #
+                # Quarantine instead: copy the unreadable file aside for
+                # inspection, leave the course in place, and let a human or a
+                # rebuild decide. Nothing is deleted on a guess.
+                _quarantine_structure(structure_path, e)
                 status = f"corrupted ({e})"
+                logger.error(
+                    f"Course '{name}' has an unreadable structure.json ({e}); "
+                    f"preserving the directory. If this persists it needs a "
+                    f"rebuild, but a single bad read is usually a torn write."
+                )
 
         if should_remove:
             logger.info(f"Auto-cleaner removing course '{name}' (status: {status})")
@@ -116,6 +134,23 @@ def clean_failed_courses(data_dir: str = "/app/data"):
         logger.info(f"Auto-cleaner: {removed_count} removed, {preserved_count} preserved.")
     else:
         logger.debug(f"Auto-cleaner: No incomplete courses found. {preserved_count} preserved.")
+
+
+def _quarantine_structure(structure_path: str, err: Exception):
+    """Copy an unreadable structure.json aside without disturbing the original.
+
+    A COPY, not a move: if the file is unreadable because a writer is midway
+    through replacing it, moving it would turn a transient state into a
+    permanent loss — exactly the failure mode this replaced.
+    """
+    try:
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        dest = f"{structure_path}.corrupt.{stamp}"
+        if not os.path.exists(dest):
+            shutil.copy2(structure_path, dest)
+            logger.warning(f"Quarantined unreadable structure.json to {dest} ({err})")
+    except Exception as e:
+        logger.warning(f"Could not quarantine {structure_path}: {e}")
 
 
 def _cleanup_sqlite(db_path: str, course_uid: str):

@@ -105,7 +105,30 @@ If plants make their own food, why do they need water?
 
     @patch('services.core.course_builder.llm_generate')
     def test_hydrate_uses_llm_text_when_no_sources(self, mock_llm):
-        """Test that LLM-generated text is passed to structuring when no sources found."""
+        """No research service → the model's own knowledge, and the course STILL builds.
+
+        WHY THE MOCK RESPONSE IS LONG NOW
+        ---------------------------------
+        This test used to return a 20-word structuring response. That is under
+        the 40-word usability floor in `_condense_and_structure_content`, so all
+        three attempts were discarded and the concept came back as a
+        `[Hydration failed]` stub — the test was not exercising "the model wrote
+        the content", it was exercising "the model produced nothing".
+
+        It passed anyway, because the hydrator counted that stub as a hydrated
+        concept and shipped the course as "ready". A one-concept course made
+        entirely of placeholders was reported as finished. Now a stub counts as
+        a failure and the >50% gate refuses the build, so the old mock made this
+        test assert the opposite of its own name.
+
+        The two cases are different and both matter:
+          * research unavailable, model wrote a real concept  → degraded
+            SUCCESS. Low confidence, marked as leaning on model knowledge, and
+            the course builds. That is this test.
+          * model produced nothing, we wrote `[Hydration failed]` → a genuine
+            failure that must count as one. That is
+            `test_condense_and_structure_fallback` plus the abort gate.
+        """
 
         # Setup: course with one concept, no source providers
         self.hydrator.provider = None  # No providers available
@@ -143,26 +166,26 @@ If plants make their own food, why do they need water?
         # a stub counts as a failed concept, aborts a one-concept build before
         # this test's assertions can run. The short body was masking the fact
         # that this test never actually reached the success path it names.
+        structured = (
+            "## Core Definition\n"
+            + ("A test concept explained at length from the model's own "
+               "knowledge, because the research service could not be "
+               "reached. ") * 6
+            + "\n## Contextual Explanation\nDetailed explanation follows.\n"
+              "## Socratic Hook\nWhy?\n")
+
+        # LLM returns content for both generation and structuring
         llm_calls = []
         def mock_llm_side_effect(prompt, **kwargs):
             llm_calls.append(prompt)
             if "Explain the concept" in prompt:
                 return "This is generated LLM content about the test concept."
-            else:
-                return (
-                    "# Test Concept\n## Metadata\n## Core Definition\n"
-                    "A test concept is a deliberately simple example used to "
-                    "exercise the hydration pipeline end to end.\n"
-                    "## Contextual Explanation\nThe concept exists so that the "
-                    "structuring step has a realistic body of prose to validate, "
-                    "repair, and store, rather than a two-line fragment that the "
-                    "usability floor would reject outright.\n"
-                    "## Socratic Hook\nWhy would a body this short ever be "
-                    "treated as a finished explanation?"
-                )
+            return structured
 
         mock_llm.side_effect = mock_llm_side_effect
 
+        # `helga-research` does not resolve in the test environment, which IS
+        # the scenario under test: no research, model-only grounding.
         self.hydrator.hydrate("test_uid")
 
         # Verify save_concept_content was called (hydration completed)
@@ -171,6 +194,22 @@ If plants make their own food, why do they need water?
 
         # Verify LLM was called (no sources, so LLM generates)
         self.assertGreater(len(llm_calls), 0, "LLM should have been called for content generation")
+
+        # The whole point: an ungrounded but real concept is a degraded
+        # SUCCESS. If the abort gate ever starts failing this, it has stopped
+        # distinguishing "no research" from "no content" and will kill every
+        # build that runs without the research service.
+        self.assertEqual(course_data.get("status"), "ready",
+                         "a research-less build that produced real content "
+                         "must still ship")
+
+        # ...and it must be honest about being ungrounded rather than silent.
+        saved = self.mock_storage.courses.save_concept_content.call_args[0][2]
+        self.assertNotIn("[Hydration failed]", saved,
+                         "real model content must not be recorded as a stub")
+        self.assertIn("grounding unavailable", saved.lower(),
+                      "a concept whose research call never completed must say "
+                      "so, not claim sources were scarce")
 
 if __name__ == '__main__':
     unittest.main()

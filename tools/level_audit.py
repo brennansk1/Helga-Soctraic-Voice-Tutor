@@ -55,6 +55,77 @@ if _ROOT not in sys.path:
 DATA_DIR = os.path.join(_ROOT, "data")
 COURSES_DIR = os.path.join(DATA_DIR, "courses")
 DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "nail-35b-a3b")
+
+# THE JUDGE IS PINNED SEPARATELY FROM THE TUTOR.
+#
+# This read OLLAMA_MODEL, so re-routing the tutor silently re-routed the judge.
+# Measured 2026-08-07 on the sibling instrument (helgabench --self-test):
+#
+#     qwen3.5:9b   accepts-misconception -> 1     CALIBRATED
+#     qwen3:14b    accepts-misconception -> None  MISCALIBRATED
+#
+# qwen3:14b is the BETTER TUTOR (accuracy 5.00) and the WORSE JUDGE. With the
+# tutor routed to it, this audit would have been judged by a model that fails
+# calibration — and nothing here would have reported that.
+JUDGE_MODEL = os.environ.get("HELGA_JUDGE_MODEL", "qwen3.5:9b")
+
+# --- self-test fixtures ------------------------------------------------------
+#
+# WHY THIS EXISTS. Every other instrument in this repo has been caught
+# manufacturing a verdict out of no information — a missing key clamped to the
+# worst score, a silent judge scored as 0%, a load timeout read as incapacity.
+# This tool had NO self-test at all, which made it the one instrument still
+# trusted on faith.
+#
+# The bar is deliberately low and unmissable: if the judge cannot separate a
+# plainly level-1 document from a plainly level-5 one, it cannot separate real
+# courses, and any number it produces about a real course is noise.
+_L1_FIXTURE = """## Core Explanation
+A qubit is like a coin. A normal coin is either heads or tails. A qubit can be
+a bit of both at the same time until you look at it. When you look, it picks
+one. That is the strange part of quantum computing.
+
+## Key Facts
+- A bit is 0 or 1.
+- A qubit can be both at once.
+- Looking at it makes it choose.
+"""
+
+_L5_FIXTURE = """## Core Explanation
+A qubit state is a unit vector in a two-dimensional complex Hilbert space,
+$|\\psi\\rangle = \\alpha|0\\rangle + \\beta|1\\rangle$ with
+$|\\alpha|^2 + |\\beta|^2 = 1$. Global phase is unphysical, so states are
+rays in $\\mathbb{CP}^1$, isomorphic to the Bloch sphere $S^2$.
+
+## Derivation
+Measurement in the computational basis is described by projectors
+$P_i = |i\\rangle\\langle i|$, giving $p(i) = \\langle\\psi|P_i|\\psi\\rangle$
+by the Born rule. Unitarity of evolution follows from requiring
+$\\langle\\psi|\\psi\\rangle$ be conserved: $U^\\dagger U = I$.
+
+## Exercise
+Show that any single-qubit unitary decomposes as
+$e^{i\\gamma}R_z(\\alpha)R_y(\\beta)R_z(\\delta)$.
+"""
+
+
+def self_test(url, model=None):
+    """Can the judge separate a plainly level-1 doc from a plainly level-5 one?
+
+    Returns True when calibrated. A tool that cannot pass this must not be used
+    to decide whether a College Course reads like one.
+    """
+    mdl = model or JUDGE_MODEL
+    print(f"\nlevel_audit judge self-test  (model={mdl})\n")
+    lo = _judge_one(url, mdl, _strip_level_hints(_L1_FIXTURE))
+    hi = _judge_one(url, mdl, _strip_level_hints(_L5_FIXTURE))
+    print(f"  plainly LEVEL 1 document -> {lo}    (must be <= 2)")
+    print(f"  plainly LEVEL 5 document -> {hi}    (must be >= 4)")
+    ok = (isinstance(lo, (int, float)) and isinstance(hi, (int, float))
+          and lo <= 2 and hi >= 4)
+    print("\n  Judge is calibrated.\n" if ok else
+          "\n  JUDGE MISCALIBRATED — its level verdicts cannot be trusted.\n")
+    return ok
 DEFAULT_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 
 JUDGE = """You classify the academic level of teaching material. Be strict and
@@ -135,15 +206,22 @@ def _judge_one(url, model, text):
 def main():
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--course", required=True)
+    p.add_argument("--course")
+    p.add_argument("--self-test", action="store_true",
+                   help="validate the judge before trusting any level verdict")
     p.add_argument("--sample", type=int, default=6,
                    help="concepts to judge (default 6)")
     p.add_argument("--repeat", type=int, default=2,
                    help="judgements per concept; LLM judges are noisy")
-    p.add_argument("--model", default=DEFAULT_MODEL)
+    p.add_argument("--model", default=JUDGE_MODEL)
     p.add_argument("--url", default=DEFAULT_URL)
     p.add_argument("--out")
     args = p.parse_args()
+
+    if args.self_test:
+        raise SystemExit(0 if self_test(args.url, args.model) else 1)
+    if not args.course:
+        p.error("--course is required unless --self-test is given")
 
     cdir = os.path.join(COURSES_DIR, args.course)
     spath = os.path.join(cdir, "structure.json")

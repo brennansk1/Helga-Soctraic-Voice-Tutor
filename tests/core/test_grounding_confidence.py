@@ -129,13 +129,22 @@ class TestConfidenceWeightsBySourceKind(unittest.TestCase):
         from services.research.ranking import compute_confidence
         self.assertGreaterEqual(compute_confidence(True, 2, 1, 2), 0.9)
 
-    def test_the_caller_passes_every_kind_it_can_produce(self):
-        """The bug was never in this function — it was in the caller dropping
-        a kind on the floor. Guard the caller."""
+    def test_the_caller_does_not_hand_count_kinds_at_all(self):
+        """The bug was never in this function — it was in the caller keeping a
+        hand-written list of kinds and forgetting to extend it. It forgot three
+        times. Guarding "did the caller remember?" only ever catches the kinds
+        that already exist, so the caller no longer counts: it passes the
+        source dicts and the weight table classifies them.
+
+        The exhaustive check (every kind ANY module emits is registered) lives
+        in test_research_grounding.py.
+        """
         import os
         root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
         src = open(os.path.join(root, 'services/research/research_server.py')).read()
-        call = src[src.index('confidence = compute_confidence('):][:260]
-        self.assertIn('textbook_sources', call)
-        self.assertIn('primary_sources', call)
-        self.assertIn('web_sources', call)
+        self.assertIn('confidence_from_sources(sources)', src)
+        for hand_counted in ('web_sources = [', 'primary_sources = [',
+                             'textbook_sources = ['):
+            self.assertNotIn(
+                hand_counted, src,
+                "counting kinds by hand in the caller is the defect itself")

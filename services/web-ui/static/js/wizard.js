@@ -469,11 +469,69 @@ async function startCustomGeneration() {
     progressEl.style.background = '';  // reset success/error tint
     treeEl.innerHTML = '<div class="build-tree-placeholder"><div class="skeleton-pulse"></div><span>Generating structure...</span></div>';
 
-    // Connect Socket.IO for progress updates. Socket is kept alive for 5s
-    // after the REST call returns so trailing STRUCT events aren't dropped.
+    // Connect Socket.IO for progress updates. The socket lives until the build
+    // reports DONE or ERROR (plus 5s of grace for trailing STRUCT events).
     const socket = io();
     let conceptCount = 0;
     let hydratedCount = 0;
+    let completed = false;
+    const buildWarnings = [];
+
+    // The socket used to be closed 5s after the REST call returned. That call
+    // only ACKs the build, so the wizard was disconnecting itself seconds into
+    // a twenty-minute build and never saw another event. It now stays open
+    // until the build actually ends.
+    function closeSocket() {
+        setTimeout(() => { try { socket.disconnect(); } catch (_) {} }, 5000);
+    }
+
+    // Shown when the build genuinely finishes — either the DONE pipeline stage
+    // or a synchronous REST response that already carries a real uid.
+    function showWizardComplete(courseUid) {
+        if (completed) return;
+        completed = true;
+        clearTimeout(stallTimer);
+        if (courseUid) wizardState.course_uid = courseUid;
+        progressEl.style.width = '100%';
+        progressEl.style.background = 'var(--status-success)';
+        statusEl.style.color = '';
+        statusEl.textContent = 'Course created successfully!';
+        document.getElementById('wiz-gen-complete').style.display = 'block';
+
+        const summaryEl = document.getElementById('wiz-gen-summary');
+        summaryEl.textContent = `${wizardState.title} — ${wizardState.modules.length} modules`;
+        if (buildWarnings.length) {
+            const warn = document.createElement('div');
+            warn.className = 'build-warn';
+            warn.style.cssText = 'margin-top:0.5rem;color:var(--status-warning);font-size:0.85rem;text-align:left;';
+            const shown = buildWarnings.slice(0, 8).map(w => `<li>${escapeHtml(w)}</li>`);
+            if (buildWarnings.length > 8) {
+                shown.push(`<li>…and ${buildWarnings.length - 8} more</li>`);
+            }
+            // i-warning mask icon from icons.css — emoji are banned in this UI.
+            warn.innerHTML =
+                '<strong><span class="i i-warning" aria-hidden="true"></span> ' +
+                'Quality notes on this course</strong>' +
+                `<ul style="margin:0.25rem 0 0 1rem;">${shown.join('')}</ul>`;
+            summaryEl.parentNode.insertBefore(warn, summaryEl.nextSibling);
+        }
+
+        const startBtn = document.getElementById('wiz-start-learning-btn');
+        const uid = wizardState.course_uid;
+        startBtn.onclick = async () => {
+            startBtn.classList.add('is-loading');
+            startBtn.disabled = true;
+            try {
+                await fetch('/api/set_active_course', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ uid: uid, title: wizardState.title })
+                });
+            } catch (_) { /* best effort */ }
+            window.location.href = '/learn?course_uid=' + encodeURIComponent(uid);
+        };
+        closeSocket();
+    }
 
     // Safety timeout — if no events arrive within 60s, surface the problem.
     const stallTimer = setTimeout(() => {
@@ -485,6 +543,34 @@ async function startCustomGeneration() {
 
     socket.on('status_update', data => {
         const msg = data.message || '';
+
+        // B6.4: structured pipeline stages are authoritative. This replaces
+        // `msg.includes('successfully')`, which matched the builder's own
+        // "Preflight checks completed successfully" and drove this bar to 100%
+        // seconds into a build that had not written a single concept.
+        if (data.event && data.event.type === 'PIPELINE_STAGE') {
+            const ev = data.event;
+            if (ev.stage === 'ERROR') {
+                clearTimeout(stallTimer);
+                statusEl.textContent = data.message || 'Build failed.';
+                statusEl.style.color = 'var(--status-error)';
+                progressEl.style.background = 'var(--status-error)';
+                showCustomGenerationRetry(statusEl);
+                closeSocket();
+                return;
+            }
+            if (ev.stage === 'DONE') {
+                showWizardComplete(ev.course_uid);
+                return;
+            }
+            clearTimeout(stallTimer);
+            statusEl.textContent = data.message || ev.stage;
+            if (typeof ev.pct === 'number') {
+                progressEl.style.width = Math.max(0, Math.min(100, ev.pct)) + '%';
+            }
+            return;
+        }
+
         if (msg.startsWith('STRUCT:')) {
             // Remove placeholder on first real event
             const ph = treeEl.querySelector('.build-tree-placeholder');
@@ -492,6 +578,12 @@ async function startCustomGeneration() {
 
             // Delegate to shared ProgressTree component
             const result = ProgressTree.handleStructMessage(msg, treeEl, statusEl);
+
+            // Quality caveats — below-level content, unverified claims. The
+            // shared component renders them into the tree and flags them here;
+            // without this the only evidence that a course is weak dies in the
+            // socket handler.
+            if (result.isWarning) buildWarnings.push(result.title);
 
             // Track concept count for progress bar
             if (result.type === 'CONCEPT') {
@@ -504,10 +596,10 @@ async function startCustomGeneration() {
                 statusEl.textContent = 'Hydrated ' + hydratedCount + '/' + conceptCount;
             }
             treeEl.scrollTop = treeEl.scrollHeight;
-        } else if (msg === 'COURSE_COMPLETE' || msg.includes('successfully')) {
-            progressEl.style.width = '100%';
-            progressEl.style.background = 'var(--status-success)';
-            statusEl.textContent = 'Course created!';
+        } else if (msg === 'COURSE_COMPLETE') {
+            // Ignored on purpose: COURSE_COMPLETE is the teaching loop's
+            // "learner finished studying" signal, not a build signal. Build
+            // completion arrives as the PIPELINE_STAGE DONE event above.
         } else if (!msg.startsWith('CPROG:') && !msg.startsWith('QTYPE:') && !msg.startsWith('PEDAGOGY:')) {
             statusEl.textContent = msg;
         }
@@ -566,17 +658,15 @@ async function startCustomGeneration() {
             statusEl.textContent = 'Error: ' + (result.error || 'Unknown error');
             statusEl.style.color = 'var(--status-error)';
             showCustomGenerationRetry(statusEl);
+            closeSocket();
         }
     } catch (e) {
         clearTimeout(stallTimer);
         statusEl.textContent = 'Failed to create course: ' + e.message;
         statusEl.style.color = 'var(--status-error)';
         showCustomGenerationRetry(statusEl);
+        closeSocket();
     }
-
-    // Keep the socket alive for a few more seconds so trailing STRUCT/
-    // HYDRATED events can still paint into the tree before we disconnect.
-    setTimeout(() => { try { socket.disconnect(); } catch (_) {} }, 5000);
 }
 
 function showCustomGenerationRetry(statusEl) {

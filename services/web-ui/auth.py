@@ -150,6 +150,13 @@ def principal_still_valid():
 
 
 def clear_principal():
+    active_user = session.get('student_id') or session.get('parent_id')
+    if active_user:
+        try:
+            from services.common.hardware_lock import get_hardware_manager
+            get_hardware_manager().release_hardware_session(active_user)
+        except Exception:
+            pass
     for k in ('parent_id', 'student_id', 'role'):
         session.pop(k, None)
 
@@ -168,6 +175,11 @@ def login_parent(parent_id):
     session['parent_id'] = parent_id
     session['role'] = 'parent'
     session.permanent = True
+    try:
+        from services.common.hardware_lock import get_hardware_manager
+        get_hardware_manager().claim_hardware_session(parent_id)
+    except Exception:
+        pass
 
 
 def launch_student(student_id):
@@ -176,12 +188,29 @@ def launch_student(student_id):
     session['student_id'] = student_id
     session['role'] = 'student'
     session.permanent = True
+    try:
+        from services.common.hardware_lock import get_hardware_manager
+        get_hardware_manager().claim_hardware_session(student_id)
+    except Exception:
+        pass
 
 
 def exit_student():
+    student_id = session.get('student_id')
+    if student_id:
+        try:
+            from services.common.hardware_lock import get_hardware_manager
+            get_hardware_manager().release_hardware_session(student_id)
+        except Exception:
+            pass
     session.pop('student_id', None)
     if session.get('parent_id'):
         session['role'] = 'parent'
+        try:
+            from services.common.hardware_lock import get_hardware_manager
+            get_hardware_manager().claim_hardware_session(session['parent_id'])
+        except Exception:
+            pass
     else:
         clear_principal()
 
@@ -220,6 +249,21 @@ def student_session_required(f):
         if not principal_still_valid():
             clear_principal()
             return _deny(401, 'session no longer valid')
+        return f(*args, **kwargs)
+    return decorated
+
+
+def hardware_required(f):
+    """Enforces single-active account hardware allocation (Ollama GPU gate + audio devices).
+    Only ONE account can hold active hardware execution at a time."""
+    from services.common.hardware_lock import get_hardware_manager, HardwareLockError
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        user_id = current_student_id() or current_parent_id() or DEFAULT_STUDENT_ID
+        try:
+            get_hardware_manager().check_hardware_access(user_id)
+        except HardwareLockError as e:
+            return _deny(423, str(e))
         return f(*args, **kwargs)
     return decorated
 

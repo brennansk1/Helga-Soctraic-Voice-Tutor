@@ -52,6 +52,20 @@ if _REPO_ROOT not in sys.path:
 DEFAULT_OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "nail-35b-a3b")
 
+# THE JUDGE IS PINNED SEPARATELY FROM THE TUTOR, AND MUST BE.
+#
+# The judge defaulted to OLLAMA_MODEL, so re-routing the tutor silently
+# re-routed the judge. Measured 2026-08-07 with --self-test:
+#
+#     qwen3.5:9b   accepts-misconception -> 1     CALIBRATED
+#     qwen3:14b    accepts-misconception -> None  MISCALIBRATED
+#
+# qwen3:14b is the BETTER TUTOR (4.34 overall, accuracy 5.00) and the WORSE
+# JUDGE — it cannot reliably detect a tutor accepting a misconception, which
+# is the one thing this rubric exists to catch. Scoring the better tutor with
+# the worse judge is how a real regression gets certified as an improvement.
+JUDGE_MODEL = os.environ.get("HELGA_JUDGE_MODEL", "qwen3.5:9b")
+
 
 # --- student profiles --------------------------------------------------------
 # Each profile is a persona the simulator must hold FOR THE WHOLE dialogue.
@@ -219,6 +233,13 @@ def score_misconception_handling(client, convo, samples_n=3):
 DIMENSIONS = ["socratic", "adaptation", "accuracy",
               "misconception_handling", "progression"]
 
+TRAJECTORY_PROMPT = """Look at the ENTIRE dialogue. Did the tutor's pedagogy collapse at any point?
+A collapse means the tutor did either of these:
+1. Stopped questioning and started lecturing (gave a long monologue without drawing reasoning from the student).
+2. Conceded or affirmed a wrong answer from the student.
+
+Return STRICT JSON: {"collapse": true|false, "reason": "<one sentence explaining why>"}"""
+
 
 def judge_self_test(model=None, url=None):
     """Validate the JUDGE before trusting its scores.
@@ -229,7 +250,7 @@ def judge_self_test(model=None, url=None):
     twice scored 3/5, so the dimension was compressed at the bottom and the
     1.6 average overstated the problem.
     """
-    c = _client(model or DEFAULT_MODEL, url or DEFAULT_OLLAMA_URL)
+    c = _client(model or JUDGE_MODEL, url or DEFAULT_OLLAMA_URL)
     topic = TOPICS[0]
     accepting = [
         {"role": "tutor", "text": "What might make coffee drinkers seem more awake?"},
@@ -782,6 +803,13 @@ def judge(client, profile_key, topic, transcript, samples_n=3):
         out["_mh_note"] = "student made no error; not scoreable"
     elif why:
         out["_mh_why"] = why
+
+    traj_raw = _chat(client, TRAJECTORY_PROMPT, user, max_tokens=250, temperature=0.0)
+    traj_d = _json_of(traj_raw)
+    out["trajectory_collapse"] = bool(traj_d.get("collapse", False))
+    if out["trajectory_collapse"]:
+        out["_collapse_reason"] = str(traj_d.get("reason", ""))[:300]
+
     out["worst_moment"] = worst
     out["_judge_samples"] = len(samples)
     return out
@@ -847,7 +875,7 @@ def main():
             mean = round(statistics.mean(vals), 2) if vals else None
             print("    " + "  ".join(
                 f"{d_[:6]}={scores.get(d_)}" for d_ in DIMENSIONS)
-                + f"  MEAN={mean}")
+                + f"  COLLAPSE={scores.get('trajectory_collapse', False)}  MEAN={mean}")
             if scores.get("worst_moment"):
                 print(f"    weakest: {scores['worst_moment'][:140]}")
             runs.append({"profile": key, "topic": topic["concept"],
@@ -873,6 +901,12 @@ def main():
     overall_sd = round(statistics.pstdev(means), 2) if len(means) > 1 else 0.0
     spread["overall"] = overall_sd
     print(f"  {'OVERALL':24} {overall['overall']}   (sd {overall_sd}, n={len(means)})")
+    
+    collapses = [r["scores"]["trajectory_collapse"] for r in runs if "trajectory_collapse" in r["scores"]]
+    if collapses:
+        collapse_rate = sum(collapses) / len(collapses)
+        print(f"  {'COLLAPSE RATE':24} {collapse_rate:.0%}   (n={len(collapses)})")
+        
     print(f"  ({len(runs)} dialogues in {time.time() - t0:.0f}s)")
 
     # The smallest difference worth believing, given observed dispersion.

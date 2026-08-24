@@ -62,12 +62,20 @@ def probe(mastery, research_url, verbose=False):
     except Exception as e:
         print(f"    research unavailable: {e}")
 
+    import threading
     h = ContentHydrator.__new__(ContentHydrator)
     h.status_callback = None
     h.mastery_level = mastery
     h.storage = None
     h.model = None
     h.used_source_ids = set()
+    h._verdict_lock = threading.Lock()
+    h._contract_failures = []
+    h._low_confidence_concepts = []
+    h._research_errors = []
+    h._fact_failures = []
+    h._missing_sections = []
+    h._doc_missing = {}
 
     t0 = time.time()
     body = h._condense_and_structure_content(

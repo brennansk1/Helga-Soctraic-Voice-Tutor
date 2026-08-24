@@ -44,14 +44,33 @@ def test_an_unfinished_course_with_content_is_preserved(tmp_path, status):
         f"would have cost nothing and rebuilding costs hours")
 
 
-@pytest.mark.parametrize("status",
-                         ["skeleton", "building", "failed", "hydration_failed"])
+@pytest.mark.parametrize("status", ["failed", "hydration_failed"])
 def test_an_unfinished_course_with_NO_content_is_still_removed(tmp_path, status):
     """The cleaner still earns its keep: nothing was generated, so nothing is
     lost, and an empty shell in the list is just noise."""
     d = _course(str(tmp_path), "course_empty", status, concepts=0)
     clean_failed_courses(str(tmp_path))
     assert not os.path.isdir(d)
+
+
+@pytest.mark.parametrize("status", ["skeleton", "building"])
+def test_a_LIVE_build_is_never_collectable_even_when_still_empty(tmp_path, status):
+    """These two are what a build IN PROGRESS looks like, not a failure.
+
+    This test used to assert the opposite — that an empty skeleton is removed —
+    and that was right only while "skeleton" meant "abandoned". It does not: a
+    course sits in "skeleton" for the WHOLE of hydration, and it is empty for
+    the first minutes of it. Collecting on status alone therefore deleted live
+    builds out from under the running hydrator, which is how a 101-concept
+    course came within five minutes of being destroyed.
+
+    So the statuses are no longer collectable at all, and the content check
+    guards the terminal ones. Two independent barriers, deliberately.
+    """
+    d = _course(str(tmp_path), "course_live", status, concepts=0)
+    clean_failed_courses(str(tmp_path))
+    assert os.path.isdir(d), (
+        f"a {status!r} course was deleted; that is a build in progress")
 
 
 def test_a_ready_course_is_never_touched(tmp_path):

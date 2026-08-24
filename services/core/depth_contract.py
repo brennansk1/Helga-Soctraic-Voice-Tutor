@@ -135,24 +135,26 @@ def _has(element, body):
 #
 # If length is ever to discriminate again, the fix is a leaner template at low
 # levels, not a tighter cap on a nine-section document.
+#
+# Contracts are POSITIVE-ONLY: a word band plus `required` elements. Every level
+# also carried an empty `"forbidden": []` that nothing ever read — no validator,
+# no prompt builder, no consumer of contract_for() — so it was removed. If a
+# ban-list is ever wanted, add it together with the code that enforces it.
 DEPTH_CONTRACTS = {
     1: {
         "label": "Awareness",
         "word_min": 120, "word_max": 1000,
         "required": ["any_source"],
-        "forbidden": [],
     },
     2: {
         "label": "Understanding",
         "word_min": 200, "word_max": 1300,
         "required": ["worked_example", "any_source"],
-        "forbidden": [],
     },
     3: {
         "label": "Application",
         "word_min": 320, "word_max": 1500,
         "required": ["formal_definition", "worked_example", "any_source"],
-        "forbidden": [],
     },
     4: {
         "label": "Proficiency",
@@ -161,7 +163,6 @@ DEPTH_CONTRACTS = {
             "formal_definition", "worked_example", "named_result",
             "derivation_or_proof", "primary_source",
         ],
-        "forbidden": [],
     },
     5: {
         "label": "Expertise",
@@ -177,7 +178,6 @@ DEPTH_CONTRACTS = {
             "named_result", "derivation_or_proof", "exercise",
             "primary_source",
         ],
-        "forbidden": [],
     },
 }
 
@@ -336,14 +336,34 @@ def regeneration_hint(problems):
             + "; ".join(dict.fromkeys(asks)) + ".")
 
 
-def validate_course(concepts, mastery, topic="", domain=None):
+def validate_course(concepts, mastery, topic="", domain=None, sources_by_uid=None):
     """Validate many concepts. Returns a summary dict for gate reporting.
 
-    `concepts` is an iterable of (uid, body).
+    `concepts` is an iterable of (uid, body) or (uid, body, sources).
+    `sources_by_uid` is an alternative way to supply the same thing: a
+    {uid: sources} mapping, used when the bodies and the retrieved sources are
+    assembled separately.
+
+    Sources MUST be threaded through. This function used to call
+    validate_concept() without them, which reproduced course-wide exactly the
+    bug validate_concept's own docstring documents: validation runs before the
+    "## Sources" block is appended, so `any_source`/`primary_source` are
+    unsatisfiable from the body alone and the gate reports failures on concepts
+    that are in fact fully cited. The per-concept path in course_builder always
+    passed sources; only this course-level path regressed, so the two gates
+    disagreed about the same content.
+
+    Callers passing plain (uid, body) pairs still work — they simply get the
+    old source-blind behaviour, which is correct when no sources are known.
     """
     results, failing = {}, []
-    for uid, body in concepts:
-        ok, problems, detail = validate_concept(body, mastery, topic, domain)
+    for entry in concepts:
+        uid, body = entry[0], entry[1]
+        srcs = entry[2] if len(entry) > 2 else None
+        if srcs is None and sources_by_uid:
+            srcs = sources_by_uid.get(uid)
+        ok, problems, detail = validate_concept(
+            body, mastery, topic, domain, sources=srcs)
         results[uid] = {"ok": ok, "problems": problems, **detail}
         if not ok:
             failing.append(uid)

@@ -1,108 +1,452 @@
-/* The trust surface. Tokens only — every colour here is defined for both
-   themes in the design system, and the guard enforces it. */
+/* ============================================================================
+ * Trust surface — A5 gate: "every concept view shows its sources and
+ * confidence".
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * The builder computes a grounding confidence per concept and writes a
+ * `## Sources` block into the concept markdown, and until now the session view
+ * showed neither. A concept the research pass barely corroborated was taught in
+ * exactly the same voice, and rendered in exactly the same chrome, as one built
+ * from three solid references. The learner had no way to tell them apart.
+ *
+ * DESIGN INTENT
+ * -------------
+ * The concept text is the product; this is supporting evidence. So the
+ * well-grounded case is deliberately quiet — a single line, collapsed, that a
+ * learner can open if they care where something came from.
+ *
+ * The weakly-grounded case is deliberately NOT quiet. That asymmetry is the
+ * whole point of the feature: a trust surface that is equally understated when
+ * content is thin has failed at its only job. That state gets a tinted surface,
+ * a warning rule down the leading edge, and opens expanded so the caveat is
+ * read rather than discovered.
+ *
+ * Every colour here is an existing token with a dark-mode value defined in
+ * style.css (--bg-warning, --status-warning, ...). No new palette entries.
+ * ==========================================================================*/
 
-.trust-pill {
-    display: inline-flex; align-items: center; gap: .4em;
-    padding: .28em .7em;
-    border: 1px solid var(--border-color);
-    border-radius: 999px;
+.trust-surface {
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border-color);
     background: var(--bg-secondary);
-    color: var(--text-primary);
-    font-size: .78rem; font-weight: 600;
+    font-size: var(--font-size-xs);
+}
+
+.trust-surface.hidden { display: none; }
+
+/* ---- Collapsed summary row ---------------------------------------------- */
+
+.trust-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    padding: var(--space-2) var(--space-5);
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: var(--font-size-xs);
+    text-align: left;
     cursor: pointer;
-    transition: border-color 160ms ease, background 160ms ease;
-}
-.trust-pill:hover:not(:disabled) { border-color: var(--accent-primary); }
-.trust-pill:disabled { opacity: .6; cursor: default; }
-.trust-pill.is-empty { font-weight: 500; color: var(--text-secondary); }
-.trust-pill-count { color: var(--accent-primary); }
-.trust-pill-label { color: var(--text-secondary); font-weight: 500; }
-.trust-pill-warn {
-    color: var(--color-warning);
-    border-left: 1px solid var(--border-color);
-    padding-left: .5em; margin-left: .1em;
+    transition: background var(--transition-fast), color var(--transition-fast);
 }
 
-.trust-panel {
-    /* border-box because this page's stylesheets are content-box by default:
-       as a full-width sheet on a phone, width:100% plus padding and border
-       resolved to 399px in a 375px viewport and hung off the right edge. */
-    box-sizing: border-box;
-    position: absolute; right: var(--space-4); top: 56px; z-index: 30;
-    width: min(460px, calc(100vw - 2 * var(--space-4)));
-    max-height: min(70vh, 620px); overflow-y: auto;
-    background: var(--bg-secondary);
+.trust-toggle:hover {
+    background: var(--bg-primary);
     color: var(--text-primary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--border-radius-lg);
-    box-shadow: var(--shadow-lg);
-    padding: var(--space-4);
 }
-.trust-panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1em; }
-.trust-panel-head h2 { margin: 0 0 .2em; font-size: 1rem; }
-.trust-close {
-    border: 0; background: none; cursor: pointer; line-height: 1;
-    font-size: 1.4rem; color: var(--text-secondary); padding: 0 .2em;
-}
-.trust-close:hover { color: var(--text-primary); }
 
-.trust-summary, .trust-note {
-    margin: .4em 0 1em; font-size: .85rem; line-height: 1.5;
+/* The status dot carries the state at a glance for anyone scanning rather than
+   reading. It is never the ONLY carrier — the label beside it says the same
+   thing in words, because colour alone fails for ~4% of male learners. */
+.trust-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+    background: var(--text-secondary);
+}
+
+.trust-label {
+    font-weight: var(--font-weight-medium, 500);
+    letter-spacing: 0.01em;
+}
+
+.trust-count {
     color: var(--text-secondary);
-}
-.trust-summary strong { color: var(--text-primary); }
-
-.trust-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
-.trust-source {
-    box-sizing: border-box;
-    padding: var(--space-3);
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--border-radius);
-}
-.trust-source-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5em; }
-.trust-source-title {
-    font-weight: 600; font-size: .9rem; color: var(--text-primary);
-    text-decoration: none; overflow-wrap: anywhere;
-}
-a.trust-source-title:hover { color: var(--accent-primary); text-decoration: underline; }
-
-.trust-tier, .trust-tag {
-    font-size: .68rem; font-weight: 700; letter-spacing: .04em;
-    text-transform: uppercase;
-    padding: .18em .5em; border-radius: 999px;
-    background: var(--bg-secondary); color: var(--text-secondary);
-    border: 1px solid var(--border-color);
-}
-.trust-tier-primary, .trust-tier-textbook { color: var(--color-success); }
-.trust-tag-warn { color: var(--color-warning); }
-
-.trust-source-meta {
-    display: flex; align-items: center; gap: .6em;
-    margin-top: .5em; font-size: .75rem; color: var(--text-secondary);
-}
-.trust-ground {
-    flex: 0 0 92px; height: 5px; border-radius: 999px;
-    background: var(--bg-secondary); border: 1px solid var(--border-color);
+    white-space: nowrap;
     overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
 }
-.trust-ground-fill { display: block; height: 100%; background: var(--accent-primary); }
-.trust-ground-num { font-variant-numeric: tabular-nums; }
-.trust-claims { margin-left: auto; }
 
-.trust-excerpt {
-    margin: .6em 0 0; font-size: .8rem; line-height: 1.5;
+/* Chevron rotates to point down when the panel is open. Reusing i-arrow-right
+   rather than adding a caret keeps this inside the existing mask-icon set. */
+.trust-chevron {
+    margin-left: auto;
+    flex: 0 0 auto;
+    opacity: 0.7;
+    transition: transform var(--transition-fast);
+}
+
+.trust-toggle[aria-expanded="true"] .trust-chevron {
+    transform: rotate(90deg);
+}
+
+/* ---- Expanded detail ----------------------------------------------------- */
+
+.trust-detail {
+    padding: 0 var(--space-5) var(--space-3);
+}
+
+.trust-detail.hidden { display: none; }
+
+.trust-caveat {
+    margin: 0 0 var(--space-2);
     color: var(--text-secondary);
-    border-left: 2px solid var(--border-color); padding-left: .7em;
+    font-size: var(--font-size-xs);
+    line-height: 1.5;
+    max-width: 68ch;
 }
 
-@media (max-width: 760px) {
-    /* On a phone the panel is a sheet, not a popover: a 460px card anchored to
-       a corner would hang off the screen. */
-    .trust-panel {
-        position: fixed; inset: auto 0 0 0; top: auto;
-        width: 100%; max-height: 78dvh;
-        border-radius: var(--border-radius-lg) var(--border-radius-lg) 0 0;
-        border-left: 0; border-right: 0; border-bottom: 0;
+.trust-sources {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.trust-source {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    line-height: 1.5;
+}
+
+.trust-source a {
+    color: var(--accent-primary);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    overflow-wrap: anywhere;
+}
+
+.trust-source a:hover {
+    border-bottom-color: currentColor;
+}
+
+/* Source type (textbook / primary / web / reference). A small caps-ish tag
+   rather than a coloured pill: four of these stacked in colour would out-shout
+   the concept text they are supposed to be supporting. */
+.trust-type {
+    flex: 0 0 auto;
+    padding: 1px var(--space-2);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    color: var(--text-secondary);
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+}
+
+/* Tier is the builder's own domain-quality ranking. Kept subordinate to the
+   type tag — it is useful detail, not a headline. */
+.trust-tier {
+    flex: 0 0 auto;
+    color: var(--text-secondary);
+    opacity: 0.8;
+    white-space: nowrap;
+}
+
+.trust-empty {
+    margin: 0;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+/* ---- The three grounding states ----------------------------------------- */
+
+/* Well grounded: quiet by design. Success green on the dot only; no tinted
+   surface, because "this worked normally" does not deserve a banner. */
+.trust-surface[data-state="grounded"] .trust-dot {
+    background: var(--status-success);
+}
+
+/* Partly grounded: warning colour on the dot, still an untinted surface. */
+.trust-surface[data-state="partial"] .trust-dot {
+    background: var(--status-warning);
+}
+
+/* Mostly the model's own knowledge: the loud state.
+
+   A tinted surface plus a rule down the leading edge, so it reads as a
+   different KIND of row from the quiet ones even before the words are read.
+   `border-inline-start` rather than border-left so it stays on the leading
+   edge under RTL. */
+.trust-surface[data-state="unsourced"] {
+    background: var(--bg-warning);
+    border-inline-start: 3px solid var(--status-warning);
+}
+
+.trust-surface[data-state="unsourced"] .trust-toggle {
+    color: var(--text-primary);
+}
+
+.trust-surface[data-state="unsourced"] .trust-toggle:hover {
+    background: transparent;
+}
+
+.trust-surface[data-state="unsourced"] .trust-label {
+    font-weight: var(--font-weight-semibold, 600);
+}
+
+.trust-surface[data-state="unsourced"] .trust-caveat {
+    color: var(--text-primary);
+}
+
+/* The warning icon only appears in the unsourced state; in the other two the
+   dot alone is enough. */
+.trust-warn-icon { display: none; }
+
+.trust-surface[data-state="unsourced"] .trust-warn-icon {
+    display: inline-block;
+    color: var(--status-warning);
+}
+
+.trust-surface[data-state="unsourced"] .trust-dot {
+    display: none;
+}
+
+/* ---- Responsive ---------------------------------------------------------- */
+
+@media (max-width: 768px) {
+    .trust-toggle { padding: var(--space-2) var(--space-3); }
+    .trust-detail { padding: 0 var(--space-3) var(--space-3); }
+
+    /* On a phone the summary row has to survive without the reference count,
+       which is the least load-bearing part of it. */
+    .trust-count { display: none; }
+
+    .trust-source {
+        flex-wrap: wrap;
+        gap: var(--space-1) var(--space-2);
     }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .trust-toggle,
+    .trust-chevron { transition: none; }
+}
+
+/* ============================================================================
+ * Build verdicts — the other three checks
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * The trust surface above shipped with one of the four build-time verdicts:
+ * grounding confidence. The other three — the fact check with independent
+ * confirmation, the depth contract, and the blind level-calibration judge —
+ * were computed on every build, written into structure.json, and read by
+ * nothing. `grep -rn 'fact_check' services/web-ui/` returned zero hits. A
+ * course that failed its fact check was presented to the learner in exactly
+ * the same chrome as one that passed it.
+ *
+ * DESIGN INTENT — the same asymmetry as the block above, deliberately
+ * -------------------------------------------------------------------
+ * Almost every course has SOMETHING: a sampled fact check, a partial depth
+ * verification, a handful of thinly-sourced concepts. If all of that is loud,
+ * none of it is. So there are exactly two volumes here:
+ *
+ *   LOUD  — a check that RAN and FAILED: a confirmed-false claim that survived
+ *           its rewrite, or a course under the depth contract's own 80% floor.
+ *           Error colour, tinted surface, opens itself.
+ *   QUIET — everything else, including "not assessed". Muted text, one line, no
+ *           tint. Not assessed is never dressed as a pass, but it is also not
+ *           an accusation.
+ *
+ * Colours are existing tokens (--status-error/-warning/-success, --bg-danger,
+ * --bg-warning), all of which carry dark-mode values in style.css:104-129.
+ * ==========================================================================*/
+
+/* ---- Per-concept check rows (inside .trust-detail) ----------------------- */
+
+.trust-checks {
+    list-style: none;
+    margin: 0 0 var(--space-3);
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    max-width: 68ch;
+}
+
+.trust-checks.hidden { display: none; }
+
+.trust-check {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+
+/* Same tag treatment as .trust-type, so a check row and a source row read as
+   members of one list rather than two unrelated components. */
+.trust-check-label {
+    flex: 0 0 auto;
+    min-width: 5.5rem;
+    padding: 1px var(--space-2);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    color: var(--text-secondary);
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+}
+
+.trust-check-text { min-width: 0; }
+
+.trust-check.is-fail {
+    color: var(--text-primary);
+}
+
+.trust-check.is-fail .trust-check-label {
+    border-color: var(--status-error);
+    color: var(--status-error);
+}
+
+.trust-check.is-caution .trust-check-label {
+    border-color: var(--status-warning);
+    color: var(--status-warning);
+}
+
+.trust-check.is-pass .trust-check-label {
+    border-color: var(--status-success);
+    color: var(--status-success);
+}
+
+/* "Checked but not this concept", "verified for 8 of 12". Deliberately the
+   plainest row of the four: an unknown is not a finding. */
+.trust-check.is-unknown .trust-check-label {
+    opacity: 0.75;
+}
+
+/* ---- The fourth surface state: a confirmed-false claim ------------------- */
+
+/* Worse than `unsourced`, and it gets its own colour to say so. Weak grounding
+   means the content is UNSUPPORTED; this means part of it was checked and found
+   WRONG. Sharing the warning amber with thin sourcing would have flattened that
+   distinction into one shade of "be careful". */
+.trust-surface[data-state="flagged"] {
+    background: var(--bg-danger);
+    border-inline-start: 3px solid var(--status-error);
+}
+
+.trust-surface[data-state="flagged"] .trust-toggle,
+.trust-surface[data-state="flagged"] .trust-caveat {
+    color: var(--text-primary);
+}
+
+.trust-surface[data-state="flagged"] .trust-toggle:hover {
+    background: transparent;
+}
+
+.trust-surface[data-state="flagged"] .trust-label {
+    font-weight: var(--font-weight-semibold, 600);
+}
+
+.trust-surface[data-state="flagged"] .trust-dot { display: none; }
+
+.trust-surface[data-state="flagged"] .trust-warn-icon {
+    display: inline-block;
+    color: var(--status-error);
+}
+
+/* ---- Course card verdict (courses grid) --------------------------------- */
+
+.course-card-quality {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    margin: var(--space-2) 0 0;
+    font-size: var(--font-size-xs);
+    line-height: 1.45;
+    color: var(--text-secondary);
+}
+
+.course-card-quality .i {
+    flex: 0 0 auto;
+    align-self: center;
+}
+
+/* The only card state that gets a surface of its own. Matched to the tinted
+   `unsourced` treatment above so "flagged" means the same thing in the grid as
+   it does inside a concept. */
+.course-card-quality.is-failed {
+    padding: var(--space-2);
+    border-radius: var(--border-radius-sm);
+    background: var(--bg-danger);
+    border-inline-start: 3px solid var(--status-error);
+    color: var(--text-primary);
+}
+
+.course-card-quality.is-failed .i { color: var(--status-error); }
+
+.course-card-quality.is-verified .i { color: var(--status-success); }
+
+/* Caution and unassessed are muted single lines on purpose — see the header
+   note. `is-caution` is truncated because its headline is a full sentence and
+   the `title` attribute carries the whole thing on hover. */
+.course-card-quality.is-caution span,
+.course-card-quality.is-unassessed span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.course-card-quality.is-unassessed { opacity: 0.75; }
+
+/* ---- Course-level banner on the learn path ------------------------------ */
+
+.path-quality-banner {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-5);
+    background: var(--bg-danger);
+    border-inline-start: 3px solid var(--status-error);
+    color: var(--text-primary);
+    font-size: var(--font-size-xs);
+    line-height: 1.5;
+}
+
+.path-quality-banner.hidden { display: none; }
+
+.path-quality-banner .i {
+    flex: 0 0 auto;
+    color: var(--status-error);
+}
+
+/* ---- Path node carrying a confirmed-false claim ------------------------- */
+
+/* Mirrors .path-node.low-confidence in style.css, in error rather than warning
+   colour, and wins over it: a node can be both, and "wrong" outranks "thin". */
+.path-node.fact-flagged .path-node-inner {
+    border-color: var(--status-error);
+    box-shadow: 0 0 0 2px rgba(224, 125, 106, 0.3);
+}
+
+.node-label-meta.is-flagged {
+    color: var(--status-error);
+    font-weight: var(--font-weight-semibold, 600);
+}
+
+@media (max-width: 768px) {
+    .path-quality-banner { padding: var(--space-2) var(--space-3); }
+    .trust-check { flex-wrap: wrap; gap: var(--space-1) var(--space-2); }
 }

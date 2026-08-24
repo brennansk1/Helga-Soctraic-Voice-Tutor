@@ -753,7 +753,32 @@ def format_for_prompt(outline, max_chapters=40):
         if len(o["chapters"]) > max_chapters:
             parts.append(f"  ... and {len(o['chapters']) - max_chapters} more")
 
-    if outline.get("vocabulary"):
-        parts.append("\nTerminology seen in reference material: "
-                     + ", ".join(outline["vocabulary"][:12]))
+    vocab = vocabulary_line(outline.get("vocabulary"))
+    if vocab:
+        parts.append("\n" + vocab)
     return "\n".join(parts)
+
+
+# BOTH BRANCHES BUILT THIS, UNDER DIFFERENT NAMES.
+#
+# `wikipedia_parent_subjects` above and main's `discover_broader_subjects` are
+# the same idea, found independently from the same failure: a narrow topic has
+# no book of its own, which is what produced the 42%-coverage Pythagorean
+# course. Main's name is what `curriculum_research` imports, so it is kept as
+# an alias rather than renaming a function this module already uses.
+discover_broader_subjects = wikipedia_parent_subjects
+
+
+def vocabulary_line(vocabulary, limit=12):
+    """The terminology line, rendered in ONE place.
+
+    `subject_outline` has always returned `vocabulary` — Wikipedia section
+    headings, kept as a weak terminology signal — and `format_for_prompt` was
+    the only thing that rendered it. Nothing called `format_for_prompt`, so the
+    field was computed on every build and read by nobody. Both formatters now
+    share this, so collecting it and using it cannot drift apart again.
+    """
+    terms = [t for t in (vocabulary or []) if t][:limit]
+    if not terms:
+        return ""
+    return "Terminology seen in reference material: " + ", ".join(terms)

@@ -19,6 +19,11 @@ from services.common.concept_doc import (
     tutor_context as build_tutor_context,
     section as concept_section,
 )
+# Durable build record. The creation pipelines below own its ending: the
+# SkeletonBuilder used to finish() the record when IT returned, roughly 5% into
+# the build, so the banner cleared (and the UI announced a ready course) while
+# hydration still had every concept to write.
+from services.common import build_state
 
 try:
     from gpu_gate import LLMContext, INTERACTIVE
@@ -764,13 +769,43 @@ class MnemosyneFSM:
         """Emit a structured course-creation progress event (B6.4) plus a human
         message. The browser drives the progress bar from {stage, pct} instead of
         substring-matching free text. `fields` carries extras (e.g. title, uid,
-        completed, total). Falls back to `message` for legacy handlers."""
+        completed, total). Falls back to `message` for legacy handlers.
+
+        Call sites live at the phase boundaries of the creation pipelines
+        (`start_creation` and `_execute_course_creation`). Until they existed
+        this helper had none, so every progress UI ran on free-text matching —
+        the exact failure mode this protocol was written to retire: the wizard
+        bar hit 100% on preflight's "checks completed successfully", and the
+        Quick Create modal read build completion off COURSE_COMPLETE, which is
+        the TEACHING loop's "learner finished studying" signal. Emit the stage;
+        never make a consumer guess from prose.
+        """
         event = {"type": "PIPELINE_STAGE", "stage": stage}
         if pct is not None:
             event["pct"] = max(0, min(100, int(pct)))
         event.update(fields)
         self.send_status_update(message or stage.replace("_", " ").title(),
                                 progress=event.get("pct"), event=event)
+
+    def _course_size(self, course_uid):
+        """{modules, concepts} for a finished course, best effort.
+
+        Rides along with the DONE stage so a completion card can state what was
+        actually built instead of counting the status messages it happened to
+        receive — a tab that joined mid-build sees a fraction of them.
+        """
+        try:
+            course = self.storage.courses.get_course(course_uid) or {}
+            modules = course.get("modules", []) or []
+            concepts = 0
+            for m in modules:
+                for u in m.get("units", []) or []:
+                    for l in u.get("lessons", []) or []:
+                        concepts += len(l.get("concepts", []) or [])
+            return {"modules": len(modules), "concepts": concepts}
+        except Exception as e:
+            logging.warning(f"Course size unavailable for {course_uid}: {e}")
+            return {}
 
     def speak(self, text, record=True):
         """Add a tutor message to the transcript (text-only, no TTS)."""
@@ -932,6 +967,17 @@ class MnemosyneFSM:
             #
             # Only fills an EMPTY slot: an aid authored for this concept was
             # written deliberately and outranks a mined one.
+            # A1: Surface Phase 3 assets.json manifest aids if available
+            manifest = getattr(self, "_asset_manifest", None)
+            node = getattr(self, "current_lesson_node", None)
+            if manifest and node:
+                uid = node.get("uid")
+                if uid:
+                    manifest_aids = manifest.get("concepts", {}).get(uid, {})
+                    if manifest_aids:
+                        self._concept_aids.update(manifest_aids)
+            
+
             self._load_domain_code_aid()
 
             if self._concept_aids:
@@ -1012,14 +1058,35 @@ class MnemosyneFSM:
         self._last_aid_decision = decision
         logging.info(f"AID POLICY: {decision.action} — {decision.reason}")
 
-        if decision.action == "reuse":
+        # "generate" MUST ALSO SURFACE A PRE-BUILT AID.
+        #
+        # Only "reuse" was handled, so a "generate" verdict fell straight
+        # through and nothing reached the transcript. Observed on a live turn:
+        #
+        #     AID POLICY: generate — score 6 — lecture (prose already failed);
+        #                 visual subject
+        #
+        # The policy correctly decided a diagram was warranted, the concept had
+        # BOTH an "opening" and a "misconception:0" aid parsed and loaded, and
+        # the learner saw nothing. Phase 3 spends ~10 minutes per course drawing
+        # these; every one was unreachable through the branch the policy
+        # actually takes.
+        #
+        # Session-time generation is a separate feature (B13). Until it exists,
+        # "generate" means "a diagram belongs here" — and if one was already
+        # drawn at build time for that slot, showing it is strictly better than
+        # showing nothing.
+        if decision.action in ("reuse", "generate"):
             aid = self._concept_aids.get(decision.slot)
             if aid:
                 self._aid_sink(dict(aid))
                 self._aid_ids_this_concept.add(decision.slot)
-            else:
+            elif decision.action == "reuse":
                 logging.warning(f"Aid policy chose slot '{decision.slot}' but it "
                                 "is not loaded; falling back to no diagram")
+            else:
+                logging.info(f"Aid policy asked to generate '{decision.slot}'; "
+                             "no pre-built aid for that slot, so none shown")
         return decision
 
     def _note_aids_shown(self, aids):
@@ -3139,6 +3206,11 @@ class MnemosyneFSM:
         if affect_note:
             system_note = f"{system_note}\n{affect_note}" if system_note else affect_note
 
+        # B3: Concise bounds based on Harvard RCT evidence
+        if os.getenv("HELGA_STRICT_SOCRATIC_BUDGET") == "1":
+            concise_note = "Keep your response to no more than a few sentences."
+            system_note = f"{system_note}\n{concise_note}" if system_note else concise_note
+
         logging.info(f"Teaching Mode Selected: {teaching_mode}")
         self.send_status_update(f"Mode: {teaching_mode}...", progress=70)
 
@@ -4568,14 +4640,24 @@ class MnemosyneFSM:
         def _creation_pipeline():
             sm = ServiceManager(compose_cmd=["docker"])
             course_uid = None
+            # The SkeletonBuilder claims the durable record; this function ends
+            # it. Read off the instance so a superseded build cannot close the
+            # live one's record.
+            build_id = None
 
             try:
                 sm.stop_for_ingestion()
 
-                self.send_status_update("Preparing storage...")
+                # B6.4: same structured stage protocol as start_creation — the
+                # drafting flow feeds the same progress UIs, so it has to speak
+                # the same vocabulary or those UIs fall back to prose matching.
+                self.send_pipeline_stage("PREFLIGHT", 2, "Preparing storage...",
+                                         topic=topic)
                 self.send_status_update("LOG: Preparing Workspace...")
 
-                self.send_status_update("Architecting Course Skeleton...")
+                self.send_pipeline_stage("SKELETON", 10,
+                                         "Architecting Course Skeleton...",
+                                         topic=topic)
                 self.send_status_update("LOG: Architecting Course Skeleton...")
                 # ZIM/Kolibri providers removed — all content is LLM-generated
                 providers = []
@@ -4592,14 +4674,25 @@ class MnemosyneFSM:
                         topic, max_depth=depth, module_depths=module_depths
                     )
                 finally:
+                    # Captured in `finally` so a build that RAISED can still be
+                    # marked failed against its own record.
+                    build_id = getattr(sb, "_build_id", None)
                     sb.close()
 
                 if not course_uid:
+                    self.send_pipeline_stage("ERROR", None,
+                                             "Skeleton generation failed.",
+                                             topic=topic)
+                    build_state.fail("skeleton generation failed",
+                                     build_id=build_id)
                     self.speak("Failed to build course skeleton.")
                     return
 
                 # Audit syllabus before hydration (same as web-ui pipeline)
-                self.send_status_update("Auditing Syllabus Quality...")
+                build_state.stage("audit", 30, build_id=build_id)
+                self.send_pipeline_stage("AUDIT", 30,
+                                         "Auditing Syllabus Quality...",
+                                         course_uid=course_uid, topic=topic)
                 auditor = SyllabusAuditor(
                     status_callback=self.send_status_update, storage=self.storage
                 )
@@ -4608,7 +4701,11 @@ class MnemosyneFSM:
                 finally:
                     auditor.close()
 
-                self.send_status_update("Hydrating Content & Pedagogy...")
+                build_state.stage("hydrate", 40, build_id=build_id)
+                build_state.update(build_id=build_id, course_uid=course_uid)
+                self.send_pipeline_stage("HYDRATE", 40,
+                                         "Hydrating Content & Pedagogy...",
+                                         course_uid=course_uid, topic=topic)
                 self.send_status_update("LOG: Hydrating Content & Pedagogy...")
                 hydrator = ContentHydrator(
                     providers=providers,
@@ -4621,19 +4718,41 @@ class MnemosyneFSM:
                 finally:
                     hydrator.close()
 
-                self.send_status_update("Course built successfully!")
+                build_state.stage("finalize", 95, build_id=build_id)
+                self.send_pipeline_stage(
+                    "FINALIZE", 95, "Finalising course...",
+                    course_uid=course_uid, topic=topic)
+                sizes = self._course_size(course_uid)
+                self.send_pipeline_stage(
+                    "DONE", 100, "Course built successfully!",
+                    course_uid=course_uid, topic=topic, **sizes
+                )
+                # The build is over HERE, not when the skeleton returned.
+                build_state.finish(course_uid=course_uid, build_id=build_id)
                 self.speak("Course creation successful.")
 
             except Exception as e:
                 logging.error(f"Creation pipeline failed: {e}", exc_info=True)
                 # AUTO-12: Log full error, send user-friendly message
-                self.send_status_update(
-                    f"Error creating course. Check logs for details."
+                self.send_pipeline_stage(
+                    "ERROR", None,
+                    "Error creating course. Check logs for details.",
+                    topic=topic, detail=str(e)[:200],
                 )
+                build_state.fail(str(e), course_uid=course_uid, build_id=build_id)
                 self.speak(
                     f"An error occurred during course creation. Please check logs."
                 )
             finally:
+                # Belt and braces: a pipeline that exits by any other path
+                # must not leave the record "building" until the stale reaper
+                # notices, which locks creation for the whole quiet budget.
+                # fail() checks ownership, so this is a no-op once the build
+                # has already reported its own result.
+                st = build_state.current()
+                if st and st.get("active"):
+                    build_state.fail("build ended without reporting a result",
+                                     build_id=build_id)
                 # AUTO-6: Only cleanup in finally, don't send misleading completion
                 self.send_status_update("Restarting Systems...")
                 sm.restart_after_ingestion()
@@ -4823,10 +4942,19 @@ class MnemosyneFSM:
             sm = ServiceManager(compose_cmd=["docker"])
             course_uid = None
             pipeline_start = time.time()
+            # The SkeletonBuilder claims the durable build record; this function
+            # ends it. Ending it where the skeleton finished — which is what
+            # used to happen — cleared the banner about 5% into the build and
+            # let the guard announce a course that was still being written.
+            build_id = None
 
             try:
                 # 1. Stop Services (Safety Lock)
-                self.send_status_update("Preparing storage...")
+                # B6.4: each phase boundary below emits a STRUCTURED stage
+                # alongside its human message. Progress UIs read {stage, pct};
+                # the free text is display only.
+                self.send_pipeline_stage("PREFLIGHT", 2, "Preparing storage...",
+                                         topic=topic)
                 logging.info("[PIPELINE] Step 1: Stopping services for ingestion")
                 sm.stop_for_ingestion()
 
@@ -4835,7 +4963,9 @@ class MnemosyneFSM:
 
                 # 2. Build Skeleton
                 self.creation_status.update({"phase": "skeleton", "progress_pct": 10, "last_update": time.strftime("%Y-%m-%dT%H:%M:%S")})
-                self.send_status_update("Architecting Course Skeleton...")
+                self.send_pipeline_stage("SKELETON", 10,
+                                         "Architecting Course Skeleton...",
+                                         topic=topic)
                 logging.info(f"[PIPELINE] Step 2: Building skeleton for '{topic}'")
                 # ZIM/Kolibri providers removed — all content is LLM-generated
                 providers = []
@@ -4940,7 +5070,18 @@ class MnemosyneFSM:
                         sb.close()
 
                 if not course_uid:
-                    self.send_status_update("Skeleton generation failed.")
+                    # The pipeline is over — say so structurally, otherwise the
+                    # UI sits on a bar that never moves again and the polled
+                    # phase still reads "skeleton" as if work were in flight.
+                    self.creation_status.update({
+                        "phase": "error",
+                        "last_update": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    })
+                    self.send_pipeline_stage("ERROR", None,
+                                             "Skeleton generation failed.",
+                                             topic=topic)
+                    build_state.fail("skeleton generation failed",
+                                     build_id=build_id)
                     self.speak("Failed to build course skeleton.")
                     return
 
@@ -4951,6 +5092,11 @@ class MnemosyneFSM:
 
                 # 3. Audit Syllabus
                 self.creation_status.update({"phase": "audit", "progress_pct": 30, "course_uid": course_uid, "last_update": time.strftime("%Y-%m-%dT%H:%M:%S")})
+                build_state.stage("audit", 30, build_id=build_id)
+                build_state.update(build_id=build_id, course_uid=course_uid)
+                self.send_pipeline_stage("AUDIT", 30,
+                                         "Auditing Syllabus Quality...",
+                                         course_uid=course_uid, topic=topic)
                 auditor = SyllabusAuditor(
                     status_callback=self.send_status_update, storage=self.storage
                 )
@@ -4966,7 +5112,10 @@ class MnemosyneFSM:
 
                 # 4. Hydrate Content
                 self.creation_status.update({"phase": "hydration", "progress_pct": 40, "last_update": time.strftime("%Y-%m-%dT%H:%M:%S")})
-                self.send_status_update("Hydrating Content & Pedagogy...")
+                build_state.stage("hydrate", 40, build_id=build_id)
+                self.send_pipeline_stage("HYDRATE", 40,
+                                         "Hydrating Content & Pedagogy...",
+                                         course_uid=course_uid, topic=topic)
                 logging.info(
                     f"[PIPELINE] Step 3: Hydrating content for course {course_uid}"
                 )
@@ -5000,6 +5149,11 @@ class MnemosyneFSM:
                     hydrator.hydrate(course_uid)
                 finally:
                     hydrator.close()
+
+                build_state.stage("finalize", 95, build_id=build_id)
+                self.send_pipeline_stage("FINALIZE", 95,
+                                         "Finalising course...",
+                                         course_uid=course_uid, topic=topic)
 
                 # BUG-4: Set course status to "ready" after successful hydration
                 # -- unless the hydrator just recorded "partial": some concepts
@@ -5048,7 +5202,21 @@ class MnemosyneFSM:
 
                 elapsed = time.time() - pipeline_start
                 self.creation_status.update({"phase": "complete", "progress_pct": 100, "last_update": time.strftime("%Y-%m-%dT%H:%M:%S")})
-                self.send_status_update(f"Course built successfully! ({elapsed:.0f}s)")
+                # THE build-completion signal. Everything a completion card
+                # needs travels with it (uid, topic, counts) so no consumer has
+                # to guess which course just finished — the old flow reused
+                # COURSE_COMPLETE from the teaching loop, which carries none of
+                # this and fires when a LEARNER finishes a course.
+                self.send_pipeline_stage(
+                    "DONE", 100,
+                    f"Course built successfully! ({elapsed:.0f}s)",
+                    course_uid=course_uid, topic=topic,
+                    elapsed_s=int(elapsed),
+                    **self._course_size(course_uid),
+                )
+                # The build ends HERE. Anything earlier reports a course ready
+                # while its concepts are still being written.
+                build_state.finish(course_uid=course_uid, build_id=build_id)
                 logging.info(f"[PIPELINE] Course creation complete in {elapsed:.0f}s")
                 self.speak("Course creation successful.")
 
@@ -5083,10 +5251,20 @@ class MnemosyneFSM:
                 self.send_status_update(
                     f"Error creating course. Check logs for details."
                 )
+                build_state.fail(str(e), course_uid=course_uid, build_id=build_id)
                 self.speak(
                     f"An error occurred during course creation. Please check logs."
                 )
             finally:
+                # Belt and braces: a pipeline that exits by any other path
+                # must not leave the record "building" until the stale reaper
+                # notices, which locks creation for the whole quiet budget.
+                # fail() checks ownership, so this is a no-op once the build
+                # has already reported its own result.
+                st = build_state.current()
+                if st and st.get("active"):
+                    build_state.fail("build ended without reporting a result",
+                                     build_id=build_id)
                 # AUTO-6: Only cleanup in finally, don't send misleading completion
                 self.send_status_update("Restarting Systems...")
                 logging.info("[PIPELINE] Step 5: Restarting services")

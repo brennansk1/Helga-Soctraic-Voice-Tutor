@@ -156,7 +156,7 @@ def csrf_protect(f):
 import auth as helga_auth
 from auth import (
     current_parent_id, current_student_id, owns_student,
-    parent_required, student_session_required, owns_student_required,
+    parent_required, student_session_required, owns_student_required, hardware_required,
     hash_secret, verify_secret,
 )
 
@@ -237,7 +237,8 @@ def health_check_poller():
 
         try:
             start = time.time()
-            resp = requests.get("http://host.docker.internal:11434/", timeout=2)
+            ollama_base = os.getenv("OLLAMA_URL", "http://host.docker.internal:11434").rstrip("/")
+            resp = requests.get(f"{ollama_base}/", timeout=2)
             
             latency = int((time.time() - start) * 1000)
             if resp.status_code == 200:
@@ -346,6 +347,10 @@ def handle_leave_status_room():
 def home():
     return render_template('home.html')
 
+@app.route('/mode-select')
+def mode_select_page():
+    return render_template('mode_select.html')
+
 @app.route('/courses')
 def courses_page():
     return render_template('courses.html')
@@ -392,6 +397,8 @@ def scope_check():
         return jsonify({'available': False}), 200
 
 @app.route('/api/suggest_modules', methods=['POST'])
+@csrf_protect
+@hardware_required
 def suggest_modules():
     """LLM suggests modules for the custom course wizard."""
     try:
@@ -401,6 +408,8 @@ def suggest_modules():
         return jsonify({'modules': [], 'error': str(e)}), 502
 
 @app.route('/api/suggest_concepts', methods=['POST'])
+@csrf_protect
+@hardware_required
 def suggest_concepts():
     """LLM suggests concepts for a module in the wizard."""
     try:
@@ -410,6 +419,8 @@ def suggest_concepts():
         return jsonify({'concepts': [], 'error': str(e)}), 502
 
 @app.route('/api/clarify_course', methods=['POST'])
+@csrf_protect
+@hardware_required
 def clarify_course():
     """LLM generates clarifying questions for the wizard."""
     try:
@@ -419,6 +430,8 @@ def clarify_course():
         return jsonify({'questions': [], 'error': str(e)}), 502
 
 @app.route('/api/create_course_custom', methods=['POST'])
+@csrf_protect
+@hardware_required
 def create_course_custom():
     """Trigger custom course generation from wizard payload."""
     try:
@@ -524,6 +537,29 @@ def build_status():
         'course_uid': state.get('course_uid'),
         'stale': state.get('stale', False),
         'messages': (state.get('messages') or [])[-120:],
+        # Everything below was already recorded by build_state and thrown away
+        # here, which is why the UI could only ever say "a build is running".
+        #
+        # `ok` and `error` matter most: without them build-guard.js announced
+        # "Your course is ready." unconditionally — including for builds that
+        # raised. It now branches on these, so a failure is reported as one.
+        #
+        # `stage` is what makes the record legible mid-build. It also selects
+        # the staleness budget on the writer's side (hydrate gets 20 minutes
+        # because one concept legitimately takes minutes; preflight gets 5), so
+        # surfacing it lets the UI explain a long quiet stretch instead of
+        # looking hung.
+        #
+        # `stubs` is the honesty signal: concepts the model failed to produce
+        # that were counted anyway. A build can finish "successfully" with a
+        # third of its content missing, and this is the only field that says so.
+        'stage': state.get('stage'),
+        'pct': state.get('pct', 0),
+        'concepts': state.get('concepts', 0),
+        'hydrated': state.get('hydrated', 0),
+        'stubs': state.get('stubs', 0),
+        'ok': state.get('ok'),
+        'error': state.get('error'),
     })
 
 
@@ -1277,6 +1313,465 @@ def get_course_structure():
         return jsonify(resp.json()), resp.status_code
     except Exception as e:
         return jsonify({'error': str(e)}), 502
+
+# ---------------------------------------------------------------------------
+# Build-time quality verdicts
+#
+# WHY THIS EXISTS
+# ---------------
+# course_builder.py runs four independent checks over a finished course and
+# writes each verdict into structure.json: `depth_contract` (does the writing
+# carry the rigor markers its mastery level requires), `fact_check` (an LLM
+# claim check with an independent second confirmation before anything is
+# acted on), `level_calibration` (a blind judge asked what level the prose
+# actually reads at) and `grounding` (per-concept source confidence). Until
+# now the frontend read NONE of them — `grep -rn 'fact_check' services/web-ui/`
+# returned nothing — so a course that failed its fact check looked exactly like
+# one that passed.
+#
+# WHY IT IS SERVED HERE AND NOT PROXIED
+# -------------------------------------
+# rag's /api/course_structure REBUILDS its response field by field
+# (librarian.py:444-473) and copies only uid/title/completed/bloom_level. Every
+# verdict block, and the per-concept `source_confidence`, is dropped on the
+# floor there. That is also why the "unverified" badge already coded into
+# learn.html has never once rendered. librarian.py is owned elsewhere, but
+# web-ui bind-mounts ./data:/app/data (docker-compose.yml:33) and already holds
+# a StorageManager for the schedule routes, so it can read the same
+# structure.json first-hand instead of asking rag for a copy it has stripped.
+# ---------------------------------------------------------------------------
+
+# Mirrors of the builder's OWN thresholds. The UI must report the verdict the
+# build recorded, not form a second opinion with different cut-offs.
+#   - course_builder.py:2988 gates level_verified on met_pct >= 80.0
+#   - level_calibration.py bakes HELGA_MAX_LEVEL_GAP into `calibrated`
+_DEPTH_MET_FLOOR = 80.0
+
+# The builder truncates every failure list to 25 entries. A concept that is
+# absent from a truncated list is therefore NOT proven clean, and we say so
+# rather than letting silence read as a pass.
+_FAILURE_LIST_CAP = 25
+
+# Only these two dimensions can make a course "failed" on their own. A
+# confirmed-false claim and a missed depth contract are defects in the artifact.
+# A level-calibration gap is a fit problem judged by a single noisy LLM read
+# (the judge is known to swing between identical runs), and thin grounding is a
+# fact about how much material exists on the subject — both are real, neither
+# justifies shouting. `sections` has a conditional rule; see _course_quality().
+_LOUD_DIMENSIONS = ('fact', 'depth')
+
+_STATE_RANK = {'absent': 0, 'pass': 1, 'caution': 2, 'fail': 3}
+
+
+def _num(value, default=None):
+    """Coerce a JSON number, tolerating the older builds that omitted keys."""
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else default
+
+
+def _quality_fact(fc):
+    """Verdict for the fact check.
+
+    `fact_check.failures[].remaining` is the number of confirmed-false claims
+    STILL present after the corrective regeneration (course_builder.py:3346-3352).
+    remaining > 0 means the rewrite did not fix it and the falsehood shipped.
+    remaining == 0 means a claim was found and regenerated, but the re-check did
+    not come back clean enough to confirm the fix — worth a caution, not an
+    alarm.
+    """
+    if not isinstance(fc, dict):
+        return {'state': 'absent'}
+    failures = fc.get('failures') or []
+    unresolved = [f for f in failures if (_num(f.get('remaining'), 0) or 0) > 0]
+    checked = _num(fc.get('concepts_checked'), 0) or 0
+    total = _num(fc.get('concepts_total'), 0) or 0
+    # `sample_fraction` < 1 means only some concepts were ever looked at, so a
+    # clean result speaks for the sample and not for the course.
+    sampled = bool(total and checked < total)
+    out = {
+        'state': 'pass',
+        'checked': checked,
+        'total': total,
+        'sampled': sampled,
+        'unresolved': len(unresolved),
+        'flagged': len(failures),
+        'clean_pct': _num(fc.get('clean_pct')),
+        'truncated': len(failures) >= _FAILURE_LIST_CAP,
+    }
+    if unresolved:
+        out['state'] = 'fail'
+        out['text'] = ('%d concept%s still contain%s a claim the fact check '
+                       'confirmed false' % (len(unresolved),
+                                            '' if len(unresolved) == 1 else 's',
+                                            's' if len(unresolved) == 1 else ''))
+    elif failures:
+        out['state'] = 'caution'
+        out['text'] = ('%d concept%s was rewritten around a false claim, and the '
+                       're-check could not confirm the fix'
+                       % (len(failures), '' if len(failures) == 1 else 's'))
+    elif sampled:
+        out['state'] = 'caution'
+        out['text'] = ('No false claims in the %d of %d concepts that were '
+                       'checked; the rest were not checked' % (checked, total))
+    else:
+        out['text'] = 'No false claims found in %d checked concepts' % checked
+    return out
+
+
+def _quality_depth(dc):
+    """Verdict for the depth contract.
+
+    `met_pct` is the share of the concepts VERIFIED THIS RUN that carried the
+    rigor markers their mastery level requires. `level_verified` additionally
+    demands the run covered the whole course, so it is False both for a genuine
+    miss and for a course that was merely resumed — those must not read the
+    same, which is why met_pct is tested separately from level_verified.
+    """
+    if not isinstance(dc, dict):
+        return {'state': 'absent'}
+    met_pct = _num(dc.get('met_pct'))
+    missed = _num(dc.get('concepts_missing_contract'), 0) or 0
+    total = _num(dc.get('concepts_total'), 0) or 0
+    # Older builds (e.g. course_2b9df59e) predate `concepts_verified`. Falling
+    # back to the course total is the conservative read: it makes the measured
+    # sample look as large as possible, so we never call a miss "too small a
+    # sample to judge" when we cannot actually tell.
+    verified = _num(dc.get('concepts_verified'), total) or 0
+    failures = dc.get('failures') or []
+    out = {
+        'state': 'pass',
+        'mastery': dc.get('mastery'),
+        'met_pct': met_pct,
+        'missed': missed,
+        'verified': verified,
+        'total': total,
+        'partial': bool(dc.get('partial_verification')) or (verified < total),
+        'truncated': len(failures) >= _FAILURE_LIST_CAP,
+    }
+    if met_pct is not None and met_pct < _DEPTH_MET_FLOOR:
+        out['state'] = 'fail'
+        # Deliberately not "below the depth" — the contract is a BAND, and a
+        # concept fails it for running long just as it does for running thin.
+        out['text'] = ('%d of %d checked concepts do not match the depth '
+                       'contract for this level (%.0f%% met)'
+                       % (missed, verified, met_pct))
+    elif out['partial']:
+        out['state'] = 'caution'
+        out['text'] = ('Depth was only verified for %d of %d concepts'
+                       % (verified, total))
+    else:
+        out['text'] = 'All %d concepts met the depth contract' % verified
+    return out
+
+
+def _quality_level(lc):
+    """Verdict for the blind level-calibration judge.
+
+    `calibrated` is already |judged - claimed| <= HELGA_MAX_LEVEL_GAP, so we
+    report the builder's flag rather than re-deriving a threshold here.
+    """
+    if not isinstance(lc, dict):
+        return {'state': 'absent'}
+    gap = _num(lc.get('gap'))
+    claimed, judged = lc.get('claimed'), lc.get('judged')
+    out = {
+        'state': 'pass' if lc.get('calibrated') else 'fail',
+        'claimed': claimed,
+        'judged': judged,
+        'gap': gap,
+        'n': _num(lc.get('n'), 0),
+    }
+    if out['state'] == 'fail':
+        out['text'] = ('Reads at level %s but is sold as level %s'
+                       % (judged, claimed))
+    else:
+        out['text'] = 'Reads at the level it claims (judged %s)' % judged
+    return out
+
+
+def _quality_grounding(gr):
+    """Verdict for per-concept source confidence.
+
+    `concepts_research_unreachable` is deliberately kept apart from
+    `concepts_below_floor`: the first is our outage, the second is a fact about
+    how much material exists on the subject. Collapsed into one number the
+    outage disappears into "this topic is obscure".
+    """
+    if not isinstance(gr, dict):
+        return {'state': 'absent'}
+    weak = _num(gr.get('concepts_below_floor'), 0) or 0
+    measured = _num(gr.get('concepts_measured'), _num(gr.get('concepts_total'), 0)) or 0
+    unreachable = _num(gr.get('concepts_research_unreachable'), 0) or 0
+    pct = _num(gr.get('well_grounded_pct'))
+    low = gr.get('low_confidence') or []
+    out = {
+        'state': 'caution' if (weak or unreachable) else 'pass',
+        'floor': _num(gr.get('confidence_floor')),
+        'below_floor': weak,
+        'measured': measured,
+        'unreachable': unreachable,
+        'well_grounded_pct': pct,
+        'truncated': len(low) >= _FAILURE_LIST_CAP,
+    }
+    if unreachable:
+        out['text'] = ('The research service was unreachable for %d concepts, so '
+                       'they are ungrounded because of an outage' % unreachable)
+    elif weak:
+        out['text'] = ('%d of %d concepts lean on the model’s own knowledge '
+                       'rather than sources' % (weak, measured))
+    else:
+        out['text'] = 'All %d measured concepts cleared the confidence floor' % measured
+    return out
+
+
+def _quality_sections(ms):
+    """Verdict for sections the model simply never wrote.
+
+    Answers the one question the other four checks do not: how much of the
+    document is literally absent. It used to be invisible because missing
+    headings were papered over with injected placeholder text, so a 45-word
+    response read downstream as a complete document.
+
+    `by_concept` is capped at 50 entries but `concepts_incomplete` never is, so
+    every count here comes from the latter — reading len(by_concept) would
+    under-report exactly on the bad runs this exists to catch.
+    """
+    if not isinstance(ms, dict):
+        return {'state': 'absent'}
+    incomplete = _num(ms.get('concepts_incomplete'), 0) or 0
+    measured = _num(ms.get('concepts_measured'), 0) or 0
+    total = _num(ms.get('concepts_total'), 0) or 0
+    missing_total = _num(ms.get('sections_missing_total'), 0) or 0
+    injected = bool(ms.get('stub_injection'))
+    partial = bool(ms.get('partial_verification')) or (measured and measured < total)
+    out = {
+        'state': 'pass',
+        'incomplete': incomplete,
+        'measured': measured,
+        'total': total,
+        'sections_missing': missing_total,
+        'stub_injection': injected,
+        'complete_pct': _num(ms.get('complete_pct')),
+        'partial': bool(partial),
+        # by_concept is a cap, so a uid missing from it on a large course is not
+        # proof the concept was complete.
+        'truncated': len(ms.get('by_concept') or {}) >= 50,
+    }
+    if incomplete:
+        out['state'] = 'fail'
+        out['text'] = ('%d of %d concepts are missing %d required section%s the '
+                       'model never wrote'
+                       % (incomplete, measured, missing_total,
+                          '' if missing_total == 1 else 's'))
+        if injected:
+            out['text'] += ' — placeholder text was written in their place'
+    elif partial:
+        out['state'] = 'caution'
+        out['text'] = ('Completeness was only measured for %d of %d concepts'
+                       % (measured, total))
+    else:
+        out['text'] = 'Every required section was written in all %d concepts' % measured
+    return out
+
+
+def _quality_concepts(course):
+    """Per-concept verdicts, keyed by concept uid.
+
+    Three of the four checks record their misses in course-level failure lists
+    rather than on the concept node, so this turns them back into a per-concept
+    view that the session's trust surface can look a single uid up in.
+    """
+    out = {}
+
+    def slot(uid):
+        return out.setdefault(uid, {})
+
+    # source_confidence is the one signal stored ON the concept node. It is also
+    # the field librarian.py drops, which is why learn.html's low-confidence
+    # badge has never had a value to test.
+    for module in course.get('modules') or []:
+        for unit in module.get('units') or []:
+            for lesson in unit.get('lessons') or []:
+                for concept in lesson.get('concepts') or []:
+                    uid = concept.get('uid')
+                    conf = _num(concept.get('source_confidence'))
+                    if uid and conf is not None:
+                        slot(uid)['source_confidence'] = round(float(conf), 2)
+
+    for f in (course.get('depth_contract') or {}).get('failures') or []:
+        uid = f.get('uid')
+        if uid:
+            slot(uid)['depth'] = {
+                'state': 'fail',
+                'problems': [str(p)[:200] for p in (f.get('problems') or [])][:4],
+            }
+
+    for f in (course.get('fact_check') or {}).get('failures') or []:
+        uid = f.get('uid')
+        if not uid:
+            continue
+        remaining = _num(f.get('remaining'), 0) or 0
+        slot(uid)['fact'] = {
+            'state': 'fail' if remaining > 0 else 'caution',
+            'remaining': remaining,
+            'claims': [str(c)[:240] for c in (f.get('claims') or [])][:3],
+        }
+
+    grounding = course.get('grounding') or {}
+    floor = _num(grounding.get('confidence_floor'))
+    for f in grounding.get('low_confidence') or []:
+        uid = f.get('uid')
+        if uid:
+            slot(uid)['below_floor'] = True
+            if floor is not None:
+                slot(uid)['confidence_floor'] = floor
+
+    for f in grounding.get('research_errors') or []:
+        uid = f.get('uid')
+        if uid:
+            slot(uid)['research_unreachable'] = True
+
+    # Unlike the failure LISTS above, `by_concept` is a map that lists only the
+    # concepts with at least one gap: absence from it means the concept had
+    # every required heading, so a missing key is a PASS here, not an unknown.
+    for uid, rec in ((course.get('missing_sections') or {}).get('by_concept') or {}).items():
+        if not uid or not isinstance(rec, dict):
+            continue
+        missing = [str(m)[:80] for m in (rec.get('missing') or [])][:6]
+        slot(uid)['sections'] = {
+            'state': 'fail',
+            'missing': missing,
+            'count': _num(rec.get('count'), len(missing)) or len(missing),
+        }
+
+    return out
+
+
+def _course_quality(course):
+    """Roll the four build-time verdicts into one course-level judgement."""
+    checks = {
+        'fact': _quality_fact(course.get('fact_check')),
+        'depth': _quality_depth(course.get('depth_contract')),
+        'level': _quality_level(course.get('level_calibration')),
+        'grounding': _quality_grounding(course.get('grounding')),
+        'sections': _quality_sections(course.get('missing_sections')),
+    }
+    assessed = [k for k, v in checks.items() if v['state'] != 'absent']
+
+    # Missing sections is kept OUT of the loud set by default, for one reason:
+    # a concept the model left half-written almost always fails its depth
+    # contract too ("missing required element: ..."), so shouting about both
+    # would flag the same defect twice and make the loud state ordinary.
+    #
+    # The exception is stub injection. That is the case no other verdict covers
+    # — the gaps were filled with placeholder prose, so the document presents
+    # itself as complete and every other check reads it as complete. A learner
+    # is then being shown manufactured filler as course content.
+    sections = checks['sections']
+    loud_fail = any(checks[k]['state'] == 'fail' for k in _LOUD_DIMENSIONS) or (
+        sections['state'] == 'fail' and sections.get('stub_injection'))
+
+    # A missing verdict is "not assessed", NEVER "passed". An older course built
+    # before a check existed has to look different from one that took the check
+    # and cleared it.
+    if not assessed:
+        verdict = 'unassessed'
+    elif loud_fail:
+        verdict = 'failed'
+    elif any(v['state'] in ('fail', 'caution') for v in checks.values()):
+        verdict = 'caution'
+    else:
+        verdict = 'verified'
+
+    # The single line a course card shows. Loud problems win; among equals the
+    # order below is the order a learner would care about them.
+    headline = ''
+    for key in ('fact', 'sections', 'depth', 'level', 'grounding'):
+        c = checks[key]
+        if c['state'] == 'fail' and c.get('text'):
+            headline = c['text']
+            break
+    if not headline:
+        for key in ('fact', 'sections', 'depth', 'grounding', 'level'):
+            c = checks[key]
+            if c['state'] == 'caution' and c.get('text'):
+                headline = c['text']
+                break
+    if not headline and verdict == 'verified':
+        headline = 'Passed every check this build ran'
+    if not headline:
+        headline = 'This course was built before these checks existed'
+
+    return {
+        'verdict': verdict,
+        'headline': headline,
+        'checks': checks,
+        'assessed': assessed,
+        'not_assessed': sorted(k for k in checks if k not in assessed),
+    }
+
+
+@app.route('/api/course_quality', methods=['GET'])
+def course_quality():
+    """Build-time quality verdicts, per course or for the whole library.
+
+    With `?uid=` returns the full verdict plus a per-concept map (used by the
+    learn path and the session trust surface). Without it returns one compact
+    verdict per course for the /courses grid.
+    """
+    uid = request.args.get('uid')
+    try:
+        storage = _get_storage()
+    except Exception as e:
+        # Never break the page over this: it is supporting evidence, not the
+        # product. An empty payload renders as "not assessed", which is honest.
+        logger.error(f"course_quality storage unavailable: {e}")
+        return jsonify({'courses': {}, 'available': False}), 200
+
+    try:
+        if uid:
+            course = storage.courses.get_course(uid)
+            if not course:
+                return jsonify({'error': 'Course not found'}), 404
+            payload = _course_quality(course)
+            payload['uid'] = uid
+            payload['concepts'] = _quality_concepts(course)
+            # `assets` is Phase 3 output that courses.js already tries to render
+            # and never receives, for the same reason as the verdicts: rag's
+            # course list does not carry it.
+            if isinstance(course.get('assets'), dict):
+                payload['assets'] = course['assets']
+            payload['available'] = True
+            resp = jsonify(payload)
+            # Verdicts are written once, at the end of a build, and never change
+            # afterwards — a short cache costs nothing and this is fetched on
+            # every learn-page load.
+            resp.headers['Cache-Control'] = 'private, max-age=60'
+            return resp, 200
+
+        out = {}
+        for row in storage.courses.list_courses():
+            cuid = row.get('uid')
+            if not cuid:
+                continue
+            try:
+                course = storage.courses.get_course(cuid)
+            except Exception as e:
+                logger.warning(f"course_quality: unreadable structure for {cuid}: {e}")
+                continue
+            if not course:
+                continue
+            entry = _course_quality(course)
+            entry.pop('checks', None)     # the grid only needs the headline
+            if isinstance(course.get('assets'), dict):
+                entry['assets'] = course['assets']
+            out[cuid] = entry
+        resp = jsonify({'courses': out, 'available': True})
+        resp.headers['Cache-Control'] = 'private, max-age=30'
+        return resp, 200
+    except Exception as e:
+        logger.error(f"course_quality failed: {e}", exc_info=True)
+        return jsonify({'courses': {}, 'available': False}), 200
+
 
 @app.route('/api/course_details', methods=['GET'])
 def proxy_course_details():
@@ -2513,6 +3008,16 @@ def auth_session_info():
         'role': session.get('role'),
         'effective_student_id': current_student_id(),
     })
+
+
+def _monitored_spawn(fn, name):
+    """Spawn a gevent greenlet with monitored error logging."""
+    def wrapper():
+        try:
+            fn()
+        except Exception as e:
+            logger.error(f"Monitored greenlet '{name}' died: {e}", exc_info=True)
+    return gevent.spawn(wrapper)
 
 
 if __name__ == '__main__':

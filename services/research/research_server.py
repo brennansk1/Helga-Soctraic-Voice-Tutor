@@ -47,8 +47,9 @@ cache = Cache(CACHE_DIR, size_limit=int(os.getenv("HELGA_CACHE_BYTES",
 wiki = wikipediaapi.Wikipedia(user_agent=_rl.user_agent(), language="en")
 
 # Pure ranking/query/scoring helpers live in ranking.py (dep-free + unit-tested).
-from ranking import (domain_tier, build_search_queries, compute_confidence,
-                     dedup_by_url, is_documentation)
+from ranking import (domain_tier, build_search_queries,       # noqa: E402
+                     confidence_from_sources, dedup_by_url,
+                     is_documentation)
 
 
 def cache_key(prefix, text):
@@ -91,12 +92,17 @@ def wiki_search_title(query):
                 cache.set(key, title, expire=CACHE_TTL_SEARCH)
                 return title
     except Exception as e:
-        logger.debug(f"wiki search failed for {query!r}: {e}")
-    # A MISS IS NOT A RESULT. This wrote an empty value under the SAME key a
-    # successful 7-day extract uses, so one transient Wikipedia blip blocked
-    # that concept from grounding for a full day. Negative results get their
-    # own short-lived key instead.
-    cache.set("miss:" + key, True, expire=900)
+        # TRANSIENT FAILURE IS NOT AN ANSWER.
+        #
+        # This used to fall through and cache "" for 24 hours, so one network
+        # blip taught the whole system that a real Wikipedia article does not
+        # exist — for every concept, in every build, until the TTL expired.
+        # `wiki_lookup` already gets this right and returns without caching;
+        # the two functions simply disagreed. Only a successful lookup that
+        # genuinely found nothing may be cached as a negative.
+        logger.warning(f"wiki search failed for {query!r} — not caching: {e}")
+        return None
+    cache.set(key, "", expire=CACHE_TTL_SEARCH)
     return None
 
 
@@ -156,6 +162,14 @@ _OFF_TOPIC_PREFIXES = ("pinyin/", "wikijunior:", "subject:", "shelf:",
                        "wikibooks:", "wikiversity:", "portal:", "school:")
 
 
+# Mentions of the subject-defining word per 10,000 characters. A page that
+# TEACHES a subject returns to its name repeatedly; one that merely mentions it
+# does not. Calibrated against the observed failure: the Mirad grammar page
+# scored far below this for "quantum", while genuine quantum textbook chapters
+# clear it comfortably.
+MIN_ANCHOR_DENSITY = 1.0
+
+
 def _is_relevant(query, title, text):
     """Does this page actually teach the subject, or merely mention the word?"""
     low_title = (title or "").lower()
@@ -173,6 +187,53 @@ def _is_relevant(query, title, text):
     present = {t for t in terms if t in body}
     if len(present) * 2 < len(terms):
         return False
+
+    # THE DISTINCTIVE TERM MUST BE THERE, AND RAW COUNTS DO NOT SCALE.
+    #
+    # "Mirad Grammar/Word Families" — a page about a CONSTRUCTED LANGUAGE —
+    # was cited as a textbook on 8 of 22 concepts of a quantum computing
+    # course, and the course still reported Source confidence 1.00. The page
+    # is 208,000 characters, and a document that large contains almost any
+    # ordinary word many times:
+    #
+    #     _is_relevant("Quantum State Notation Families", ...) -> True
+    #     _is_relevant("Word Families", ...)                   -> True
+    #
+    # Two independent holes let it through:
+    #
+    #   * Half the words being present is satisfied by GENERIC vocabulary
+    #     alone ("state", "notation", "families"). The one word that actually
+    #     names the subject — "quantum" — was never required.
+    #   * A raw count of >= 3 is trivial in a 200k-character page. The same
+    #     threshold means completely different things at 3k and at 200k, so it
+    #     grows MORE permissive exactly as pages get longer and more general.
+    #
+    # The fix is DENSITY, applied to half the query's terms.
+    #
+    # An earlier attempt used the longest term as a "subject anchor", on the
+    # theory that longer words are the topical ones. That is not true and the
+    # measurement said so: for "Quantum State Notation Families" the longest
+    # words are "notation" and "families" (8) while the word that names the
+    # subject, "quantum", is 7 — so the anchor landed on generic vocabulary
+    # and the page passed anyway.
+    #
+    # Measured on the two pages, per 10,000 characters:
+    #
+    #                        quantum  qubit  entanglement  state
+    #   Mirad grammar          0.00   0.00      0.00        0.91
+    #   real quantum chapter   2.65   2.60      2.42       16.97
+    #
+    # The discriminator is not which term is longest — it is that a page
+    # teaching a subject uses SEVERAL of its terms densely, while an unrelated
+    # page scrapes past on one common word. So: count how many query terms
+    # clear the density bar, and require at least half of them to do it. This
+    # mirrors the presence rule above, with substance instead of mere presence.
+    dense = sum(1 for t in terms
+                if 10_000.0 * body.count(t) / max(len(body), 1)
+                >= MIN_ANCHOR_DENSITY)
+    if dense * 2 < len(terms):
+        return False
+
     return max((body.count(t) for t in present), default=0) >= 3
 
 
@@ -184,12 +245,13 @@ def textbook_lookup(query, limit=2):
     # Version the key. When the extraction or filtering logic changes, entries
     # cached under the old behaviour are wrong, not merely old — the relevance
     # filter shipped and "Pinyin/Cell (biology)" kept being served from cache.
-    key = cache_key("textbook", f"v2|{query}|{limit}")
+    key = cache_key("textbook", f"v3|{query}|{limit}")
     cached = cache.get(key)
     if cached is not None:
         return cached
 
     out = []
+    had_error = False
     for slug, api, label in TEXTBOOK_SITES:
         if len(out) >= limit:
             break
@@ -202,7 +264,8 @@ def textbook_lookup(query, limit=2):
                 continue
             hits = ((r.json().get("query") or {}).get("search") or [])
         except Exception as e:
-            logger.debug(f"{label} search failed for {query!r}: {e}")
+            logger.warning(f"{label} search failed for {query!r}: {e}")
+            had_error = True
             continue
 
         for hit in hits:
@@ -227,12 +290,38 @@ def textbook_lookup(query, limit=2):
                 "text": text[:6000],
             })
 
-    cache.set(key, out, expire=CACHE_TTL_SEARCH)
+    # DO NOT CACHE "NOTHING FOUND" WHEN THE LOOKUP ITSELF FAILED.
+    #
+    # Every site error above is swallowed with `continue`, so a total network
+    # failure and a genuine "this subject has no open textbook" both arrive
+    # here as an empty list. Caching that for 24h teaches the whole pipeline
+    # that no textbook exists for the subject — across every later concept and
+    # every later build. Only a lookup that actually ran may record a negative.
+    if out or not had_error:
+        cache.set(key, out, expire=CACHE_TTL_SEARCH)
+    else:
+        logger.warning(f"textbook lookup for {query!r} errored — not caching empty")
     return out
 
 
+_TAG = re.compile(r"<[^>]+>")
+_WS = re.compile(r"\s+")
+PRIMARY_MIN_ABSTRACT = 120        # shorter than this is a stub, not an abstract
+
+
+def _clean_abstract(raw):
+    """Plain text from a Crossref JATS / arXiv Atom abstract, or ''."""
+    if not raw:
+        return ""
+    text = _WS.sub(" ", _TAG.sub(" ", raw)).strip()
+    # Crossref abstracts routinely open with the literal word "Abstract".
+    if text[:9].lower().startswith("abstract"):
+        text = text[8:].lstrip(" :.-")
+    return text
+
+
 def primary_source_lookup(query, limit=2):
-    """Find PRIMARY literature (DOI / arXiv) for a query.
+    """Find PRIMARY literature (DOI / arXiv) for a query, WITH its abstract.
 
     The depth contract requires a primary source at mastery >= 4, on the
     principle that an "advanced undergraduate" course citing only Wikipedia is
@@ -244,16 +333,31 @@ def primary_source_lookup(query, limit=2):
     queried first because it spans every discipline — arXiv would silently
     exclude the humanities.
 
+    WHY THE ABSTRACT IS NOW MANDATORY. This used to return title + URL only,
+    and the pipeline appended exactly that to the prompt: a heading and a link.
+    The model read no sentence of the paper, yet the paper was rendered to the
+    learner as a citation and counted 0.25 toward grounding confidence. That is
+    a citation for text that never reached the model — the course claimed
+    evidence it had not used. So a result without a usable abstract is not
+    returned at all: Crossref is asked for more rows than needed and the ones
+    with abstracts are kept, and arXiv (which always carries a summary)
+    backfills the rest.
+
     Returns [] rather than raising: a missing primary source must degrade the
     course's recorded grounding, never abort its creation.
     """
-    key = cache_key("primary", f"{query}|{limit}")
+    # v2: entries cached under the old shape have no "text", so every one of
+    # them would now be discarded as uncitable. Version the key rather than
+    # serving a week of results that cannot be used.
+    key = cache_key("primary", f"v3|{query}|{limit}")
     cached = cache.get(key)
     if cached is not None:
         return cached or []
 
     out = []
-    # 1. Crossref — all disciplines, returns a DOI.
+    had_error = False
+    # 1. Crossref — all disciplines, returns a DOI. Ask for 3x and filter:
+    #    abstract coverage is real but patchy, and a hit without one is unusable.
     try:
         _u = "https://api.crossref.org/works"
         _rl.wait(_u)
@@ -264,20 +368,31 @@ def primary_source_lookup(query, limit=2):
         r = requests.get(_u, params=_p, headers=_rl.headers(), timeout=15)
         _rl.note_response(_u, r.status_code, r.headers)
         if r.status_code == 200:
-            for item in (r.json().get("message", {}).get("items") or [])[:limit]:
+            for item in (r.json().get("message", {}).get("items") or []):
+                if len(out) >= limit:
+                    break
                 doi = item.get("DOI")
-                if not doi:
+                abstract = _clean_abstract(item.get("abstract"))
+                if not doi or len(abstract) < PRIMARY_MIN_ABSTRACT:
                     continue
+                titles = item.get("title") or []
+                title_str = titles[0] if (titles and titles[0]) else "Untitled"
                 out.append({
                     "url": f"https://doi.org/{doi}",
-                    "title": (item.get("title") or ["Untitled"])[0][:200],
+                    "title": str(title_str)[:200],
                     "type": "journal",
+                    "source": "Crossref",
                     "domain_tier": 1,
+                    "text": abstract[:2500],
                 })
     except Exception as e:
         logger.debug(f"crossref lookup failed for {query!r}: {e}")
+        had_error = True
 
     # 2. arXiv — preprints, STEM-leaning. HTTPS: the http endpoint 301s.
+    #    Parsed per <entry> rather than with three independent findall()s: the
+    #    old code paired ids[i] with titles[i+1] to skip the feed title, which
+    #    silently mismatches title and link the moment an entry lacks one.
     if len(out) < limit:
         try:
             _u = "https://export.arxiv.org/api/query"
@@ -289,28 +404,54 @@ def primary_source_lookup(query, limit=2):
                 headers=_rl.headers(), timeout=15)
             _rl.note_response(_u, r.status_code, r.headers)
             if r.status_code == 200:
-                ids = re.findall(r"<id>(http[^<]*abs[^<]*)</id>", r.text)
-                titles = re.findall(r"<title>([^<]*)</title>", r.text)
-                for i, url in enumerate(ids[:limit - len(out)]):
+                for entry in re.findall(r"<entry>(.*?)</entry>", r.text, re.S):
+                    if len(out) >= limit:
+                        break
+                    m_id = re.search(r"<id>\s*(http[^<]*abs[^<]*)</id>", entry)
+                    m_ti = re.search(r"<title>(.*?)</title>", entry, re.S)
+                    m_su = re.search(r"<summary>(.*?)</summary>", entry, re.S)
+                    abstract = _clean_abstract(m_su.group(1) if m_su else "")
+                    if not m_id or len(abstract) < PRIMARY_MIN_ABSTRACT:
+                        continue
                     out.append({
-                        "url": url,
-                        "title": (titles[i + 1] if len(titles) > i + 1
-                                  else "arXiv preprint")[:200].strip(),
+                        "url": m_id.group(1).strip(),
+                        "title": _WS.sub(
+                            " ", (m_ti.group(1) if m_ti else "arXiv preprint")
+                        ).strip()[:200],
                         "type": "preprint",
+                        "source": "arXiv",
                         "domain_tier": 1,
+                        "text": abstract[:2500],
                     })
         except Exception as e:
             logger.debug(f"arxiv lookup failed for {query!r}: {e}")
+        had_error = True
 
+    # Same contract as textbook_lookup: an errored lookup must not record
+    # "no primary literature exists for this subject" for the next 24 hours.
+    if not out and had_error:
+        logger.warning(f"primary lookup for {query!r} errored — not caching empty")
+        return out
     cache.set(key, out, expire=CACHE_TTL_SEARCH)
     return out
 
 
 def wiki_lookup(title):
+    """Wikipedia page for an EXACT title, or None.
+
+    The miss is cached as "" and read back with `or None`, the same shape
+    wiki_search_title uses. It stored `None`, which diskcache cannot tell apart
+    from a cache miss (`cache.get` returns None for both), so the negative
+    cache never once served a hit: the cascade tries up to three candidates per
+    concept and every failing one was re-fetched from Wikipedia on every
+    concept of every build, forever. That is the majority of lookups — a
+    pedagogical concept title usually has no article — so the dead branch was
+    costing a network round trip on nearly every attempt.
+    """
     key = cache_key("wiki", title)
     cached = cache.get(key)
     if cached is not None:
-        return cached
+        return cached or None
 
     try:
         page = wiki.page(title)
@@ -327,8 +468,9 @@ def wiki_lookup(title):
             return result
     except Exception as e:
         logger.warning(f"Wikipedia lookup failed for '{title}': {e}")
+        return None          # transient failure: do not poison the cache
 
-    cache.set(key, None, expire=CACHE_TTL_SEARCH)
+    cache.set(key, "", expire=CACHE_TTL_SEARCH)
     return None
 
 
@@ -509,10 +651,199 @@ async def extract_page(session, url):
     return text
 
 
+# --- Subject selection -------------------------------------------------------
+#
+# THE DEFECT THIS REPLACES: `subject = (module_title or course_title or title)`.
+# On the hydration path `module_title` is ALWAYS non-empty, so the two largest
+# contributors to combined_text — two textbook extracts at 6000 chars each, and
+# the primary literature — were keyed on the MODULE. They were disk-cached on
+# the module, so concept 1 and concept 12 of a module received byte-identical
+# grounding, and `_is_relevant` judged relevance against the module title
+# rather than the concept. Only SearXNG was concept-specific, so with SearXNG
+# down a 12-concept module had ONE grounding blob repeated twelve times.
+#
+# The original reasoning was sound and is kept: generated concept titles are
+# pedagogical TASKS ("Identify the Right Angle"), and a task matches no
+# textbook and no paper. The error was making the module the KEY instead of the
+# FALLBACK. So the concept is tried first, then the concept in its module's
+# context, then the module, then the course — and the cache key follows the
+# query, so distinct concepts cannot collapse onto one entry.
+
+
+def _lookup_subjects(title, module_title, course_title, broaden=False):
+    """Subjects to search for one concept, most specific first."""
+    ordered = [title]
+    if title and module_title:
+        # A task title plus its module reads as a topic to a search index:
+        # "Identify the Right Angle" alone matches nothing, "Identify the Right
+        # Angle Right Triangles" retrieves right-triangle material.
+        ordered.append(f"{title} {module_title}")
+    ordered += [module_title, course_title]
+
+    if broaden:
+        # See api_research_concept: broadening must WIDEN the net, never swap
+        # it, so the narrow subjects stay at the front of the list.
+        try:
+            try:      # container (flat)
+                from syllabus_sources import discover_broader_subjects
+            except ImportError:
+                from services.research.syllabus_sources import (
+                    discover_broader_subjects)
+            ordered += discover_broader_subjects(
+                module_title or course_title or title)
+        except Exception as e:
+            logger.debug(f"broadening subjects failed: {e}")
+
+    seen, out = set(), []
+    for s in ordered:
+        s = (s or "").strip()
+        if s and s.lower() not in seen:
+            seen.add(s.lower())
+            out.append(s)
+    return out
+
+
+def _gather(fn, subjects, limit):
+    """Run a lookup over `subjects` until `limit` distinct results are held.
+
+    Falls back down the specificity ladder AND tops up from it: a concept that
+    yields one textbook of its own gets its second from the module rather than
+    being replaced by the module's two.
+    """
+    out, seen = [], set()
+    for subject in subjects:
+        if len(out) >= limit:
+            break
+        try:
+            found = fn(subject, limit=limit - len(out)) or []
+        except Exception as e:
+            logger.debug(f"lookup failed for {subject!r}: {e}")
+            continue
+        for r in found:
+            url = r.get("url")
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            out.append(r)
+            if len(out) >= limit:
+                break
+    return out
+
+
+# --- Assembling what the model actually reads --------------------------------
+#
+# THE RULE: **a source may only be cited if its text reached the model.**
+#
+# Three ways that was violated, all of which produced citations for text the
+# course never used:
+#   - primary literature contributed a heading and a URL and nothing else, yet
+#     rendered as a citation and scored 0.25 (fixed in primary_source_lookup by
+#     requiring an abstract);
+#   - domain sources were appended to `sources` unconditionally but to the
+#     prompt only `if ds.get("text")`, and an empty `url` rendered as `[Title]()`;
+#   - combined_text was truncated to 3000 words AFTER assembly, so the tail was
+#     always cut — and the tail was the web extracts, i.e. the only
+#     concept-specific text in the whole blob — while `sources` still listed
+#     them.
+#
+# So text is now budgeted BEFORE assembly, per source, and the citation list is
+# built from what survived. Kinds are interleaved rather than concatenated so
+# that running out of budget degrades every kind evenly instead of deleting
+# whichever kind happens to be last.
+
+WORD_BUDGET = 3000
+MIN_USEFUL_WORDS = 40             # below this an extract teaches nothing
+KIND_WORD_CAP = {
+    "wikipedia": 700,
+    "textbook": 800,
+    # Official docs are read like a textbook, not skimmed like a web hit: a
+    # guide can span tens of pages and the crawler now follows them.
+    "documentation": 800,
+    "web": 400,
+    "journal": 300, "preprint": 300,
+    "primary_document": 150, "artefact": 150, "structured_fact": 80,
+}
+DEFAULT_WORD_CAP = 200
+
+# Order within a round: the most teachable material first, so that when the
+# budget runs out mid-round it is the catalogue metadata that goes.
+_KIND_ORDER = ("wikipedia", "textbook", "documentation", "web",
+               "journal", "preprint",
+               "primary_document", "artefact", "structured_fact")
+
+
+def _interleave(entries):
+    """Round-robin the entries by kind, best kind first within each round."""
+    groups = {}
+    for e in entries:
+        groups.setdefault(e["kind"], []).append(e)
+    order = ([k for k in _KIND_ORDER if k in groups]
+             + [k for k in groups if k not in _KIND_ORDER])
+    out = []
+    while any(groups[k] for k in order):
+        for k in order:
+            if groups[k]:
+                out.append(groups[k].pop(0))
+    return out
+
+
+def _assemble(entries, budget=WORD_BUDGET):
+    """(combined_text, cited) — cited holds ONLY entries whose text got in."""
+    parts, cited, dropped = [], [], 0
+    remaining = budget
+    for e in _interleave(entries):
+        words = (e.get("text") or "").split()
+        if not words or not e.get("url"):
+            # No text, or nothing to link to. Either way it cannot honestly be
+            # cited, and an empty url renders as "[Title]()" to the learner.
+            dropped += 1
+            continue
+        if remaining < MIN_USEFUL_WORDS:
+            dropped += 1
+            continue
+        take = words[:min(KIND_WORD_CAP.get(e["kind"], DEFAULT_WORD_CAP),
+                          remaining)]
+        parts.append(f"## Source: {e['label']} - {e['title']}\n{' '.join(take)}")
+        remaining -= len(take)
+        cited.append(e)
+    if dropped:
+        logger.debug(f"grounding: {dropped} source(s) not cited (no text, no "
+                     f"url, or past the {budget}-word budget)")
+    return "\n\n".join(parts), cited
+
+
+def _citation(entry):
+    """The public source record for an entry that made it into the prompt."""
+    out = {"url": entry["url"], "title": entry["title"],
+           "domain_tier": entry.get("tier", 1), "type": entry["kind"]}
+    if entry.get("source"):
+        out["source"] = entry["source"]
+    return out
+
+
 # --- Full research pipeline for one concept ---
-async def _research_concept_async(title, module_title, course_title, mastery=1):
-    sources = []
-    combined_parts = []
+async def _research_concept_async(title, module_title, course_title, mastery=1,
+                                  broaden=False):
+    entries = []
+
+    subjects = _lookup_subjects(title, module_title, course_title, broaden)
+    # Broadening widens the net: more subjects (above) and a higher ceiling on
+    # each kind, so a concept that found one textbook can find a second.
+    n_textbook = 3 if broaden else 2
+    n_primary = 3 if broaden else (2 if (mastery or 1) >= 4 else 1)
+
+    # Textbook and literature lookups walk at most this much of the ladder, and
+    # skip the "concept + module" rung. Each rung is a real round trip and the
+    # hydrator's HTTP timeout is 15 s: concept-specific grounding costs one
+    # UNCACHED lookup per concept where module-keyed grounding cost one per
+    # module, and that is the trade being made deliberately — but it should not
+    # also pay for a rung that rarely pays out. The combined phrase earns its
+    # place in Wikipedia search and SearXNG, which rank loose phrasing; a
+    # MediaWiki book search or a Crossref query on it mostly returns the same
+    # thing the concept alone did, and `_is_relevant` then judges the hit
+    # against every word of the combination, which is stricter still.
+    _combo = f"{title} {module_title}".strip() if (title and module_title) else None
+    ladder = [s for s in subjects if s != _combo][:4 if broaden else 3]
 
     # 1. Wikipedia (synchronous, fast)
     #
@@ -529,9 +860,7 @@ async def _research_concept_async(title, module_title, course_title, mastery=1):
     # concept title is a task, so fall back to it rather than teaching
     # ungrounded.
     wiki_result = None
-    for candidate in (title, module_title, course_title):
-        if not candidate:
-            continue
+    for candidate in subjects:
         # Exact page first (cheap, cached), then SEARCH — exact match fails on
         # essentially everything this pipeline generates.
         wiki_result = wiki_lookup(candidate)
@@ -549,19 +878,15 @@ async def _research_concept_async(title, module_title, course_title, mastery=1):
                 if wiki_result:
                     logger.info(f"wiki: {candidate!r} -> {resolved!r}")
         if wiki_result:
-            if candidate is not title:
+            if candidate != (title or "").strip():
                 logger.info(
                     f"wiki: '{title}' had no page; grounded via '{candidate}'")
             break
-    wikipedia_data = None
     if wiki_result:
-        combined_parts.append(f"## Source: Wikipedia - {wiki_result['title']}\n{wiki_result['text']}")
-        wikipedia_data = wiki_result
-        sources.append({
-            "url": wiki_result["url"],
-            "title": wiki_result["title"],
-            "domain_tier": 1,
-            "type": "wikipedia",
+        entries.append({
+            "kind": "wikipedia", "label": "Wikipedia",
+            "title": wiki_result["title"], "url": wiki_result["url"],
+            "text": wiki_result["text"], "tier": 1,
         })
 
     # 2a. PRIMARY LITERATURE for advanced levels. The depth contract requires
@@ -575,15 +900,13 @@ async def _research_concept_async(title, module_title, course_title, mastery=1):
     # 0.4 at best and every one of its concepts shipped marked "Limited
     # sources". Corroboration is worth having at any level; only the
     # REQUIREMENT is level-dependent.
-    _n_primary = 2 if (mastery or 1) >= 4 else 1
-    if True:
-        # Query the SUBJECT, not the pedagogical task title — "Identify the
-        # Right Angle" matches no literature.
-        subject = (module_title or course_title or title)
-        for ps in primary_source_lookup(subject, limit=_n_primary):
-            sources.append(ps)
-            combined_parts.append(
-                f"## Source: {ps['type']} - {ps['title']}\n{ps['url']}")
+    for ps in _gather(primary_source_lookup, ladder, n_primary):
+        entries.append({
+            "kind": ps["type"], "label": ps.get("source", "literature"),
+            "title": ps["title"], "url": ps["url"],
+            "text": ps.get("text", ""), "tier": 1,
+            "source": ps.get("source"),
+        })
 
     # 2a-bis. OPEN TEXTBOOKS — the shape of source a COURSE actually wants.
     #
@@ -591,20 +914,12 @@ async def _research_concept_async(title, module_title, course_title, mastery=1):
     # introductory biology from a 2024 Nature letter, you build it from a
     # textbook. Wikibooks and Wikiversity are exactly that: content already
     # selected, sequenced and explained for a learner.
-    #
-    # Queried on the SUBJECT for the same reason as the literature lookup —
-    # "Identify the Right Angle" is a task, not a topic.
-    _subject = (module_title or course_title or title)
-    for tb in textbook_lookup(_subject, limit=2):
-        sources.append({
-            "url": tb["url"],
-            "title": tb["title"],
-            "domain_tier": 1,
-            "type": "textbook",
+    for tb in _gather(textbook_lookup, ladder, n_textbook):
+        entries.append({
+            "kind": "textbook", "label": tb["source"], "title": tb["title"],
+            "url": tb["url"], "text": tb["text"], "tier": 1,
             "source": tb["source"],
         })
-        combined_parts.append(
-            f"## Source: {tb['source']} - {tb['title']}\n{tb['text']}")
 
     # 2a-ter. DOMAIN-ROUTED ARCHIVES. Art history is taught from artefacts and
     # history from primary documents; a biology concept has no use for either.
@@ -617,20 +932,25 @@ async def _research_concept_async(title, module_title, course_title, mastery=1):
             classify_domains, fetch_domain_sources)
     try:
         _domains = classify_domains(title, module_title, course_title)
-        for ds in fetch_domain_sources(title or _subject, _domains):
-            sources.append({
-                "url": ds.get("url", ""), "title": ds["title"],
-                "domain_tier": 1, "type": ds["type"], "source": ds["source"],
+        # The concept first here too: a museum or an archive is one of the few
+        # sources that CAN answer a narrow question ("Name the Short Sides"
+        # cannot be looked up, but "Impressionist brushwork" can), and this was
+        # the one lookup already receiving the concept title.
+        for ds in fetch_domain_sources(title or (subjects[0] if subjects else ""), _domains):
+            entries.append({
+                "kind": ds["type"], "label": ds["source"], "title": ds["title"],
+                "url": ds.get("url", ""), "text": ds.get("text", ""),
+                "tier": 1, "source": ds["source"],
             })
-            if ds.get("text"):
-                combined_parts.append(
-                    f"## Source: {ds['source']} - {ds['title']}\n{ds['text']}")
     except Exception as e:
         logger.debug(f"domain sources failed: {e}")
 
     # 2b. Generate search queries (mastery-aware)
     search_stats_reset()
     queries = build_search_queries(title, module_title, mastery)
+    if broaden:
+        for extra in subjects[2:4]:
+            queries.extend(build_search_queries(extra, course_title, mastery)[:1])
 
     # 3. Search via SearXNG
     async with aiohttp.ClientSession() as session:
@@ -645,46 +965,40 @@ async def _research_concept_async(title, module_title, course_title, mastery=1):
         top_results = unique_results[:5]
 
         # 4. Extract content from top pages
-        for result in top_results[:3]:
+        for result in top_results[:4 if broaden else 3]:
             text = await extract_page(session, result["url"])
             if text:
-                combined_parts.append(
-                    f"## Source: {result['title']}\n{text[:2000]}"
-                )
-                sources.append({
-                    "url": result["url"],
-                    "title": result["title"],
-                    "domain_tier": result["tier"],
-                    "type": "web",
+                entries.append({
+                    # OFFICIAL DOCS ARE NOT A GENERIC WEB RESULT.
+                    #
+                    # For "what does dbt's ref() do at compile time" there is
+                    # no textbook and the Wikipedia article is a stub, and the
+                    # project's own documentation is the authoritative answer.
+                    # Tagged "web" it scored at the LOWEST weight, which is why
+                    # computer-science concepts came out of research near the
+                    # 0.5 confidence floor. `is_documentation` already knew;
+                    # nothing asked it at the point the kind was decided.
+                    "kind": ("documentation"
+                             if is_documentation(result["url"]) else "web"),
+                    "label": urlparse(result["url"]).netloc or "web",
+                    "title": result["title"], "url": result["url"],
+                    "text": text, "tier": result["tier"],
                 })
 
-    combined_text = "\n\n".join(combined_parts)
-    # Truncate to ~3000 words
-    words = combined_text.split()
-    if len(words) > 3000:
-        combined_text = " ".join(words[:3000])
+    # Assemble under the word budget, then cite ONLY what got in.
+    combined_text, cited = _assemble(entries)
+    sources = [_citation(e) for e in cited]
 
-    # Confidence: based on source count and quality
-    # EVERY kind the pipeline can produce must be passed. A kind that is not
-    # passed does not exist as far as the score is concerned — that has now
-    # been the bug here twice (primary literature, then textbooks).
-    # Official documentation is promoted OUT of the generic web bucket before
-    # counting, so it is not double-counted at the lower weight. For a
-    # technical concept this is the authoritative source and the only one that
-    # is reliably right about version-specific behaviour.
-    doc_sources = [s for s in sources
-                   if s.get("type") == "web" and is_documentation(s.get("url"))]
-    _doc_urls = {s.get("url") for s in doc_sources}
-    for s in doc_sources:
-        s["type"] = "documentation"
-    web_sources = [s for s in sources
-                   if s.get("type") == "web" and s.get("url") not in _doc_urls]
-    primary_sources = [s for s in sources
-                       if s.get("type") in ("journal", "preprint")]
-    textbook_sources = [s for s in sources if s.get("type") == "textbook"]
-    confidence = compute_confidence(bool(wikipedia_data), len(web_sources),
-                                    len(primary_sources), len(textbook_sources),
-                                    len(doc_sources))
+    # Confidence is computed from the SOURCE DICTS, not from hand-counted
+    # kinds. Counting by hand is what made this function blind to three of the
+    # seven kinds it produces — see ranking.SOURCE_KIND_WEIGHTS for the full
+    # history. Scoring the cited list rather than everything fetched also makes
+    # the number mean what it says: how well grounded the text the model read
+    # actually was.
+    confidence = confidence_from_sources(sources)
+
+    wikipedia_data = next(
+        (wiki_result for e in cited if e["kind"] == "wikipedia"), None)
 
     # Report whether the web leg actually ran. Without this a concept grounded
     # only by Wikipedia looks the same whether the topic is obscure or the
@@ -698,14 +1012,20 @@ async def _research_concept_async(title, module_title, course_title, mastery=1):
         "confidence": confidence,
         "search_degraded": bool(_ss.get("degraded", 0)),
         "search_stats": _ss,
+        # Diagnostics: which subject actually grounded this concept is the
+        # first thing anyone asks when a module's concepts look identical.
+        "subjects_tried": subjects,
+        "broadened": bool(broaden),
     }
 
 
-def research_concept_sync(title, module_title, course_title, mastery=1):
+def research_concept_sync(title, module_title, course_title, mastery=1,
+                          broaden=False):
     loop = asyncio.new_event_loop()
     try:
         return loop.run_until_complete(
-            _research_concept_async(title, module_title, course_title, mastery)
+            _research_concept_async(title, module_title, course_title, mastery,
+                                    broaden)
         )
     finally:
         loop.close()
@@ -715,35 +1035,82 @@ def research_concept_sync(title, module_title, course_title, mastery=1):
 
 @app.route("/api/research_concept", methods=["POST"])
 def api_research_concept():
+    """Ground one concept.
+
+    `broaden` IS NOW READ. It was accepted and ignored: the caller retries a
+    below-floor concept with `broaden: True` and an unchanged module_title, and
+    since every substantial lookup was keyed on the module, the retry hit cache
+    and returned byte-identical sources and an identical confidence — which
+    then failed the caller's strict `>` comparison, deterministically, after up
+    to 20 seconds. Every concept that lacked a textbook, primary or web hit paid
+    that cost on every build (Wikipedia alone scores 0.40 against a 0.50 floor).
+
+    Implemented rather than removed, because the caller does not ask whether
+    the server supports it: it retries whenever confidence < floor, so deleting
+    the parameter would leave the wasted round trip in place and only remove
+    the chance of it helping. Broadening now genuinely widens the search — more
+    subjects (module, course, and the discipline from Wikipedia's categories)
+    and a higher ceiling per source kind — while KEEPING the narrow queries, so
+    a retry can only ever add to what the first pass found.
+    """
     data = request.get_json(force=True)
     title = data.get("title", "")
     module_title = data.get("module_title", "")
     course_title = data.get("course_title", "")
     mastery = data.get("mastery", 1)
+    broaden = bool(data.get("broaden", False))
 
     if not title:
         return jsonify({"error": "title required"}), 400
 
-    result = research_concept_sync(title, module_title, course_title, mastery)
+    result = research_concept_sync(title, module_title, course_title, mastery,
+                                   broaden)
     return jsonify(result)
 
 
 @app.route("/api/research_batch", methods=["POST"])
 def api_research_batch():
+    """Ground several concepts in one request.
+
+    NO CALLER USES THIS. The hydrator issues N single POSTs instead, which is
+    N HTTP round trips and N event loops for work that shares almost all of its
+    lookups — every concept in a module falls back to the same module and
+    course subjects. Wiring it up is a change to course_builder.py, which is
+    not this service's to make; the endpoint is kept correct and ready.
+
+    What is fixed here: it built a fresh event loop per concept, and it dropped
+    concepts whose research raised, returning a short dict with no indication
+    which ones were missing.
+    """
     data = request.get_json(force=True)
     concepts = data.get("concepts", [])
     course_title = data.get("course_title", "")
     mastery = data.get("mastery", 1)
+    broaden = bool(data.get("broaden", False))
 
-    results = {}
-    for concept in concepts:
-        title = concept.get("title", "")
-        module_title = concept.get("module_title", "")
-        uid = concept.get("uid", title)
-        if title:
-            results[uid] = research_concept_sync(
-                title, module_title, course_title, mastery
-            )
+    async def _run_all():
+        out = {}
+        for concept in concepts:
+            title = concept.get("title", "")
+            if not title:
+                continue
+            uid = concept.get("uid", title)
+            try:
+                out[uid] = await _research_concept_async(
+                    title, concept.get("module_title", ""), course_title,
+                    mastery, broaden)
+            except Exception as e:
+                logger.warning(f"batch research failed for {title!r}: {e}")
+                out[uid] = {"sources": [], "wikipedia": None,
+                            "combined_text": "", "confidence": 0.0,
+                            "error": str(e)[:200]}
+        return out
+
+    loop = asyncio.new_event_loop()
+    try:
+        results = loop.run_until_complete(_run_all())
+    finally:
+        loop.close()
 
     return jsonify({"results": results})
 
@@ -765,11 +1132,20 @@ def health():
     except Exception:
         pass
 
+    # A DEPENDENCY-BLIND HEALTHCHECK IS HOW THIS SERVICE HID FOR WEEKS.
+    #
+    # This returned "healthy" with SearXNG unreachable, and Docker's
+    # healthcheck consumed that verdict — so the orchestrator reported a
+    # working system while grounding silently degraded. The Dockerfile carries
+    # the scar: "The container was diagnosed as 'SearXNG is down' for weeks.
+    # SearXNG was fine." Reporting a subsystem's state and then ignoring it in
+    # the verdict is the same mistake in a smaller box.
+    healthy = bool(searxng_reachable)
     return jsonify({
-        "status": "healthy",
+        "status": "healthy" if healthy else "degraded",
         "searxng_reachable": searxng_reachable,
         "cache_entries": len(cache),
-    })
+    }), (200 if healthy else 503)
 
 
 if __name__ == "__main__":

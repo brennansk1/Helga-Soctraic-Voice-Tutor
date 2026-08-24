@@ -51,7 +51,7 @@ Two things this seam cannot decide for you:
     stopped being the normal failure. Verify the candidate's server honours it
     before trusting the build path to it.
 
-And one thing the project already learned: Ternary-Bonsai-27B at 1.7-bit
+And one thing the project already learned: Ternary-Bonsai-27B at 2-bit (7.9 GB, ~2.2 bits/weight)
 produced clean output on a simplified prompt (4/4) and degenerated into
 repetition on the REAL builder prompt (3/3). See docs/MODE_A_STATUS.md §5. Gate
 any candidate on the real prompt — `tools/model_gate.py` does exactly that.
@@ -95,6 +95,18 @@ def resolve(role=TUTOR):
              or _clean(os.getenv("OLLAMA_MODEL"))
              or DEFAULT_MODEL)
 
+    # THE ROLE FALLBACK IS `model`, NOT A HARDCODED NAME.
+    #
+    # These read `or "qwen3.5:9b"` / `or "qwen3.5:4b"`, which contradicted the
+    # docstring directly above: a role with no override did NOT fall back to
+    # the single-model configuration, it fell back to a model name frozen in
+    # this file. Setting OLLAMA_MODEL therefore moved the general path and left
+    # build and tutor pointing at whatever was hardcoded here — models the box
+    # may not even hold — with nothing reporting the divergence.
+    #
+    # That is the model split-brain, which has broken this project three times,
+    # and it is what tests/common/test_model_default_agrees.py exists to catch.
+    # It caught it here, during a merge that reintroduced it.
     if role == BUILD:
         return (_clean(os.getenv("HELGA_BUILD_URL")) or base,
                 _clean(os.getenv("HELGA_BUILD_MODEL")) or model)

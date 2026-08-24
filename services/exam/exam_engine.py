@@ -581,7 +581,15 @@ def create_exam_blueprint(storage, llm_json=None):
         from services.common.llm_utils import llm_generate_json
 
         def llm_json(system, user, schema):
-            return llm_generate_json(user, sys_prompt=system, json_schema=schema)
+            # The kwarg is `schema`, not `json_schema` — llm_generate_json uses
+            # it BOTH to grammar-constrain generation and to validate the parse.
+            # Misspelled, this raised TypeError on EVERY call, and nothing on
+            # the exam path catches it: item generation, theming, the validity
+            # guard and free-response grading all call self.llm_json bare, so
+            # the exception escaped to Flask as a 500. It survived because the
+            # tests inject their own llm_json and never construct this closure —
+            # the default branch only runs in production.
+            return llm_generate_json(user, sys_prompt=system, schema=schema)
 
     engine = ExamEngine(storage, llm_json)
     bp = Blueprint("exam", __name__)

@@ -4469,6 +4469,12 @@ class ContentHydrator:
             reference_material = ""
             research_sources = []
             research_confidence = 0.0
+            # ABSENT IS NOT THE SAME AS THIN, and the learner-facing marker
+            # below used to say the same thing for both. "The grounding pass
+            # found little corroborating material" is a claim about the
+            # SUBJECT; when the research service was never reached, no pass
+            # happened and that sentence is simply false.
+            research_reached = False
             try:
                 research_resp = requests.post(
                     f"{research_url}/api/research_concept",
@@ -4488,6 +4494,7 @@ class ContentHydrator:
                     reference_material = research_data.get("combined_text", "")
                     research_sources = research_data.get("sources", [])
                     research_confidence = research_data.get("confidence", 0.0)
+                    research_reached = True
                     # Name the sources that grounded this concept. "Hydrating
                     # concept 7/12" says nothing about quality; "grounded in
                     # Wikibooks + Crossref" is the product's actual claim.
@@ -4700,7 +4707,15 @@ class ContentHydrator:
 
             # A2: an honest marker on thin content. Previously a 0.0-confidence
             # concept was visually identical to a well-sourced one.
-            if low_confidence:
+            if low_confidence and not research_reached:
+                structured_md += (
+                    "\n\n> **Grounding unavailable.** The research service could "
+                    "not be reached while this concept was written, so no "
+                    "sources were consulted at all and it rests entirely on the "
+                    "model's own knowledge. That is not the same as a subject "
+                    "with thin coverage — nothing was checked. Verify specifics "
+                    "before relying on them.\n")
+            elif low_confidence:
                 structured_md += (
                     "\n\n> **Limited sources.** The grounding pass found little "
                     "corroborating material for this concept "

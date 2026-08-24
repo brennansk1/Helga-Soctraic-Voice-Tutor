@@ -36,6 +36,28 @@ COPY services/common /app/services/common
 # is never called, but code that is never PACKAGED.
 COPY services/domains /app/services/domains
 
+# course_builder._record_syllabus_check does `from tools.syllabus_check import
+# check_structure, MIN_COVERAGE`. Until now this image contained only
+# services/core and services/common, so /app/tools did not exist, the import
+# raised ImportError, and the handler swallowed it at log level INFO —
+# criterion 6 has therefore NEVER run inside a container, while
+# docs/MODE_A_STATUS.md records it as "runs on every skeleton". It is the only
+# quality gate with external ground truth, so HELGA_SYLLABUS_GATE=1 was inert.
+#
+# Only syllabus_check.py is copied, not all of tools/. The rest of that
+# directory is host-run harnesses (helgabench, model_gate, the probes) that
+# depend on packages core deliberately does not install; copying them in would
+# put modules in the image that cannot import. syllabus_check.py itself is
+# stdlib-only at module scope and reaches services.common.fact_check lazily,
+# which resolves because it computes _ROOT as the parent of its own directory
+# — /app — which is already PYTHONPATH.
+#
+# docker-compose.yml additionally bind-mounts ./tools over this path so a host
+# edit takes effect without a rebuild, matching how core and common are
+# handled. This COPY is what makes the image correct on its own, for any run
+# that does not come through that compose file.
+COPY tools/syllabus_check.py /app/tools/syllabus_check.py
+
 ENV PYTHONPATH=/app
 
 WORKDIR /app/services/core

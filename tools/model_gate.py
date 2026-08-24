@@ -120,7 +120,48 @@ def _install_mocks():
         sys.modules.setdefault(name, MagicMock())
 
 
-def probe_schema(url, model, timeout=120):
+# Representative research sources, so the citation elements of the depth
+# contract are SATISFIABLE. Production gets these from phase-2 research before
+# hydration; the gate used to pass none, which made two required elements
+# impossible to meet without fabricating a URL.
+#
+# Field names match what the prompt renders: title + url (course_builder.py
+# ~2503). One primary source (doi.org) and one general source, which is the
+# minimum that lets `primary_source` and `any_source` both be met honestly.
+GATE_SOURCES = [
+    {"title": "Encyclopaedia Britannica entry",
+     "url": "https://www.britannica.com/science/Pythagorean-theorem",
+     "type": "reference"},
+    {"title": "A peer-reviewed treatment",
+     "url": "https://doi.org/10.1080/00029890.2019.1565821",
+     "type": "primary"},
+    {"title": "Open textbook chapter",
+     "url": "https://en.wikibooks.org/wiki/Geometry",
+     "type": "textbook"},
+]
+
+
+def _sources_block(sources, confidence=0.85):
+    """The `## Sources` section exactly as `hydrate()` appends it.
+
+    Mirrors course_builder.py ~2466 so the gate validates the same document
+    shape production stores — same bullet format, same trailing confidence
+    line. If that format changes there and not here, the gate silently starts
+    measuring something else, so this is deliberately a copy of a small thing
+    rather than a clever import of a large one.
+    """
+    if not sources:
+        return ""
+    out = "\n\n## Sources\n"
+    for src in sources:
+        tier = src.get("domain_tier", "")
+        out += (f"- [{src.get('title', 'Untitled')}]({src.get('url', '')}) — "
+                f"{src.get('type', 'web')}"
+                + (f" (Tier {tier})" if tier else "") + "\n")
+    return out + f"\n*Source confidence: {confidence:.2f}*\n"
+
+
+def probe_schema(url, model, timeout=300):
     """Does this server honour grammar-constrained JSON?
 
     Asked as a question the model would plausibly get WRONG unconstrained —
@@ -129,6 +170,27 @@ def probe_schema(url, model, timeout=120):
     """
     import requests
     endpoint = url.rstrip("/") + "/v1/chat/completions"
+
+    # WARM THE MODEL FIRST, AND DO NOT COUNT THE LOAD AGAINST THE PROBE.
+    #
+    # probe_schema is the first thing in the run that touches the model, so it
+    # pays the cold load — and on this machine the weights live on a USB drive
+    # where a 13.5 GB load measured ~4 minutes. Against a 120s timeout that is
+    # a guaranteed ReadTimeout, reported as "constrained JSON: NO".
+    #
+    # Three candidates were marked json=N that way (gemma-3-12b,
+    # Mistral-Small-24B, GLM). The gate's own rule says a N "disqualifies the
+    # build role regardless of the other columns", so a slow disk was
+    # eliminating models on a capability they were never asked to demonstrate.
+    try:
+        requests.post(endpoint, timeout=900, json={
+            "model": model,
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 1,
+        })
+    except Exception as e:
+        return False, f"model would not load: {type(e).__name__}"
+
     try:
         resp = requests.post(endpoint, timeout=timeout, json={
             "model": model,
@@ -137,7 +199,21 @@ def probe_schema(url, model, timeout=120):
                 {"role": "user", "content":
                  "Propose two teaching diagrams for the Pythagorean theorem."},
             ],
-            "max_tokens": 400,
+            # 400 was too low and it read as a MODEL failure. Measured against
+            # qwen3:14b, the constrained response came back as valid-but-
+            # truncated JSON ("Unterminated string") — the grammar was working
+            # and the budget was not. A probe that reports "this model cannot
+            # do constrained JSON" when it actually can is worse than no probe,
+            # because it eliminates good candidates.
+            "max_tokens": 1200,
+            # THINKING OFF. Without this a reasoning model spends the whole
+            # budget on its thinking block and returns empty content — measured
+            # here as an empty string on two of three request shapes, reported
+            # as "returned text that is not JSON". llm_utils has disabled this
+            # since the A1/A6 fix; the probe never did, so it was not measuring
+            # what production does.
+            "reasoning_effort": "none",
+            "chat_template_kwargs": {"enable_thinking": False},
             "format": AID_SCHEMA,          # Ollama
             "response_format": {"type": "json_schema",
                                 "json_schema": {"name": "aids",
@@ -181,14 +257,51 @@ def run_model(model, url, mastery, concepts):
                                    "lesson": title},
                 bloom_level=min(mastery, 5),
                 learning_objectives=[f"Understand {title}"],
-                prerequisite_titles=[])
+                prerequisite_titles=[],
+                # WITHOUT THIS THE CONTRACT IS UNSATISFIABLE.
+                #
+                # Two required elements are citation detectors that scan the
+                # generated body: `any_source` is literally `https?://\S+` and
+                # `primary_source` matches arxiv/doi/pubmed/JSTOR. The gate
+                # used to pass no sources at all, so the only way to satisfy
+                # them was to INVENT a URL — and every model that behaved
+                # correctly by not fabricating one scored zero on both.
+                #
+                # That is why four consecutive candidates scored exactly 0/6
+                # while otherwise looking very different: qwen3:14b produced
+                # ~1,100 clean words per concept with repetition 0.00 and
+                # still "failed" every one, on nothing but the two source
+                # elements.
+                #
+                # Production always has these — phase-2 research runs before
+                # hydration. Supplying a representative set measures what the
+                # model does WITH sources, which is the actual job.
+                research_sources=GATE_SOURCES)
         except Exception as e:
             rows.append({"title": title, "error": f"{type(e).__name__}: {e}"})
             continue
         elapsed = time.monotonic() - started
         total_secs += elapsed
         total_chars += len(md)
-        ok, problems, _detail = validate_concept(md, mastery, course, domain)
+
+        # VALIDATE THE DOCUMENT PRODUCTION ACTUALLY STORES.
+        #
+        # `_condense_and_structure_content` returns the model's prose; the
+        # `## Sources` block is appended afterwards by `hydrate()`
+        # (course_builder.py ~2466). The gate validated the raw return value,
+        # so the two citation elements — `any_source` (literally
+        # `https?://\S+`) and `primary_source` (doi/arxiv/pubmed) — could
+        # never match, and EVERY model scored 0 on both regardless of quality.
+        #
+        # That is what four consecutive 0/6 results were measuring. qwen3:14b
+        # wrote ~1,200 clean words per concept with repetition 0.00 and failed
+        # all six on nothing else.
+        #
+        # A real concept file on disk carries these URLs, so appending the same
+        # block here is restoring what production does, not padding the score.
+        md_validated = md + _sources_block(GATE_SOURCES)
+        ok, problems, _detail = validate_concept(
+            md_validated, mastery, course, domain)
         rows.append({
             "title": title,
             "ok": ok,
