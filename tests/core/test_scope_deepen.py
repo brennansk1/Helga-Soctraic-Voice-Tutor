@@ -201,3 +201,48 @@ def test_degraded_is_described_as_unknown_not_small():
 def test_nothing_is_said_when_nothing_happened():
     a = deepen_scope(_brief(40), 60, lambda t, b: b, now=_clock())
     assert describe_deepening(a) == ""
+
+
+# --- the ceiling, and the off-by-one that set it -----------------------------
+
+def test_the_ladder_never_reaches_the_degrading_iteration():
+    """The initial sweep IS iteration one.
+
+    The iterative-retrieval literature puts the optimum at two or three
+    iterations and reports a FOURTH consistently degrading answer quality.
+    Three escalations would BE iteration four. This pins the arithmetic so a
+    later "let's search a bit harder" cannot quietly reintroduce it.
+    """
+    assert MAX_TIERS == 2, (
+        "MAX_TIERS counts ESCALATIONS, not iterations: the initial "
+        "curriculum_brief sweep is iteration 1, so 2 escalations = 3 total, "
+        "the top of the measured optimum. 3 would run the degrading fourth.")
+
+
+def test_only_the_two_most_precise_tiers_run():
+    """Ordered cheapest-and-most-precise first, so the ceiling drops the tier
+    most likely to return plausible non-answers."""
+    ran = []
+
+    def widen(tier, brief):
+        ran.append(tier["name"])
+        return _brief(brief["chapter_count"] + 1)
+
+    deepen_scope(_brief(2), 10_000, widen, now=_clock())
+    assert ran == ["adjacent", "parent"], ran
+    assert "applied" not in ran, (
+        "the widest tier ran; it is defined but must sit outside the default "
+        "ceiling")
+
+
+def test_a_caller_can_still_reach_the_third_tier_deliberately():
+    """Defined-but-not-default is different from deleted. A caller that knows
+    it wants the widest sweep can ask for it."""
+    ran = []
+
+    def widen(tier, brief):
+        ran.append(tier["name"])
+        return _brief(brief["chapter_count"] + 1)
+
+    deepen_scope(_brief(2), 10_000, widen, max_tiers=3, now=_clock())
+    assert "applied" in ran

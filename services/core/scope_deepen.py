@@ -68,14 +68,35 @@ try:
 except ImportError:  # container (flat)
     from scope_fit import assess_scope
 
-#: How many escalations at most. Three, not "until satisfied": beyond a few
-#: tiers the marginal source is noise, and the literature has answer quality
-#: FALLING once retrieved material is dominated by plausible non-answers.
-MAX_TIERS = 3
+#: How many escalations at most — and this is TWO, not three, because of an
+#: off-by-one that matters.
+#:
+#: The iterative-retrieval literature measures ITERATIONS, and reports the
+#: optimum at two or three with a FOURTH iteration consistently degrading
+#: answer quality across complex datasets — additional cycles introduce noisy
+#: or tangentially related material faster than they add signal.
+#:
+#: The initial `curriculum_brief` sweep IS iteration one. So three escalations
+#: would run iteration four: exactly the one shown to make things worse. Two
+#: escalations put the ladder at three total iterations, the top of the
+#: measured optimum.
+#:
+#: The same work notes that on simple cases quality degrades with EVERY extra
+#: iteration, because the first retrieval was already sufficient. That is why
+#: nothing escalates unless the arithmetic first says the material is thin.
+MAX_TIERS = 2
 
 #: Consecutive tiers that may add nothing before we call the subject dry. Two
 #: rather than one, for the reason `research_loop` gives: one empty round is
 #: often a bad query, two is the subject.
+#:
+#: Systematic-review practice uses the same shape of rule — stop when the last
+#: N records yield nothing new — but with N in the tens, and the difference is
+#: the UNIT. There a barren step is one screened record; here it is an entire
+#: search sweep across a widened set of terms. Two barren sweeps is a far
+#: stronger signal than two barren records, and with MAX_TIERS at two it is
+#: also the whole ladder — so in practice this fires as "the escalation found
+#: nothing" rather than as an early exit.
 DRY_TIERS = 2
 
 #: Wall-clock ceiling. Course creation already runs for tens of minutes and a
