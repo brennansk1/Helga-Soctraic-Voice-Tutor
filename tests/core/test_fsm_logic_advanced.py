@@ -262,5 +262,17 @@ def test_get_state_preserves_visuals(fsm):
 
     assert state_data['state'] == 'SOCRATIC_LEARNING'
     assert state_data['current_lesson_uid'] == 'lesson1'
-    assert state_data['current_context'] == "This is the context."
+    # `current_context` IS DELIBERATELY NOT SENT.
+    #
+    # /state is polled every 2 seconds per connected student, and this shipped
+    # up to 10,000 characters of the concept document — plus the same text
+    # again inside `graph_node` — to a browser where NOTHING reads either
+    # field: grepping all of services/web-ui/ for both names returns no
+    # consumer. It also put the concept's worked examples and answer key into
+    # the page for anyone who opened devtools, on a tutor whose whole method is
+    # withholding the answer until the learner has committed to one.
+    #
+    # The identifying fields the UI actually uses are asserted around this.
+    assert 'current_context' not in state_data
+    assert 'text' not in (state_data.get('graph_node') or {})
     assert len(state_data['transcript']) > 0
