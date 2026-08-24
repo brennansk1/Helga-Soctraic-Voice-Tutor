@@ -316,15 +316,22 @@
                     request.path=='/library' %}aria-current="page" {% endif %}>Library</a>
                 <a href="/progress" class="nav-link {% if request.path == '/progress' %}active{% endif %}" {% if
                     request.path=='/progress' %}aria-current="page" {% endif %}>Progress</a>
-                {# Practice and Test are DIFFERENT jobs: ungraded drilling vs
-                   graded gates. Assessment is what makes a degree credible —
-                   exams gate completion and retention-over-time is the
-                   credential a one-shot exam cannot offer — so it is visible,
-                   not buried inside Practice. #}
-                <a href="/practice" class="nav-link {% if request.path in ['/practice', '/quiz', '/review', '/schedule'] %}active{% endif %}" {% if
-                    request.path in ['/practice', '/quiz', '/review', '/schedule'] %}aria-current="page" {% endif %}>Practice</a>
-                <a href="/test" class="nav-link {% if request.path == '/test' %}active{% endif %}" {% if
-                    request.path=='/test' %}aria-current="page" {% endif %}>Test</a>
+                {# "Test" WAS A DESTINATION THAT DID NOT EXIST.
+                   The note here argued that Practice and Test are different
+                   jobs — ungraded drilling versus graded gates — and that
+                   assessment should be visible rather than buried. That is a
+                   fair argument, but nothing implements it: /test is a
+                   redirect to /practice?tab=quiz, there is no exam route, no
+                   exam template and no exam endpoint. The `exams` tables exist
+                   in the schema and nothing writes them.
+
+                   So the bar offered eight destinations for seven pages, and
+                   clicking Test highlighted PRACTICE — the tell that the two
+                   were never distinct. The redirect stays for bookmarks; the
+                   nav no longer promises a page that is not there. Put it
+                   back when there is an exam to point it at. #}
+                <a href="/practice" class="nav-link {% if request.path in ['/practice', '/quiz', '/review', '/schedule', '/test'] %}active{% endif %}" {% if
+                    request.path in ['/practice', '/quiz', '/review', '/schedule', '/test'] %}aria-current="page" {% endif %}>Practice</a>
                 <a href="/settings" class="nav-link {% if request.path in ['/settings', '/status'] %}active{% endif %}" {% if
                     request.path in ['/settings', '/status'] %}aria-current="page" {% endif %}>Settings</a>
             </nav>

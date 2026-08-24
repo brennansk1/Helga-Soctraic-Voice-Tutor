@@ -42,6 +42,13 @@
        deep blue and fails over the dark theme's pale blue (2.9:1) — the same
        "right in light mode by accident" trap as the missing tokens. */
     --on-accent: #ffffff;
+    /* Ink for a pill sitting on a 12% tint of the accent — the badge and the
+       template flag. The accent ON its own pale wash is 3.58:1, which fails AA
+       for the small uppercase text those pills use, and the fix is opposite in
+       each theme: light needs a DARKER ink, dark needs a LIGHTER one. Naming
+       it once here stops the next component reaching for whichever accent
+       happens to look right in the theme its author had open. */
+    --accent-on-tint: #23567a;   /* 7.83:1 on the light tint */
     --accent-primary-dark: #23567a;
     --accent-secondary: #c17f4a;
     --accent-secondary-hover: #a8693a;
@@ -135,6 +142,7 @@
     --accent-primary: #5da0c2;
     /* Dark ink on the pale accent: 6.0:1, versus 2.9:1 for white. */
     --on-accent: #12201b;
+    --accent-on-tint: #5da0c2;   /* 4.87:1 on the dark tint */
     --accent-primary-dark: #4a8db0;
     --accent-secondary: #d4a066;
     --accent-secondary-hover: #e2b585;

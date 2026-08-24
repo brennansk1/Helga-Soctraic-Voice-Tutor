@@ -113,7 +113,17 @@ class TestNoFeatureReachableOnlyByUrl(unittest.TestCase):
     # "the nav" is no longer the only legitimate entry point, because some
     # features are now modes of a parent surface rather than destinations.
     NAV_PAGES = ['/courses', '/degree', '/library', '/progress', '/practice',
-                 '/test', '/settings']
+                 '/settings']
+
+    # Aliases kept for old links and bookmarks. They are NOT destinations and
+    # must not occupy a slot in the nav: /test sat there promising graded exams
+    # that do not exist — no exam route, no template, no endpoint — and
+    # clicking it highlighted PRACTICE, which is the tell that the two were
+    # never distinct. Removing a nav entry is exactly what this class exists to
+    # catch, so the guarantee is replaced rather than dropped: each alias must
+    # still land on a page the nav does link.
+    ALIAS_REDIRECTS = {'/test': '/practice', '/quiz': '/practice',
+                       '/review': '/practice'}
 
     # feature -> the page that must link to it
     NESTED_ENTRY_POINTS = {
@@ -150,6 +160,20 @@ class TestNoFeatureReachableOnlyByUrl(unittest.TestCase):
         for path in self.NAV_PAGES:
             self.assertIn(f'href="{path}"', nav,
                           f"{path} is advertised but not reachable from the nav")
+
+    def test_every_alias_lands_on_a_page_the_nav_links(self):
+        """An alias may leave the nav; it may not become a dead end."""
+        client = app.test_client()
+        html = client.get('/').data.decode()
+        nav = html.split('app-nav', 1)[-1].split('</nav>', 1)[0]
+        for alias, target in self.ALIAS_REDIRECTS.items():
+            resp = client.get(alias)
+            self.assertIn(resp.status_code, (301, 302, 308),
+                          f"{alias} no longer redirects; it is orphaned")
+            self.assertIn(target, resp.headers.get('Location', ''),
+                          f"{alias} redirects somewhere other than {target}")
+            self.assertIn(f'href="{target}"', nav,
+                          f"{alias} lands on {target}, which the nav does not link")
 
     def test_nested_features_are_linked_from_their_parent(self):
         """Removing something from the nav is only safe if it gained a home.

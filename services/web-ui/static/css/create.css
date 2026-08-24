@@ -179,8 +179,12 @@
 .source-card p { color: var(--text-secondary); font-size: .92rem; line-height: 1.45; margin: 0 0 .8em; }
 .source-icon svg { width: 34px; height: 34px; fill: none; stroke: var(--accent-primary); stroke-width: 1.8; }
 .source-badge {
+    /* MEASURED 3.58:1 IN LIGHT MODE, against a 4.5 requirement for text this
+       small. The badge puts --accent-primary on a 12% tint of ITSELF, which
+       is a pale wash of the same hue — the two are close by construction.
+       The darker accent keeps the identity and clears AA. */
     font-size: .74rem; letter-spacing: .04em; text-transform: uppercase;
-    color: var(--accent-primary);
+    color: var(--accent-on-tint);
     background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
     padding: 3px 9px; border-radius: 999px;
 }
@@ -237,8 +241,9 @@
 }
 .tpl-flag {
     position: absolute; top: 12px; right: 12px;
+    /* Same 3.58:1 failure as .source-badge, same fix. */
     font-size: .72rem; letter-spacing: .05em; text-transform: uppercase;
-    color: var(--accent-primary);
+    color: var(--accent-on-tint);
     background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
     padding: 3px 9px; border-radius: 999px;
 }
