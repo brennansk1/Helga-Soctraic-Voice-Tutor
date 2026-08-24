@@ -720,6 +720,83 @@ class SkeletonBuilder:
             f"- {blacklist}\n"
         )
 
+    #: A padded title is the parent's title with " Part N" or " Lesson N"
+    #: stuck on the end. Nothing a model writes looks like that.
+    _PADDED = __import__("re").compile(
+        r"^(?P<parent>.+?)\s+(?:Part|Lesson)\s+\d+$", __import__("re").I)
+
+    @staticmethod
+    def is_placeholder_title(title, parent_title=None):
+        """True when `title` is scaffolding rather than a taught idea.
+
+        The builder pads empty lessons with "{lesson} Part N" so the structure
+        is never empty, on the reasoning that a generic concept beats a black
+        hole in the learning path. Measured on a real build, that reasoning is
+        wrong: an "Advanced SQL" course shipped a whole unit of
+
+            Set Operations and Deduplication Logic Part 2 Lesson 3 Part 1
+
+        whose only objective was "Understand Set Operations and Deduplication
+        Logic Part 2 Lesson 3". That is a black hole WITH A NAME, which is
+        worse than an absent unit — the course advertises 108 concepts, the
+        learner opens five dead ends, and hydration spends a minute of model
+        time writing content for a title that means nothing.
+
+        The trigger is dedup, not the model: in a module named "Set
+        Operations", every honest concept contains "set operations", so dedup
+        strips them as echoes of the parent and padding fills the hole.
+        """
+        t = (title or "").strip()
+        m = SkeletonBuilder._PADDED.match(t)
+        if not m:
+            return False
+        if parent_title is None:
+            return True
+        # Only scaffolding when the stem IS the parent — a real concept called
+        # "Window Functions Part 2" in a differently-named lesson is content.
+        return m.group("parent").strip().lower() == (parent_title or "").strip().lower()
+
+    def prune_placeholder_scaffolding(self, course):
+        """Drop lessons that are entirely padding, and units left empty.
+
+        Returns a tally. Mutates `course` in place. A module is never emptied
+        completely — if every one of its units is scaffolding, the module is
+        kept and logged, because an absent module is a hole in the syllabus the
+        learner can see, while a thin one is merely thin.
+        """
+        tally = {"concepts": 0, "lessons": 0, "units": 0}
+        for module in (course.get("modules") or []):
+            m_title = module.get("title", "")
+            kept_units = []
+            for unit in (module.get("units") or []):
+                u_title = unit.get("title", "")
+                kept_lessons = []
+                for lesson in (unit.get("lessons") or []):
+                    l_title = lesson.get("title", "")
+                    concepts = lesson.get("concepts") or []
+                    padded = [c for c in concepts
+                              if self.is_placeholder_title(c.get("title"), l_title)]
+                    if concepts and len(padded) == len(concepts):
+                        tally["concepts"] += len(concepts)
+                        tally["lessons"] += 1
+                        continue
+                    kept_lessons.append(lesson)
+                unit["lessons"] = kept_lessons
+                if not kept_lessons:
+                    tally["units"] += 1
+                    continue
+                kept_units.append(unit)
+            if kept_units:
+                module["units"] = kept_units
+            elif module.get("units"):
+                logger.warning(
+                    f"  [PRUNE] every unit of '{m_title}' was scaffolding; "
+                    f"keeping them rather than emptying the module")
+        if any(tally.values()):
+            logger.info(f"  [PRUNE] dropped {tally['concepts']} padded concepts, "
+                        f"{tally['lessons']} lessons, {tally['units']} units")
+        return tally
+
     def _normalize_title(self, title: str) -> str:
         if not title:
             return ""
@@ -1794,6 +1871,10 @@ class SkeletonBuilder:
         # objectives are, and the pattern classifiers work on exactly those.
         # An UNKNOWN concept still gets its domain's standing rule, so the
         # floor is safe; what this recovers is the per-kind ceiling.
+        # BEFORE classification, not after: typing a padded title wastes a
+        # model call and puts a kind on a concept that is about to be dropped.
+        self.prune_placeholder_scaffolding(course_dict)
+
         self._classify_concepts_by_domain(course_dict, topic)
 
         # Write course structure to JSON
