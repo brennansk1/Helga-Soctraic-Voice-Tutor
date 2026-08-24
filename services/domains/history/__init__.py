@@ -64,6 +64,21 @@ KEYWORDS = (
     "ancient", "medieval", "renaissance", "revolution", "empire",
     "world war", "civil war", "cold war", "colonial", "reformation",
     "antiquity", "archaeology", "dynasty", "monarchy", "crusades",
+    # NAMED POLITIES AND EVENTS, because a learner types a SUBJECT and this
+    # list held only eras and abstractions. Measured on realistic topics:
+    # "The Roman Republic" routed to (generic) and got no history teaching at
+    # all, while "Ancient Rome" and "The Roman Empire" worked — the difference
+    # was purely which era word happened to appear in the phrasing.
+    #
+    # A BARE "roman" IS NOT HERE, for the same reason a bare "force" is not in
+    # science and a bare "vector" is not in mathematics: "Roman numerals" is
+    # maths and "Roman architecture" is neither. The multi-word form carries
+    # the whole signal without the ambiguity.
+    "roman republic", "byzantine", "ottoman", "mesopotamia", "feudal",
+    "feudalism", "napoleonic", "holocaust", "apartheid", "pharaoh",
+    "shogunate", "samurai", "prehistoric", "prehistory", "abolition",
+    "suffrage", "decolonisation", "decolonization", "great depression",
+    "vietnam war", "korean war", "silk road", "treaty of",
 )
 
 
