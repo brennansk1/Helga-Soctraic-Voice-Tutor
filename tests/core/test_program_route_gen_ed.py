@@ -41,8 +41,10 @@ def _call(body):
     seen = {}
 
     def fake_plan_degree(subject, template, llm_json_fn=None, search_fn=None,
-                         preset="college", general_education="include"):
+                         preset="college", general_education="include",
+                         context=""):
         seen["general_education"] = general_education
+        seen["context"] = context
         return {"subject": subject, "template": template, "courses": [],
                 "general_education": general_education}
 

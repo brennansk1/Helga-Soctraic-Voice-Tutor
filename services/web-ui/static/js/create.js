@@ -28,6 +28,7 @@
         topic: "",
         mastery: 3,
         style: "",
+        context: "",
         scope: null,         // scope-check result
         index: 0,
     };
@@ -86,8 +87,23 @@
         nextBtn.disabled = !canLeave(name) || state.index === seq.length - 1;
         rebuildDots();
 
+        if (name === "subject") tuneContextPrompt();
         if (name === "scope") runScopeCheck();
         if (name === "review") renderReview();
+    }
+
+    /* The context box is asking one thing — "which version of this subject do
+       you mean?" — but a degree and a single course give very different
+       examples of it, and a course-shaped example on the degree route reads
+       as though the box does not apply. */
+    function tuneContextPrompt() {
+        var box = document.getElementById("context");
+        if (!box) return;
+        var isDegree = state.template === "associate" ||
+                       state.template === "bachelors";
+        box.placeholder = isDegree
+            ? "e.g. I want the research and statistics side, aiming at graduate study — not clinical practice or counselling."
+            : "e.g. I write joins and GROUP BY already. I want window functions, CTEs and reading a query plan, for analytics work — not database administration.";
     }
 
     /* A page must be satisfied before the arrow moves on — but dots can jump
@@ -214,6 +230,12 @@
     var topicInput = document.getElementById("topic");
     var masteryInput = document.getElementById("mastery");
     var masteryDesc = document.getElementById("mastery-desc");
+    var contextInput = document.getElementById("context");
+    if (contextInput) {
+        contextInput.addEventListener("input", function () {
+            state.context = contextInput.value;
+        });
+    }
     var styleInput = document.getElementById("style");
 
     function syncMastery() { masteryDesc.textContent = MASTERY[masteryInput.value]; }
@@ -569,6 +591,7 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ subject: state.topic.trim(),
                                    template: state.template,
+                                   context: state.context.trim(),
                                    general_education: genEdChoice() }),
         })
             .then(function (r) {
@@ -621,6 +644,7 @@
                     text: text,
                     template: state.template,
                     mastery: state.mastery,
+                    context: state.context.trim(),
                     source: "create_carousel",
                 },
             }),

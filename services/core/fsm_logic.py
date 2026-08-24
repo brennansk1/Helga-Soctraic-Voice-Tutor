@@ -1470,7 +1470,37 @@ class MnemosyneFSM:
                 elif "enter" in text_lc or "palace" in text_lc:
                     self.enter_mode_3(text)
                 elif "create" in text_lc:
-                    epub_path = event.get("payload", {}).get("filepath")
+                    _pl = event.get("payload", {}) or {}
+                    epub_path = _pl.get("filepath")
+                    # THE CREATE CAROUSEL POSTS ITS ANSWERS HERE AND NOTHING
+                    # READ THEM. /api/create_course parks the three sliders in
+                    # _pending_course_params for the pipeline to pick up; this
+                    # path — the one the /create page actually uses — parsed a
+                    # sentence and dropped the rest of the payload on the
+                    # floor. The learner set "Level: working knowledge", saw it
+                    # confirmed on the review panel, and got the depth default.
+                    _params = {}
+                    for _k in ("scope", "mastery", "starting_from"):
+                        if _pl.get(_k) is not None:
+                            try:
+                                _params[_k] = int(_pl[_k])
+                            except (TypeError, ValueError):
+                                logging.warning(
+                                    "create payload had a non-numeric %s (%r) "
+                                    "— ignoring that one dial", _k, _pl[_k])
+                    _ctx = (_pl.get("context")
+                            or _pl.get("learner_context") or "").strip()
+                    if _ctx:
+                        _params["learner_context"] = _ctx
+                        # Said out loud in the build log: a course built to a
+                        # brief and one built from a bare title are different
+                        # courses, and which one you got should not be a matter
+                        # of inspection.
+                        logging.info("[CREATE] building to the learner's own "
+                                     "brief (%d chars): %r",
+                                     len(_ctx), _ctx[:120])
+                    if _params:
+                        self._pending_course_params = _params
                     self.start_creation(text, epub_filepath=epub_path)
                 elif "list" in text_lc:
                     self.list_courses()
@@ -4665,6 +4695,8 @@ class MnemosyneFSM:
 
                 sb = SkeletonBuilder(
                     providers=providers,
+                    learner_context=(getattr(self, "_pending_course_params", {})
+                                     or {}).get("learner_context"),
                     should_cancel=lambda: not self.creation_in_progress,
                         status_callback=self.send_status_update,
                     course_depth=depth,
@@ -4989,6 +5021,12 @@ class MnemosyneFSM:
                 _scope = _cp.get('scope', depth)
                 _mastery = _cp.get('mastery', depth)
                 _start = _cp.get('starting_from', 1)
+                # Read BEFORE the delete below. This used to be fetched again
+                # at the SkeletonBuilder call further down, by which point the
+                # attribute was gone — so the learner's own description of what
+                # they wanted arrived as None on the researched path, the one
+                # every UI-built course takes.
+                _ctx = (_cp.get('learner_context') or '').strip() or None
                 if hasattr(self, '_pending_course_params'):
                     del self._pending_course_params
 
@@ -5069,6 +5107,7 @@ class MnemosyneFSM:
                 else:
                     sb = SkeletonBuilder(
                         providers=providers,
+                        learner_context=_ctx,
                         should_cancel=lambda: not self.creation_in_progress,
                         status_callback=self.send_status_update,
                         course_depth=depth,
@@ -5895,6 +5934,12 @@ def create_program():
     # Defaulting to "include" keeps the credit-hour comparison intact for
     # anyone who does not express a preference.
     gen_ed = (data.get("general_education") or "include").strip()
+    # A degree gets built from a subject word for MONTHS. "Psychology" is a
+    # research programme or a clinical one; "Music" is theory or production.
+    # The learner's own sentence decides which, and it is kept on the plan so
+    # each course built later still has it.
+    learner_context = (data.get("context")
+                       or data.get("learner_context") or "").strip()
     if not subject:
         return {"error": "subject is required"}, 400
     try:
@@ -5911,7 +5956,8 @@ def create_program():
         # Same helper the course builder hands the planner elsewhere, so a
         # programme is planned against the same model and repair path.
         plan = plan_degree(subject, template, llm_json_fn=llm_generate_json,
-                           general_education=gen_ed)
+                           general_education=gen_ed,
+                           context=learner_context)
     except ProgramError as e:
         # An unteachable plan is a real answer, not a server fault: the subject
         # could not carry a programme of this size.
@@ -5999,6 +6045,12 @@ def choose_program_elective(uid):
         fsm._pending_course_params = {
             "scope": 3, "mastery": 3, "starting_from": 1,
         }
+        # The brief the learner gave when they planned the degree applies to
+        # every course in it. Without this, "Statistics" inside a psychology
+        # programme is built as a generic maths course.
+        _ctx = (plan or {}).get("learner_context")
+        if _ctx:
+            fsm._pending_course_params["learner_context"] = _ctx
         # Remembered so the pipeline can attach the finished course back to
         # the programme slot it was built for.
         fsm._pending_program = {"program_uid": uid, "course_title": title}
@@ -6324,9 +6376,18 @@ def api_create_course():
     if fsm.creation_in_progress:
         return jsonify({"error": "Course creation already in progress"}), 409
 
-    # Store slider params for the creation pipeline to pick up
+    # Store slider params for the creation pipeline to pick up.
+    #
+    # `context` rides with them because three numbers cannot say what a
+    # learner is for. "SQL" at scope 3 / mastery 3 / start 1 describes the
+    # SHAPE of a course and nothing about whether it should teach reporting
+    # queries or storage engines — and the builder, given only the word,
+    # produced a module on the history of the standard.
     fsm._pending_course_params = {
-        "scope": int(scope), "mastery": int(mastery), "starting_from": int(starting_from)
+        "scope": int(scope), "mastery": int(mastery),
+        "starting_from": int(starting_from),
+        "learner_context": (data.get("context")
+                            or data.get("learner_context") or "").strip(),
     }
     fsm.start_creation(f"create course {topic} with depth {depth}")
     return jsonify({"course_uid": "pending", "status": "building",

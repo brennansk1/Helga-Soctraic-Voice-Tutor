@@ -167,6 +167,24 @@
                         <p class="mastery-desc" id="mastery-desc" role="status"></p>
                     </div>
 
+                    {# A SUBJECT WORD IS NOT A BRIEF.
+                       The three sliders describe the SHAPE of a course — how
+                       much, how deep, from where — and say nothing about what
+                       it is for. "SQL" covers an analytics engineer, a backend
+                       developer, a DBA and someone revising for an interview,
+                       and given only the word the builder produced a module on
+                       the history of the standard. This is where the learner
+                       says which of those they are. #}
+                    <label class="field">
+                        <span class="field-label">What do you want out of this?
+                            <small>(optional, but it changes the course)</small></span>
+                        <textarea id="context" rows="3" maxlength="600"
+                                  placeholder="e.g. I write joins and GROUP BY already. I want window functions, CTEs and reading a query plan, for analytics work — not database administration."></textarea>
+                        <small class="field-hint">Anything here outranks the
+                            subject word when Helga decides what belongs in the
+                            course.</small>
+                    </label>
+
                     <label class="field">
                         <span class="field-label">Teaching style <small>(optional)</small></span>
                         <input type="text" id="style" placeholder="e.g. Academic, ELI5, hands-on"

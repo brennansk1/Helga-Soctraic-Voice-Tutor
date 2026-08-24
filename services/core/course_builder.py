@@ -676,6 +676,7 @@ class SkeletonBuilder:
         providers: list = None,
         status_callback=None,
         should_cancel=None,
+        learner_context: str = None,
         course_depth: int = 2,
         teaching_style: str = "",
         storage: StorageManager = None,
@@ -696,6 +697,20 @@ class SkeletonBuilder:
         # A predicate rather than a flag so the builder never has to know what
         # owns the state; it just asks, at the checkpoints below.
         self.should_cancel = should_cancel
+        # WHAT THE LEARNER ACTUALLY WANTS, IN THEIR OWN WORDS.
+        #
+        # The whole structure was decided from a topic STRING. "SQL" is not a
+        # course brief — it is a word covering an analytics engineer, a backend
+        # developer, a DBA and someone revising for an interview, and the
+        # builder had no way to tell them apart. Measured: a course on "SQL"
+        # opened with modules on History and Interoperability and
+        # Standardization — a fair reading of the word, and no use to anyone
+        # learning it.
+        #
+        # `user_note` already existed at MODULE and CONCEPT level, from the
+        # wizard, and reached hydration. Nothing carried intent at the level
+        # where it decides most: the module plan.
+        self.learner_context = (learner_context or "").strip()
         self.course_depth = course_depth
         self.teaching_style = teaching_style or ""
         # Three-slider system (falls back to depth for legacy callers)
@@ -1706,7 +1721,12 @@ class SkeletonBuilder:
             f"Student Background: {self.starting_from}/5 ({cp['starting_label']}) — starting at Bloom level {bloom_floor} ({bloom_labels.get(bloom_floor, 'Remember')})\n"
             f"{temporal_constraint}\n"
             f"{category_constraint}\n\n"
-            f"Create exactly {target_modules} PROGRESSIVE modules for a course on '{topic}'.\n\n"
+            + (f"WHAT THIS LEARNER SAID THEY WANT, in their own words. It "
+               f"outranks the topic word: let it decide what belongs in this "
+               f"course and what does not, and which sense of an ambiguous "
+               f"subject is meant.\n\"{self.learner_context}\"\n\n"
+               if self.learner_context else "")
+            + f"Create exactly {target_modules} PROGRESSIVE modules for a course on '{topic}'.\n\n"
             f"PROGRESSION SCHEDULE — Each module MUST match its assigned complexity level:\n"
             f"{progression_schedule}\n\n"
             f"THIS IS A JOURNEY from Bloom {bloom_floor} ({bloom_labels.get(bloom_floor)}) to Bloom {bloom_ceiling} ({bloom_labels.get(bloom_ceiling)}).\n"

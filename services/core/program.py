@@ -602,7 +602,8 @@ def drop_unteachable(titles, on_drop=None):
     return kept
 
 
-def propose_slot_subjects(subject, template, llm_json_fn, brief_fn=None):
+def propose_slot_subjects(subject, template, llm_json_fn, brief_fn=None,
+                          context=""):
     """Real course titles for each slot, or {} .
 
     THE GAP THIS FILLS
@@ -639,7 +640,12 @@ def propose_slot_subjects(subject, template, llm_json_fn, brief_fn=None):
     lines = "\n".join(f"  {slot}: {n} courses" for slot, n in wanted.items())
     try:
         data = llm_json_fn(
-            prompt=(f"Name the actual courses in a real {tpl['label']} programme "
+            prompt=((f"WHAT THIS LEARNER SAID THEY WANT FROM THE DEGREE, in "
+                     f"their own words. A subject name does not say which "
+                     f"programme in that subject they mean; this does, and it "
+                     f"outranks convention when the two disagree.\n"
+                     f"\"{context.strip()}\"\n\n" if (context or "").strip() else "")
+                    + f"Name the actual courses in a real {tpl['label']} programme "
                     f"in {subject}.\n\nSlots to fill:\n{lines}\n\n"
                     f"gen_ed is general education outside the major; core is the "
                     f"major itself in teaching order; elective is advanced "
@@ -837,7 +843,8 @@ def curated_degree(subject, template):
     return None
 
 
-def source_degree_slots(subject, template, llm_json_fn=None, search_fn=None):
+def source_degree_slots(subject, template, llm_json_fn=None, search_fn=None,
+                        context=""):
     """Fill a degree's slots, preferring published curricula over invention.
 
     Returns {"slots": {...}, "source": str, "authoritative": bool, "gaps": [...]}.
@@ -876,7 +883,8 @@ def source_degree_slots(subject, template, llm_json_fn=None, search_fn=None):
         if gaps and llm_json_fn:
             try:
                 proposed = propose_slot_subjects(subject, template,
-                                                 llm_json_fn) or {}
+                                                 llm_json_fn,
+                                                 context=context) or {}
             except Exception as e:
                 logger.warning(f"[DEGREE] gap fill failed: {e}")
                 proposed = {}
@@ -920,7 +928,8 @@ def source_degree_slots(subject, template, llm_json_fn=None, search_fn=None):
     #    standard and the record should say so.
     slots = {}
     if llm_json_fn:
-        slots = propose_slot_subjects(subject, template, llm_json_fn) or {}
+        slots = propose_slot_subjects(subject, template, llm_json_fn,
+                                     context=context) or {}
     gaps = [k for k, n in wanted.items() if len(slots.get(k) or []) < n]
     return {"slots": slots, "source": "model-proposed", "authoritative": False,
             "gaps": gaps,
@@ -1161,7 +1170,8 @@ def assign_terms(courses, terms, per_term=None):
 
 
 def plan_degree(subject, template, llm_json_fn=None, search_fn=None,
-                preset="college", general_education=GEN_ED_INCLUDE):
+                preset="college", general_education=GEN_ED_INCLUDE,
+                context=""):
     """The single entry point: a subject and a degree tier in, a plan out.
 
     Everything above this is a step; this is the thing a caller invokes. The
@@ -1187,11 +1197,18 @@ def plan_degree(subject, template, llm_json_fn=None, search_fn=None,
     tpl = template_for(template, general_education)
 
     sourced = source_degree_slots(subject, template,
-                                  llm_json_fn=llm_json_fn, search_fn=search_fn)
+                                  llm_json_fn=llm_json_fn, search_fn=search_fn,
+                                  context=context)
     plan = plan_from_template(subject, template,
                               slot_subjects=sourced.get("slots"), preset=preset,
                               general_education=general_education)
     plan["general_education"] = general_education
+    # KEPT ON THE PLAN, not just used once. Each course inside a programme is
+    # built later, on its own, hours or days after the degree was planned — so
+    # the brief has to outlive the planning call or every course in the degree
+    # gets built from a bare title again.
+    if (context or "").strip():
+        plan["learner_context"] = context.strip()
     if general_education == GEN_ED_DONE:
         # Satisfied elsewhere: they count toward the degree and are already
         # behind the learner, so anything gated on them is open immediately.

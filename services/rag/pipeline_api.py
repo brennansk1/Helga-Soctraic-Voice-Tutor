@@ -805,6 +805,13 @@ def create_pipeline_blueprint(storage):
             "authored_by": data.get("model") or AUTHOR_EXTERNAL,
             "courses": normalised,
         }
+        # Carried for the same reason the local planner carries it: the courses
+        # in this programme are built later, one at a time, and each one would
+        # otherwise be built from its title alone. An external author who says
+        # what the degree is FOR should not have to repeat it per course.
+        _ctx = (data.get("context") or data.get("learner_context") or "").strip()
+        if _ctx:
+            plan["learner_context"] = _ctx
         try:
             storage.programs.create(uid, plan)
         except Exception as e:
