@@ -104,10 +104,27 @@ def domain_for(subject, llm_json_fn=None, context=None):
     s = (subject or "").strip().lower()
     if not s:
         return None
+    # LONGEST KEYWORD WINS, NOT THE FIRST DOMAIN CHECKED.
+    #
+    # This returned on the first domain whose keyword matched, in discovery
+    # order — so a course called "Data Science Foundations" matched science's
+    # bare "science" and never reached computer science's "data science".
+    # Every concept in it was then classified by the WRONG domain: "Advanced
+    # SQL" came out UNKNOWN and "Dimensional modelling (Kimball)" came out
+    # QUANTITY, a science kind, which would tell the tutor that a data-
+    # modelling concept has UNITS.
+    #
+    # Specificity is the right tie-break and length is a good proxy for it:
+    # "data science" and "computer science" are both more specific than
+    # "science", and the longer string is the one that knows more about the
+    # subject. Discovery order knows nothing at all.
+    best_key, best_len = None, 0
     for key in available():
         mod = _CACHE.get(key)
         for w in (getattr(mod, "KEYWORDS", ()) or ()):
             w = w.lower()
+            if len(w) <= best_len:
+                continue
             # SINGLE WORDS MATCH AT A WORD BOUNDARY; PHRASES MATCH ANYWHERE.
             #
             # The rule used to be keyed on LENGTH — boundary for <=4 chars,
@@ -123,11 +140,13 @@ def domain_for(subject, llm_json_fn=None, context=None):
             # A trailing \b would lose every inflected form.
             if " " in w:
                 if w in s:
-                    return key
+                    best_key, best_len = key, len(w)
             else:
                 import re as _re
                 if _re.search(rf"\b{_re.escape(w)}", s):
-                    return key
+                    best_key, best_len = key, len(w)
+    if best_key:
+        return best_key
     if llm_json_fn:
         return _classify_with_llm(s, llm_json_fn, context=context)
     return None
@@ -190,6 +209,59 @@ def _classify_with_llm(subject, llm_json_fn, context=None):
     except Exception as e:
         logger.debug(f"[DOMAIN] llm classification failed: {e}")
         return None
+
+
+def kind_for_concept(title, course_domain, text="", objectives=None):
+    """(domain, kind) for ONE concept, allowing it to differ from its course.
+
+    WHY A CONCEPT MAY LEAVE ITS COURSE'S DOMAIN
+    -------------------------------------------
+    A course carries one domain, and real syllabuses do not. Measured on a
+    genuine career checklist: "Data Science Foundations" routes to computer
+    science — correctly — and then its statistics, confidence-interval and
+    causal-inference concepts came out UNKNOWN, because the CS classifier has
+    nothing to say about them. They are mathematics concepts sitting in a
+    computing course, which is what that subject actually IS.
+
+    THE COURSE DOMAIN IS TRIED FIRST AND ITS ANSWER IS KEPT.
+    A confident answer from the course's own domain always wins; this only
+    fills in where that domain said UNKNOWN. That ordering matters, because
+    the failure it replaces was a course-level domain answering for concepts
+    it did not understand — "Dimensional modelling (Kimball)" classified as
+    QUANTITY by the science domain, which would tell the tutor that a data
+    modelling concept has units. Wrong guidance is worse than none, so a
+    fallback that could OVERRIDE a confident answer would reintroduce exactly
+    that.
+
+    Returns (None, None) when neither domain recognises it — the generic path.
+    """
+    primary = for_domain(course_domain)
+    if primary is not None:
+        try:
+            kind = primary.classify(title, text, objectives)
+        except Exception as e:
+            logger.debug(f"[DOMAIN] {course_domain} classify failed: {e}")
+            kind = None
+        if kind and kind != "UNKNOWN":
+            return course_domain, kind
+
+    # The course's domain had nothing. Does the concept name its own?
+    try:
+        other = domain_for(title)
+    except Exception:
+        other = None
+    if other and other != course_domain:
+        mod = for_domain(other)
+        try:
+            kind = mod.classify(title, text, objectives) if mod else None
+        except Exception:
+            kind = None
+        if kind and kind != "UNKNOWN":
+            logger.info(f"[DOMAIN] concept {title!r} taught as {other} "
+                        f"inside a {course_domain} course")
+            return other, kind
+
+    return (course_domain, "UNKNOWN") if primary is not None else (None, None)
 
 
 def for_domain(domain_key):

@@ -114,13 +114,38 @@ def test_a_model_failure_costs_the_guidance_not_the_build():
     assert _concepts(course)[0]["concept_kind"] == mk.UNKNOWN
 
 
-def test_no_source_text_means_no_call():
-    """Classifying from a title alone is what patterns already tried."""
+def test_no_source_text_still_asks_the_model():
+    """This used to assert the opposite, and the opposite was the defect.
+
+    The old rule — "classifying from a title alone is what patterns already
+    tried" — is wrong twice. Patterns match STRINGS; a model knows what
+    "Slowly changing dimensions" or "Row-level security" IS. And the rule
+    meant the classifier skipped every concept of every TYPED-TOPIC course,
+    because that path has no book at all: the component built for exactly the
+    titles patterns cannot read never ran on the courses that needed it most.
+
+    Patterns still run first, so a hit never pays for a call.
+    """
     course = _course(["Working with these ideas"], chapter=99)
     calls = []
-    cc.classify_course(course, BOOK,
-                       llm_json_fn=lambda **k: calls.append(1) or {})
-    assert calls == []
+
+    def _spy(**kw):
+        calls.append(kw.get("prompt", ""))
+        return {"concepts": []}
+
+    cc.classify_course(course, BOOK, llm_json_fn=_spy)
+    assert calls, "gave up instead of asking the model"
+    # And the prompt must say the source is ABSENT rather than showing an
+    # empty header, which reads as "unreadable" instead of "not there".
+    assert "No source text available" in calls[0]
+
+
+def test_the_model_may_answer_unknown():
+    """The enum used to be the kinds alone, so a model told "answer UNKNOWN if
+    unsure" had no legal way to say it and was forced to pick a kind — the
+    schema manufacturing the wrong-guidance-is-worse-than-none failure."""
+    assert cc.UNKNOWN in cc.SCHEMA["properties"]["concepts"]["items"][
+        "properties"]["kind"]["enum"]
 
 
 def test_lesson_source_text_is_used_when_there_is_no_chapter():

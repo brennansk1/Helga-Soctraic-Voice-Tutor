@@ -1838,7 +1838,17 @@ class MnemosyneFSM:
         try:
             from services.domains.registry import domain_of, for_domain
             course = self.storage.courses.get_course(self.active_course_uid)
-            domain = domain_of(course or {})
+            # THE CONCEPT'S OWN DOMAIN WINS WHERE IT HAS ONE.
+            #
+            # A course carries one domain and real syllabuses do not: a
+            # statistics concept inside a data-science course is taught by
+            # mathematics. The build records that on the concept as
+            # `concept_domain` when it differs, and reading the COURSE's
+            # domain here would hand the tutor guidance from a module that
+            # does not have this kind — rendering nothing, silently, for
+            # exactly the concepts that needed the borrow.
+            domain = (node.get("concept_domain")
+                      or domain_of(course or {}))
             module = for_domain(domain) if domain else None
         except Exception as e:
             logging.debug(f"domain lookup failed: {e}")
@@ -2154,6 +2164,9 @@ class MnemosyneFSM:
                         # `_domain_teaching`'s own docstring and still true of
                         # the code underneath it.
                         "concept_kind": concept.get("concept_kind"),
+                        # Which domain taught it, when that differs from the
+                        # course's — see `_domain_teaching`.
+                        "concept_domain": concept.get("concept_domain"),
                         "teaching_pair": concept.get("teaching_pair"),
                         "code_example": concept.get("code_example"),
                     }
@@ -2306,6 +2319,7 @@ class MnemosyneFSM:
                 # dropping these silently downgrades a CS concept to generic
                 # teaching, with nothing failing to show it.
                 "concept_kind": concept_details.get("concept_kind"),
+                "concept_domain": concept_details.get("concept_domain"),
                 "teaching_pair": concept_details.get("teaching_pair"),
                 "code_example": concept_details.get("code_example"),
             }

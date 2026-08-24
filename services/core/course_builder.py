@@ -1249,7 +1249,8 @@ class SkeletonBuilder:
         course.
         """
         try:
-            from services.domains.registry import for_subject, DOMAIN_KEY
+            from services.domains.registry import (
+                for_subject, kind_for_concept, DOMAIN_KEY)
         except Exception as e:
             logger.debug(f"[DOMAIN] registry unavailable: {e}")
             return
@@ -1282,6 +1283,7 @@ class SkeletonBuilder:
         if not ext or not hasattr(ext, "classify"):
             return
 
+        dom = getattr(ext, "DOMAIN", None)
         tally = {"by_pattern": 0, "unknown": 0}
         for module in (course_dict.get("modules") or []):
             for unit in (module.get("units") or []):
@@ -1290,16 +1292,66 @@ class SkeletonBuilder:
                         name = (concept.get("title") or "").strip()
                         if not name:
                             continue
+                        # A CONCEPT MAY LEAVE ITS COURSE'S DOMAIN.
+                        #
+                        # Real syllabuses are not single-domain. Measured on a
+                        # career checklist: "Data Science Foundations" routes
+                        # to computer science, correctly, and its statistics
+                        # and causal-inference concepts then came out UNKNOWN
+                        # because the CS classifier has nothing to say about
+                        # them. They are mathematics concepts inside a
+                        # computing course, which is what that subject is.
+                        #
+                        # The course's own domain is tried first and its
+                        # confident answer always wins — see
+                        # `kind_for_concept`.
                         try:
-                            kind = ext.classify(
-                                name, "", concept.get("learning_objectives"))
+                            cdom, kind = kind_for_concept(
+                                name, dom, "",
+                                concept.get("learning_objectives"))
                         except Exception:
-                            kind = None
+                            cdom, kind = None, None
                         if not kind or kind == "UNKNOWN":
                             tally["unknown"] += 1
                             continue
                         concept["concept_kind"] = kind
+                        # Record WHICH domain taught it when it differs, so
+                        # `_domain_teaching` reads the right guidance rather
+                        # than the course's.
+                        if cdom and cdom != dom:
+                            concept["concept_domain"] = cdom
+                            tally.setdefault("borrowed", 0)
+                            tally["borrowed"] += 1
                         tally["by_pattern"] += 1
+
+        # THE LLM TAKES THE TAIL, and this is where classification actually
+        # gets good.
+        #
+        # Patterns are free and exact when they hit, and they leak endlessly:
+        # this session alone fixed plurals, singulars, ambiguous words and
+        # match ordering in them and kept finding gaps. A model that has never
+        # seen the chapter still knows what "Slowly changing dimensions" or
+        # "Row-level security" IS.
+        #
+        # Batched per LESSON — one call for a lesson's whole concept list, not
+        # one per concept — and only for what patterns left UNKNOWN, so a hit
+        # never pays for a call.
+        if tally["unknown"] and hasattr(ext, "classify_concepts"):
+            try:
+                sub = ext.classify_concepts(
+                    course_dict, None, llm_json_fn=llm_generate_json,
+                    status_callback=self.status_callback)
+                if isinstance(sub, dict):
+                    gained = int(sub.get("by_reading") or 0)
+                    if gained:
+                        tally["by_reading"] = gained
+                        tally["unknown"] = max(
+                            0, tally["unknown"] - gained)
+                        logger.info(
+                            f"[DOMAIN] the model classified {gained} concept(s) "
+                            f"the patterns could not")
+            except Exception as e:
+                logger.warning(f"[DOMAIN] llm classification failed: {e}")
 
         if tally["by_pattern"] or tally["unknown"]:
             course_dict[DOMAIN_KEY] = getattr(ext, "DOMAIN", None)

@@ -64,7 +64,18 @@ LABEL = "Science"
 #: "brute force"; "energy" appears in economics and policy courses. Every one
 #: of those is listed only inside a longer phrase.
 KEYWORDS = (
-    "physics", "chemistry", "biology", "science", "scientific",
+    # A BARE "science" IS NOT HERE, for the same reason "force" is not.
+    #
+    # It is ambiguous across domains in the way that does harm: data science,
+    # political science, social science, library science, sports science.
+    # Measured — "Data Science Foundations" matched it and every concept in
+    # that course was then classified by THIS domain, so "Dimensional
+    # modelling (Kimball)" came out as QUANTITY and the tutor would have been
+    # told a data-modelling concept has units.
+    #
+    # The natural sciences reach this domain through their own names and
+    # through the topic terms below, which is where the real signal is.
+    "physics", "chemistry", "biology", "natural sciences", "scientific method",
     "astronomy", "geology", "earth science", "physical science",
     "life science", "natural science", "thermodynamics", "mechanics",
     "electromagnetism", "optics", "quantum", "relativity",

@@ -113,9 +113,14 @@ def test_the_concept_node_carries_the_build_time_fields():
     """current_lesson_node is all the tutor sees; these must survive into it."""
     src = inspect.getsource(fsm_logic)
     i = src.index('"complexity_role": concept_details.get')
-    block = src[i - 900:i + 500]
+    # Window widened when `concept_domain` was added to the same dict — a
+    # fixed slice around a landmark is fragile to exactly the change these
+    # assertions exist to protect. The fields matter; the byte offset does not.
+    block = src[i - 900:i + 1200]
     assert 'concept_details.get("concept_kind")' in block
     assert 'concept_details.get("teaching_pair")' in block
+    # Which domain taught it, when that differs from the course's.
+    assert 'concept_details.get("concept_domain")' in block
 
 
 # ---------------------------------------------------------------------------

@@ -46,6 +46,11 @@ from services.domains.science.concept_kind import (  # noqa: E402
 )
 
 KINDS = [k for k in RANK if k != UNKNOWN]
+#: What the model may ANSWER — the kinds plus an explicit escape. The enum used
+#: to be `KINDS` alone, so a model told "answer UNKNOWN if unsure" had no legal
+#: way to say it and was forced to pick a kind: the schema manufacturing the
+#: wrong-guidance-is-worse-than-none failure the prompt was trying to avoid.
+ANSWERABLE = KINDS + [UNKNOWN]
 
 SCHEMA = {
     "type": "object",
@@ -56,7 +61,7 @@ SCHEMA = {
                 "type": "object",
                 "properties": {
                     "title": {"type": "string"},
-                    "kind": {"type": "string", "enum": KINDS},
+                    "kind": {"type": "string", "enum": ANSWERABLE},
                     "why": {"type": "string"},
                 },
                 "required": ["title", "kind"],
@@ -87,6 +92,24 @@ _KIND_BRIEF = {
 def _prompt(lesson_title, concept_titles, source_text):
     kinds = "\n".join(f"- {k}: {v}" for k, v in _KIND_BRIEF.items())
     concepts = "\n".join(f"- {t}" for t in concept_titles)
+    if not (source_text or "").strip():
+        # Says the source is ABSENT rather than showing an empty header, which
+        # would invite the model to read it as unreadable — absent-vs-degraded,
+        # in a prompt.
+        return (
+            f"### SECTION: {lesson_title}\n"
+            f"(No source text available — classify from the concept names and "
+            f"the section they sit in.)\n\n"
+            f"### TASK\n"
+            f"Classify each concept below by WHAT KIND OF KNOWLEDGE it is. "
+            f"The kind decides how it gets taught.\n\n"
+            f"KINDS:\n{kinds}\n\n"
+            f"CONCEPTS:\n{concepts}\n\n"
+            f"Answer UNKNOWN for anything you cannot place confidently: a "
+            f"wrong kind gives the tutor actively wrong teaching "
+            f"instructions, which is worse than giving it none.\n\n"
+            f'Return STRICT JSON: {{"concepts": [{{"title": "...", '
+            f'"kind": "...", "why": "<6 words>"}}]}}')
     return (
         f"### SOURCE TEXT — section '{lesson_title}'\n"
         f"{(source_text or '')[:5000]}\n\n"
@@ -153,7 +176,11 @@ def classify_course(course, book, llm_json_fn=None, status_callback=None):
 
         if not needs_reading:
             continue
-        if not llm_json_fn or not text:
+        # NO SOURCE TEXT IS NOT A REASON TO GIVE UP. This bailed to UNKNOWN
+        # whenever `text` was empty — every concept of a typed-topic course,
+        # which has no book — so the classifier built for exactly the titles
+        # patterns cannot read never ran on the courses that needed it most.
+        if not llm_json_fn:
             for c in needs_reading:
                 c["concept_kind"] = UNKNOWN
                 tally["unknown"] += 1

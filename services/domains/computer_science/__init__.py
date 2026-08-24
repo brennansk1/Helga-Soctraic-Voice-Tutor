@@ -123,6 +123,7 @@ KEYWORDS = (
     "iceberg", "rbac", "ci/cd", "terraform", "kubernetes", "docker",
     "observability", "n8n", "workflow automation", "rag", "vector store",
     "mcp", "prompt engineering", "eval harness", "guardrails",
+    "data science", "data scientist", "data engineering",
     "finops", "cost management", "code node", "visual layer", "low-code",
     "no-code", "warehouse", "query optimisation", "query optimization",
 
