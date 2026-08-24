@@ -803,6 +803,13 @@ def create_pipeline_blueprint(storage):
             "template": data.get("template", "associate"),
             "gen_ed": data.get("gen_ed", "include"),
             "authored_by": data.get("model") or AUTHOR_EXTERNAL,
+            # THE TERM COUNT IS PART OF THE PLAN, not just of the reply.
+            # Without it every consumer that reads plan["terms"] sees 0: the
+            # term-balance check silently declined to run, and the capstone
+            # check compared term 4 against 0 and called a correctly-placed
+            # capstone misplaced.
+            "terms": (data.get("terms")
+                      or max((c["term"] for c in normalised), default=0)),
             "courses": normalised,
         }
         # Carried for the same reason the local planner carries it: the courses
@@ -812,6 +819,35 @@ def create_pipeline_blueprint(storage):
         _ctx = (data.get("context") or data.get("learner_context") or "").strip()
         if _ctx:
             plan["learner_context"] = _ctx
+        # THE SAME GATE A LOCALLY PLANNED DEGREE FACES.
+        #
+        # `validate` above catches what makes a programme UNTEACHABLE — cycles,
+        # unresolvable or same-term prerequisites. It says nothing about
+        # whether the result is shaped like a degree: terms of wildly uneven
+        # size, a capstone that is not at the end, twenty courses that are one
+        # subject renamed, or prerequisite sets copied across siblings so they
+        # distinguish nothing. /api/program refuses a local plan on exactly
+        # those grounds, and an externally authored plan was skipping them —
+        # so the more capable model was held to the LOWER bar.
+        try:
+            from tools.degree_quality import assess
+        except ImportError:
+            assess = None
+            logger.info("degree_quality unavailable — shape gate skipped")
+        if assess is not None:
+            shape = assess(plan)
+            if shape.get("verdict") != "DEGREE_SHAPED":
+                failed = ", ".join(shape.get("failed", []))
+                logger.warning("external programme for %r rejected: %s",
+                               subject, failed)
+                return jsonify({
+                    "error": f"the plan does not look like a degree ({failed})"
+                             f" — nothing was saved",
+                    "reason": "not_degree_shaped",
+                    "checks": {k: v for k, v in shape.items()
+                               if isinstance(v, dict)},
+                }), 422
+
         try:
             storage.programs.create(uid, plan)
         except Exception as e:

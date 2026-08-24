@@ -216,6 +216,9 @@ services:
       - ./logs:/app/logs
       - ./services/rag:/app/services/rag
       - ./services/common:/app/services/common
+      # The degree shape gate lives here. Without it the pipeline blueprint
+      # cannot hold an externally authored degree to the bar a local one meets.
+      - ./tools:/app/tools:ro
       # The domain layer, alongside common. A bind mount SHADOWS the image, so
       # shipping it in the Dockerfile is not enough on its own — without this
       # line a dev container would still have no `services/domains` under the

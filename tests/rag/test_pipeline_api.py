@@ -168,6 +168,12 @@ class TestDegrees:
     in the programme, and one scheduled no earlier than the course needing it.
     An externally authored plan faces the same function, so "authored
     elsewhere" cannot mean "checked less".
+
+    It also faces `tools.degree_quality.assess`, the shape gate a locally
+    planned degree meets: even terms, a capstone at the end, prerequisite sets
+    that distinguish siblings, and at least one real edge. Those are not
+    teachability failures — they are the difference between a degree and a
+    list of courses.
     """
 
     def _plan(self, courses):
@@ -208,10 +214,16 @@ class TestDegrees:
         assert r.status_code == 400
 
     def test_the_plan_reads_back_with_its_author(self, client):
+        # Two courses with a real edge, not one: the shape gate refuses a
+        # programme with no prerequisite edges at all, because that is a
+        # course list rather than a degree — and it refuses a locally planned
+        # one on the same ground.
         uid = client.post("/api/pipeline/program", json=self._plan([
             {"title": "Intro to SQL", "term": 1, "slot": 1},
+            {"title": "Data Modelling", "term": 2, "slot": 1,
+             "prerequisites": ["Intro to SQL"]},
         ])).get_json()["program_uid"]
         d = client.get(f"/api/pipeline/program/{uid}").get_json()
         assert d["subject"] == "Data Science"
-        assert d["counts"]["courses"] == 1
-        assert d["counts"]["unbuilt"] == 1
+        assert d["counts"]["courses"] == 2
+        assert d["counts"]["unbuilt"] == 2

@@ -39,8 +39,18 @@ _MATH_UNICODE = re.compile(r"[∑∫∂√≤≥≠≈∈∀∃→↦⊂∪∩·
 
 _DETECTORS = {
     # A stated, named definition rather than a casual gloss.
+    # THE PUNCTUATION INSIDE THE BOLD IS NOT THE POINT.
+    #
+    # This demanded the exact string "**Definition**", so a body opening
+    # "**Definition.**" or "**Definition:**" — the way people actually write
+    # one — was judged to have no definition at all and refused. Measured: a
+    # four-concept course, every concept carrying a real formal definition,
+    # rejected 4/4 on `formal_definition`. Widening to allow the trailing
+    # punctuation recognises a definition that IS there; it does not accept
+    # one that is not.
     "formal_definition": re.compile(
-        r"\*\*Definition\*\*|^#+\s*Definition|is defined as|we define\b|"
+        r"\*\*Definitions?\s*[.:]?\*\*|^#+\s*Definition|is defined as|"
+        r"\bwe define\b|\bdefined to be\b|"
         r"\bLet\s+[A-Za-z\\$]|\bDenote\b|\bformally,",
         re.IGNORECASE | re.MULTILINE),
 
