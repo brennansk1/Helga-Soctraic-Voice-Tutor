@@ -1306,6 +1306,78 @@ def auto_generate_flashcards_endpoint():
         return jsonify({"error": str(e)}), 500
 
 
+#: Courses whose hydration is being re-run right now, so a second click (or a
+#: second tab) cannot start a competing hydrator over the same files.
+_RESUMING = set()
+_RESUMING_LOCK = __import__("threading").Lock()
+
+#: Statuses a resume is allowed to act on. "ready" is excluded deliberately:
+#: re-running hydration over a finished course would spend an hour of model
+#: time to rewrite content that is already good.
+_RESUMABLE = ("partial", "hydration_failed", "skeleton", "building", "failed")
+
+
+@app.route("/api/course/<course_uid>/resume_build", methods=["POST"])
+def resume_build(course_uid):
+    """Finish a course whose build stopped short, without rebuilding it.
+
+    WHY THIS EXISTS
+    ---------------
+    `hydrate()` marks a course "partial" when even ONE concept comes back a
+    stub, and `courses.js` renders anything that is not "ready" as a disabled
+    card. So a single failed concept in a hundred left a course permanently
+    unopenable, with no way forward but Delete and build the whole thing again
+    — discarding every concept that HAD hydrated, which on this hardware is
+    hours of model time.
+
+    Hydration already skips concepts that have content, so resuming costs only
+    the concepts that actually failed. The expensive, correct thing was
+    already implemented; nothing exposed it.
+
+    Returns 202 and works in the background: on this hardware even a handful of
+    concepts outlives any sensible request timeout.
+    """
+    try:
+        course = storage.courses.get_course(course_uid)
+    except Exception as e:
+        logger.error(f"resume_build: cannot read {course_uid}: {e}")
+        return jsonify({"error": "course could not be read"}), 500
+    if not course:
+        return jsonify({"error": "no such course"}), 404
+
+    status = (course.get("status") or "").lower()
+    if status == "ready":
+        return jsonify({"status": "ready", "message": "nothing to resume"}), 200
+    if status not in _RESUMABLE:
+        return jsonify({"error": f"cannot resume a course in state {status!r}"}), 409
+
+    with _RESUMING_LOCK:
+        if course_uid in _RESUMING:
+            return jsonify({"status": "already_resuming"}), 202
+        _RESUMING.add(course_uid)
+
+    def _run():
+        try:
+            from services.core.course_builder import ContentHydrator
+            h = ContentHydrator(status_callback=_update_status, course_depth=3,
+                                storage=storage)
+            try:
+                h.hydrate(course_uid)
+            finally:
+                h.close()
+            after = (storage.courses.get_course(course_uid) or {}).get("status")
+            logger.info(f"[RESUME] {course_uid} finished with status {after!r}")
+        except Exception as e:
+            logger.error(f"[RESUME] {course_uid} failed: {e}", exc_info=True)
+        finally:
+            with _RESUMING_LOCK:
+                _RESUMING.discard(course_uid)
+
+    __import__("threading").Thread(target=_run, daemon=True,
+                                   name=f"resume-{course_uid}").start()
+    return jsonify({"status": "resuming", "course_uid": course_uid}), 202
+
+
 @app.route("/api/custom_course/preview", methods=["POST"])
 def preview_custom_course():
     """Generate a preview structure for a custom course without committing."""

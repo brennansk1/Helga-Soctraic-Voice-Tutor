@@ -11,6 +11,40 @@ function relativeDay(epochSeconds) {
     return Math.floor(days / 7) + ' weeks ago';
 }
 
+/* Watch a resumed build to completion.
+
+   Written because the "Resume build" handler originally handed off to a
+   `pollCourseStatus` that DID NOT EXIST — the typeof guard made it fall
+   through to a blind page reload four seconds later, while the build it was
+   reporting on ran for another hour. The guard hid the missing function
+   instead of surfacing it, which is the same shape as every other
+   component-works-but-the-path-never-fires defect in this project.
+
+   Polls the status endpoint the wizard already uses. Gives up after a bounded
+   number of attempts rather than polling a dead service forever. */
+function pollCourseStatus(uid, button) {
+    var attempts = 0;
+    var MAX = 720;            // 5s apart, so an hour of building
+    (function tick() {
+        if (++attempts > MAX) { return; }
+        fetch('/api/course_status/' + uid)
+            .then(function (r) { return r.ok ? r.json() : {}; })
+            .then(function (d) {
+                var st = (d && d.status || '').toLowerCase();
+                if (st === 'ready') { location.reload(); return; }
+                if (st === 'failed' || st === 'hydration_failed') {
+                    if (button) {
+                        button.disabled = false;
+                        button.textContent = 'Resume build';
+                    }
+                    return;
+                }
+                setTimeout(tick, 5000);
+            })
+            .catch(function () { setTimeout(tick, 5000); });
+    })();
+}
+
 /* Fetched once per list render and merged onto the cards. Failure is silent
    and the cards fall back to a plain "Continue" — a decoration must not be
    able to stop the list rendering. */
@@ -163,14 +197,50 @@ async function loadCourses() {
                 } else {
                     actionButton.textContent = progress > 0 ? 'Continue' : 'Start Learning';
                 }
+            } else if (status === 'partial' || status === 'hydration_failed' ||
+                       status === 'failed') {
+                /* A DEAD CARD USED TO BE THE ONLY OUTCOME HERE.
+                   hydrate() marks a course "partial" when even ONE concept
+                   comes back a stub, and everything that is not "ready"
+                   rendered disabled. So one bad concept in a hundred left the
+                   course permanently unopenable, and the only way forward was
+                   Delete and rebuild — discarding every concept that HAD
+                   hydrated, which on this hardware is hours of model time.
+                   Hydration already skips concepts that have content, so
+                   resuming costs only what actually failed. */
+                actionButton = mkEl('button', 'btn-alpine btn-alpine-primary');
+                actionButton.style.cssText = 'flex: 1;';
+                actionButton.textContent = 'Resume build';
+                actionButton.title = status === 'partial'
+                    ? 'Some concepts did not finish. This retries only those.'
+                    : 'This build stopped early. This continues it.';
+                actionButton.addEventListener('click', function () {
+                    actionButton.disabled = true;
+                    actionButton.textContent = 'Resuming...';
+                    fetch('/api/course/' + course.uid + '/resume_build',
+                          { method: 'POST' })
+                        .then(function (r) { return r.json().catch(function () { return {}; })
+                            .then(function (d) { return { ok: r.ok, d: d }; }); })
+                        .then(function (res) {
+                            if (!res.ok) throw new Error(res.d.error || 'failed');
+                            /* The build outlives this request, so hand over to
+                               the same poller a fresh build uses rather than
+                               inventing a second progress path. */
+                            actionButton.textContent = 'Building...';
+                            pollCourseStatus(course.uid, actionButton);
+                        })
+                        .catch(function (e) {
+                            actionButton.disabled = false;
+                            actionButton.textContent = 'Resume failed - retry';
+                            actionButton.title = String(e && e.message || e);
+                        });
+                });
             } else {
-                // failed, hydration_failed, partial, unknown — show disabled with status
+                // unknown — nothing safe to offer
                 actionButton = mkEl('button', 'btn-alpine btn-alpine-primary');
                 actionButton.style.cssText = 'flex: 1; opacity: 0.6;';
                 actionButton.disabled = true;
-                actionButton.textContent =
-                    (status === 'failed' || status === 'hydration_failed')
-                        ? 'Build Failed' : 'Not Ready';
+                actionButton.textContent = 'Not Ready';
             }
 
             // A5.3 — the header was a full-bleed gradient slab in a colour

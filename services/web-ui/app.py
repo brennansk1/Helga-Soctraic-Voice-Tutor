@@ -1618,6 +1618,23 @@ def get_course_status(uid):
         logger.error(f"Course status check failed: {e}")
         return jsonify({'status': 'unknown', 'error': str(e)}), 502
 
+@app.route('/api/course/<uid>/resume_build', methods=['POST'])
+@csrf_protect
+def resume_build(uid):
+    """Finish a course whose build stopped short. Returns 202 immediately.
+
+    The work runs in the RAG service and outlives this request by design, so
+    the browser polls /api/course_status/<uid> afterwards rather than waiting.
+    """
+    try:
+        resp = requests.post(f'{SERVICES["rag"]}/api/course/{uid}/resume_build',
+                             timeout=10)
+        return jsonify(resp.json()), resp.status_code
+    except Exception as e:
+        logger.error(f"Resume build failed for {uid}: {e}")
+        return jsonify({'error': 'could not reach the course service'}), 502
+
+
 @app.route('/api/upload_source', methods=['POST'])
 @csrf_protect
 def upload_source():
