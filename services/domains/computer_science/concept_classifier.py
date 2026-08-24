@@ -72,6 +72,28 @@ _KIND_BRIEF = {
     "DEBUGGING": "reading an error and finding the cause",
     "CONVENTION": "true by decision, with no derivation",
     "REFERENCE": "lookup material — flags, parameters, endpoints",
+    # THESE TWO WERE MISSING WHILE STILL BEING LEGAL ANSWERS.
+    #
+    # `ANSWERABLE` is built from `RANK`, which gained both kinds when the
+    # domain learned to teach operated software. The brief did not, so the
+    # schema offered the model two enum values it had never been told the
+    # meaning of. Measured on a real SQL build: it answered TOOL_BOUNDARY for
+    # "Index Scan Types", "Set Operation Efficiency" and "Adjacency List
+    # Traversal" — pure MECHANISM — because the word "Efficiency" looks like a
+    # trade-off. TOOL_BOUNDARY's guidance says "Do NOT answer it", so every one
+    # of those would have had the tutor REFUSE to teach core material.
+    #
+    # Both briefs therefore lead with what DISQUALIFIES a concept.
+    "TOOL_OPERATION": "operating a NAMED VENDOR PRODUCT's interface — where a "
+                      "setting lives in Power BI, Tableau, n8n. Only when a "
+                      "specific product's UI is the subject. NOT any "
+                      "procedure that happens to involve software",
+    "TOOL_BOUNDARY": "choosing WHICH TOOL OR LAYER a capability belongs in — "
+                     "dbt or the BI tool, SQL or the visual builder. Requires "
+                     "TWO DIFFERENT TOOLS OR LAYERS to choose between. "
+                     "Comparing two features of the SAME language "
+                     "(ROWS vs RANGE, UNION vs UNION ALL) is MECHANISM, NOT "
+                     "this. A concept about which is faster is MECHANISM",
 }
 
 

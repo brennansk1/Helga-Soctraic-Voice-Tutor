@@ -57,6 +57,14 @@ CONVENTION = "CONVENTION"
 REFERENCE = "REFERENCE"
 UNKNOWN = "UNKNOWN"
 
+#: What counts as a LAYER for a boundary decision — the things a capability
+#: can be built IN. Used only by the TOOL_BOUNDARY pattern, which requires one
+#: of these on BOTH sides of a comparison word.
+_LAYER = (r"\b(dbt|sql|bi tool|power ?bi|tableau|looker|excel|spreadsheet|"
+          r"visual builder|no.?code|gui|ui|code|script|python|warehouse|"
+          r"application|semantic layer|n8n|airflow|orchestrator|"
+          r"database|app|pipeline|notebook)\b")
+
 #: Teaching order. Lower comes first. This is what the builder sequences on,
 #: and it encodes real prerequisite structure rather than documentation layout:
 #: you cannot practise before you can install, cannot debug before you can
@@ -184,7 +192,24 @@ _PATTERNS = (
     # "decide what logic belongs in dbt versus in the BI tool" contains "BI
     # tool" — and if OPERATION matched first, the most reasoning-rich concept
     # in the subject would be taught as a menu path.
-    (TOOL_BOUNDARY, r"\b(versus|vs\.?|rather than|instead of|which layer|"
+    # A BARE "vs" IS NOT A LAYER DECISION, for the same reason a bare "force"
+    # is not physics and a bare "vector" is not mathematics.
+    #
+    # This alternation used to open with `versus|vs\.?|rather than|instead of`,
+    # so ANY comparison matched. Measured on a real SQL build: "ROWS vs RANGE
+    # Distinction", "ROWS vs RANGE Semantics" and "Time vs Event Frames" all
+    # came out TOOL_BOUNDARY — whose guidance is "Do NOT answer it" — so the
+    # tutor would have refused to explain the single most important
+    # distinction in window functions.
+    #
+    # A boundary decision needs TWO LAYERS to choose between. The comparison
+    # words now only fire with a layer term on BOTH sides.
+    # The determiner is not optional decoration: "SQL versus THE visual
+    # builder" is the natural phrasing, and without allowing it the comparison
+    # missed and TOOL_OPERATION claimed the concept on "visual builder".
+    (TOOL_BOUNDARY, _LAYER + r"\s*(?:versus|vs\.?|or|rather than|instead of)"
+                    r"\s*(?:the|a|an|in|its)?\s*" + _LAYER + r"|"
+                    r"\b(which layer|"
                     # "WHERE should X live" and "SHOULD X live" are the same
                     # question; requiring the leading "where" missed the
                     # commoner phrasing entirely.
