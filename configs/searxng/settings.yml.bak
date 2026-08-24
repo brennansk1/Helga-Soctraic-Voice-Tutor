@@ -1,0 +1,23 @@
+use_default_settings: true
+search:
+  formats: [html, json]
+  default_lang: en
+server:
+  limiter: false
+  image_proxy: false
+  port: 8080
+  bind_address: "0.0.0.0"
+  secret_key: "helga-internal-only"
+engines:
+  - name: google
+    engine: google
+    shortcut: g
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: ddg
+  - name: wikipedia
+    engine: wikipedia
+    shortcut: wp
+  - name: bing
+    engine: bing
+    shortcut: bi

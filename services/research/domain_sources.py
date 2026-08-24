@@ -243,6 +243,45 @@ def wikidata_facts(query, limit=1):
 #   * NC and ND variants are avoided everywhere, as elsewhere in this project.
 
 
+_TERM_STOP = {"the", "and", "for", "with", "from", "into", "common", "basic",
+              "introduction", "using", "your", "what", "how", "why", "this",
+              "that", "data", "type", "types", "value", "values"}
+
+
+def _distinctive_terms(text):
+    """Content words worth matching on. Plurals folded to a stem."""
+    import re as _re
+    out = set()
+    for w in _re.findall(r"[a-z]+", (text or "").lower()):
+        if len(w) < 4 or w in _TERM_STOP:
+            continue
+        out.add(w[:-1] if w.endswith("s") and len(w) > 4 else w)
+    return out
+
+
+def _is_on_topic(query, title, min_hits=2):
+    """Does this result share enough with the query to be about it?
+
+    FREE-TEXT SCHOLARLY SEARCH IS POLYSEMOUS AND CONFIDENT ABOUT IT.
+    Measured: OpenAlex answers "Common Table Expressions" with "limma powers
+    differential expression analyses for RNA-sequencing" at relevance 1212 —
+    it matched "expression" in the molecular-biology sense, and the paper
+    outranks everything because it is heavily cited. Two genomics papers
+    reached a SQL course that way, weighted 0.25 each as real evidence.
+
+    One shared word is not aboutness; the biology paper shares "expression"
+    too. Requiring TWO distinctive terms separates "Pushing Predicates into
+    Recursive SQL Common Table Expressions" from "The UCSC Table Browser",
+    which shares only "table". Concepts with a single distinctive term fall
+    back to one, because for those it is all the signal there is.
+    """
+    q = _distinctive_terms(query)
+    if not q:
+        return True
+    need = min(min_hits, len(q))
+    return len(q & _distinctive_terms(title)) >= need
+
+
 def openalex_works(query, limit=3):
     """OpenAlex — CC0 scholarly metadata and abstracts, no key, no tier.
 
@@ -269,9 +308,13 @@ def openalex_works(query, limit=3):
             text = " ".join(positions[i] for i in sorted(positions))
         if not text:
             continue
+        name = w.get("display_name") or ""
+        if not _is_on_topic(query, name):
+            logger.debug("openalex: dropped off-topic %r for %r", name[:60], query)
+            continue
         out.append({
             "type": "scholarly", "source": "OpenAlex",
-            "title": w.get("display_name") or query,
+            "title": name or query,
             "url": w.get("doi") or w.get("id") or "",
             "text": text[:600], "license": "CC0",
         })

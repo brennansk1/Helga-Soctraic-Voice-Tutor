@@ -6425,7 +6425,6 @@ class SyllabusAuditor:
 
         # Build module-level bloom/complexity annotations
         bloom_summary = ""
-        self._checkpoint("module")
         for m_idx, module in enumerate(course.get("modules", []), 1):
             level = module.get("level", m_idx)
             bloom_summary += f"  Module {m_idx} '{module['title']}': complexity_level={level}\n"

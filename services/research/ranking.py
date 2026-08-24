@@ -123,6 +123,12 @@ _DOC_HOSTS = (
     "duckdb.org", "spark.apache.org", "kafka.apache.org",
     "docs.sqlalchemy.org", "postgresql.org", "dev.mysql.com",
     "sqlite.org", "docs.pola.rs", "pandas.pydata.org", "numpy.org",
+    # cloud provider documentation — the reference for anything managed, and
+    # the first thing a search returns for a database or pipeline question.
+    # Missing until a SQL course surfaced an AWS CTE guide scored as a generic
+    # web page.
+    "docs.aws.amazon.com", "learn.microsoft.com", "cloud.google.com",
+    "docs.oracle.com", "docs.mongodb.com", "redis.io", "clickhouse.com",
     # infra and tooling
     "docs.docker.com", "kubernetes.io", "developer.hashicorp.com",
     "git-scm.com", "docs.github.com", "docs.gitlab.com",

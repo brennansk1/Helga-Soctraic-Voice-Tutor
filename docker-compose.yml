@@ -357,6 +357,15 @@ services:
       - SEARXNG_URL=http://helga-searxng:8080
       - FLASK_ENV=production
     volumes:
+      # THE RESEARCH SERVICE RAN THE IMAGE'S COPY OF ITS OWN CODE.
+      # core, rag and web-ui all bind-mount their source; this one did not, so
+      # every edit here needed a rebuild — and a `docker compose restart` after
+      # changing a file looked like it had applied and had not. Measured: a
+      # relevance guard added to domain_sources.py was absent from the running
+      # container while the same restart-and-test loop reported no change.
+      # Flat layout on purpose: this image puts its modules at /app, not
+      # /app/services/research.
+      - ./services/research:/app
       - ./data/research_cache:/app/data/research_cache
     restart: unless-stopped
     healthcheck:

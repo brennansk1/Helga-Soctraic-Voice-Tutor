@@ -8,16 +8,43 @@ server:
   port: 8080
   bind_address: "0.0.0.0"
   secret_key: "helga-internal-only"
+# ENGINES THAT ANSWER A SERVER, NOT ONES THAT CAPTCHA IT.
+#
+# This listed google, bing and duckduckgo. Every one of them blocks
+# datacenter traffic, and SearXNG answered every query with
+#   "unresponsive_engines": [["brave","Suspended: too many requests"],
+#                            ["duckduckgo","CAPTCHA"],
+#                            ["startpage","Suspended: CAPTCHA"]]
+# and an EMPTY result list. The whole web arm of research was therefore dead:
+# no web pages, and — because official documentation is only ever reached
+# through web search — no documentation either. Measured on a SQL course,
+# where postgresql.org and dev.mysql.com are registered as authoritative
+# hosts and not one was ever fetched. What reached the learner instead was
+# Wikipedia plus whatever OpenAlex returned, which for "Common Table
+# Expressions" included two genomics papers.
+#
+# The engines below are chosen because they serve automated clients:
+# independent crawlers and real APIs. Stack Exchange earns its place on a
+# technical subject specifically — it is where the answers actually are.
 engines:
-  - name: google
-    engine: google
-    shortcut: g
-  - name: duckduckgo
-    engine: duckduckgo
-    shortcut: ddg
   - name: wikipedia
     engine: wikipedia
     shortcut: wp
+  - name: mojeek
+    engine: mojeek
+    shortcut: mjk
+  - name: stackexchange
+    engine: stackexchange
+    shortcut: stex
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: ddg
+    disabled: true          # CAPTCHAs a server; kept visible, not used
+  - name: google
+    engine: google
+    shortcut: g
+    disabled: true
   - name: bing
     engine: bing
     shortcut: bi
+    disabled: true

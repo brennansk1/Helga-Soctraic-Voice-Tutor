@@ -936,7 +936,19 @@ async def _research_concept_async(title, module_title, course_title, mastery=1,
         # sources that CAN answer a narrow question ("Name the Short Sides"
         # cannot be looked up, but "Impressionist brushwork" can), and this was
         # the one lookup already receiving the concept title.
-        for ds in fetch_domain_sources(title or (subjects[0] if subjects else ""), _domains):
+        # THE SUBJECT GOES INTO THE QUERY, NOT JUST THE CONCEPT.
+        #
+        # "Common Table Expressions" alone is ambiguous to a free-text scholarly
+        # index — measured, it returns RNA-sequencing papers, because
+        # "expression" means something else in biology. Prefixing the subject
+        # turns the top hit into "Pushing Predicates into Recursive SQL Common
+        # Table Expressions". The relevance guard in domain_sources catches
+        # what still slips through; this is what stops most of it being asked
+        # for in the first place.
+        _subject = (course_title or "").strip()
+        _scholarly_q = f"{_subject} {title}".strip() if (_subject and title) else (
+            title or (subjects[0] if subjects else ""))
+        for ds in fetch_domain_sources(_scholarly_q, _domains):
             entries.append({
                 "kind": ds["type"], "label": ds["source"], "title": ds["title"],
                 "url": ds.get("url", ""), "text": ds.get("text", ""),
