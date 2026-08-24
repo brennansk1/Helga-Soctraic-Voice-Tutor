@@ -120,6 +120,25 @@
         // the number that makes it actionable.
         [/^CHECK:SCOPE:(stretched|unsupported):(.+)/, function (m) {
             return (m[1] === 'unsupported' ? '\u26A0 ' : '') + m[2]; }],
+
+        /* THE SEARCH IS STILL WORKING — SAY WHAT IT IS DOING.
+           A thin first sweep now escalates instead of immediately shrinking
+           the course, and that escalation takes real time. Without these two
+           lines the learner watches a progress bar sit still and concludes it
+           has hung; with them they can see it is widening the search, and WHY
+           each widening is a sensible thing to try. */
+        [/^SCOPE:DEEPEN:([a-z]+):(.+)/, function (m) {
+            return 'Not much material yet \u2014 searching ' + m[2]; }],
+
+        /* And the outcome, in the learner's terms. "sufficient" and
+           "saturated" are opposite answers and must never read the same:
+           one means we found it, the other means it genuinely is not there. */
+        [/^SCOPE:DEEPENED:(sufficient|saturated|budget|exhausted|degraded):(.+)/,
+         function (m) {
+            var mark = (m[1] === 'sufficient') ? '\u2713 '
+                     : (m[1] === 'degraded') ? '\u2139 '
+                     : '\u26A0 ';
+            return mark + m[2]; }],
         [/^CHECK:COVERAGE:(\d+)/,        function (m) {
             return 'Covers ' + m[1] + '% of the published syllabus for this subject'; }],
         [/^CHECK:SEQUENCING:INDEX_ORDER/, function () {

@@ -671,6 +671,23 @@ function setupCreationSocket(topic) {
             // so repeat builds in the same tab use the current course name.
             showCompletion(window._currentCreationTopic || topic);
         }
+        /* The deepening search is the one long pause a learner will actually
+           wonder about: the bar stops moving while the builder widens its
+           search. Rendered in plain language here rather than filtered out,
+           because "still working, and here is why" is the whole point.
+           Without this branch the raw "SCOPE:DEEPEN:adjacent:..." string would
+           be printed to the user — this file shows any message it does not
+           recognise verbatim. */
+        else if (msg.startsWith('SCOPE:DEEPEN:')) {
+            var dparts = msg.split(':');
+            statusEl.textContent =
+                'Not much material yet — searching ' +
+                dparts.slice(3).join(':');
+        }
+        else if (msg.startsWith('SCOPE:DEEPENED:')) {
+            var oparts = msg.split(':');
+            statusEl.textContent = oparts.slice(2).join(':');
+        }
         else if (!msg.startsWith('CHECK:') && !msg.startsWith('CPROG:') && !msg.startsWith('PEDAGOGY:') && !msg.startsWith('QTYPE:')) {
             statusEl.textContent = msg;
         }

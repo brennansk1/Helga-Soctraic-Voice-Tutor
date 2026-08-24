@@ -1900,8 +1900,49 @@ class SkeletonBuilder:
             from scope_fit import assess_scope, describe
         try:
             _requested = int(self.course_params.get("total_concepts_approx") or 0)
-            self._scope_fit = assess_scope(brief, _requested,
-                                           requested_courses=1)
+
+            # LOOK HARDER BEFORE SHRINKING.
+            #
+            # This was a single `assess_scope` on whatever the first sweep
+            # returned, so a subject whose syllabus is merely hard to find was
+            # treated exactly like one that has none. `deepen_scope` escalates
+            # the search when the arithmetic says thin, re-assesses after each
+            # tier, and stops at the first of: sufficiency, saturation, the
+            # tier ceiling, or the time budget. On a sufficient or degraded
+            # brief it does nothing at all and costs nothing.
+            try:
+                from services.core.scope_deepen import (
+                    deepen_scope, describe_deepening)
+            except ImportError:
+                from scope_deepen import deepen_scope, describe_deepening
+
+            def _widen(tier, current_brief):
+                terms = self._widen_terms(tier, topic)
+                if not terms:
+                    return None
+                logger.info(f"[DEEPEN] {tier['name']}: retrying via {terms}")
+                return curriculum_brief(
+                    topic, mastery=self.mastery, scope=self.scope,
+                    starting_from=self.starting_from,
+                    preset_label=getattr(self, "preset_label", None),
+                    broader_subjects=terms)
+
+            self._scope_fit = deepen_scope(
+                brief, _requested, _widen, requested_courses=1,
+                status_callback=self.status_callback)
+
+            # The deepening may have found a better brief — use it downstream
+            # rather than the thin one that triggered the search.
+            _deepened = self._scope_fit.pop("brief", None)
+            if isinstance(_deepened, dict) and _deepened:
+                brief = _deepened
+            self._deepening_note = describe_deepening(self._scope_fit)
+            if self._deepening_note:
+                logger.info(f"[DEEPEN] {self._deepening_note}")
+                if self.status_callback:
+                    self.status_callback(
+                        f"SCOPE:DEEPENED:{self._scope_fit['deepening']['stopped']}"
+                        f":{self._deepening_note}")
 
             # EVIDENCE SETS THE LENGTH, within the range.
             #
@@ -2010,6 +2051,50 @@ class SkeletonBuilder:
             logger.debug(f"chapter retention failed: {e}")
             self._syllabus_chapters = []
         return format_brief(brief)
+
+    def _widen_terms(self, tier, topic):
+        """Search terms for one escalation tier. Never raises.
+
+        The tiers widen in the order most likely to find a REAL syllabus first:
+        the same subject under its formal name, then the discipline containing
+        it, then the courses that teach it as a component. Late tiers are the
+        ones that bring back plausible non-answers, which is why the ladder
+        above them is bounded rather than exhaustive.
+
+        `parent` reuses `_parent_subjects`, which already existed and was
+        consulted exactly once — for the FIRST sweep. The whole point of the
+        ladder is that one sweep is not a measurement of a subject.
+        """
+        name = (tier or {}).get("name")
+        if name == "parent":
+            try:
+                subjects, _degraded = self._parent_subjects(topic)
+                return list(subjects or [])[:3]
+            except Exception as e:
+                logger.debug(f"[DEEPEN] parent lookup failed: {e}")
+                return []
+
+        asks = {
+            "adjacent": (f"What is '{topic}' called in a university catalogue "
+                         f"or textbook? Give 1-3 alternative names for the SAME "
+                         f"subject, comma separated, no explanation."),
+            "applied": (f"Which established courses or subjects teach '{topic}' "
+                        f"as one of their components? Name 1-3, comma "
+                        f"separated, no explanation."),
+        }
+        prompt = asks.get(name)
+        if not prompt:
+            return []
+        try:
+            raw = llm_generate(
+                prompt=prompt,
+                sys_prompt="You name academic subjects. Answer tersely.",
+                max_tokens=60)
+            return [t.strip() for t in (raw or "").split(",")
+                    if t.strip() and len(t.strip()) < 60][:3]
+        except Exception as e:
+            logger.debug(f"[DEEPEN] {name} terms failed: {e}")
+            return []
 
     _PARENT_CACHE = {}
 
