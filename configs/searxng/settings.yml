@@ -2,6 +2,19 @@ use_default_settings: true
 search:
   formats: [html, json]
   default_lang: en
+  # INDEPENDENT ENGINES ARE SLOWER THAN THE ONES THAT BLOCK US.
+  #
+  # SearXNG drops any engine that misses the deadline, silently. Measured:
+  # yep answered with 20 results when addressed directly and contributed
+  # nothing to a combined search — it was being queried and timed out. The
+  # default ~3s budget is tuned for Google-class latency, which is precisely
+  # the class of engine this deployment cannot use. Research is a background
+  # build step; waiting another few seconds costs nothing a learner sees.
+  max_request_timeout: 12.0
+outgoing:
+  request_timeout: 10.0
+  max_request_timeout: 12.0
+  pool_connections: 20
 server:
   limiter: false
   image_proxy: false
@@ -27,19 +40,54 @@ server:
 # independent crawlers and real APIs. Stack Exchange earns its place on a
 # technical subject specifically — it is where the answers actually are.
 engines:
+  # CHOSEN BY MEASUREMENT, not by reputation. Each was queried in isolation
+  # from this container for "sql window function" and kept only if it answered:
+  #
+  #   yep           20 results  tutorials and references (dbvis, EssentialSQL)
+  #   github        30 results  REPOS — code, not teaching material. REJECTED:
+  #                             weighted as "web" it would pollute grounding.
+  #   marginalia    10 results  independent index, non-commercial bias
+  #   stackexchange 10 results  where technical answers actually live
+  #   mwmbl          0 results  unresponsive
+  #   qwant          0 results  unresponsive
+  #   google/bing/ddg/brave/startpage — CAPTCHA a datacenter, always
+  #
+  # The rule this encodes: prefer engines with their OWN index or a real API.
+  # Anything that fronts Google will fail here the moment it is asked from a
+  # server, and failing silently is what left the whole web arm dead.
+  # CATEGORIES ARE NOT OPTIONAL HERE.
+  #
+  # Redefining an engine by name under `use_default_settings: true` merges
+  # your keys over the default — and an entry with no `categories` drops out
+  # of the general category, so a plain search never queries it. Measured:
+  # yep returned 20 results when addressed directly and ZERO in a combined
+  # search, and only stackexchange (which happened to keep its category)
+  # contributed at all. Every engine here therefore names its category.
   - name: wikipedia
     engine: wikipedia
     shortcut: wp
+    categories: [general]
+  - name: yep
+    engine: yep
+    shortcut: yep
+    categories: [general]
   - name: mojeek
     engine: mojeek
     shortcut: mjk
+    categories: [general]
+  - name: marginalia
+    engine: marginalia
+    shortcut: mrg
+    categories: [general]
   - name: stackexchange
     engine: stackexchange
     shortcut: stex
+    categories: [general]
+  # Kept visible and off, so the next person sees they were considered.
   - name: duckduckgo
     engine: duckduckgo
     shortcut: ddg
-    disabled: true          # CAPTCHAs a server; kept visible, not used
+    disabled: true
   - name: google
     engine: google
     shortcut: g
