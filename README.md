@@ -6,9 +6,10 @@ dialogue — probing what you actually understand, drawing a diagram when a
 picture carries what words cannot, and scheduling the review before you forget
 it.
 
-It runs **entirely offline**. No API keys, no accounts, no telemetry, nothing
-leaves the machine. The model, the search index, the speech synthesis and your
-learning history all live on your hardware.
+It runs **entirely offline**. No API keys, no cloud account, no telemetry,
+nothing leaves the machine. The model, the search index, the speech synthesis
+and your learning history all live on your hardware. Profiles are local: a
+parent account and a student profile per learner, stored in your own database.
 
 <!-- SCREENSHOT:hero -->
 
@@ -156,7 +157,12 @@ tells.
 
 <!-- SCREENSHOT:courses -->
 
-- **Quick create** — a topic and a depth level
+- **Quick create** — a topic, a level, and a sentence about what you want
+- **Say what it is for** — an optional brief that outranks the subject word.
+  "SQL" covers an analytics engineer, a backend developer and a DBA; given the
+  word alone the builder produced a module on the history of the standard.
+  Given *"window functions, for analytics work, not administration"* it
+  produced six modules on frames, partitions and offset functions.
 - **Custom wizard** — build it module by module
 - **Your own material** — EPUB, PDF, Markdown and plain text, including
   figures extracted from the book
@@ -182,6 +188,41 @@ Stack courses into a credit-bearing programme on the Carnegie standard
 (1 credit = 45 hours; 60 for an associate, 120 for a bachelor's). General
 education is include, transfer-in, or skip — nobody should have to take
 English to finish a D&D degree.
+
+A plan has to survive two gates before it is saved, whether Helga planned it or
+you handed one in: `validate` for what makes a programme *unteachable* — a
+prerequisite cycle, a prerequisite that is not in the programme, one scheduled
+no earlier than the course needing it — and a shape gate for whether it looks
+like a degree at all: comparable terms, a capstone at the end, prerequisite
+sets that distinguish siblings rather than "everything that came before".
+Both refuse with reasons and save nothing.
+
+### Bringing in a stronger model
+
+Helga builds with the local model. When you want a larger one — Claude, or
+anything that speaks HTTP — it can take over **any part** of the build and hand
+the rest back:
+
+- A **whole course in one request**, structure and every body, so a model that
+  holds the curriculum in one context can order concepts and avoid repeating
+  itself instead of being made to write ninety separate calls
+- **Any part of it.** Write twenty concepts, leave seventy; the local model
+  fills the rest without being told which. The hydrator already skips anything
+  that has a body, so what is missing *is* the queue
+- The **same bar either way.** The depth contract judges the content and the
+  degree gates judge the plan; work that falls short is refused with its
+  reasons rather than stored. A course that arrives this way has not faced the
+  fact-check and grounding verdicts, and says so rather than inheriting a pass
+- **Provenance per concept**, so a course written by both models is legible
+  afterwards
+
+```bash
+curl localhost:5002/api/pipeline    # the surface describes itself
+```
+
+Full reference: **[docs/EXTERNAL_AUTHORING.md](docs/EXTERNAL_AUTHORING.md)**.
+Note that this surface has **no authentication** — fine on a laptop, not fine
+exposed to a network.
 
 ### Voice, in both directions
 
@@ -248,6 +289,14 @@ OLLAMA_MODEL=nail-35b-a3b-ctx    # project model, 16k context (docs/MODEL.md)
 OLLAMA_URL=http://host.docker.internal:11434
 FLASK_ENV=production
 DEFAULT_VOICE=af_heart            # Kokoro TTS voice
+
+HELGA_RESEARCH_TIMEOUT=90         # seconds a concept's research may take.
+                                  # Cold lookups measured 4-37s, ~85s for two
+                                  # at once; below that the result is thrown
+                                  # away and the concept is written llm-only.
+LOG_LEVEL=INFO                    # rag-engine verbosity. At WARNING the whole
+                                  # hydration path is silent, and a build that
+                                  # wrote nothing looks like one that never ran.
 ```
 
 ---
