@@ -5629,7 +5629,8 @@ def scope_check_endpoint():
                 if title:
                     out.append({"title": str(title)[:120],
                                 "source": str(it.get("source") or "")[:40],
-                                "url": str(it.get("url") or "")[:300]})
+                                "url": str(it.get("url") or "")[:300],
+                                "relevance": it.get("relevance")})
             return out
 
         out = {"available": True,
@@ -5642,6 +5643,30 @@ def scope_check_endpoint():
                "texts": _titles(brief.get("canonical_texts"), "title", "book"),
                "vocabulary": [str(v)[:60] for v in (brief.get("vocabulary") or [])[:12]],
                "broadened_to": list(brief.get("broadened_to") or [])[:4]}
+
+        # THE SAME BAR THE BUILD WILL APPLY.
+        #
+        # This screen said "the subject can carry it" on a chapter COUNT, and
+        # the build then scored the very same book 3.25 against a 6.0 grounding
+        # bar, rejected it, and logged "treating as SOURCELESS". The learner was
+        # promised evidence the builder had already decided not to use, while
+        # this endpoint's docstring claimed it runs "the same instruments the
+        # build uses". It now runs the same THRESHOLD too, and says plainly
+        # when nothing clears it.
+        try:
+            from services.core.course_builder import GROUNDING_RELEVANCE as _bar
+        except Exception:
+            _bar = 6.0
+        scored = [float(x.get("relevance") or 0)
+                  for x in (brief.get("syllabi") or []) if isinstance(x, dict)]
+        out["grounding_bar"] = _bar
+        out["best_relevance"] = round(max(scored), 2) if scored else 0.0
+        out["grounded"] = bool(scored and max(scored) >= _bar)
+        if scored and not out["grounded"]:
+            out["grounding_note"] = (
+                "Material exists but none of it is close enough to this exact "
+                "subject to ground the structure, so the build will write it "
+                "from the model's own knowledge and say so.")
         tier = practice_tier(topic)
         if tier:
             out["practice_tier"] = tier["message"]

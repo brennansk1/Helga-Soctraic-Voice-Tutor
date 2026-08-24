@@ -117,7 +117,34 @@
                    ' (confidence ' + m[3] + ')'; }],
         [/^STRUCT:RESEARCH_RETRY:(.+)/,   function (m) {
             return 'Thin sourcing for "' + m[1] + '" — searching wider'; }],
-        [/^CHECK:PREFLIGHT:PASS/,        function () { return 'Model is reachable'; }],
+        /* SIX CHECKS, NOT ONE. The builder emits CHECK:PREFLIGHT:PASS:<msg>
+           for the topic, the context window, the depth, storage writability,
+           the model being online and the model being able to generate — and
+           this collapsed every one of them to "Model is reachable", so the
+           learner saw the same sentence repeated and learned nothing from any
+           of it. The message is right there after the prefix. */
+        [/^CHECK:PREFLIGHT:PASS:?(.*)/,  function (m) {
+            var raw = (m[1] || '').trim();
+            if (!raw) return 'Pre-flight check passed';
+            /* REPLACE THE WHOLE LINE, not the matched prefix. Using
+               raw.replace() left the untouched tail on the end, so
+               "Context window 8192 tokens" rendered as "Model context is
+               large enough (8192 tokens) tokens". */
+            var known = [
+                [/^topic valid/i,            function ()  { return 'Topic looks buildable'; }],
+                [/^context window (\d+)/i,   function (m) { return 'Model context is large enough — ' + m[1] + ' tokens'; }],
+                [/^depth valid/i,            function ()  { return 'Requested depth is valid'; }],
+                [/^storage writable/i,       function ()  { return 'Storage is writable'; }],
+                [/^llm online.*?(\d+) *ms/i, function (m) { return 'Model is reachable — ' + m[1] + 'ms'; }],
+                [/^llm online/i,             function ()  { return 'Model is reachable'; }],
+                [/^llm content generation/i, function ()  { return 'Model can generate content'; }]
+            ];
+            for (var i = 0; i < known.length; i++) {
+                var hit = raw.match(known[i][0]);
+                if (hit) return known[i][1](hit);
+            }
+            return raw.charAt(0).toUpperCase() + raw.slice(1);
+        }],
 
         /* AUDITED 2026-08-24: seven status prefixes were emitted by the
            backend and rendered by nothing, so real build work happened in
@@ -699,8 +726,32 @@
             .catch(function () { return null; })
             .then(function (st) {
                 if (!st || settled) return;
-                if (st.phase && ORDER.indexOf(st.phase) !== -1) {
-                    setStage(st.phase, 'active');
+                /* THE TWO VOCABULARIES DO NOT MATCH, and silently.
+                   The server reports skeleton -> audit -> hydration ->
+                   complete; this rail is named preflight, research, skeleton,
+                   coverage, hydrate, assets. "audit" and "hydration" are in
+                   neither list, so ORDER.indexOf() returned -1 for both and
+                   the rail stuck on Structure for the whole build while the
+                   server happily reported progress nobody could see. */
+                var PHASE_TO_STAGE = {
+                    // The build's very first status, set before preflight
+                    // even runs. Found by the vocabulary test, not by hand.
+                    initializing: 'preflight',
+                    preflight: 'preflight', research: 'research',
+                    skeleton: 'skeleton',
+                    audit: 'coverage', coverage: 'coverage',
+                    hydration: 'hydrate', hydrate: 'hydrate',
+                    assets: 'assets'
+                };
+                var stage = PHASE_TO_STAGE[st.phase];
+                if (stage) setStage(stage, 'active');
+                if (st.phase === 'complete') {
+                    settled = true; stopPolling(); finish(st.course_uid);
+                    return;
+                }
+                if (st.phase === 'error' || st.phase === 'aborted') {
+                    settled = true; stopPolling(); settle('error', null);
+                    return;
                 }
                 if (st.phase === 'cancelled') {
                     settled = true; stopPolling(); settle('cancelled', null);
@@ -730,6 +781,45 @@
         var params = new URLSearchParams(window.location.search);
         var topic = params.get('topic');
         if (topic) $('build-topic').textContent = 'Building: ' + topic;
+
+        /* REPLAY WHAT ALREADY HAPPENED.
+           Socket.IO only delivers messages sent AFTER this page connected, so
+           reloading during a build — or opening it from the pill after
+           navigating away — showed an empty log and "Warming up..." for a
+           build that had been talking for an hour. The durable record already
+           keeps the last 120 messages and /api/build/status already returns
+           them; nothing replayed them. Replayed through the same handler as
+           live traffic, so the rail, the evidence panel and the module list
+           all rebuild exactly as they would have live. */
+        fetch('/api/build/status')
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .catch(function () { return null; })
+            .then(function (st) {
+                if (!st || !st.messages || !st.messages.length) return;
+                st.messages.forEach(function (m) {
+                    // The record's field is `m`, not `message`. Checked
+                    // against the real payload rather than assumed: guessing
+                    // here fails silently, replaying nothing at all.
+                    try { handle(typeof m === 'string' ? m : (m && (m.m || m.message || m.msg))); }
+                    catch (e) { /* one bad record must not stop the replay */ }
+                });
+            });
+
+        /* ELAPSED IS SINCE THE BUILD STARTED, NOT SINCE THIS TAB OPENED.
+           `started` is set when the script loads, so reloading a page during a
+           three-hour build showed "0:02" — and this number is the learner's
+           only evidence of how long the thing has been going. The server sends
+           started_at on /api/creation_status; trust it when it is there. */
+        fetch('/api/creation_status')
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .catch(function () { return null; })
+            .then(function (st) {
+                if (!st || !st.started_at) return;
+                var t = Date.parse(st.started_at);
+                // Guard a clock skew between container and browser: a start in
+                // the future would render a negative timer.
+                if (!isNaN(t) && t <= Date.now()) started = t;
+            });
 
         setInterval(function () {
             var s = Math.floor((Date.now() - started) / 1000);

@@ -270,6 +270,21 @@
             verdict.classList.add("warn");
             detail.textContent = "The research service could not be reached. " +
                 "The build itself re-checks scope before generating anything.";
+        } else if (j.verdict === "ok" && j.grounded === false) {
+            /* THE COUNT SAID YES AND THE BUILD WILL SAY NO.
+               This screen graded on how MUCH material exists; the builder
+               grades on how CLOSE it is, and rejects anything under its
+               grounding bar. Measured on "SQL": 60 chapters found, best match
+               scored 3.0 against a bar of 6.0, and the build logged
+               "treating as SOURCELESS" — after this screen had promised the
+               subject was covered. Saying it here is the honest version. */
+            verdict.textContent = "Enough material, but none of it is close enough";
+            verdict.classList.add("warn");
+            detail.textContent = (j.grounding_note || "") +
+                (j.best_relevance != null && j.grounding_bar != null
+                    ? " (closest match scored " + j.best_relevance +
+                      "; the build needs " + j.grounding_bar + ".)"
+                    : "");
         } else if (j.verdict === "ok") {
             verdict.textContent = "The subject can carry it";
             verdict.classList.add("ok");
@@ -315,6 +330,18 @@
                     sm.className = "scope-evidence-src";
                     sm.textContent = " — " + it.source;
                     li.appendChild(sm);
+                }
+                // A title alone reads as "this will be used". The score is
+                // what decides whether it actually is.
+                if (it && it.relevance != null && j.grounding_bar != null) {
+                    var sc = document.createElement("span");
+                    var ok = Number(it.relevance) >= Number(j.grounding_bar);
+                    sc.className = "scope-evidence-score" + (ok ? " is-ok" : " is-weak");
+                    sc.textContent = ok
+                        ? " · match " + it.relevance
+                        : " · match " + it.relevance + ", below the " +
+                          j.grounding_bar + " needed";
+                    li.appendChild(sc);
                 }
                 ul.appendChild(li);
             });
@@ -657,6 +684,32 @@
         al.className = "create-btn-label"; al.textContent = "Go to the build";
         a.appendChild(al);
         box.appendChild(h); box.appendChild(p1); box.appendChild(a);
+
+        /* THIS CARD USED TO BE A DEAD END.
+           It rendered once from the lock's state at page load and never looked
+           again, so when the build ended — or was killed, which leaves the
+           durable record reporting stale/failed — the guard cleared, the nav
+           pill disappeared, and this card sat there blocking creation until
+           the learner thought to reload. Measured today after a core restart.
+
+           The guard reconciles against the server every 30s; watch it and
+           bring the flow back the moment it lets go. The button is for anyone
+           who does not want to wait for the next tick. */
+        var again = document.createElement("button");
+        again.className = "create-btn-secondary";
+        again.type = "button";
+        again.style.marginTop = "var(--space-3)";
+        again.textContent = "Check again";
+        again.addEventListener("click", function () { location.reload(); });
+        box.appendChild(again);
+
+        var freed = setInterval(function () {
+            if (!window.HelgaBuildGuard || !window.HelgaBuildGuard.active()) {
+                clearInterval(freed);
+                location.reload();
+            }
+        }, 5000);
+
         shell.appendChild(box);
         return;
     }
