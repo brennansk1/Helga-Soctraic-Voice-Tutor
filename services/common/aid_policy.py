@@ -141,6 +141,19 @@ _DOMAIN_KINDS = (
      r"food (web|chain)|flow of|process|call stack|recursi|hierarch|"
      r"precedent|binds|inherit(s|ance)?|reference(s)? itself|"
      r"prerequisite|upstream|downstream)", ("graph",)),
+    # CLICK PATHS ARE STEPS, AND THEY MUST BEAT THE CODE RULE BELOW.
+    #
+    # A GUI product's path — Power BI's Modeling then Manage Roles, an n8n
+    # canvas, a Snowflake console pane — is a sequence of labelled actions,
+    # which is exactly a `steps` aid. It is NOT code, and the CODE rule below
+    # matches broadly enough to swallow these: "Power BI row-level security"
+    # would otherwise be offered as a code listing, implying a command exists
+    # where none does. `TOOL_OPERATION` guidance says not to use a code aid;
+    # this is what makes the right aid available instead of none.
+    (r"\b(power ?bi|tableau|looker|fabric|snowsight|n8n|zapier|"
+     r"dashboard|workspace|ribbon|pane|menu|click|drag.and.drop|"
+     r"visual (builder|editor)|row.level security|manage roles)",
+     ("steps",)),
     (r"\b(step|method|procedure|algorithm|solve for|how to|"
      r"first .* then|derivation)", ("steps",)),
     # CODE. The listing is the teaching object for programming, so this needs

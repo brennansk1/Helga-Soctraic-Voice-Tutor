@@ -138,3 +138,34 @@ def test_conceptual_design_is_not_swallowed_by_the_tool_kinds():
     for concept in ("Dimensional modelling (Kimball)",
                     "Semantic layer / MetricFlow", "Security and RBAC"):
         assert classify(concept) == MECHANISM
+
+
+# --- what a click path is SHOWN with ----------------------------------------
+
+def test_a_click_path_gets_a_steps_aid_not_a_code_block():
+    """TOOL_OPERATION forbids a `code` aid, so it needs a vehicle.
+
+    A click path IS a sequence of labelled actions, which is exactly what the
+    `steps` aid is. Without this routing the CODE rule — which is deliberately
+    broad — would match these and offer a code listing, implying a command
+    exists where none does.
+    """
+    from services.common.aid_policy import suggest_kinds
+    for concept in ("Power BI row-level security",
+                    "Build a permissioned dashboard in Power BI",
+                    "n8n canvas basics"):
+        assert suggest_kinds(concept) == ("steps",), concept
+
+
+def test_real_code_still_gets_a_code_aid():
+    """The click-path rule sits ABOVE the code rule, so it must not swallow
+    actual programming."""
+    from services.common.aid_policy import suggest_kinds
+    for concept in ("Binary search in Python", "Writing a recursive function"):
+        assert "code" in suggest_kinds(concept), concept
+
+
+def test_the_guidance_points_at_the_aid_that_exists():
+    """Telling the tutor what NOT to use, without naming what to use, leaves
+    it to improvise — which for a GUI path means prose."""
+    assert "`steps` AID" in GUIDANCE[TOOL_OPERATION]
