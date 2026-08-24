@@ -80,7 +80,7 @@ I moved the whole worktree, data included, to **`~/Desktop/helga-live`** with
 
 | Location | Courses | Notes |
 |---|---|---|
-| `~/Desktop/helga-live/data` | 6 | recent work + the new SQL course |
+| `~/Desktop/helga-live/data` | 5 | recent work + the new SQL course (a 6th, an abandoned "causal inference" skeleton, was deleted by the cleaner bug below before I fixed it) |
 | `Desktop/Helga-Soctraic-Voice-Tutor-main/data` | 19 | your older library, early August |
 
 I did **not** merge them. Merging two SQLite libraries is easy to get wrong and
