@@ -76,3 +76,49 @@ class TestPrune:
                 {"title": "M Part 1 Lesson 1 Part 1"}]}]}]}]}
         SkeletonBuilder.prune_placeholder_scaffolding(SkeletonBuilder, c)
         assert c["modules"][0]["units"], "an absent module is a visible hole"
+
+
+class TestNeverLeavesAnEmptyUnit:
+    """The "never empty a module" branch must not empty its UNITS instead.
+
+    The first version assigned `unit["lessons"] = kept_lessons` while walking,
+    before knowing whether the module would keep any unit. When every unit was
+    scaffolding, the branch put the original unit list back — but those units
+    had already been emptied in place, so the module kept units holding zero
+    lessons. Worse than either outcome the branch chooses between.
+
+    Found by tests/core/test_skeleton_builder.py, which asserts every unit has
+    at least one lesson: "Unit '... Part 1' has no lessons".
+    """
+
+    @staticmethod
+    def _all_scaffolding():
+        return {"modules": [{"title": "M", "units": [
+            {"title": "M Part 1", "lessons": [
+                {"title": "M Part 1 Lesson 1",
+                 "concepts": [{"title": "M Part 1 Lesson 1 Part 1"}]}]},
+            {"title": "M Part 2", "lessons": [
+                {"title": "M Part 2 Lesson 1",
+                 "concepts": [{"title": "M Part 2 Lesson 1 Part 1"}]}]},
+        ]}]}
+
+    def test_every_kept_unit_still_has_at_least_one_lesson(self):
+        c = self._all_scaffolding()
+        SkeletonBuilder.prune_placeholder_scaffolding(SkeletonBuilder, c)
+        for module in c["modules"]:
+            for unit in module["units"]:
+                assert unit["lessons"], (
+                    f"unit {unit['title']!r} was emptied and kept")
+
+    def test_a_bailed_out_module_is_left_byte_for_byte_alone(self):
+        import copy
+        c = self._all_scaffolding()
+        before = copy.deepcopy(c)
+        SkeletonBuilder.prune_placeholder_scaffolding(SkeletonBuilder, c)
+        assert c == before, "bailing out must not mutate anything"
+
+    def test_tally_reports_nothing_when_it_bailed_out(self):
+        """A tally claiming drops that did not happen is a false report."""
+        c = self._all_scaffolding()
+        tally = SkeletonBuilder.prune_placeholder_scaffolding(SkeletonBuilder, c)
+        assert tally == {"concepts": 0, "lessons": 0, "units": 0}

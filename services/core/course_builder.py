@@ -767,9 +767,9 @@ class SkeletonBuilder:
         tally = {"concepts": 0, "lessons": 0, "units": 0}
         for module in (course.get("modules") or []):
             m_title = module.get("title", "")
-            kept_units = []
+            kept_units, plan = [], []
+            dropped = {"concepts": 0, "lessons": 0, "units": 0}
             for unit in (module.get("units") or []):
-                u_title = unit.get("title", "")
                 kept_lessons = []
                 for lesson in (unit.get("lessons") or []):
                     l_title = lesson.get("title", "")
@@ -777,18 +777,34 @@ class SkeletonBuilder:
                     padded = [c for c in concepts
                               if self.is_placeholder_title(c.get("title"), l_title)]
                     if concepts and len(padded) == len(concepts):
-                        tally["concepts"] += len(concepts)
-                        tally["lessons"] += 1
+                        dropped["concepts"] += len(concepts)
+                        dropped["lessons"] += 1
                         continue
                     kept_lessons.append(lesson)
-                unit["lessons"] = kept_lessons
-                if not kept_lessons:
-                    tally["units"] += 1
-                    continue
-                kept_units.append(unit)
+                if kept_lessons:
+                    # NOTHING IS MUTATED UNTIL THE WHOLE MODULE IS DECIDED.
+                    #
+                    # This assigned `unit["lessons"] = kept_lessons` here,
+                    # before knowing whether the module would keep any unit at
+                    # all. When every unit turned out to be scaffolding, the
+                    # "never empty a module" branch below put the ORIGINAL unit
+                    # list back — but those units had already been emptied in
+                    # place, so the module kept units holding ZERO lessons.
+                    # That is worse than either outcome the branch chooses
+                    # between, and a structure test caught it:
+                    # "Unit '... Part 1' has no lessons".
+                    plan.append((unit, kept_lessons))
+                    kept_units.append(unit)
+                else:
+                    dropped["units"] += 1
             if kept_units:
+                for unit, kept_lessons in plan:
+                    unit["lessons"] = kept_lessons
                 module["units"] = kept_units
+                for k in tally:
+                    tally[k] += dropped[k]
             elif module.get("units"):
+                # Left EXACTLY as it was — no unit above was touched.
                 logger.warning(
                     f"  [PRUNE] every unit of '{m_title}' was scaffolding; "
                     f"keeping them rather than emptying the module")

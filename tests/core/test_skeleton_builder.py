@@ -55,6 +55,26 @@ class TestSkeletonStrategy(unittest.TestCase):
         
         self.captured_prompts = []
         self.generated_counts = {"modules": 0, "units_lessons": 0, "concepts": 0}
+        self._unit_calls = self._lesson_calls = self._concept_calls = 0
+
+        UNITS = [
+            {"title": "Kinematics Unit", "description": "Basics of motion"},
+            {"title": "Heat Flow Unit", "description": "Thermal energy transfer"},
+            {"title": "Wave Particle Unit", "description": "Quantum duality"},
+        ]
+        LESSONS = [
+            {"title": "Velocity Vectors"},
+            {"title": "Conduction Convection"},
+            {"title": "Photon Behavior"},
+        ]
+        CONCEPTS = [
+            [{"title": "Scalar Speed", "objectives": ["Def 1"]},
+             {"title": "Vector Velocity", "objectives": ["Def 2"]}],
+            [{"title": "Fourier Heat Law", "objectives": ["Def 1"]},
+             {"title": "Thermal Conductivity", "objectives": ["Def 2"]}],
+            [{"title": "Wave Function Collapse", "objectives": ["Def 1"]},
+             {"title": "Quantum Tunneling", "objectives": ["Def 2"]}],
+        ]
 
         def llm_side_effect(prompt, **kwargs):
             self.captured_prompts.append(prompt)
@@ -84,42 +104,40 @@ class TestSkeletonStrategy(unittest.TestCase):
                 ]
 
             # 2. UNITS GENERATION
+            #
+            # SELECTED BY CALL ORDER, NOT BY PROMPT TEXT.
+            #
+            # These branches used to read `if "Newtonian" in prompt ... elif
+            # "Thermodynamics" in prompt`, and the builder's prompt carries the
+            # WHOLE course context — every module's name appears in every
+            # module's prompt. So the first branch won every time, every unit
+            # came back "Kinematics Unit", and dedup rejected it as a duplicate
+            # from the second module onward. The builder then fell back to
+            # "{module} Part 1", its lesson to "... Lesson 1", and its concepts
+            # to "... Part N" stubs.
+            #
+            # The test still passed, because it counted those stubs: two of its
+            # three modules were pure scaffolding and the structure assertions
+            # were satisfied by padding. That only surfaced when the builder
+            # stopped shipping padding.
             if "TASK: Generate exactly" in prompt and "Units" in prompt:
                 self.generated_counts["units_lessons"] += 1
-                if "Newtonian" in prompt:
-                    return [{"title": "Kinematics Unit", "description": "Basics of motion"}]
-                elif "Thermodynamics" in prompt:
-                    return [{"title": "Heat Flow Unit", "description": "Thermal energy transfer"}]
-                else:
-                    return [{"title": "Wave Particle Unit", "description": "Quantum duality"}]
+                i = self._unit_calls
+                self._unit_calls += 1
+                return [UNITS[i % len(UNITS)]]
 
             # 3. LESSONS GENERATION
             if "Generate exactly" in prompt and "lessons for" in prompt:
-                if "Kinematics" in prompt:
-                    return [{"title": "Velocity Vectors"}]
-                elif "Heat Flow" in prompt:
-                    return [{"title": "Conduction Convection"}]
-                else:
-                    return [{"title": "Photon Behavior"}]
+                i = self._lesson_calls
+                self._lesson_calls += 1
+                return [LESSONS[i % len(LESSONS)]]
 
             # 4. CONCEPTS GENERATION
             if "Generate exactly" in prompt and "concepts for" in prompt:
                 self.generated_counts["concepts"] += 1
-                if "Velocity" in prompt:
-                    return [
-                        {"title": "Scalar Speed", "objectives": ["Def 1"]},
-                        {"title": "Vector Velocity", "objectives": ["Def 2"]}
-                    ]
-                elif "Conduction" in prompt:
-                    return [
-                        {"title": "Fourier Heat Law", "objectives": ["Def 1"]},
-                        {"title": "Thermal Conductivity", "objectives": ["Def 2"]}
-                    ]
-                else:
-                    return [
-                        {"title": "Wave Function Collapse", "objectives": ["Def 1"]},
-                        {"title": "Quantum Tunneling", "objectives": ["Def 2"]}
-                    ]
+                i = self._concept_calls
+                self._concept_calls += 1
+                return list(CONCEPTS[i % len(CONCEPTS)])
 
             return []
 
