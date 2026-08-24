@@ -384,11 +384,21 @@
          * promise as offering it on a lending-only book — so it is disabled and
          * says where the book can be read instead. */
         if (b.source !== 'internet_archive') {
-            btn.disabled = true;
-            btn.title = 'Helga builds from Internet Archive scans today. This ' +
-                        'is readable at ' + b.source_label +
-                        ' — open Details to read it there.';
-            return btn;
+            /* A DISABLED BUTTON EXPLAINS ITSELF ONLY ON HOVER, and never on a
+               touch screen. Every non-Internet-Archive result on a search
+               therefore showed a row of dead "Build course" buttons whose
+               reason was invisible — measured on "SQL", where the best match
+               by far is a Wikibooks text and every one of its buttons was
+               dead. Say what this source CAN do instead: the label carries the
+               limitation, and the action still goes somewhere useful. */
+            var read = el('a', 'lib-build-btn is-alt', 'Read at ' + b.source_label);
+            read.href = b.url || '#';
+            read.target = '_blank';
+            read.rel = 'noopener noreferrer';
+            read.title = 'Helga builds courses from Internet Archive scans ' +
+                         'today, so it cannot build from this one. It is ' +
+                         'readable at ' + b.source_label + '.';
+            return read;
         }
         btn.addEventListener('click', function () { build(b.id); });
         return btn;

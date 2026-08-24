@@ -531,3 +531,18 @@ body.lib-detail-open { overflow: hidden; }
     .lib-detail-inner { padding: var(--space-4); }
     .lib-detail-head { flex-direction: column; }
 }
+
+/* The "Read at ..." action that replaces a dead Build button on sources Helga
+   cannot build from. Secondary on purpose: it is a real action, but it is not
+   the one the page is for, and it must not compete with a build that CAN run. */
+.lib-build-btn.is-alt {
+    background: transparent;
+    color: var(--accent-on-tint);
+    border-color: var(--border-color);
+    text-decoration: none;
+    display: inline-block;
+}
+.lib-build-btn.is-alt:hover {
+    background: color-mix(in srgb, var(--accent-primary) 10%, transparent);
+    border-color: var(--accent-primary);
+}
