@@ -35,6 +35,7 @@ from services.common.learner_behaviour import (
     classify as _classify_behaviour, describe as _describe_behaviour)
 from services.common.teaching_move import from_turn_state
 from services.common.turn_state import TurnState
+from services.common import turn_state as _turn_state_io
 from services.common.prompts import (
     DEFAULT_GRADE_BAND,
     _concept_is_arbitrary,
@@ -1189,11 +1190,27 @@ class MnemosyneFSM:
                 # course never blocks on it.
                 self._warm_model_async()
                 prev_uid = self.active_course_uid
-                self.active_course_uid = uid
                 if prev_uid and prev_uid != uid:
+                    # SAVE THE OUTGOING COURSE FIRST, WHILE IT IS STILL ACTIVE.
+                    #
+                    # This block used to switch `active_course_uid` and then
+                    # clear the transcript, history, queue, node, streaks and
+                    # bloom level — without saving any of it. `RESUME_COURSE`
+                    # has always done this correctly (`resume_course` saves the
+                    # outgoing course and restores the incoming one), but
+                    # SET_CONTEXT is what the Learn tab actually sends when a
+                    # course is opened, so the correct path was the one nobody
+                    # took. Leaving a lesson to open a different course
+                    # discarded everything since the last of the other save
+                    # points, and arriving gave a blank session even when that
+                    # course had progress stored.
+                    #
+                    # The ORDER matters: saving after the switch would write
+                    # the outgoing course's state under the incoming uid.
+                    self._save_current_course_progress()
                     logging.info(
                         f"SET_CONTEXT: switching course {prev_uid} → {uid}, "
-                        f"clearing transcript/history/queue"
+                        f"saved {prev_uid}, clearing session state"
                     )
                     self.transcript = []
                     self.conversation_history = []
@@ -1206,6 +1223,19 @@ class MnemosyneFSM:
                     self.current_bloom_level = 1
                     self.bloom_correct_streak = 0
                     self.socratic_type_index = 0
+                    self.turn_state = TurnState()
+
+                self.active_course_uid = uid
+
+                if prev_uid != uid:
+                    # RESTORE THE INCOMING COURSE. Without this, opening a
+                    # course you were halfway through started it from nothing
+                    # while its progress sat in the blob untouched.
+                    try:
+                        self._load_course_progress(uid)
+                    except Exception as e:
+                        logging.warning(
+                            f"SET_CONTEXT: could not restore {uid}: {e}")
                 try:
                     course = self.storage.courses.get_course(uid)
                     self.current_teaching_style = (
@@ -1236,6 +1266,12 @@ class MnemosyneFSM:
                     f"NAVIGATE_TO_TOPIC: switching course "
                     f"{self.active_course_uid} → {payload_course_uid}"
                 )
+                # Same shape as SET_CONTEXT above, and it had the same hole:
+                # switch, wipe, never save. A learner who clicks a concept in a
+                # different course from the path view takes THIS path, not
+                # SET_CONTEXT's, so both needed the fix.
+                if self.active_course_uid:
+                    self._save_current_course_progress()
                 self.active_course_uid = payload_course_uid
                 self.load_course_assets(payload_course_uid)
                 self.transcript = []
@@ -1243,6 +1279,17 @@ class MnemosyneFSM:
                 self.syllabus_queue = []
                 self.last_lesson_title = None
                 self.current_context = ""
+                self.turn_state = TurnState()
+                # Restore whatever this course already had. `navigate_to_topic`
+                # below then overrides `current_lesson_node` with the concept
+                # actually clicked — which is right: the click is a more recent
+                # statement of intent than the saved position.
+                try:
+                    self._load_course_progress(payload_course_uid)
+                except Exception as e:
+                    logging.warning(
+                        f"NAVIGATE_TO_TOPIC: could not restore "
+                        f"{payload_course_uid}: {e}")
                 try:
                     course = self.storage.courses.get_course(payload_course_uid)
                     self.current_teaching_style = (
@@ -1947,6 +1994,24 @@ class MnemosyneFSM:
                         "learning_objectives": concept.get("learning_objectives", []),
                         "complexity_role": concept.get("complexity_role", ""),
                         "depth_level": concept.get("depth_level"),
+                        # DOMAIN TEACHING DATA — attached at build time.
+                        #
+                        # `NAVIGATE_TO_TOPIC` copies these three onto
+                        # `current_lesson_node` and has a comment saying it
+                        # must, because that dict is all the tutor sees. But
+                        # they were never put HERE, so the copy read None every
+                        # time and `_domain_teaching()` returned (None, None)
+                        # for every concept of every domain.
+                        #
+                        # The consumer was fixed and the producer was not. That
+                        # is why the kinds measured as working: the harness
+                        # calls the prompt function directly, which is not the
+                        # path a learner takes — a caveat written verbatim in
+                        # `_domain_teaching`'s own docstring and still true of
+                        # the code underneath it.
+                        "concept_kind": concept.get("concept_kind"),
+                        "teaching_pair": concept.get("teaching_pair"),
+                        "code_example": concept.get("code_example"),
                     }
             # Fallback: search across all courses
             result = self.storage.courses.find_concept_across_courses(uid)
@@ -1959,6 +2024,12 @@ class MnemosyneFSM:
                     "title": result["title"],
                     "text": content,
                     "resource_text": content,
+                    # Same fields on the cross-course fallback. A concept found
+                    # this way is taught by the same tutor and must not lose
+                    # its domain guidance for having been located differently.
+                    "concept_kind": result.get("concept_kind"),
+                    "teaching_pair": result.get("teaching_pair"),
+                    "code_example": result.get("code_example"),
                 }
             return None
         except Exception as e:
@@ -2301,13 +2372,36 @@ class MnemosyneFSM:
             # Load existing blob to not overwrite other courses' progress
             full_state = self._read_session_blob()
 
+            # THE CONCEPT TEXT IS NOT SESSION STATE.
+            #
+            # `current_lesson_node["text"]` carries the concept's whole
+            # markdown — up to the 10,000 characters `current_context` slices
+            # from it — and every save wrote that into the blob, per course.
+            # Modelled at realistic sizes that is ~6 KB per course of a blob
+            # rewritten on every one of the seven save points, and 313 KB at
+            # fifty courses, to persist something already on disk.
+            #
+            # It is also the WRONG copy: re-hydrating or editing a concept
+            # leaves the snapshot stale, so a resumed session would keep
+            # teaching the old text. `_load_course_progress` reads it back from
+            # storage, which is authoritative.
+            _node = self.current_lesson_node
+            if isinstance(_node, dict):
+                _node = {k: v for k, v in _node.items()
+                         if k not in ("text", "resource_text")}
+
             course_state = {
-                "current_node": self.current_lesson_node,
+                "current_node": _node,
                 "syllabus_queue": self.syllabus_queue,
                 "completed_topics": list(self.completed_topics),
                 "transcript": self.transcript[-20:],
                 "conversation_history": self.conversation_history[-10:],
                 "socratic_type_index": self.socratic_type_index,
+                # The learner's struggle on the CURRENT point. Without this,
+                # pausing mid-difficulty and returning loses `misses`, and the
+                # tutor greets a stuck learner as if nothing had happened.
+                "turn_state": _turn_state_io.to_dict(
+                    getattr(self, "turn_state", None)),
                 "concept_correct_streak": self.concept_correct_streak,
                 "concept_miss_streak": getattr(self, "concept_miss_streak", 0),
                 "concept_question_count": self.concept_question_count,
@@ -2328,6 +2422,10 @@ class MnemosyneFSM:
 
             if "courses" not in full_state:
                 full_state["courses"] = {}
+            # WHEN, so the resume affordance can say "last studied Tuesday"
+            # rather than only "Continue". A card that knows you have progress
+            # but cannot say where or when is barely better than none.
+            course_state["saved_at"] = time.time()
             full_state["courses"][self.active_course_uid] = course_state
             full_state["last_active_uid"] = self.active_course_uid
             full_state["schema"] = 1
@@ -2342,6 +2440,35 @@ class MnemosyneFSM:
         except Exception as e:
             logging.error(f"Failed to save state: {e}")
 
+    def resume_points(self):
+        """Where this student left off in EVERY course they have started.
+
+        `/state` describes the ACTIVE course only, which is the right shape for
+        the session view and the wrong one for the course list — the list needs
+        to say "Continue: Ohm's Law" for each card, and that lives per course in
+        the session blob.
+
+        Returns {course_uid: {concept_uid, concept_title, saved_at,
+        completed}}. Never raises: a resume hint is a nicety and must not be
+        able to break the course list.
+        """
+        out = {}
+        try:
+            blob = self._read_session_blob()
+            for uid, data in (blob.get("courses") or {}).items():
+                if not isinstance(data, dict):
+                    continue
+                node = data.get("current_node") or {}
+                out[uid] = {
+                    "concept_uid": node.get("uid"),
+                    "concept_title": node.get("title"),
+                    "saved_at": data.get("saved_at"),
+                    "completed": len(data.get("completed_topics") or []),
+                }
+        except Exception as e:
+            logging.warning(f"resume_points failed: {e}")
+        return out
+
     def _load_course_progress(self, course_uid):
         try:
             full_state = self._read_session_blob()
@@ -2349,11 +2476,29 @@ class MnemosyneFSM:
             if course_uid in courses:
                 data = courses[course_uid]
                 self.current_lesson_node = data.get("current_node")
+                # Re-read the concept text that the save deliberately dropped.
+                # Authoritative rather than a snapshot: a concept re-hydrated
+                # since the pause is taught as it is NOW.
+                if isinstance(self.current_lesson_node, dict):
+                    _uid = self.current_lesson_node.get("uid")
+                    if _uid and not self.current_lesson_node.get("text"):
+                        try:
+                            _text = self.storage.courses.get_concept_content(
+                                course_uid, _uid) or ""
+                        except Exception as e:
+                            logging.warning(
+                                f"could not re-read concept {_uid}: {e}")
+                            _text = ""
+                        self.current_lesson_node["text"] = _text
+                        self.current_lesson_node["resource_text"] = _text
+                        self.current_context = _text[:10000]
                 self.syllabus_queue = data.get("syllabus_queue", [])
                 self.completed_topics = set(data.get("completed_topics", []))
                 self.transcript = data.get("transcript", [])
                 self.conversation_history = data.get("conversation_history", [])
                 self.socratic_type_index = data.get("socratic_type_index", 0)
+                self.turn_state = _turn_state_io.from_dict(
+                    data.get("turn_state"))
                 self.concept_correct_streak = data.get("concept_correct_streak", 0)
                 self.concept_miss_streak = data.get("concept_miss_streak", 0)
                 self.concept_question_count = data.get("concept_question_count", 0)
@@ -5010,6 +5155,12 @@ def scope_check_endpoint():
 @app.route("/state", methods=["GET"])
 def get_state():
     return registry.get(_student_id_from_request()).get_state()
+
+
+@app.route("/api/resume_points", methods=["GET"])
+def get_resume_points():
+    """Per-course resume positions for the course list."""
+    return jsonify(registry.get(_student_id_from_request()).resume_points())
 
 
 @app.route("/api/aid/<aid_id>", methods=["GET"])

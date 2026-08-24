@@ -1103,6 +1103,25 @@ def proxy_stats():
         logger.warning(f"Stats proxy failed: {e}")
         return jsonify({'courses': 0, 'concepts': 0, 'streak': 0}), 200
 
+@app.route('/api/resume_points', methods=['GET'])
+@student_session_required
+def api_resume_points():
+    """Where this student left off in each course, for the course list.
+
+    Short timeout and an empty dict on failure: this decorates the cards with
+    "Continue: Ohm's Law" and must never be the reason the course list fails
+    to render.
+    """
+    sid_student = current_student_id()
+    try:
+        resp = requests.get(f'{SERVICES["core"]}/api/resume_points',
+                            params={'student_id': sid_student}, timeout=3)
+        return jsonify(resp.json()), resp.status_code
+    except Exception as e:
+        logger.warning(f"resume_points unavailable: {e}")
+        return jsonify({}), 200
+
+
 @app.route('/api/event', methods=['POST'])
 @csrf_protect
 def post_event():

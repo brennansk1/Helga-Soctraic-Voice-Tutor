@@ -1687,6 +1687,53 @@
 
         document.getElementById('back-to-path-btn-session').addEventListener('click', exitToPathView);
 
+        /* CLOSING THE TAB IS ALSO LEAVING.
+           The back button fires PAUSE_SESSION; Cmd-W did not, so a learner who
+           simply closed the tab fell back to whichever save point happened to
+           fire last — usually their previous answer, losing the exchange they
+           had just finished.
+
+           `visibilitychange` rather than `beforeunload`: mobile Safari and
+           Chrome often never fire `beforeunload` when an app is backgrounded
+           or a tab is swiped away, and `hidden` is the event both do fire.
+
+           `fetch(..., {keepalive:true})` rather than `navigator.sendBeacon`,
+           which was the obvious choice and does not work here. /api/event is
+           @csrf_protect and accepts the token only as an X-CSRF-Token header
+           or a `csrf_token` FORM field — a beacon cannot set headers, and the
+           endpoint reads `request.json`, so a FormData beacon would fail the
+           other half. A keepalive fetch survives the page teardown the same
+           way a beacon does AND carries headers, which base.html's fetch
+           wrapper fills in automatically.
+
+           Guarded by `_paused` so hiding and re-showing a tab repeatedly does
+           not fire a save per toggle; re-entering the lesson clears it. */
+        var _pauseSent = false;
+        function pauseBeacon() {
+            if (_pauseSent) return;
+            _pauseSent = true;
+            try {
+                fetch('/api/event', {
+                    method: 'POST',
+                    keepalive: true,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type: 'PAUSE_SESSION', payload: {} })
+                }).catch(function () { /* leaving anyway */ });
+            } catch (e) { /* never block the unload */ }
+        }
+        // A tab that comes back is a session that continues, so re-arm.
+        document.addEventListener('visibilitychange', function () {
+            if (document.visibilityState === 'visible') _pauseSent = false;
+        });
+        // Hiding a tab MIGHT be leaving; `pagehide` definitely is. So the
+        // visibility handler checks the state and `pagehide` does not — an
+        // earlier version tested `event === undefined` to tell them apart,
+        // which reads the global `window.event` and is not the same question.
+        document.addEventListener('visibilitychange', function () {
+            if (document.visibilityState === 'hidden') pauseBeacon();
+        });
+        window.addEventListener('pagehide', pauseBeacon);
+
         // Global keyboard shortcuts for the learn tab.
         //   Escape  — exit session view and return to path view. We ignore
         //             it while the user is typing in the textarea (to avoid

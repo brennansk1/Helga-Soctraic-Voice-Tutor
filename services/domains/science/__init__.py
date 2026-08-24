@@ -74,6 +74,30 @@ KEYWORDS = (
     "physiology", "botany", "zoology", "cell biology", "molecular biology",
     "neuroscience", "immunology", "photosynthesis", "periodic table",
     "newtonian", "kinematics", "electricity and magnetism",
+    # TOPIC-LEVEL TERMS. Same measurement: "newtons laws of motion" and
+    # "cell division" both routed to (generic).
+    #
+    # The traps this module's docstring names are handled by the registry
+    # matching a single word at a LEADING word boundary — "cell" cannot fire
+    # inside "Excel", "force" cannot fire inside "workforce".
+    #
+    # That was not true when these were added. The rule was keyed on keyword
+    # LENGTH (boundary under five characters, substring otherwise), so "force"
+    # substring-matched and "Managing your workforce" routed here. The comment
+    # that replaced this one asserted it was "verified, not assumed" and it was
+    # assumed; the test that now covers it is what found the difference.
+    # "force" and "forces" are NOT here, and that is the module docstring
+    # being right. They are ordinary English — brute force, force of habit,
+    # police force, sales force — and a bare "force" routed "Brute force
+    # negotiation tactics" to science. Physics reaches this domain through
+    # "newton's laws", "momentum", "friction" and the LLM matcher; ambiguous
+    # English words are not worth the courses they mis-teach.
+    "cell", "cells", "atom", "atoms", "molecule", "molecules", "gravity",
+    "momentum", "friction", "velocity", "acceleration",
+    "mitosis", "meiosis", "dna", "rna", "gene", "genes", "protein",
+    "enzyme", "electron", "proton", "neutron", "isotope", "reaction",
+    "newtons laws", "newton's laws", "natural selection", "ecosystem",
+    "circuit", "voltage", "current", "magnetism", "wavelength", "entropy",
 )
 
 

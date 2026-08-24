@@ -98,5 +98,16 @@ KEYWORDS = (
     "data structure", "devops", "backend", "frontend", "web development",
     "python", "javascript", "typescript", "java", "rust", "golang", "sql",
     "dbt", "django", "react", "kubernetes", "docker", "terraform", "airflow",
-    "pandas", "database", "git", "api",
+    "pandas", "database", "git", "api",    # TOPIC-LEVEL TERMS. Measured: "recursion", "binary search trees" and
+    # "how does TCP work" all routed to (generic). DevDocs answers "is this a
+    # TECHNOLOGY", which is the right question for SOURCING and the wrong one
+    # for whether the CS teaching layer applies — recursion has no doc site and
+    # is still computer science.
+    "recursion", "algorithm", "algorithms", "data structure",
+    "data structures", "binary search", "linked list", "hash table",
+    "big-o", "complexity", "sorting", "compiler", "pointer", "memory leak",
+    "concurrency", "thread", "deadlock", "tcp", "http", "dns", "socket",
+    "database", "sql", "query", "index", "cache", "encryption", "hashing",
+    "git", "version control", "unit test", "debugging", "refactoring",
+
 )

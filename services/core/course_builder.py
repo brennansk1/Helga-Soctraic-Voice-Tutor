@@ -1238,6 +1238,80 @@ class SkeletonBuilder:
             if build_state:
                 build_state.finish()
 
+    def _classify_concepts_by_domain(self, course_dict, topic):
+        """Set `concept_kind` on every concept, via the domain registry.
+
+        Pattern-only: no book, no model call. Routed through the registry so a
+        history course cannot inherit computer-science kinds — the separation
+        rule `tests/domains/test_domain_separation.py` enforces.
+
+        Never raises. A classification failure must cost the guidance, not the
+        course.
+        """
+        try:
+            from services.domains.registry import for_subject, DOMAIN_KEY
+        except Exception as e:
+            logger.debug(f"[DOMAIN] registry unavailable: {e}")
+            return
+
+        title = course_dict.get("title") or topic or ""
+
+        # THE MATCHING STEP: name, description, and the shape it built.
+        #
+        # Keywords run first inside `for_subject` and are free when they hit.
+        # This context is for when they do not — a bare title is often
+        # genuinely ambiguous ("Vectors" is mathematics or biology, "Trees" is
+        # computer science or botany) and the module list settles it at once.
+        # Measured before this existed: eight of sixteen realistic topics got
+        # no domain at all.
+        modules = [m.get("title", "") for m in (course_dict.get("modules") or [])]
+        context_lines = []
+        if course_dict.get("overview"):
+            context_lines.append(f"Description: {course_dict['overview'][:300]}")
+        if modules:
+            context_lines.append("Modules: " + "; ".join(
+                t for t in modules[:8] if t))
+        context = "\n".join(context_lines) or None
+
+        try:
+            ext = for_subject(f"{title} {topic or ''}",
+                              llm_json_fn=llm_generate_json, context=context)
+        except Exception as e:
+            logger.debug(f"[DOMAIN] subject lookup failed: {e}")
+            return
+        if not ext or not hasattr(ext, "classify"):
+            return
+
+        tally = {"by_pattern": 0, "unknown": 0}
+        for module in (course_dict.get("modules") or []):
+            for unit in (module.get("units") or []):
+                for lesson in (unit.get("lessons") or []):
+                    for concept in (lesson.get("concepts") or []):
+                        name = (concept.get("title") or "").strip()
+                        if not name:
+                            continue
+                        try:
+                            kind = ext.classify(
+                                name, "", concept.get("learning_objectives"))
+                        except Exception:
+                            kind = None
+                        if not kind or kind == "UNKNOWN":
+                            tally["unknown"] += 1
+                            continue
+                        concept["concept_kind"] = kind
+                        tally["by_pattern"] += 1
+
+        if tally["by_pattern"] or tally["unknown"]:
+            course_dict[DOMAIN_KEY] = getattr(ext, "DOMAIN", None)
+            course_dict["concept_kinds"] = tally
+            logger.info(
+                f"[DOMAIN] {getattr(ext, 'DOMAIN', '?')}: classified "
+                f"{tally['by_pattern']} concept(s) by pattern, "
+                f"{tally['unknown']} unknown")
+            if self.status_callback:
+                self.status_callback(
+                    f"DOMAIN:KINDS:{tally['by_pattern']}:{tally['unknown']}")
+
     def _record_progress(self, message):
         """Mirror a status event into the durable build record.
 
@@ -1653,6 +1727,22 @@ class SkeletonBuilder:
                         "the subject, but may still serve an individual concept "
                         "— a judgement that can only be made per concept"),
             }
+
+        # DOMAIN CLASSIFICATION ON THE TOPIC-TYPED PATH.
+        #
+        # This file had NO reference to the domain registry at all, which meant
+        # every domain module — all of them — ran only for courses built from
+        # an uploaded book. Type "teach me calculus" into the box and none of
+        # it fired: no per-kind guidance, no NEVER_SOLVE, no NEVER_QUIZ, no
+        # "never demand an observation". The prohibitions that define each
+        # domain reached the tutor only by upload.
+        #
+        # `book_skeleton` does this by READING the source, which is better and
+        # is not available here — there is no book on this path. Titles and
+        # objectives are, and the pattern classifiers work on exactly those.
+        # An UNKNOWN concept still gets its domain's standing rule, so the
+        # floor is safe; what this recovers is the per-kind ceiling.
+        self._classify_concepts_by_domain(course_dict, topic)
 
         # Write course structure to JSON
         self.storage.courses.create_course(course_dict)

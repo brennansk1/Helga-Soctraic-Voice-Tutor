@@ -1,3 +1,25 @@
+
+/* "3 days ago" reads better than a date on a card, and a learner deciding
+   which course to pick up is asking how long it has been, not when it was. */
+function relativeDay(epochSeconds) {
+    if (!epochSeconds) return '';
+    var days = Math.floor((Date.now() / 1000 - epochSeconds) / 86400);
+    if (days <= 0) return 'today';
+    if (days === 1) return 'yesterday';
+    if (days < 7) return days + ' days ago';
+    if (days < 14) return 'last week';
+    return Math.floor(days / 7) + ' weeks ago';
+}
+
+/* Fetched once per list render and merged onto the cards. Failure is silent
+   and the cards fall back to a plain "Continue" — a decoration must not be
+   able to stop the list rendering. */
+function loadResumePoints() {
+    return fetch('/api/resume_points')
+        .then(function (r) { return r.ok ? r.json() : {}; })
+        .then(function (d) { window.RESUME_POINTS = d || {}; })
+        .catch(function () { window.RESUME_POINTS = {}; });
+}
 /**
  * courses.js — Course listing and Quick Create flow
  * Handles: course card rendering, quick create modal, progress updates
@@ -53,8 +75,13 @@ async function loadCourses() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     try {
+        // Fetched CONCURRENTLY with the list, not before it: the resume hints
+        // decorate the cards and must not add a serial round trip to the time
+        // the learner waits for them. `loadResumePoints` never rejects.
+        const resumeReady = loadResumePoints();
         const resp = await fetch('/api/courses', { signal: controller.signal });
         clearTimeout(timeoutId);
+        await resumeReady;
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const data = await resp.json();
         const courses = data.courses || [];
@@ -125,7 +152,17 @@ async function loadCourses() {
                 actionButton.dataset.action = 'start';
                 actionButton.dataset.uid = course.uid;
                 actionButton.dataset.title = course.title || '';
-                actionButton.textContent = progress > 0 ? 'Continue' : 'Start Learning';
+                /* "Continue" alone made the learner re-derive their own
+                   place from the path view. The position is persisted per
+                   course already; it just was not surfaced. */
+                var rp = (window.RESUME_POINTS || {})[course.uid];
+                if (progress > 0 && rp && rp.concept_title) {
+                    actionButton.textContent = 'Continue: ' + rp.concept_title;
+                    actionButton.title = 'Resume ' + rp.concept_title +
+                        (rp.saved_at ? ' — last studied ' + relativeDay(rp.saved_at) : '');
+                } else {
+                    actionButton.textContent = progress > 0 ? 'Continue' : 'Start Learning';
+                }
             } else {
                 // failed, hydration_failed, partial, unknown — show disabled with status
                 actionButton = mkEl('button', 'btn-alpine btn-alpine-primary');

@@ -175,3 +175,107 @@ def test_domain_is_recorded_on_the_course_under_a_stable_key():
     registry.classify_course(course, subject="Learning Rust")
     assert course.get(registry.DOMAIN_KEY) == "computer_science"
     assert registry.domain_of(course) == "computer_science"
+
+
+# --- topic-level routing, measured on what people actually type --------------
+
+def test_realistic_topics_reach_their_domain():
+    """A learner types a TOPIC, not a subject name.
+
+    Measured before the keyword lists were widened: eight of these sixteen
+    routed to no domain at all and got generic teaching — "the pythagorean
+    theorem", "cell division", "recursion", "how does TCP work" among them.
+    """
+    from services.domains.registry import for_subject
+    expected = {
+        "the pythagorean theorem": "mathematics",
+        "quadratic equations": "mathematics",
+        "derivatives and integrals": "mathematics",
+        "linear algebra": "mathematics",
+        "photosynthesis": "science",
+        "newtons laws of motion": "science",
+        "the periodic table": "science",
+        "cell division": "science",
+        "the french revolution": "history",
+        "world war two": "history",
+        "the cold war": "history",
+        "ancient rome": "history",
+        "python decorators": "computer_science",
+        "how does TCP work": "computer_science",
+        "recursion": "computer_science",
+        "binary search trees": "computer_science",
+    }
+    missed = []
+    for topic, want in expected.items():
+        got = getattr(for_subject(topic), "DOMAIN", None)
+        if got != want:
+            missed.append(f"{topic!r} -> {got} (want {want})")
+    assert not missed, "topics with no domain teaching: " + "; ".join(missed)
+
+
+def test_the_word_boundary_traps_the_domains_documented():
+    """Each domain's docstring names a trap. None of them may fire.
+
+    "cell" inside "Excel", "force" inside "workforce", "api" inside
+    "therapist" — the last one actually shipped and routed a therapy course to
+    computer science.
+    """
+    from services.domains.registry import for_subject
+    for subject, forbidden in (
+        ("Excel spreadsheet formulas", "science"),
+        ("Managing your workforce", "science"),
+        ("Becoming a therapist", "computer_science"),
+        ("Brute force negotiation tactics", "science"),
+    ):
+        got = getattr(for_subject(subject), "DOMAIN", None)
+        assert got != forbidden, f"{subject!r} wrongly routed to {got}"
+
+
+def test_llm_matching_is_only_consulted_when_keywords_miss():
+    """Keywords are free and exact; the model call is not. A hit must not
+    pay for one."""
+    from services.domains.registry import domain_for
+    calls = []
+
+    def _spy(**kw):
+        calls.append(kw)
+        return {"domain": "none"}
+
+    assert domain_for("linear algebra", llm_json_fn=_spy) == "mathematics"
+    assert calls == [], "model consulted despite a keyword hit"
+
+
+def test_llm_matcher_receives_the_domain_list_and_context():
+    """The step: give the model the course, what else is known, and the
+    domains to choose between."""
+    from services.domains.registry import domain_for
+    seen = {}
+
+    def _spy(**kw):
+        seen["prompt"] = kw.get("prompt", "")
+        return {"domain": "science"}
+
+    got = domain_for("Zzz unmatchable subject", llm_json_fn=_spy,
+                     context="Modules: Photosynthesis; Respiration")
+    assert got == "science"
+    p = seen["prompt"]
+    for domain in ("mathematics", "history", "science", "computer_science"):
+        assert domain in p, f"{domain} not offered to the model"
+    assert "Photosynthesis" in p, "context not passed"
+    assert "none" in p, "model given no way to decline"
+
+
+def test_llm_answer_outside_the_domain_list_is_refused():
+    """A hallucinated key must not become a domain."""
+    from services.domains.registry import domain_for
+    assert domain_for("Zzz", llm_json_fn=lambda **k: {"domain": "astrology"}) is None
+    assert domain_for("Zzz", llm_json_fn=lambda **k: {"domain": "none"}) is None
+
+
+def test_llm_failure_degrades_to_generic():
+    from services.domains.registry import domain_for
+
+    def _boom(**kw):
+        raise RuntimeError("model down")
+
+    assert domain_for("Zzz unmatchable", llm_json_fn=_boom) is None

@@ -63,6 +63,21 @@ KEYWORDS = (
     "linear algebra", "differential equations", "discrete mathematics",
     "number theory", "real analysis", "topology", "arithmetic",
     "prealgebra", "quantitative reasoning", "mathematical",
+    # TOPIC-LEVEL TERMS, not just subject names.
+    #
+    # Measured on realistic personal-use topics: "the pythagorean theorem",
+    # "quadratic equations" and "derivatives and integrals" all routed to
+    # (generic) and got NO mathematics teaching, because the list named
+    # SUBJECTS and a learner types a TOPIC. Eight of sixteen realistic topics
+    # missed across all four domains.
+    #
+    # Short entries are matched on word boundaries, so "theorem" cannot fire
+    # inside another word and "matrix" does not catch "matrices" — hence both.
+    "theorem", "pythagorean", "derivative", "derivatives", "integral",
+    "integrals", "quadratic", "polynomial", "logarithm", "exponent",
+    "matrix", "matrices", "vector", "eigenvalue", "factorisation",
+    "factorization", "fractions", "equations", "inequalities", "sequences",
+    "limits", "differentiation", "integration", "proof",
 )
 
 

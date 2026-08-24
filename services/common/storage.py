@@ -1303,21 +1303,39 @@ class CourseStore:
         return uid
 
     def get_course(self, uid: str) -> Optional[dict]:
-        """Read course structure.json."""
-        if uid in self._cache:
-            # Return a copy to prevent accidental in-memory mutations affecting the cache
-            import copy
-            return copy.deepcopy(self._cache[uid])
-            
+        """Read course structure.json.
+
+        CACHED ON MTIME, NOT ON UID ALONE.
+        
+        This cache was keyed only on `uid` and never invalidated, so once a
+        course had been read the process served that parse until restart. A
+        course that finished hydrating, was rebuilt, or had its structure
+        rewritten kept being returned in its OLD form — to the course list, to
+        the stats, and to the FSM — with nothing indicating the data was stale.
+        Long-lived services are exactly where that bites, and this one runs for
+        days.
+
+        The file's mtime is an exact key: unchanged means the parse is still
+        valid, changed means it is not.
+        """
+        import copy
         path = os.path.join(self.courses_dir, uid, "structure.json")
-        if not os.path.exists(path):
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
             return None
+
+        cached = self._cache.get(uid)
+        if cached and cached[0] == mtime:
+            # A copy, so a caller mutating what it gets back cannot poison the
+            # cache for everyone else.
+            return copy.deepcopy(cached[1])
+
         with open(path, "r") as f:
             course = json.load(f)
-            import copy
-            self._evict_if_full()
-            self._cache[uid] = copy.deepcopy(course)
-            return course
+        self._evict_if_full()
+        self._cache[uid] = (mtime, copy.deepcopy(course))
+        return course
 
     def update_course(self, uid: str, course_dict: dict):
         """Overwrite course structure.json and update metadata in SQLite."""
@@ -1325,12 +1343,22 @@ class CourseStore:
         course_dict["updated_at"] = datetime.utcnow().isoformat()
         
         import copy
-        self._evict_if_full()
-        self._cache[uid] = copy.deepcopy(course_dict)
-        
         path = os.path.join(self.courses_dir, uid, "structure.json")
         with open(path, "w") as f:
             json.dump(course_dict, f, indent=2)
+
+        # CACHE AFTER THE WRITE, AND WITH THE FILE'S REAL MTIME.
+        #
+        # This wrote a bare dict where `get_course` now stores (mtime, course),
+        # and it wrote it BEFORE the file existed on disk — so the entry could
+        # not carry a valid mtime even in principle. Priming it from the
+        # written file keeps one shape everywhere and keeps the key honest.
+        self._evict_if_full()
+        try:
+            self._cache[uid] = (os.path.getmtime(path),
+                                copy.deepcopy(course_dict))
+        except OSError:
+            self._cache.pop(uid, None)
             
         # Update metadata table
         try:
@@ -2026,8 +2054,38 @@ class CourseStore:
                     return concepts
         return []
 
+    #: Memoised course stats, keyed (uid -> (mtime, stats)).
+    #:
+    #: `/api/courses` calls `get_course_stats` PER COURSE, and each call reads
+    #: and parses that course's `structure.json` — 28-84 KB apiece in the
+    #: current data directory. Rendering the course list therefore parsed a
+    #: quarter of a megabyte for five courses, and would parse over a megabyte
+    #: for twenty-five, to print "12 modules, 40 concepts" on some cards.
+    #:
+    #: The counts change only when the structure does, so the file's mtime is
+    #: an exact invalidation key: a changed course re-counts on the next call,
+    #: an unchanged one costs a stat(). Chosen over a stats column on the
+    #: `courses` row — which would be faster still — because that needs a
+    #: schema migration, and this needs none while removing the same reads.
+    _stats_cache = {}
+
     def get_course_stats(self, uid: str) -> dict:
-        """Count modules, units, lessons, concepts in a course."""
+        """Count modules, units, lessons, concepts in a course.
+
+        Memoised on the structure file's mtime — see `_stats_cache`.
+        """
+        structure_path = os.path.join(self.courses_dir, uid, "structure.json")
+        mtime = None
+        try:
+            mtime = os.path.getmtime(structure_path)
+            cached = self._stats_cache.get(uid)
+            if cached and cached[0] == mtime:
+                return cached[1]
+        except OSError:
+            # No structure file: fall through and let `get_course` decide. Do
+            # NOT cache that outcome — a course mid-build acquires one.
+            pass
+
         course = self.get_course(uid)
         if not course:
             return {"modules": 0, "units": 0, "lessons": 0, "concepts": 0}
@@ -2039,7 +2097,10 @@ class CourseStore:
                 for lesson in unit.get("lessons", []):
                     l += 1
                     c += len(lesson.get("concepts", []))
-        return {"modules": m, "units": u, "lessons": l, "concepts": c}
+        stats = {"modules": m, "units": u, "lessons": l, "concepts": c}
+        if mtime is not None:
+            self._stats_cache[uid] = (mtime, stats)
+        return stats
 
 
 class SearchStore:

@@ -257,3 +257,52 @@ class TurnState:
     def __repr__(self):              # pragma: no cover
         return (f"<TurnState established={len(self.established)} "
                 f"errors={len(self.errors)} attempts={self.attempts}>")
+
+
+# --- persistence -------------------------------------------------------------
+#
+# WHY THIS EXISTS
+# `TurnState` is reset per concept and was never saved, so pausing mid-struggle
+# and coming back lost `misses` — the counter that fires "they have now failed
+# this point N times in a row, CHANGE YOUR APPROACH". A learner who gave up on
+# a hard point, closed the tab, and returned was greeted as though it were
+# their first attempt, by a tutor that had forgotten the whole difficulty.
+#
+# That is the one piece of session memory whose loss a learner would actually
+# notice, because it is the piece that was about THEM.
+
+def to_dict(ts):
+    """Serialise a TurnState. Returns {} for None, so callers need no guard."""
+    if ts is None:
+        return {}
+    return {
+        "established": list(getattr(ts, "established", []) or []),
+        "errors": list(getattr(ts, "errors", []) or []),
+        "unresolved": list(getattr(ts, "unresolved", []) or []),
+        "attempts": int(getattr(ts, "attempts", 0) or 0),
+        "current_question": getattr(ts, "current_question", "") or "",
+        "answers_seen": int(getattr(ts, "_answers_seen", 0) or 0),
+        "misses": int(getattr(ts, "misses", 0) or 0),
+    }
+
+
+def from_dict(data):
+    """Rebuild a TurnState. Never raises — a corrupt blob costs the memory of
+    one concept's struggle, and must not cost the session."""
+    ts = TurnState()
+    if not isinstance(data, dict):
+        return ts
+    try:
+        # Tuples survive a JSON round trip as lists; `established` is read as
+        # pairs, so restore the shape rather than the type it happened to have.
+        ts.established = [tuple(x) if isinstance(x, (list, tuple)) else x
+                          for x in (data.get("established") or [])]
+        ts.errors = list(data.get("errors") or [])
+        ts.unresolved = list(data.get("unresolved") or [])
+        ts.attempts = int(data.get("attempts") or 0)
+        ts.current_question = data.get("current_question") or ""
+        ts._answers_seen = int(data.get("answers_seen") or 0)
+        ts.misses = int(data.get("misses") or 0)
+    except Exception:
+        return TurnState()
+    return ts
