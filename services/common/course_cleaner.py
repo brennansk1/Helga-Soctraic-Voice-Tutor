@@ -6,9 +6,44 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Courses with these statuses are considered incomplete and should be cleaned up
-# on container restart. Only "ready" courses are preserved.
+# Courses with these statuses did not finish building.
+#
+# THEY ARE NOT AUTOMATICALLY GARBAGE. Hydration is resumable — it skips every
+# concept that already has content — so a course stopped at 60 of 100 concepts
+# is hours of model time that only needs finishing, and the courses list now
+# offers a "Resume build" button to finish it.
+#
+# This module used to delete all four states outright, directory and SQLite row,
+# every time the RAG service imported. Two things followed, both measured:
+#
+#   * The resume button was unreachable for most of them. The course was gone
+#     before anyone could click it.
+#   * An interrupted build was destroyed by the very mechanism meant to rescue
+#     it: the stale-build reaper marks an abandoned build "failed" so it stops
+#     showing as in progress, and the next RAG start then deleted it.
+#
+# On 2026-08-24 a 101-concept course sat at "skeleton" for five and a half
+# hours while it hydrated. Starting the stack during that window would have
+# deleted all of it, silently, with no prompt and no backup.
+#
+# So the status alone no longer decides. See `_has_recoverable_work`.
 INCOMPLETE_STATUSES = {"failed", "hydration_failed", "building", "skeleton"}
+
+
+def _has_recoverable_work(course_dir):
+    """Has anything been hydrated here that resuming would keep?
+
+    One written concept is the threshold, because that is exactly what
+    hydration will skip on a resume: the cost of preserving a course that
+    turns out to be useless is one stale directory the user can delete, and
+    the cost of deleting one wrongly is hours of generation that cannot be
+    recovered.
+    """
+    content_dir = os.path.join(course_dir, "content")
+    try:
+        return any(n.endswith(".md") for n in os.listdir(content_dir))
+    except OSError:
+        return False
 
 
 def clean_failed_courses(data_dir: str = "/app/data"):
@@ -47,7 +82,14 @@ def clean_failed_courses(data_dir: str = "/app/data"):
 
                 status = course.get("status", "unknown")
                 if status in INCOMPLETE_STATUSES:
-                    should_remove = True
+                    # Deleting is now the LAST resort, not the default.
+                    if _has_recoverable_work(course_dir):
+                        logger.warning(
+                            f"Course '{name}' is '{status}' but has hydrated "
+                            f"content — preserving it so it can be resumed "
+                            f"rather than rebuilt.")
+                    else:
+                        should_remove = True
                 elif status != "ready":
                     # Unknown status — preserve but log warning
                     logger.warning(f"Course '{name}' has unknown status '{status}', preserving.")
