@@ -189,6 +189,30 @@ async function loadCourses() {
 
             const h3 = mkEl('h3', 'course-card-title');
             h3.textContent = course.title || '';
+            /* WHICH TEACHING LAYER THIS COURSE GOT.
+               A course that routed to no domain is taught generically — no
+               per-kind guidance, none of the prohibitions that define each
+               domain — and nothing surfaced that, so the lesser path looked
+               identical to the better one. Appended to the title node, which
+               is created HERE: an earlier version built the badge further up
+               and guarded on a `titleEl` that does not exist in this scope, so
+               it would have attached to nothing. */
+            if (course.teaching_domain) {
+                const badge = mkEl('span', 'course-card-domain');
+                badge.textContent = ({
+                    mathematics: 'Mathematics',
+                    science: 'Science',
+                    history: 'History',
+                    computer_science: 'Computer Science'
+                })[course.teaching_domain] || course.teaching_domain;
+                badge.title = 'Taught with the ' + badge.textContent +
+                    ' teaching layer';
+                badge.style.cssText =
+                    'font-size:11px;opacity:.65;margin-left:8px;' +
+                    'padding:1px 7px;border:1px solid currentColor;' +
+                    'border-radius:9px;white-space:nowrap;vertical-align:middle;';
+                h3.appendChild(badge);
+            }
             body.appendChild(h3);
 
             const desc = mkEl('p', 'course-card-desc');

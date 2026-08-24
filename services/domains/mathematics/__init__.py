@@ -75,7 +75,14 @@ KEYWORDS = (
     # inside another word and "matrix" does not catch "matrices" — hence both.
     "theorem", "pythagorean", "derivative", "derivatives", "integral",
     "integrals", "quadratic", "polynomial", "logarithm", "exponent",
-    "matrix", "matrices", "vector", "eigenvalue", "factorisation",
+    # "vector" is NOT here. It is ambiguous across domains in exactly the way
+    # that does harm: a disease vector (epidemiology), an attack vector
+    # (security), vector graphics. Measured — a course called "Vectors" whose
+    # modules were "Mosquitoes and malaria; Ticks and Lyme disease" routed to
+    # mathematics on this keyword, ahead of the LLM matcher that would have
+    # read those modules and said science. Linear algebra reaches this domain
+    # through "linear algebra", "matrix" and "eigenvalue".
+    "matrix", "matrices", "eigenvalue", "factorisation",
     "factorization", "fractions", "equations", "inequalities", "sequences",
     "limits", "differentiation", "integration", "proof",
 )

@@ -326,6 +326,15 @@ def courses():
                     "description": course.get("overview", ""),
                     "status": course.get("status", "unknown"),
                     "teaching_style": course.get("teaching_style", ""),
+                    # WHICH TEACHING LAYER THIS COURSE ACTUALLY GOT.
+                    #
+                    # A course that routed to no domain is taught generically —
+                    # no per-kind guidance, none of the prohibitions that
+                    # define each domain. That is a real difference in what the
+                    # learner receives and nothing surfaced it, so a course
+                    # quietly getting the lesser path looked identical to one
+                    # getting the better path.
+                    "teaching_domain": course.get("teaching_domain") or None,
                     "progress": 0,
                     "stats": stats,
                 }
