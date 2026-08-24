@@ -190,7 +190,13 @@ def test_transition_to_socratic_learning_no_course(fsm):
 
     # Assert
     assert fsm.state == 'LOBBY'
-    fsm.speak.assert_called_with("I couldn't find a course on nonexistent course. You can say 'create a course on nonexistent course' to build one, or say 'list courses' to see what's available.")
+    # CASE IS PRESERVED. This assertion used to expect "nonexistent course",
+    # lower-cased, because `transition` folded ALL learner text to lower before
+    # doing anything with it — which also destroyed case-bearing ANSWERS (pH,
+    # chemical symbols, identifiers, code) before the grader saw them, and
+    # echoed the learner's own messages back to them in lower case. The folded
+    # copy now exists only for command matching.
+    fsm.speak.assert_called_with("I couldn't find a course on Nonexistent Course. You can say 'create a course on Nonexistent Course' to build one, or say 'list courses' to see what's available.")
 
 def test_course_creation_call(fsm):
     """Tests that the course creation process is called correctly."""

@@ -1,3 +1,48 @@
+
+/* Watch a custom-course build to completion.
+   The wizard previously had no way to observe a build it had started: the
+   server answered immediately with a placeholder uid and the UI declared
+   victory. This asks the same endpoint the automatic-creation flow uses. */
+async function pollCustomCourseBuild(statusEl, progressEl) {
+    const started = Date.now();
+    const MAX_MS = 30 * 60 * 1000;
+    while (Date.now() - started < MAX_MS) {
+        await new Promise(r => setTimeout(r, 5000));
+        let st;
+        try {
+            const r = await fetch('/api/creation_status');
+            if (!r.ok) continue;
+            st = await r.json();
+        } catch (_) { continue; }
+
+        if (st.message && statusEl) statusEl.textContent = st.message;
+        if (typeof st.percent === 'number' && progressEl) {
+            progressEl.style.width = Math.max(5, Math.min(99, st.percent)) + '%';
+        }
+        const phase = (st.phase || '').toLowerCase();
+        if (st.course_uid && (phase === 'complete' || phase === 'done')) {
+            if (progressEl) {
+                progressEl.style.width = '100%';
+                progressEl.style.background = 'var(--status-success)';
+            }
+            if (statusEl) statusEl.textContent = 'Course created successfully!';
+            window.location.href = '/learn?course_uid=' + st.course_uid;
+            return;
+        }
+        if (phase === 'error' || phase === 'aborted' || phase === 'failed') {
+            if (statusEl) {
+                statusEl.textContent = 'Build failed: ' + (st.message || phase);
+                statusEl.style.color = 'var(--status-error)';
+            }
+            showCustomGenerationRetry(statusEl);
+            return;
+        }
+    }
+    if (statusEl) {
+        statusEl.textContent =
+            'Still building after 30 minutes — check the Courses page.';
+    }
+}
 /**
  * wizard.js — Custom Course Builder (5-step wizard)
  * Path B of the dual-path course creation system.
@@ -481,7 +526,15 @@ async function startCustomGeneration() {
         const result = await resp.json();
         clearTimeout(stallTimer);
 
-        if (result.course_uid) {
+        /* THE BUILD HAS STARTED — IT HAS NOT FINISHED.
+           This branch fired on any truthy `course_uid`, and the server sent
+           the literal string "pending" before it had built anything, so the
+           wizard painted "Course created successfully!" over a build that had
+           in fact refused to start, and then navigated to
+           /learn?course_uid=pending.
+           The server no longer sends a uid it does not have; the real one
+           arrives from /api/creation_status when the build actually lands. */
+        if (result.course_uid && result.course_uid !== 'pending') {
             wizardState.course_uid = result.course_uid;
             progressEl.style.width = '100%';
             progressEl.style.background = 'var(--status-success)';
@@ -504,6 +557,11 @@ async function startCustomGeneration() {
                 } catch (_) { /* best effort */ }
                 window.location.href = '/learn?course_uid=' + result.course_uid;
             };
+        } else if (result.status === 'building') {
+            /* Accepted and running. Poll for the finished course rather than
+               claiming success or reporting an error — neither is true yet. */
+            statusEl.textContent = 'Building your course — this takes a few minutes…';
+            pollCustomCourseBuild(statusEl, progressEl);
         } else {
             statusEl.textContent = 'Error: ' + (result.error || 'Unknown error');
             statusEl.style.color = 'var(--status-error)';

@@ -564,6 +564,13 @@ def get_typed_socratic_prompt(question_type_key, context_text, conversation_hist
     if system_note:
         combined_note += f"\n{system_note}"
 
+    # `aid_policy` IS FORWARDED. It was accepted here and dropped, and
+    # `_aid_prompt_block` reads None as "legacy always-on" — so every Socratic
+    # turn received the full diagram grammar regardless of the none/reuse/
+    # generate verdict, and a `prompt_nudge` ("THIS TURN: draw X") never
+    # reached a question turn at all. Exactly the defect the block below
+    # documents for `concept_kind` and `figure_facts`; this argument was left
+    # behind in the same call.
     return get_socratic_tutor_prompt(
         context_text, conversation_history,
         system_note=combined_note,
@@ -586,6 +593,12 @@ def get_typed_socratic_prompt(question_type_key, context_text, conversation_hist
         # once seen by a learner.
         concept_kind=concept_kind,
         figure_facts=figure_facts,
+        # Accepted by this function and dropped here. `_aid_prompt_block`
+        # reads None as "legacy always-on", so every Socratic turn got the
+        # full diagram grammar whatever the none/reuse/generate verdict said,
+        # and a `prompt_nudge` never reached a question turn at all. Same
+        # omission as the two arguments above, in the same call.
+        aid_policy=aid_policy,
     )
 
 
@@ -1156,7 +1169,9 @@ Return ONLY the single word: LECTURE or QUESTION."""}]
 
 def get_micro_lecture_prompt(topic, context_text, history=[], style_modifier="standard", aid_policy=None,
                              missing_concepts=None, next_question_type=None, bloom_level=1,
-                             prior_concepts=None, grade_band=None):
+                             prior_concepts=None, grade_band=None,
+                             system_note=None, concept_kind=None,
+                             figure_facts=None, learner_behaviour=None):
     """
     Generates a short explanation (Micro-Lecture) for introducing a topic or after failed attempts.
     The lecture always ends with a follow-up question whose type matches the current
@@ -1186,11 +1201,21 @@ def get_micro_lecture_prompt(topic, context_text, history=[], style_modifier="st
         if history_parts:
             history_str = "\n\nRecent conversation:\n" + "\n".join(history_parts)
 
+    # THESE ARE THE CONCEPT'S KNOWN MISCONCEPTIONS, NOT THIS LEARNER'S ERRORS.
+    #
+    # The caller passes `self.current_misconceptions`, which is the concept
+    # markdown's `## Misconceptions` section — "students often believe X". The
+    # wording here used to be "The student specifically struggled with: ...",
+    # which tells the tutor this learner made those mistakes. They may not have
+    # made any of them, and opening by correcting an error nobody committed is
+    # the exact failure `learner_history` is careful to avoid elsewhere.
     missing_str = ""
     if missing_concepts:
         missing_str = (
-            f"\n\nThe student specifically struggled with: {', '.join(missing_concepts)}. "
-            f"Focus your explanation on these gaps."
+            f"\n\nLearners commonly go wrong on: {', '.join(missing_concepts)}. "
+            f"Pre-empt these where the explanation naturally touches them. Do "
+            f"NOT tell the student they made these mistakes unless the "
+            f"transcript shows they did."
         )
 
     # Map question type to follow-up style so lecture flows into the right Socratic mode
@@ -1228,7 +1253,35 @@ def get_micro_lecture_prompt(topic, context_text, history=[], style_modifier="st
     # another paragraph of prose. Still policy-gated: budget and cooldown apply.
     aid_str = _aid_prompt_block(aid_policy)
 
-    return [{"role": "system", "content": f"""You are the LECTURER. The student is learning about '{topic}'.
+    # THE ADAPTATION INPUTS, WHICH LECTURE MODE USED TO DISCARD.
+    #
+    # LECTURE is selected precisely WHEN THE LEARNER IS FAILING — grade <= 1,
+    # or detected ignorance. It is the mode that most needs to know what kind
+    # of learner this is and what the domain requires, and it received none of
+    # it: no `system_note` (so the K-2 affect guidance and the adult pacing
+    # note were built and dropped), no `concept_kind` (so a maths lecture was
+    # not bound by "never produce a solved answer", a history lecture not by
+    # "never ask them to guess a date", a science lecture not by "the
+    # observation is supplied, never demanded"), and no mined figure facts.
+    note_str = f"\n\nSYSTEM NOTE: {system_note}" if system_note else ""
+    behaviour_str = (f"\n\nTHIS LEARNER RIGHT NOW: {learner_behaviour}"
+                     if learner_behaviour else "")
+    facts_str = f"\n\n{figure_facts}" if figure_facts else ""
+
+    kind_str = ""
+    if concept_kind:
+        try:
+            from services.domains.registry import for_domain
+            dk, kind = (concept_kind if isinstance(concept_kind, (tuple, list))
+                        and len(concept_kind) == 2 else (None, None))
+            ext = for_domain(dk)
+            line = ext.prompt_line(kind) if ext else ""
+            if line:
+                kind_str = "\n\n" + line
+        except Exception:
+            kind_str = ""
+
+    return [{"role": "system", "content": f"""You are the LECTURER. The student is learning about '{topic}'.{kind_str}{note_str}{behaviour_str}{facts_str}
 Teaching Style: {style_modifier}
 GRADE REGISTER: {profile['register']}
 

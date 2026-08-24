@@ -39,6 +39,11 @@ services:
       # services/common must be mounted alongside it or the import works in
       # the image and fails in the running container.
       - ./services/common:/app/services/common
+      # The domain layer, alongside common. A bind mount SHADOWS the image, so
+      # shipping it in the Dockerfile is not enough on its own — without this
+      # line a dev container would still have no `services/domains` under the
+      # mounted tree, and every domain import would fail exactly as before.
+      - ./services/domains:/app/services/domains
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
@@ -107,6 +112,11 @@ services:
       - ./logs:/app/logs
       - ./services/core:/app/services/core
       - ./services/common:/app/services/common
+      # The domain layer, alongside common. A bind mount SHADOWS the image, so
+      # shipping it in the Dockerfile is not enough on its own — without this
+      # line a dev container would still have no `services/domains` under the
+      # mounted tree, and every domain import would fail exactly as before.
+      - ./services/domains:/app/services/domains
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5003/health"]
@@ -146,6 +156,11 @@ services:
       - ./logs:/app/logs
       - ./services/rag:/app/services/rag
       - ./services/common:/app/services/common
+      # The domain layer, alongside common. A bind mount SHADOWS the image, so
+      # shipping it in the Dockerfile is not enough on its own — without this
+      # line a dev container would still have no `services/domains` under the
+      # mounted tree, and every domain import would fail exactly as before.
+      - ./services/domains:/app/services/domains
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5002/health"]

@@ -75,6 +75,12 @@ def _repair_mojibake(text):
         return text
 
 
+#: How far to look for the turn's question before giving up on finding one.
+#: Generous on purpose: the prompt asks for the question LAST, so a bound that
+#: is too tight silently deletes exactly what the turn was for.
+MAX_TURN_SENTENCES = 12
+
+
 def clean_llm_response(text):
     """Remove LLM artifacts and extract clean conversational text."""
     if not text:
@@ -182,19 +188,34 @@ def clean_llm_response(text):
     text = text.strip()
 
     # --- Phase 5: Extract the first meaningful question ---
-    # Find sentences ending with ? and take up to the first 2-3 sentences
+    # Find sentences up to and including the first question.
     if text:
         sentences = re.split(r"(?<=[.?!])\s+", text)
         # Filter out empty sentences
         sentences = [s.strip() for s in sentences if s.strip() and len(s.strip()) > 5]
 
         if sentences:
-            # Take sentences up to and including the first question
+            # KEEP THE QUESTION. The cap used to be `sentences[:4]`, so a turn
+            # whose question arrived as the fifth sentence or later had it
+            # DELETED — and `ask_socratic_question` then bolted on a canned
+            # generic question in its place, replacing the model's real
+            # follow-up with boilerplate.
+            #
+            # The prompt requires the question LAST, so a hard four-sentence
+            # cap was fighting the instruction the model was given. The
+            # original intent — stop once the question is asked, so the tutor
+            # cannot ramble past it — is preserved: the cap now applies only
+            # when there is no question to protect.
             result = []
-            for s in sentences[:4]:  # Max 4 sentences
+            for s in sentences[:MAX_TURN_SENTENCES]:
                 result.append(s)
                 if "?" in s:
                     break  # Stop after the first question
+            else:
+                # No question found within the bound: fall back to the old
+                # short-answer behaviour rather than emitting a lecture.
+                if not any("?" in x for x in result):
+                    result = result[:4]
             text = " ".join(result)
 
     return text.strip()
@@ -1134,7 +1155,21 @@ class MnemosyneFSM:
         elif event_type == "RESUME":
             event_type = "RESUME_COURSE"
 
-        text = event.get("payload", {}).get("text", "").lower()
+        # RAW, NOT LOWERCASED. This value is the learner's answer: it goes
+        # into `self.transcript`, into the grading prompt, into the safety
+        # check, and back to the browser to be re-rendered. Lowercasing it here
+        # destroyed every case-bearing answer before the grader saw it —
+        # chemical symbols, pH, identifiers, code, proper nouns — and the
+        # learner's own messages were echoed back to them in lower case.
+        #
+        # It also made grading inconsistent with itself: EDIT_MESSAGE does not
+        # lowercase, so an edited answer and the original were graded on
+        # different inputs.
+        #
+        # `text_lc` exists for the command matching below, which is the only
+        # thing that ever wanted a folded case.
+        text = event.get("payload", {}).get("text", "")
+        text_lc = text.lower()
         topic_uid = event.get("payload", {}).get("topic_id")  # For NAVIGATE_TO_TOPIC
 
         # All events should update last interaction time for inactivity timeout
@@ -1360,18 +1395,18 @@ class MnemosyneFSM:
             if (
                 event_type == "TEXT_INPUT" or event_type == "user_speech"
             ):  # Allow user_speech
-                if "open" in text or "start course" in text:
+                if "open" in text_lc or "start course" in text_lc:
                     self.enter_mode_1(text)
-                elif "review" in text:
+                elif "review" in text_lc:
                     self.enter_mode_2(text)
-                elif "enter" in text or "palace" in text:
+                elif "enter" in text_lc or "palace" in text_lc:
                     self.enter_mode_3(text)
-                elif "create" in text:
+                elif "create" in text_lc:
                     epub_path = event.get("payload", {}).get("filepath")
                     self.start_creation(text, epub_filepath=epub_path)
-                elif "list" in text:
+                elif "list" in text_lc:
                     self.list_courses()
-                elif "status" in text:
+                elif "status" in text_lc:
                     self.report_status()
         elif self.state == "SOCRATIC_LEARNING":
             if event_type == "SKIP_CONCEPT":
@@ -1437,6 +1472,10 @@ class MnemosyneFSM:
 
     # --- COMMAND HANDLERS ---
     def handle_global_commands(self, event_type, text):
+        # This function receives the RAW learner text (case preserved, so the
+        # answer reaching the grader is what they typed). Command matching
+        # wants a folded copy, and only command matching does.
+        text_lc = (text or "").lower()
         if event_type == "SPEECH_DETECTED":
             return True
 
@@ -1455,7 +1494,7 @@ class MnemosyneFSM:
         # A command is what the student SAID, not a word that happens to appear
         # inside an answer. Substring matching here was destructive rather than
         # merely wrong: a genetics student typing "the stop codon terminates
-        # translation" hit `"stop" in text`, which cleared current_lesson_node
+        # translation" hit `"stop" in text_lc`, which cleared current_lesson_node
         # and emptied syllabus_queue -- their answer ungraded and their session
         # queue gone. "A caesura is a pause" moved the FSM to PAUSED, which has
         # no handler in transition(), so every later message was silently
@@ -1464,24 +1503,24 @@ class MnemosyneFSM:
         # `_is_command` requires the utterance to BE the command, allowing only
         # trivial politeness around it. Explicit events still route as before,
         # and they are how the UI actually sends these.
-        if self._is_command(text, ("pause",)) or event_type == "PAUSE":
+        if self._is_command(text_lc, ("pause",)) or event_type == "PAUSE":
             if self.state != "PAUSED":
                 self.previous_state = self.state
                 self.state = "PAUSED"
             self.speak("Paused. Say resume when you are ready.")
             return True
-        if self._is_command(text, ("resume", "continue")) or event_type == "RESUME":
+        if self._is_command(text_lc, ("resume", "continue")) or event_type == "RESUME":
             if self.state == "PAUSED":
                 self.state = self.previous_state if self.previous_state else "LOBBY"
                 self.speak("Resuming.")
             return True
-        if self._is_command(text, ("stop", "reset", "go to lobby", "exit")):
+        if self._is_command(text_lc, ("stop", "reset", "go to lobby", "exit")):
             self.state = "LOBBY"
             self.speak("Returned to lobby.")
             self.current_lesson_node = None
             self.syllabus_queue = []
             return True
-        if self._is_command(text, ("end session", "shutdown")):
+        if self._is_command(text_lc, ("end session", "shutdown")):
             self.shutdown()
             return True
         return False
@@ -1513,22 +1552,25 @@ class MnemosyneFSM:
         return False
 
     def handle_nav_commands(self, text):
+        # Raw text in, folded copy for command matching only — see
+        # `handle_global_commands`.
+        text_lc = (text or "").lower()
         # Same reasoning as handle_global_commands. "The next step is to divide
         # both sides by 3" was skipping the concept and abandoning the answer
         # ungraded; "in the previous chapter we saw" was leaving the session.
-        if self._is_command(text, ("next", "skip", "move on")):
+        if self._is_command(text_lc, ("next", "skip", "move on")):
             if self.state == "SOCRATIC_LEARNING":
                 self._advance_without_completing()
                 return True
             self.play_sound("STEP_FORWARD")
             return False
-        if self._is_command(text, ("go back", "previous", "back")):
+        if self._is_command(text_lc, ("go back", "previous", "back")):
             # Save progress and return to path view
             self._save_current_course_progress()
             self.stop_audio()
             self.speak("Returning to course overview.")
             return True
-        if "where am i" in text:
+        if "where am i" in text_lc:
             current_topic_title = (
                 self.current_lesson_node["title"]
                 if self.current_lesson_node
@@ -1563,6 +1605,108 @@ class MnemosyneFSM:
         if self.course_bloom_floor > self.course_bloom_ceiling:
             self.course_bloom_floor = self.course_bloom_ceiling
         logging.info(f"Course Bloom bounds (band {self.grade_band}): floor={self.course_bloom_floor}, ceiling={self.course_bloom_ceiling}")
+
+    def reap_stale_builds(self, max_age_hours=6):
+        """Mark long-dead builds failed so they stop showing as in progress.
+
+        A build only lives in one process. If that process is killed — a
+        restart, a `docker stop`, an OOM — the course keeps the status the
+        skeleton wrote ("skeleton"), and `courses.js` renders that as
+        "Building..." and re-polls every five seconds indefinitely. There was
+        no reaper, so the card stayed stuck forever with no way to retry it.
+
+        Deliberately conservative: only courses that are BOTH in a building
+        state and older than `max_age_hours` are touched, because a genuine
+        build can legitimately run for tens of minutes on this hardware and
+        killing a live one would be worse than the stuck card.
+
+        Never raises: this runs at startup and must not be able to stop it.
+        """
+        BUILDING = ("skeleton", "building")
+        reaped = []
+        try:
+            import datetime as _dt
+            cutoff = time.time() - max_age_hours * 3600
+            for row in (self.storage.courses.list_courses() or []):
+                if (row.get("status") or "") not in BUILDING:
+                    continue
+                uid = row.get("uid")
+                if not uid:
+                    continue
+                # Prefer the structure file's mtime: it is when the build last
+                # actually wrote something, which is what "stale" means here.
+                try:
+                    path = os.path.join(self.storage.courses.courses_dir, uid,
+                                        "structure.json")
+                    touched = os.path.getmtime(path)
+                except OSError:
+                    touched = 0
+                if touched and touched > cutoff:
+                    continue
+                course = self.storage.courses.get_course(uid)
+                if not course:
+                    continue
+                course["status"] = "failed"
+                course["failure_reason"] = (
+                    "the build did not finish — the process it was running in "
+                    "stopped. You can delete this course and start it again.")
+                self.storage.courses.update_course(uid, course)
+                reaped.append(uid)
+            if reaped:
+                logging.warning(
+                    f"[REAPER] marked {len(reaped)} abandoned build(s) failed: "
+                    f"{', '.join(reaped)}")
+        except Exception as e:
+            logging.error(f"[REAPER] stale build sweep failed: {e}")
+        return reaped
+
+    def _begin_concept(self):
+        """Everything that must be forgotten when a new concept starts.
+
+        WHY ONE METHOD. These resets were scattered, and the two paths into a
+        concept did DIFFERENT subsets of them:
+
+          `next_syllabus_item` (finish one, get the next) reset the streaks,
+          the bloom level and the aid budget — but never re-seeded
+          `passed_question_types` / `concept_bloom_target`, and never
+          refreshed `current_mastery_criteria`. So concept N+1 could clear the
+          mastery gate on concept N's evidence, and was graded against
+          concept N's criteria.
+
+          `navigate_to_topic` (click a node — the ONLY path the Learn tab
+          uses) reset NONE of them. Not the aid budget, so `_concept_aids`
+          still held the previous concept's diagrams and `_decide_visual_aid`
+          would serve them; not the bloom seed; not the criteria.
+
+        And `turn_state` was reset only on a COURSE switch despite its own
+        comment and docstring both saying "reset per concept" — so
+        `ALREADY ESTABLISHED: ...` and `STILL WRONG: ...` from concept A were
+        rendered into concept B's prompt under `Do not re-teach or re-ask`.
+
+        One method, called from both paths, so the two cannot drift again.
+        """
+        self.turn_state = TurnState()
+        self.socratic_type_index = 0
+        self.socratic_retry_count = 0
+        self.concept_correct_streak = 0
+        self.concept_miss_streak = 0
+        self.concept_question_count = 0
+        self.bloom_correct_streak = 0
+        # Seeds `current_bloom_level` from the COURSE FLOOR (not a hardcoded 1)
+        # and sets `concept_bloom_target` and `passed_question_types`.
+        try:
+            self._seed_bloom_for_concept()
+        except Exception as e:
+            logging.warning(f"bloom seed failed: {e}")
+            self.current_bloom_level = self.course_bloom_floor or 1
+            self.passed_question_types = set()
+        self._reset_aid_budget()
+        # Concept-scoped teaching metadata. Stale values here mean the tutor
+        # grades against the wrong criteria and warns about another concept's
+        # misconceptions.
+        self.current_mastery_criteria = ""
+        self.current_misconceptions = []
+        self.current_analogies = []
 
     def _seed_bloom_for_concept(self):
         """Seed bloom level from course floor and set concept target from metadata."""
@@ -2166,6 +2310,22 @@ class MnemosyneFSM:
                 "code_example": concept_details.get("code_example"),
             }
             self.current_context = self.current_lesson_node["text"][:10000]
+
+            # THE PER-CONCEPT RESET, WHICH THIS PATH NEVER DID.
+            #
+            # This is the ONLY way the Learn tab enters a concept — a node
+            # click sends NAVIGATE_TO_TOPIC — and it reset nothing. The aid
+            # budget still held the previous concept's diagrams for
+            # `_decide_visual_aid` to serve, `turn_state` still listed the
+            # previous concept's established facts and open errors under "do
+            # not re-teach or re-ask", the mastery gate still held the previous
+            # concept's passed question types, and grading still used the
+            # previous concept's criteria.
+            #
+            # Called AFTER `current_lesson_node` is set, because
+            # `_seed_bloom_for_concept` reads the node's bloom level from it.
+            self._begin_concept()
+
             self.syllabus_queue = []  # Clear existing queue when navigating
             self.last_lesson_title = None  # Reset bridge
             self.transcript = []  # Clear chat history for new session
@@ -2735,7 +2895,29 @@ class MnemosyneFSM:
             if self.active_course_uid:
                 try:
                     all_concepts = self.storage.courses.get_flat_concepts(self.active_course_uid)
-                    for c in all_concepts:
+
+                    # CONTINUE FROM WHERE THEY ARE, NOT FROM THE BEGINNING.
+                    #
+                    # `navigate_to_topic` empties the queue, so finishing a
+                    # concept you jumped to always landed here — and this
+                    # rebuilt the queue in flat order from the FIRST
+                    # uncompleted concept. Click concept 10, master it, and the
+                    # tutor bridged you to concept 1.
+                    #
+                    # Rotating the list so it resumes after the concept just
+                    # finished keeps the course's own order (which is what the
+                    # flat list is for) while starting from the right place.
+                    # Anything skipped is still in the queue, just later.
+                    just_done = (self.current_lesson_node or {}).get("uid")
+                    start = 0
+                    if just_done:
+                        for i, c in enumerate(all_concepts):
+                            if c["uid"] == just_done:
+                                start = i + 1
+                                break
+                    ordered = all_concepts[start:] + all_concepts[:start]
+
+                    for c in ordered:
                         if c["uid"] not in self.completed_topics:
                             content = self.storage.courses.get_concept_content(
                                 self.active_course_uid, c["uid"]
@@ -2828,14 +3010,9 @@ class MnemosyneFSM:
             (None, intro)
         )  # Add intro to history so it appears in chat
         self.last_lesson_title = self.current_lesson_node["title"]
-        self.socratic_type_index = 0  # Reset question type for new concept
-        self.socratic_retry_count = 0  # Reset retry counter for new concept
-        self.concept_correct_streak = 0  # Reset mastery tracking for new concept
-        self.concept_miss_streak = 0
-        self.concept_question_count = 0
-        self.current_bloom_level = 1  # Reset Bloom's level for new concept
-        self.bloom_correct_streak = 0
-        self._reset_aid_budget()
+        # One shared reset — see `_begin_concept`. This block used to do a
+        # SUBSET of it, and `navigate_to_topic` did none of it.
+        self._begin_concept()
 
         # Broadcast concept progress to UI
         completed_count = len(self.completed_topics)
@@ -2847,6 +3024,17 @@ class MnemosyneFSM:
         self.ask_socratic_question(
             "Initiate concept exploration."
         )
+
+    @staticmethod
+    def _merge_turn_note(system_note, context_trigger):
+        """Fold this turn's instruction into the note the model receives.
+
+        Both matter and neither replaces the other: `system_note` carries the
+        question type and the affect guidance, `context_trigger` carries what
+        just happened and what to do about it. Joined rather than overwritten.
+        """
+        parts = [p for p in (system_note, context_trigger) if p and str(p).strip()]
+        return "\n\n".join(str(p).strip() for p in parts) or None
 
     def ask_socratic_question(self, context_trigger, initial_mode=None):
         self.send_status_update("Reviewing History...", progress=60)
@@ -3022,13 +3210,37 @@ class MnemosyneFSM:
                 prior_concepts=self.prior_concepts_summary,
                 grade_band=self.grade_band,
                 aid_policy=aid_decision,
+                # LECTURE is chosen when the learner is FAILING, and it used to
+                # be the one mode that received none of the signals about them.
+                system_note=self._merge_turn_note(system_note, context_trigger),
+                concept_kind=_domain_kind,
+                figure_facts=_extra,
+                learner_behaviour=_describe_behaviour(
+                    [p[0] for p in (self.conversation_history or []) if p[0]],
+                    grades=[self._last_socratic_grade or 0]),
             )
         else:
             prompt = get_typed_socratic_prompt(
                 current_q_type["key"],
                 redacted_context,
                 structured_history,
-                system_note=system_note,
+                # THE TURN'S OWN INSTRUCTION, WHICH NEVER REACHED THE MODEL.
+                #
+                # Every branch of the decision matrix builds a specific
+                # instruction — "their answer was incorrect, acknowledge what
+                # went wrong then re-ask a simpler version", "affirm what they
+                # demonstrated, then extend" — and passed it as
+                # `context_trigger`. It appeared in exactly three places: this
+                # function's signature, the dialogue-contract call, and an
+                # append to `conversation_history` AFTER the LLM had already
+                # answered. It was never in the prompt.
+                #
+                # So the grade -> instruction feedback loop was open at both
+                # ends: the tutor was never told how the last answer went, and
+                # the prompt's own output rule ("if the SYSTEM NOTE mentions
+                # the student's prior answer, START by assessing it") referred
+                # to a note that was not there.
+                system_note=self._merge_turn_note(system_note, context_trigger),
                 misconceptions=self.current_misconceptions,
                 analogies=self.current_analogies,
                 style_modifier=self.current_teaching_style,
@@ -3131,7 +3343,16 @@ class MnemosyneFSM:
 
         self.last_question = question
         self._get_turn_state().ask(question)
-        self.conversation_history.append((context_trigger, question))
+        # SLOT [0] IS WHAT THE LEARNER SAID. It is rendered to the model as
+        # `Student: ...` (`prompts.py`), so appending the FSM's own system note
+        # here fed our instructions back as the student's words on the next
+        # turn — and contaminated everything that reads that slot to judge the
+        # learner: `learner_behaviour.classify` (making TERSE unreachable and
+        # over-firing BLUFFING), `_seen_terms`, and the dialogue contract.
+        #
+        # The tutor's question is still recorded; the note is not, because the
+        # student did not say it.
+        self.conversation_history.append(("", question))
 
         # FIX: The tutor must speak the question!
         self.speak(question)
@@ -4822,6 +5043,29 @@ class MnemosyneFSM:
                     f"[PIPELINE] Creation pipeline failed: {e}", exc_info=True
                 )
                 self.creation_status.update({"phase": "error", "progress_pct": 0, "last_update": time.strftime("%Y-%m-%dT%H:%M:%S")})
+
+                # MARK THE COURSE, NOT JUST THE SESSION.
+                #
+                # `creation_status` lives in memory and dies with the process.
+                # The course row keeps whatever the skeleton wrote —
+                # "skeleton" — and `courses.js` treats that as "Building...",
+                # re-polling every 5 seconds forever. A build that crashed
+                # weeks ago still shows as in progress, with no way for the
+                # user to retry or delete it out of that state.
+                try:
+                    if course_uid:
+                        c = self.storage.courses.get_course(course_uid)
+                        if c and c.get("status") not in ("ready", "partial"):
+                            c["status"] = "failed"
+                            c["failure_reason"] = str(e)[:300]
+                            self.storage.courses.update_course(course_uid, c)
+                            logging.info(
+                                f"[PIPELINE] marked {course_uid} failed")
+                except Exception as mark_err:
+                    logging.error(
+                        f"[PIPELINE] could not mark {course_uid} failed: "
+                        f"{mark_err}")
+
                 self.send_status_update(
                     f"Error creating course. Check logs for details."
                 )
@@ -5000,14 +5244,30 @@ class MnemosyneFSM:
             "conversation_history": self.conversation_history,
             "transcript": self.transcript,
             "battery_level": self.battery_level,
-            "current_context": self.current_context,
+            # `current_context` AND THE NODE'S `text` ARE NOT SENT.
+            #
+            # This endpoint is polled every 2 seconds per connected student.
+            # It shipped `current_context` (up to 10,000 characters of the
+            # concept document) and `graph_node` spread from
+            # `current_lesson_node`, which carries the same text again — so
+            # every poll moved ~20 KB that NOTHING in the browser reads:
+            # grepping all of `services/web-ui/` for either name returns no
+            # consumer at all.
+            #
+            # It also put the concept's worked examples and answer key in the
+            # page for anyone who opens devtools, on a tutor whose whole method
+            # is withholding the answer until the learner has committed to one.
             "syllabus_length": len(self.syllabus_queue),
             "current_lesson_uid": current_lesson_uid,
             "current_lesson_title": current_lesson_title,
             "graph_node": {
-                **(self.current_lesson_node or {}),
-                "analogies": self.current_analogies,
-                "misconceptions": self.current_misconceptions
+                k: v for k, v in {
+                    **(self.current_lesson_node or {}),
+                    "analogies": self.current_analogies,
+                    "misconceptions": self.current_misconceptions,
+                }.items()
+                if k not in ("text", "resource_text", "teaching_pair",
+                             "code_example")
             } if self.current_lesson_node else None,
             "completed_topics": list(self.completed_topics),
             "current_card": self.current_card["title"] if self.current_card else None,
@@ -5755,25 +6015,31 @@ def create_course_custom():
 
     def _custom_pipeline():
         try:
-            fsm.creation_in_progress = True
+            # DO NOT SET `creation_in_progress` HERE.
+            #
+            # This set the flag and then called `start_creation`, whose FIRST
+            # act is `if self.creation_in_progress: speak("already being
+            # created"); return`. The thread blocked itself: nothing was ever
+            # built, the `finally` cleared the flag, and the route returned
+            # {"status": "building", "course_uid": "pending"} — which the
+            # wizard treats as success and then navigates to
+            # /learn?course_uid=pending. A hand-authored syllabus was
+            # discarded and the user was told it had worked.
+            #
+            # `start_creation` owns the flag's whole lifecycle; the route above
+            # already returns 409 when a build is genuinely running.
             fsm.send_status_update(f"Creating custom course: {title}")
-
-            # Build the course creation command
-            topic = title
-            depth = 3
-            teaching_style = data.get("teaching_style", "")
-            fsm.start_creation(
-                f"create course {topic} depth {depth}",
-                epub_filepath=None
-            )
+            fsm.start_creation(f"create course {title} with depth 3",
+                               epub_filepath=None)
         except Exception as e:
             logging.error(f"Custom course creation failed: {e}", exc_info=True)
             fsm.send_status_update(f"Error: {str(e)[:200]}")
-        finally:
-            fsm.creation_in_progress = False
 
     threading.Thread(target=_custom_pipeline, daemon=True).start()
-    return {"status": "building", "course_uid": "pending"}
+    # NO FAKE UID. "pending" is not a course, and returning it sent the client
+    # to /learn?course_uid=pending. The client polls /api/creation_status for
+    # the real uid.
+    return {"status": "building"}
 
 
 # --- Verification Guide Routes (VG-01, VG-04, VG-08) ---
@@ -5861,4 +6127,19 @@ def api_cancel_creation():
 
 if __name__ == "__main__":
     logging.info("Starting core-logic service...")
+
+    # SWEEP ABANDONED BUILDS BEFORE SERVING.
+    #
+    # A build lives in one process. If that process stopped — restart, docker
+    # stop, OOM — the course kept the skeleton's status and the UI rendered
+    # "Building..." forever, re-polling every five seconds with no way to
+    # retry. Startup is the honest moment to notice: any build still marked
+    # in-progress here was running in a process that no longer exists.
+    #
+    # Best-effort by design; a failed sweep must never stop the service.
+    try:
+        registry.get(DEFAULT_STUDENT_ID).reap_stale_builds()
+    except Exception as _reap_err:
+        logging.error(f"[REAPER] startup sweep failed: {_reap_err}")
+
     app.run(host="0.0.0.0", port=5003)

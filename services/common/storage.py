@@ -1344,8 +1344,20 @@ class CourseStore:
         
         import copy
         path = os.path.join(self.courses_dir, uid, "structure.json")
-        with open(path, "w") as f:
-            json.dump(course_dict, f, indent=2)
+
+        # ATOMIC, like `create_course`. This was a plain truncating write, and
+        # it is the call that lands the FINISHED course after a build that can
+        # run for tens of minutes. A crash or a `docker stop` between truncate
+        # and flush left a half-written structure.json — the course destroyed
+        # at the moment it was completed. `create_course` has always done this
+        # correctly; the update path did not.
+        payload = json.dumps(course_dict, indent=2)
+        tmp_path = path + ".tmp"
+        with open(tmp_path, "w") as f:
+            f.write(payload)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)
 
         # CACHE AFTER THE WRITE, AND WITH THE FILE'S REAL MTIME.
         #
@@ -2018,8 +2030,16 @@ class CourseStore:
                 db.execute("INSERT INTO concepts_fts (concept_uid, course_uid, "
                            "title, content) VALUES (?,?,?,?)",
                            (concept_uid, course_uid, title, markdown))
-            except sqlite3.OperationalError:
-                pass  # FTS5 unavailable; substring search still works
+            except sqlite3.OperationalError as e:
+                # WAS A BARE `pass` WITH NO LOG. "database is locked" is an
+                # OperationalError too, and hydration writes concurrently from
+                # a thread pool — so a contended write silently never reached
+                # the index and the concept became invisible to search, with
+                # nothing recorded at any level. FTS5 genuinely being absent is
+                # a different and much rarer thing; both now say so.
+                logger.warning(
+                    f"concept index write failed for {concept_uid}: {e} "
+                    f"(search will not find this concept)")
             db.commit()
         except sqlite3.OperationalError:
             pass  # pre-v15 database

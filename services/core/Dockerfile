@@ -23,6 +23,18 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 COPY services/core /app/services/core
 COPY services/common /app/services/common
+# THE DOMAIN LAYER SHIPS TOO.
+#
+# `services/domains` was in neither this COPY list nor any compose mount, so
+# in the container every `from services.domains...` raised ImportError — and
+# every call site swallows that at DEBUG level (`course_builder.py`,
+# `fsm_logic._domain_teaching`, `prompts.py`, `book_skeleton.py`). All four
+# domain modules were dead in the deployed system while the whole test suite
+# passed on the host, because on the host the package is simply there.
+#
+# Same signature defect as the twelve before it, one level up: not code that
+# is never called, but code that is never PACKAGED.
+COPY services/domains /app/services/domains
 
 ENV PYTHONPATH=/app
 
