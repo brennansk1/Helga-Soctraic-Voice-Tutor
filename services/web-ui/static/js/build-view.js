@@ -656,6 +656,37 @@
             .then(function (s) { finish(s && s.course_uid); });
     }
 
+    function idle() {
+        var cancel = $('build-cancel');
+        if (cancel) cancel.hidden = true;
+        var title = $('build-topic');
+        if (title) title.textContent = 'No course is building';
+        var sub = $('build-sub');
+        if (sub) sub.textContent =
+            'Start one from Courses, or pick a book in the Library.';
+        /* The replay fills these from the LAST build's messages, so without
+           clearing them an idle page showed that build's evidence and modules
+           as though they were live. */
+        var ev = $('build-evidence');
+        if (ev) ev.textContent = 'Nothing building — no evidence to show.';
+        var mods = $('build-modules');
+        if (mods) mods.textContent = '';
+        var el = $('build-elapsed');
+        if (el && el.parentElement) el.parentElement.hidden = true;
+        ORDER.forEach(function (s) {
+            var n = stageEls[s];
+            if (n) n.classList.remove('is-active', 'is-done', 'is-warn');
+        });
+        var stream = $('build-stream');
+        if (stream) {
+            stream.textContent = '';
+            var li = document.createElement('li');
+            li.className = 'stream-item';
+            li.textContent = 'Nothing is building right now.';
+            stream.appendChild(li);
+        }
+    }
+
     function finish(courseUid) {
         settled = true;
         stopPolling();
@@ -759,6 +790,16 @@
                 }
                 if (st.active === false && st.course_uid) {
                     settled = true; stopPolling(); finish(st.course_uid);
+                    return;
+                }
+                /* NO BUILD AT ALL IS ITS OWN STATE.
+                   Opening /build with nothing running showed the last build's
+                   rail — every stage green, the subtitle "Done." — and still
+                   offered "Cancel build" for a build that did not exist. The
+                   replay is what fills the rail, so the page looked busy while
+                   the server reported nothing at all. Say so instead. */
+                if (st.active === false && !st.course_uid && !st.started_at) {
+                    settled = true; stopPolling(); idle();
                 }
             });
 
