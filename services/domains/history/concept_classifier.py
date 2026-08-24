@@ -85,7 +85,23 @@ _KIND_BRIEF = {
 }
 
 
-def _prompt(lesson_title, concept_titles, source_text):
+def _course_line(topic):
+    """The COURSE the concepts belong to, stated before anything else.
+
+    A concept title does not carry its own subject. "Vectors" is a data
+    structure, a matrix column or a disease carrier depending only on the
+    course around it, and this prompt used to show the model the lesson title
+    and the concept names with no way to tell which. The registry already had
+    to learn this the hard way — a course whose modules were "Mosquitoes and
+    malaria" routed to mathematics on the keyword "vector".
+
+    Empty string when unknown, so the prompt degrades to what it was rather
+    than announcing an absence.
+    """
+    t = (topic or "").strip()
+    return f"### COURSE: {t}\n\n" if t else ""
+
+def _prompt(lesson_title, concept_titles, source_text, topic=None):
     kinds = "\n".join(f"- {k}: {v}" for k, v in _KIND_BRIEF.items())
     concepts = "\n".join(f"- {t}" for t in concept_titles)
     if not (source_text or "").strip():
@@ -93,7 +109,7 @@ def _prompt(lesson_title, concept_titles, source_text):
         # would invite the model to read it as unreadable — absent-vs-degraded,
         # in a prompt.
         return (
-            f"### SECTION: {lesson_title}\n"
+            f"{_course_line(topic)}### SECTION: {lesson_title}\n"
             f"(No source text available — classify from the concept names and "
             f"the section they sit in.)\n\n"
             f"### TASK\n"
@@ -107,7 +123,7 @@ def _prompt(lesson_title, concept_titles, source_text):
             f'Return STRICT JSON: {{"concepts": [{{"title": "...", '
             f'"kind": "...", "why": "<6 words>"}}]}}')
     return (
-        f"### SOURCE TEXT — section '{lesson_title}'\n"
+        f"{_course_line(topic)}### SOURCE TEXT — section '{lesson_title}'\n"
         f"{(source_text or '')[:5000]}\n\n"
         f"### TASK\n"
         f"Classify each concept below by WHAT KIND OF HISTORICAL KNOWLEDGE it "
@@ -132,7 +148,8 @@ def _prompt(lesson_title, concept_titles, source_text):
     )
 
 
-def classify_course(course, book, llm_json_fn=None, status_callback=None):
+def classify_course(course, book, llm_json_fn=None, status_callback=None,
+                    topic=None):
     """Give every concept a kind, reading the source where patterns fall short.
 
     Mutates `course` in place, setting `concept_kind`. Returns a tally. Never
@@ -185,7 +202,7 @@ def classify_course(course, book, llm_json_fn=None, status_callback=None):
         try:
             raw = llm_json_fn(
                 prompt=_prompt(lesson.get("title", ""),
-                               [c["title"] for c in needs_reading], text),
+                               [c["title"] for c in needs_reading], text, topic=topic or course.get("title")),
                 schema=SCHEMA, expected_type="dict", max_tokens=600)
             tally["calls"] += 1
             got = {}

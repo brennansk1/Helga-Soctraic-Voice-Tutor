@@ -1431,9 +1431,20 @@ class SkeletonBuilder:
         # never pays for a call.
         if tally["unknown"] and hasattr(ext, "classify_concepts"):
             try:
-                sub = ext.classify_concepts(
-                    course_dict, None, llm_json_fn=llm_generate_json,
-                    status_callback=self.status_callback)
+                # `topic` is forwarded, and it is not decoration: a concept
+                # title does not carry its own subject. "Vectors" is a data
+                # structure, a matrix column or a disease carrier depending
+                # only on the course around it, and the classifier saw the
+                # lesson title and the concept names with no way to tell.
+                try:
+                    sub = ext.classify_concepts(
+                        course_dict, None, llm_json_fn=llm_generate_json,
+                        status_callback=self.status_callback, topic=topic)
+                except TypeError:
+                    # A domain that has not grown the argument yet still runs.
+                    sub = ext.classify_concepts(
+                        course_dict, None, llm_json_fn=llm_generate_json,
+                        status_callback=self.status_callback)
                 if isinstance(sub, dict):
                     gained = int(sub.get("by_reading") or 0)
                     if gained:
