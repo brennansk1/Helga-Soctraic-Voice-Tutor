@@ -228,6 +228,7 @@
 
     /* ------------------------------------------------ page 4: scope check */
     var scopeIdle = document.getElementById("scope-idle");
+    var scopeTimer = null;
     var scopeRunning = document.getElementById("scope-running");
     var scopeResult = document.getElementById("scope-result");
     var scopeTopicEl = document.getElementById("scope-topic");
@@ -241,6 +242,14 @@
         scopeResult.classList.add("hidden");
         scopeRunning.classList.remove("hidden");
         scopeTopicEl.textContent = topic;
+        // Elapsed, because the wait is long enough to doubt.
+        var t0 = Date.now();
+        var elEl = document.getElementById("scope-elapsed");
+        if (scopeTimer) clearInterval(scopeTimer);
+        scopeTimer = setInterval(function () {
+            if (!elEl) return;
+            elEl.textContent = Math.round((Date.now() - t0) / 1000) + "s";
+        }, 1000);
 
         fetch("/api/scope_check", {
             method: "POST",
@@ -256,6 +265,7 @@
     }
 
     function renderScope(j) {
+        if (scopeTimer) { clearInterval(scopeTimer); scopeTimer = null; }
         scopeRunning.classList.add("hidden");
         scopeResult.classList.remove("hidden");
         scopeResult.textContent = "";

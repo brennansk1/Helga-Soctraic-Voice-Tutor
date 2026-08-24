@@ -570,3 +570,10 @@
 .scope-evidence-score { font-size: .85em; color: var(--text-secondary); }
 .scope-evidence-score.is-weak { color: var(--color-warning); }
 .scope-evidence-score.is-ok { color: var(--color-success, var(--accent-primary)); }
+
+.scope-running-note {
+    margin-top: .5em;
+    font-size: .85rem;
+    line-height: 1.5;
+    color: var(--text-secondary);
+}

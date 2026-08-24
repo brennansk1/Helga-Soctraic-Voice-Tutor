@@ -192,6 +192,17 @@
                         <div class="scope-pulse" aria-hidden="true"></div>
                         <p>Sweeping open textbooks and archives for
                            “<span id="scope-topic"></span>”…</p>
+                        {# A BARE SPINNER FOR FORTY SECONDS READS AS A HANG.
+                           This queries five archives and the Wikimedia ones
+                           rate-limit, so a wait of half a minute is normal and
+                           was indistinguishable from a broken page. Saying
+                           what it is doing, and how long it has been doing it,
+                           costs nothing and removes the doubt. #}
+                        <p class="scope-running-note">
+                            Checking Wikibooks, Wikiversity, OpenStax and the
+                            Internet Archive. This usually takes under a
+                            minute — <span id="scope-elapsed">0s</span> so far.
+                        </p>
                     </div>
                     <div class="scope-result hidden" id="scope-result"></div>
                 </div>
