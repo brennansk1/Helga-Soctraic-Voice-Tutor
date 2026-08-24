@@ -42,6 +42,13 @@ import re
 
 ORIENTATION = "ORIENTATION"
 TOOLING = "TOOLING"
+#: Operating a GUI product — the clicks, panes and menu paths of Power BI,
+#: Snowflake's console, n8n's canvas, a Fabric workspace. Distinct from
+#: TOOLING, which is a command you can show in a `code` aid.
+TOOL_OPERATION = "TOOL_OPERATION"
+#: Which layer a capability belongs in — dbt or the BI tool, SQL or the visual
+#: builder. No menu path, no vendor answer: the durable half of tool knowledge.
+TOOL_BOUNDARY = "TOOL_BOUNDARY"
 SYNTAX = "SYNTAX"
 PROCEDURE = "PROCEDURE"
 MECHANISM = "MECHANISM"
@@ -57,6 +64,11 @@ UNKNOWN = "UNKNOWN"
 RANK = {
     ORIENTATION: 0,
     TOOLING: 1,
+    TOOL_OPERATION: 1,
+    # Ranked with MECHANISM, not with TOOLING: it is a reasoning concept that
+    # happens to be about tools, and teaching it early — before the learner
+    # knows what either layer costs — makes it a preference poll.
+    TOOL_BOUNDARY: 4,
     SYNTAX: 2,
     PROCEDURE: 3,
     MECHANISM: 4,
@@ -68,6 +80,51 @@ RANK = {
 
 #: How to teach each kind. Stated as an instruction to the tutor.
 GUIDANCE = {
+    #: THE BOUNDARY DECISION — where the reasoning actually lives.
+    #:
+    #: The career checklist that prompted this kind states it as a learning
+    #: objective outright: "Decide what logic belongs in dbt versus in the BI
+    #: tool." That question has no menu path and no vendor answer. It is the
+    #: durable half of tool knowledge, it survives the vendor moving the menu,
+    #: and it is exactly what a Socratic tutor is FOR.
+    TOOL_BOUNDARY: (
+        "THIS IS A WHERE-DOES-IT-BELONG DECISION — the same capability can be "
+        "built in more than one layer, and the skill is choosing. Logic in dbt "
+        "or in the BI tool; a transformation in SQL or in the visual builder; "
+        "a workflow in n8n's canvas or in one of its code nodes; a rule in the "
+        "warehouse or in the application.\n"
+        "Do NOT answer it. This is the most reasoning-rich thing in the "
+        "subject and the learner can genuinely be led to it. Establish what "
+        "each option makes easy and what it makes expensive — who can see the "
+        "logic, what happens when a second consumer needs the same number, "
+        "what breaks when the tool is replaced, who is on call when it fails "
+        "at 3am. Then ask ONE question that forces the trade-off into the "
+        "open.\n"
+        "There is usually a defensible answer and it is not always the "
+        "engineer's instinct: pushing everything into code can be wrong when "
+        "the business owns the tool and not the repo. If the learner argues "
+        "the other side well, say so."),
+
+    TOOL_OPERATION: (
+        "THIS IS OPERATING A PRODUCT'S INTERFACE, AND SOCRATIC QUESTIONING "
+        "CANNOT REACH IT. Where a setting lives — Power BI's row-level "
+        "security under Modeling then Manage Roles, a Snowflake warehouse's "
+        "auto-suspend in its console — is a CONTINGENT FACT ABOUT A PRODUCT, "
+        "decided by a vendor's designers. No amount of reasoning derives it, "
+        "and asking the learner to guess it is a quiz with the answer "
+        "withheld. It is also perishable: vendors move menus between "
+        "releases.\n"
+        "So STATE THE PATH PLAINLY — the pane, the menu, the order of steps — "
+        "the way you would state a date. Do not ask them to find it, do not "
+        "hint, and do not use a `code` aid: there is no command, and a code "
+        "block implies one exists.\n"
+        "THEN SPEND THE WHOLE TURN ON THE PART THAT DOES CARRY REASONING, "
+        "which is always one of: WHEN you would reach for this rather than "
+        "the alternative, WHY the product models it this way, or WHAT it "
+        "costs you later. Ask ONE question there. A learner who can click the "
+        "path but cannot say when to use it has learned the perishable half "
+        "and missed the durable one."),
+
     ORIENTATION: (
         "This concept is about WHAT something is and WHY it exists. Do not ask "
         "the student to guess a definition. State what it is in one plain "
@@ -120,6 +177,56 @@ GUIDANCE = {
 #: Ordered most-specific first. A title matching several kinds gets the most
 #: specific, which is why "debug a failing test" is DEBUGGING and not PROCEDURE.
 _PATTERNS = (
+    # THE TWO TOOL KINDS RUN FIRST, and the BOUNDARY runs before the
+    # OPERATION. A concept can name a product AND ask where logic belongs —
+    # "decide what logic belongs in dbt versus in the BI tool" contains "BI
+    # tool" — and if OPERATION matched first, the most reasoning-rich concept
+    # in the subject would be taught as a menu path.
+    (TOOL_BOUNDARY, r"\b(versus|vs\.?|rather than|instead of|which layer|"
+                    # "WHERE should X live" and "SHOULD X live" are the same
+                    # question; requiring the leading "where" missed the
+                    # commoner phrasing entirely.
+                    r"(where |)(should|does|would)\b[^.?]{0,40}\b"
+                    r"(live|belong|go|sit|be built|be done)\b|belongs? in|"
+                    r"push(ing)? (logic|it) (down|up)|"
+                    r"(tool|ui|gui|no.?code) (or|vs) (code|sql|script)|"
+                    r"when the (visual|no.?code|gui) layer|"
+                    r"drop into a code node|escape hatch)\w*"),
+    # GUI products by name. Deliberately a NAME list rather than a shape: what
+    # makes something a click-path is that a vendor drew it, and no pattern
+    # over English detects that.
+    (TOOL_OPERATION, r"\b(power ?bi|tableau|looker studio|excel|spreadsheet|"
+                     r"fabric|synapse|databricks (ui|workspace|notebook)|"
+                     r"snowsight|snowflake (console|ui)|airflow ui|"
+                     r"n8n (canvas|editor|node|nodes)|zapier|make\.com|"
+                     r"dashboard|workspace|dax|power query|"
+                     r"click|menu|pane|ribbon|drag.and.drop|visual (builder|"
+                     r"editor|layer))\w*"),
+    # ANALYTICS AND PLATFORM VOCABULARY. Measured on a real career checklist:
+    # after routing was fixed, 18 of 24 items still classified UNKNOWN — the
+    # domain was claimed and no per-kind guidance applied. These patterns are
+    # written from that checklist's own words rather than invented.
+    (MECHANISM, r"\b(dimensional model|kimball|star schema|grain\b|"
+                r"slowly changing dimension|scd\b|conformed dimension|"
+                r"semantic layer|metricflow|governed metric|"
+                r"normalis|normaliz|denormalis|denormaliz|"
+                r"idempoten|partition|clustering|query plan|execution plan|"
+                r"rbac|least privilege|role hierarch|"
+                r"retrieval|rag\b|chunking|embedding|vector search|"
+                r"guardrail|human.in.the.loop|eval harness|"
+                r"data contract|lineage|drift|"
+                r"warehouse sizing|cost model|finops|spend attribution)\w*"),
+    (PROCEDURE, r"\b(end to end|stand up|deploy|self.host|provision|"
+                r"orchestrat|schedule a|backfill|incremental model|"
+                r"ci/cd|pipeline|containeris|containeriz|compose file|"
+                r"infrastructure as code|terraform|migration)\w*"),
+    (CONVENTION, r"\b(testing strategy|test suite|project structure|"
+                r"naming convention|code review|branching|pull request|"
+                r"documentation|runbook|style guide)\w*"),
+    (TOOLING, r"\b(snowflake|airflow|dagster|docker|kubernetes|"
+              r"databricks|bigquery|redshift|duckdb|n8n|postgres|"
+              r"install|configure|setup|set up|virtualenv|"
+              r"observability|monitoring|alerting|incident response)\w*"),
     (DEBUGGING, r"\b(debug|troubleshoot|error|exception|traceback|failure|"
                 r"failing|diagnos|fix(ing)?\b|common problems|why (is|does).{0,30}"
                 r"(fail|break|not work))"),

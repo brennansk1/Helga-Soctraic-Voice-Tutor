@@ -109,5 +109,21 @@ KEYWORDS = (
     "concurrency", "thread", "deadlock", "tcp", "http", "dns", "socket",
     "database", "sql", "query", "index", "cache", "encryption", "hashing",
     "git", "version control", "unit test", "debugging", "refactoring",
+    # ANALYTICS AND DATA ENGINEERING. Measured against a real career
+    # checklist: 15 of 24 of its items reached NO domain at all — "dimensional
+    # modelling", "semantic layer", "Snowflake", "Power BI", "dbt", "RBAC",
+    # "data contracts" — because the list named languages and paradigms while
+    # practitioners name TOOLS AND PRACTICES.
+    "dbt", "airflow", "dagster", "snowflake", "databricks", "bigquery",
+    "redshift", "duckdb", "power bi", "tableau", "looker", "fabric",
+    "semantic layer", "metricflow", "dimensional model", "kimball",
+    "star schema", "slowly changing dimension", "data warehouse",
+    "data pipeline", "data contract", "data modelling", "data modeling",
+    "analytics engineering", "etl", "elt", "orchestration", "lakehouse",
+    "iceberg", "rbac", "ci/cd", "terraform", "kubernetes", "docker",
+    "observability", "n8n", "workflow automation", "rag", "vector store",
+    "mcp", "prompt engineering", "eval harness", "guardrails",
+    "finops", "cost management", "code node", "visual layer", "low-code",
+    "no-code", "warehouse", "query optimisation", "query optimization",
 
 )
