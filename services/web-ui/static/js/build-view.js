@@ -118,6 +118,33 @@
         [/^STRUCT:RESEARCH_RETRY:(.+)/,   function (m) {
             return 'Thin sourcing for "' + m[1] + '" — searching wider'; }],
         [/^CHECK:PREFLIGHT:PASS/,        function () { return 'Model is reachable'; }],
+
+        /* AUDITED 2026-08-24: seven status prefixes were emitted by the
+           backend and rendered by nothing, so real build work happened in
+           silence. These are the build-time ones. (CPROG/PEDAGOGY/QTYPE are
+           tutoring-time and belong to the session view, not this page.) */
+        [/^DOMAIN:KINDS:(\d+):(\d+)/,    function (m) {
+            var typed = +m[1], unknown = +m[2];
+            return 'Teaching layer applied — ' + typed + ' concepts typed' +
+                   (unknown ? ', ' + unknown + ' left generic' : ''); }],
+        [/^AUDIT:PASS1:DEDUP:STARTING/,   function () {
+            return 'Checking for repeated material'; }],
+        [/^AUDIT:DEDUP:(\d+)/,            function (m) {
+            return 'Removed ' + m[1] + ' duplicate ' +
+                   (+m[1] === 1 ? 'topic' : 'topics'); }],
+        [/^AUDIT:PASS2:LLM_REVIEW:STARTING/, function () {
+            return 'Reviewing the syllabus for quality'; }],
+        [/^AUDIT:COMPLETE:(\d+):(\d+)/,  function (m) {
+            return 'Syllabus settled — ' + m[1] + ' modules, ' + m[2] +
+                   ' concepts'; }],
+        [/^SYLLABUS:AUDIT:STARTING/,      function () {
+            return 'Comparing against a real syllabus'; }],
+        [/^SYLLABUS:PHASE:1_SKELETON/,    function () {
+            return 'Drafting the course outline'; }],
+        [/^DOCS:CURRICULUM:(\d+)/,        function (m) {
+            return 'Read ' + m[1] + ' documentation sections'; }],
+        [/^DOCS:SYNTHESIS_FAILED:(.+)/,   function (m) {
+            return 'Documentation pass failed — ' + m[1]; }],
         [/^CHECK:PREFLIGHT:FAIL/,        function () { return 'Could not reach the model'; }],
         [/^CHECK:SYLLABUS_EVIDENCE:NONE/, function () {
             return 'No open textbook found for this subject — building without that evidence'; }],
@@ -584,6 +611,15 @@
                 : 'The build stopped before it finished. Nothing was saved.');
             return;
         }
+        /* A CANCELLED BUILD IS NOT A FINISHED ONE. Without this branch a
+           cancellation fell through to the success path below, which asks for
+           a course_uid, gets null, and still shows the completion panel — the
+           build the learner just stopped, reported as done. */
+        if (phase === 'cancelled') {
+            fail('You stopped this build. Nothing was saved, and any concepts '
+                 + 'already written are kept so a rebuild can reuse them.');
+            return;
+        }
         // The uid is not in the status text, so ask the service that holds it.
         // Without one the panel still appears — the course exists — but it
         // points at Courses rather than pretending to know which one.
@@ -641,7 +677,41 @@
     }
 
     function poll() {
-        if (settled || !window.HelgaBuildGuard || !window.HelgaBuildGuard.probe) return;
+        if (settled) return;
+
+        /* THE RAIL USED TO MOVE ONLY ON STATUS MESSAGES.
+           Those are pushed over Socket.IO, so any stretch that emits nothing —
+           a curriculum sweep sitting in 45-second Wikimedia rate-limit
+           backoffs, for instance — left the rail on "Pre-flight" for many
+           minutes while the build was healthy and busy. Worse, if the socket
+           never connects (a build page opened on an origin the server's CORS
+           list does not name), NOTHING arrives and the page reads "Warming
+           up..." for the entire build.
+
+           The server already knows the coarse phase and reports it on
+           /api/creation_status, which this poller was fetching and using only
+           to detect completion. Use it for the rail too: a second, independent
+           source of truth that does not depend on the socket at all.
+           setStage() never walks backwards, so whichever source is ahead wins
+           and the fine-grained stream still adds the detail. */
+        fetch('/api/creation_status')
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .catch(function () { return null; })
+            .then(function (st) {
+                if (!st || settled) return;
+                if (st.phase && ORDER.indexOf(st.phase) !== -1) {
+                    setStage(st.phase, 'active');
+                }
+                if (st.phase === 'cancelled') {
+                    settled = true; stopPolling(); settle('cancelled', null);
+                    return;
+                }
+                if (st.active === false && st.course_uid) {
+                    settled = true; stopPolling(); finish(st.course_uid);
+                }
+            });
+
+        if (!window.HelgaBuildGuard || !window.HelgaBuildGuard.probe) return;
         window.HelgaBuildGuard.probe(function (verdict, courseUid, phase) {
             if (settled || verdict !== 'ended') return;
             if (phase === 'error') settle('error', null);

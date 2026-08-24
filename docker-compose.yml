@@ -155,6 +155,14 @@ services:
       # line a dev container would still have no `services/domains` under the
       # mounted tree, and every domain import would fail exactly as before.
       - ./services/domains:/app/services/domains
+      # `scope_check` imports services.research.curriculum_research
+      # IN-PROCESS. The build itself talks to the research SERVICE over HTTP,
+      # which is why builds were fine while the pre-build scope check was not.
+      # Without this mount the import fails and the endpoint returns
+      # {"available": false} — rendered in the creation UI as "the research
+      # service could not be reached", naming the wrong cause: the service was
+      # up and healthy, the MODULE was absent from this container.
+      - ./services/research:/app/services/research
       # course_builder imports tools.syllabus_check (quality gate criterion 6).
       # These bind mounts REPLACE the image's filesystem at their paths, so
       # mounting only core and common left /app/tools missing even after the

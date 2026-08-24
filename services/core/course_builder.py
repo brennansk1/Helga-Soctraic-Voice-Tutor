@@ -660,12 +660,22 @@ def _detect_context_window():
         return None
 
 
+class CourseCreationCancelled(Exception):
+    """The learner pressed Cancel and the build stopped at a checkpoint.
+
+    A distinct type so the pipeline can tell "the user changed their mind"
+    from "the build broke" — they need opposite handling: one cleans up
+    quietly, the other is an error the learner should see.
+    """
+
+
 class SkeletonBuilder:
     def __init__(
         self,
         db_path: str = None,
         providers: list = None,
         status_callback=None,
+        should_cancel=None,
         course_depth: int = 2,
         teaching_style: str = "",
         storage: StorageManager = None,
@@ -676,6 +686,16 @@ class SkeletonBuilder:
         self.db_path = db_path
         self.providers = []  # Content providers removed
         self.status_callback = status_callback
+        # CANCELLATION WAS COSMETIC. `/api/cancel_creation` flipped
+        # `creation_in_progress` and set phase="cancelled", and NOTHING in
+        # this builder ever read it: the thread ran to completion, kept a
+        # 13 GB model busy for hours, and wrote the course the learner
+        # believed they had cancelled. Measured 2026-08-24 — a new 7,920-token
+        # LLM call started SEVEN SECONDS after "cancelled by user" was logged.
+        #
+        # A predicate rather than a flag so the builder never has to know what
+        # owns the state; it just asks, at the checkpoints below.
+        self.should_cancel = should_cancel
         self.course_depth = course_depth
         self.teaching_style = teaching_style or ""
         # Three-slider system (falls back to depth for legacy callers)
@@ -812,6 +832,21 @@ class SkeletonBuilder:
             logger.info(f"  [PRUNE] dropped {tally['concepts']} padded concepts, "
                         f"{tally['lessons']} lessons, {tally['units']} units")
         return tally
+
+    def _checkpoint(self, where=""):
+        """Raise if the learner has cancelled. Called between units of work.
+
+        Deliberately BETWEEN steps rather than inside them: killing a build
+        mid-write is how half a structure.json reaches disk. At a checkpoint
+        the last completed step is durable and the next has not started.
+        """
+        try:
+            cancelled = bool(self.should_cancel and self.should_cancel())
+        except Exception:      # a broken predicate must not stop a good build
+            return
+        if cancelled:
+            logger.info(f"[CANCEL] build stopping at checkpoint: {where}")
+            raise CourseCreationCancelled(where or "cancelled")
 
     def _normalize_title(self, title: str) -> str:
         if not title:
@@ -3527,6 +3562,7 @@ class SkeletonBuilder:
         units_data = units_data[:base_units]
 
         for u_idx, unit_data in enumerate(units_data, 1):
+            self._checkpoint("unit")
             u_title = self._normalize_title(unit_data.get("title", ""))
             unit_used_fallback = False
             if not u_title or self._is_duplicate(u_title, course_topic=topic, level="unit"):
@@ -4267,11 +4303,17 @@ class ContentHydrator:
         course_depth: int = 2,
         storage: StorageManager = None,
         mastery: int = None,
+        should_cancel=None,
     ):
         self.db_path = db_path
         self.provider = None  # Content providers removed — LLM-only generation
         self.status_callback = status_callback
         self.course_depth = course_depth
+        # Hydration is the long phase — hours on this hardware — so it is the
+        # one a learner is most likely to cancel, and the one that most needs
+        # to notice. Checked per concept: the concept just written is on disk
+        # and the next has not started, so a resume picks up cleanly.
+        self.should_cancel = should_cancel
         self.mastery_level = mastery if mastery is not None else course_depth
         self.used_source_ids = set()
         self.model = None
@@ -4448,10 +4490,25 @@ class ContentHydrator:
         max_workers = max(1, min(_bg_cap, len(concept_list)))
         research_url = os.getenv("RESEARCH_URL", "http://helga-research:5006")
 
+        def _cancelled():
+            try:
+                return bool(self.should_cancel and self.should_cancel())
+            except Exception:
+                return False
+
         def _hydrate_one(idx, uid, title, objectives, complexity_role, user_note,
                          bloom_level, depth_level, prerequisite_titles, learning_objectives_list):
             """Hydrate a single concept (runs in thread pool)."""
             nonlocal hydrated_count, failed_count, hydration_fallback_count
+
+            # CANCELLED WORK IS NOT FAILED WORK. Return before doing anything,
+            # and do NOT touch failed_count: a cancelled build that counted its
+            # unstarted concepts as failures would trip the >50% abort gate and
+            # mark the course "failed", which is a different and worse claim
+            # than "the learner stopped it". Concepts already written stay on
+            # disk and a resume skips them.
+            if _cancelled():
+                return
 
             h_ctx = hierarchy_map.get(uid, {})
 
@@ -6368,6 +6425,7 @@ class SyllabusAuditor:
 
         # Build module-level bloom/complexity annotations
         bloom_summary = ""
+        self._checkpoint("module")
         for m_idx, module in enumerate(course.get("modules", []), 1):
             level = module.get("level", m_idx)
             bloom_summary += f"  Module {m_idx} '{module['title']}': complexity_level={level}\n"

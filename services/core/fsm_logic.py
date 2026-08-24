@@ -230,6 +230,7 @@ from safety import (check_safety, check_safety_detailed, get_safety_redirect_mes
                     check_output_safety)
 from service_manager import ServiceManager
 from services.core.course_builder import SkeletonBuilder, ContentHydrator, SyllabusAuditor, CourseCreationError
+from services.core.course_builder import CourseCreationCancelled  # noqa: E402
 from services.core.llm_client import get_llm_client
 # Logger setup
 
@@ -4664,7 +4665,8 @@ class MnemosyneFSM:
 
                 sb = SkeletonBuilder(
                     providers=providers,
-                    status_callback=self.send_status_update,
+                    should_cancel=lambda: not self.creation_in_progress,
+                        status_callback=self.send_status_update,
                     course_depth=depth,
                     teaching_style=teaching_style,
                     storage=self.storage,
@@ -4709,7 +4711,8 @@ class MnemosyneFSM:
                 self.send_status_update("LOG: Hydrating Content & Pedagogy...")
                 hydrator = ContentHydrator(
                     providers=providers,
-                    status_callback=self.send_status_update,
+                    should_cancel=lambda: not self.creation_in_progress,
+                        status_callback=self.send_status_update,
                     course_depth=depth,
                     storage=self.storage,
                 )
@@ -4731,6 +4734,16 @@ class MnemosyneFSM:
                 build_state.finish(course_uid=course_uid, build_id=build_id)
                 self.speak("Course creation successful.")
 
+            except CourseCreationCancelled:
+                # NOT an error. The learner asked for this, so it is reported
+                # as a stop rather than a failure, and nothing half-built is
+                # advertised as a course.
+                logging.info("[CANCEL] creation pipeline stopped by the learner")
+                self.send_status_update("Course creation cancelled.")
+                self.creation_status.update({
+                    "active": False, "phase": "cancelled",
+                    "last_update": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                })
             except Exception as e:
                 logging.error(f"Creation pipeline failed: {e}", exc_info=True)
                 # AUTO-12: Log full error, send user-friendly message
@@ -5056,6 +5069,7 @@ class MnemosyneFSM:
                 else:
                     sb = SkeletonBuilder(
                         providers=providers,
+                        should_cancel=lambda: not self.creation_in_progress,
                         status_callback=self.send_status_update,
                         course_depth=depth,
                         teaching_style=teaching_style,
@@ -5124,7 +5138,8 @@ class MnemosyneFSM:
 
                 hydrator = ContentHydrator(
                     providers=providers,
-                    status_callback=self.send_status_update,
+                    should_cancel=lambda: not self.creation_in_progress,
+                        status_callback=self.send_status_update,
                     course_depth=depth,
                     storage=self.storage,
                     mastery=_mastery,
@@ -5581,8 +5596,17 @@ def scope_check_endpoint():
         try:
             from curriculum_research import curriculum_brief
             from scope_fit import assess_scope, practice_tier
-        except ImportError:
-            return _js({"available": False}), 200
+        except ImportError as _imp:
+            # LOUD, because this returned {"available": False} silently and the
+            # UI rendered it as "the research service could not be reached" —
+            # blaming a healthy service for a missing module, with nothing in
+            # any log to contradict it.
+            logging.error(
+                "scope_check: curriculum_research/scope_fit not importable in "
+                "this container (%s). A healthy research SERVICE is a "
+                "different thing: this endpoint needs the MODULE on the path.",
+                _imp)
+            return _js({"available": False, "error": "module unavailable"}), 200
     try:
         template = data.get("template") or "course"
         requested = {"course": 135, "sequence": 270, "seminar": 90,
@@ -5590,11 +5614,34 @@ def scope_check_endpoint():
                      "bachelors": 5400}.get(template, 135)
         brief = curriculum_brief(topic)
         fit = assess_scope(brief, requested, requested_courses=1)
+        # NAME WHAT WAS FOUND, not just how much of it.
+        #
+        # This returned a count and a verdict, so the screen could say "the
+        # subject can carry it" and nothing about WHY — the learner had no way
+        # to judge whether the evidence behind that claim was any good. The
+        # brief already holds the titles; they were simply never passed on.
+        def _titles(items, *keys):
+            out = []
+            for it in (items or [])[:6]:
+                if not isinstance(it, dict):
+                    continue
+                title = next((it.get(k) for k in keys if it.get(k)), None)
+                if title:
+                    out.append({"title": str(title)[:120],
+                                "source": str(it.get("source") or "")[:40],
+                                "url": str(it.get("url") or "")[:300]})
+            return out
+
         out = {"available": True,
                "verdict": fit.get("verdict", "ok"),
                "reason": fit.get("reason", ""),
                "chapters": fit.get("chapter_count", 0),
-               "sources": fit.get("structural_sources", 0)}
+               "sources": fit.get("structural_sources", 0),
+               "syllabi": _titles(brief.get("syllabi"), "book", "title"),
+               "courses": _titles(brief.get("courses"), "title", "course"),
+               "texts": _titles(brief.get("canonical_texts"), "title", "book"),
+               "vocabulary": [str(v)[:60] for v in (brief.get("vocabulary") or [])[:12]],
+               "broadened_to": list(brief.get("broadened_to") or [])[:4]}
         tier = practice_tier(topic)
         if tier:
             out["practice_tier"] = tier["message"]

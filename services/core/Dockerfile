@@ -35,6 +35,8 @@ COPY services/common /app/services/common
 # Same signature defect as the twelve before it, one level up: not code that
 # is never called, but code that is never PACKAGED.
 COPY services/domains /app/services/domains
+# scope_check imports curriculum_research in-process; see docker-compose.
+COPY services/research /app/services/research
 
 # course_builder._record_syllabus_check does `from tools.syllabus_check import
 # check_structure, MIN_COVERAGE`. Until now this image contained only

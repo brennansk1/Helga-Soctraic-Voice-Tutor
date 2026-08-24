@@ -529,3 +529,35 @@
     color: var(--text-secondary);
 }
 .upload-alt a { color: var(--accent-primary); }
+
+/* The evidence behind the scope verdict. Tokens only — every colour here is
+   defined for both themes in the design system, and the guard enforces it. */
+.scope-evidence {
+    margin-top: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border-color);
+}
+.scope-evidence-label {
+    margin: 0 0 .25em;
+    font-size: .8rem;
+    font-weight: 600;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+.scope-evidence-list {
+    margin: 0 0 var(--space-3);
+    padding-left: 1.1em;
+    font-size: .92rem;
+    line-height: 1.55;
+    color: var(--text-primary);
+}
+.scope-evidence-list a { color: var(--accent-primary); text-decoration: none; }
+.scope-evidence-list a:hover { text-decoration: underline; }
+.scope-evidence-src { color: var(--text-secondary); font-size: .85em; }
+.scope-evidence-vocab {
+    margin: 0 0 .4em;
+    font-size: .88rem;
+    line-height: 1.5;
+    color: var(--text-secondary);
+}

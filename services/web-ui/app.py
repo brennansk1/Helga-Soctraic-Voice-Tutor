@@ -102,8 +102,26 @@ if not os.environ.get('FLASK_SECRET_KEY'):
         "FLASK_SECRET_KEY not set — using an ephemeral key; sessions reset on restart. "
         "Set FLASK_SECRET_KEY in .env for a stable secret."
     )
-CORS_ORIGINS = os.environ.get('CORS_ORIGINS', 'http://localhost:5050,http://127.0.0.1:5050').split(',')
+# WHY THIS IS NOT JUST A LIST OF LOCALHOST.
+#
+# Socket.IO carries every live build update — the stage rail, the evidence
+# panel, the raw log. `cors_allowed_origins` REJECTS a handshake from an origin
+# not on this list with a bare 400, and the browser surfaces that as nothing at
+# all: a build page that says "Warming up..." for an hour while the build runs
+# perfectly underneath. Measured 2026-08-24 on a tunnelled origin.
+#
+# So a deployment reached on any other hostname (a Cloudflare tunnel, a LAN IP,
+# a reverse proxy) MUST list that origin here or it gets a silent, permanently
+# blank progress view. `CORS_ORIGINS=*` is accepted for a trusted private
+# deployment; it is a real widening and is spelled explicitly rather than
+# arrived at by accident.
+_cors_raw = os.environ.get(
+    'CORS_ORIGINS', 'http://localhost:5050,http://127.0.0.1:5050').strip()
+CORS_ORIGINS = '*' if _cors_raw == '*' else [o.strip() for o in _cors_raw.split(',') if o.strip()]
 socketio = SocketIO(app, async_mode='gevent', cors_allowed_origins=CORS_ORIGINS, max_http_buffer_size=10000000)
+logging.getLogger(__name__).info(
+    "Socket.IO accepting origins: %s — a build page reached on any other "
+    "origin will show no live updates at all", CORS_ORIGINS)
 
 # --- CSRF Protection ---
 def get_csrf_token():

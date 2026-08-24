@@ -284,6 +284,64 @@
         scopeResult.appendChild(verdict);
         scopeResult.appendChild(detail);
 
+        /* SHOW THE EVIDENCE, NOT JUST THE VERDICT.
+           "The subject can carry it" is an assertion; the titles behind it are
+           what let a learner judge whether to believe it. The endpoint has
+           always had them — they were computed, counted, and thrown away. */
+        var found = document.createElement("div");
+        found.className = "scope-evidence";
+
+        function group(label, items, asLinks) {
+            if (!items || !items.length) return;
+            var h = document.createElement("p");
+            h.className = "scope-evidence-label";
+            h.textContent = label;
+            found.appendChild(h);
+            var ul = document.createElement("ul");
+            ul.className = "scope-evidence-list";
+            items.forEach(function (it) {
+                var li = document.createElement("li");
+                var title = (typeof it === "string") ? it : it.title;
+                if (asLinks && it && it.url) {
+                    var a = document.createElement("a");
+                    a.href = it.url; a.target = "_blank"; a.rel = "noopener noreferrer";
+                    a.textContent = title;
+                    li.appendChild(a);
+                } else {
+                    li.textContent = title;
+                }
+                if (it && it.source) {
+                    var sm = document.createElement("span");
+                    sm.className = "scope-evidence-src";
+                    sm.textContent = " — " + it.source;
+                    li.appendChild(sm);
+                }
+                ul.appendChild(li);
+            });
+            found.appendChild(ul);
+        }
+
+        if (j && j.available !== false) {
+            group("Syllabi found", j.syllabi, true);
+            group("Courses found", j.courses, true);
+            group("Texts found", j.texts, true);
+            if (j.vocabulary && j.vocabulary.length) {
+                var v = document.createElement("p");
+                v.className = "scope-evidence-vocab";
+                v.textContent = "Topics it expects to cover: " +
+                    j.vocabulary.slice(0, 10).join(", ");
+                found.appendChild(v);
+            }
+            if (j.broadened_to && j.broadened_to.length) {
+                var b = document.createElement("p");
+                b.className = "scope-evidence-vocab";
+                b.textContent = "No book on this exact topic — searched wider: "
+                    + j.broadened_to.join(", ");
+                found.appendChild(b);
+            }
+            if (found.childNodes.length) scopeResult.appendChild(found);
+        }
+
         if (j && j.practice_tier) {
             var tier = document.createElement("div");
             tier.className = "scope-tier";
