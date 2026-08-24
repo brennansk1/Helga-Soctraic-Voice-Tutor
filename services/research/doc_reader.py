@@ -88,7 +88,17 @@ KNOWN_DOCS = {
     "react": "https://react.dev/learn",
     "kubernetes": "https://kubernetes.io/docs/home/",
     "pandas": "https://pandas.pydata.org/docs/user_guide/index.html",
+    # SQL IS A STANDARD, NOT A PRODUCT, so it has no single home — and
+    # `resolve("SQL")` therefore returned None while `resolve("postgresql")`
+    # worked. A course on "SQL" got no documentation at all for want of an
+    # alias. PostgreSQL's manual is the reference the standard is usually read
+    # through: complete, free, and the closest thing to a canonical text.
+    "sql": "https://www.postgresql.org/docs/current/sql.html",
+    "postgres": "https://www.postgresql.org/docs/current/",
     "postgresql": "https://www.postgresql.org/docs/current/",
+    "mysql": "https://dev.mysql.com/doc/refman/8.0/en/",
+    "sqlite": "https://sqlite.org/docs.html",
+    "duckdb": "https://duckdb.org/docs/",
     "python": "https://docs.python.org/3/tutorial/index.html",
     "terraform": "https://developer.hashicorp.com/terraform/docs",
     "airflow": "https://airflow.apache.org/docs/apache-airflow/stable/index.html",

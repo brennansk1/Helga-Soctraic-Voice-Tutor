@@ -123,6 +123,8 @@
            this collapsed every one of them to "Model is reachable", so the
            learner saw the same sentence repeated and learned nothing from any
            of it. The message is right there after the prefix. */
+        [/^CHECK:PREFLIGHT:WARN:?(.*)/,  function (m) {
+            return (m[1] || 'A pre-flight check passed with a caveat').trim(); }],
         [/^CHECK:PREFLIGHT:PASS:?(.*)/,  function (m) {
             var raw = (m[1] || '').trim();
             if (!raw) return 'Pre-flight check passed';

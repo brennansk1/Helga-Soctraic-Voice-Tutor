@@ -1179,14 +1179,23 @@ class SkeletonBuilder:
         all_passed = True
 
         def log_and_emit(status: str, msg: str):
+            """status is "✓" pass, "✗" fail, "!" warn.
+
+            WARN IS A THIRD STATE, not a quiet failure. This used to treat
+            anything that was not "✓" as FAIL, so a degraded-but-usable
+            condition — web search returning nothing, say — would have been
+            reported to the learner as a broken build and, worse, read by the
+            UI as one.
+            """
             logger.info(f"[PREFLIGHT] {status} {msg}")
-            if self.status_callback:
-                prefix = "PASS" if status == "✓" else f"FAIL:{msg.replace(' ', '_')}"
-                # For basic matching to what is requested
-                if status == "✓":
-                    self.status_callback(f"CHECK:PREFLIGHT:PASS:{msg}")
-                else:
-                    self.status_callback(f"CHECK:PREFLIGHT:FAIL:{msg}")
+            if not self.status_callback:
+                return
+            if status == "✓":
+                self.status_callback(f"CHECK:PREFLIGHT:PASS:{msg}")
+            elif status == "!":
+                self.status_callback(f"CHECK:PREFLIGHT:WARN:{msg}")
+            else:
+                self.status_callback(f"CHECK:PREFLIGHT:FAIL:{msg}")
 
         # 1. Topic Validation
         if not topic or len(topic.strip()) < 3 or len(topic.strip()) > 200:
@@ -1264,8 +1273,75 @@ class SkeletonBuilder:
             log_and_emit("✗", f"LLM unreachable ({last})")
             all_passed = False
 
-        # Content providers removed — LLM-only content generation
-        log_and_emit("✓", "LLM content generation ready")
+        # 5. THE MODEL CAN ACTUALLY GENERATE.
+        #
+        # This line used to be `log_and_emit("✓", "LLM content generation
+        # ready")` with NOTHING above it — a leftover from when content
+        # providers existed. It reported a green check unconditionally, every
+        # single build, whatever the model was doing. And the health check
+        # above it only pings /v1/models: it proves the SERVER answers, not
+        # that a model is loaded or that it can emit a token. A server up with
+        # a missing or wedged model passed preflight and failed later, per
+        # concept, after the learner had been told everything was fine.
+        if llm_ok:
+            try:
+                probe = llm_generate(
+                    prompt="Reply with the single word: ready",
+                    sys_prompt="You reply with one word.",
+                    max_tokens=8, retries=1)
+                if probe and probe.strip():
+                    log_and_emit("✓", "Model generated a test response")
+                else:
+                    log_and_emit("✗", "Model is reachable but generated nothing "
+                                      "— it is probably still loading")
+                    all_passed = False
+            except Exception as e:
+                log_and_emit("✗", f"Model could not generate ({type(e).__name__})")
+                all_passed = False
+
+        # 6. THE GROUNDING PIPELINE, which the build depends on per concept.
+        #
+        # Nothing checked this. Measured today: SearXNG's engines all
+        # CAPTCHA a datacenter, so every web query returned zero results, the
+        # documentation arm was dead, and a course was written entirely from
+        # model memory — while preflight reported six green checks. A build
+        # that cannot reach its sources should say so BEFORE spending an hour,
+        # not through a depth contract that fails afterwards.
+        research_url = os.getenv("RESEARCH_URL", "http://helga-research:5006")
+        try:
+            r = requests.get(f"{research_url}/health", timeout=8)
+            if 200 <= r.status_code < 300:
+                log_and_emit("✓", "Research service reachable")
+            else:
+                log_and_emit("✗", f"Research service unhealthy (HTTP "
+                                  f"{r.status_code}) — concepts would be "
+                                  f"written with no sources")
+                all_passed = False
+        except Exception as e:
+            log_and_emit("✗", f"Research service unreachable ({type(e).__name__}) "
+                              f"— concepts would be written with no sources")
+            all_passed = False
+
+        # 7. Search returning ANYTHING. A warning rather than a block: a course
+        #    can still be built from encyclopaedias and open textbooks without
+        #    web search, and the scope screen already reports grounding. But it
+        #    is the difference between a cited course and a remembered one, so
+        #    it is said out loud rather than discovered in the output.
+        try:
+            sx = os.getenv("SEARXNG_URL", "http://helga-searxng:8080")
+            probe = requests.get(f"{sx}/search",
+                                 params={"q": "test", "format": "json"},
+                                 timeout=10)
+            hits = len((probe.json() or {}).get("results") or []) if probe.ok else 0
+            if hits:
+                log_and_emit("✓", f"Web search returning results ({hits} for a probe)")
+            else:
+                log_and_emit("!", "Web search returned nothing — official "
+                                  "documentation cannot be found, so concepts "
+                                  "will lean on encyclopaedias and the model")
+        except Exception as e:
+            log_and_emit("!", f"Web search unavailable ({type(e).__name__}) — "
+                              f"documentation cannot be found")
 
         return all_passed
 
