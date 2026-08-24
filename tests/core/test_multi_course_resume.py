@@ -300,3 +300,64 @@ def test_concept_text_is_not_persisted_into_the_blob():
     assert "xxxxx" not in blob, "concept text written into the session blob"
     assert json.loads(blob)["courses"]["course_a"]["current_node"]["title"] \
         == "Ohm's Law"
+
+
+# --- the whole point: leave mid-lesson, come back to the same place ----------
+
+def test_a_fresh_process_picks_up_exactly_where_it_left_off():
+    """The scenario a learner actually lives.
+
+    Nothing in memory — a new FSM reading only the durable store, which is what
+    a restarted container or a reopened browser gets. Every field here is one a
+    learner would notice missing.
+    """
+    from services.common.turn_state import TurnState
+
+    left = _fsm()
+    left.active_course_uid = "course_p"
+    left.current_lesson_node = {"uid": "con_5", "title": "Ohm's Law",
+                                "text": "# Ohm's Law\n\nV = IR."}
+    left.completed_topics = {"con_1", "con_2", "con_3"}
+    left.transcript = [{"sender": "helga", "text": "What happens to current?"},
+                       {"sender": "user", "text": "it stops?"}]
+    left.conversation_history = [("it stops?", "what would that predict?")]
+    left.turn_state.misses = 2
+    left.turn_state.current_question = "what happens to the current?"
+    left.current_bloom_level = 3
+    left._save_current_course_progress()
+
+    # A NEW process: same durable rows, nothing carried in memory.
+    back = _fsm()
+    back.storage.fsm.rows = left.storage.fsm.rows
+    back.storage.courses.get_concept_content = (
+        lambda c, u: "# Ohm's Law\n\nV = IR.")
+    back.transition({"type": "SET_CONTEXT",
+                     "payload": {"course_uid": "course_p"}})
+
+    node = back.current_lesson_node or {}
+    assert node.get("title") == "Ohm's Law", "lost their place"
+    assert len(back.transcript) == 2, "lost the conversation"
+    assert back.transcript[-1]["text"] == "it stops?"
+    assert len(back.completed_topics) == 3, "lost their progress"
+    assert back.current_bloom_level == 3, "dropped back to the starting level"
+    # The one a learner would feel most: the tutor remembering they were stuck.
+    assert back.turn_state.misses == 2, "forgot the learner was struggling"
+    assert back.turn_state.current_question == "what happens to the current?"
+
+
+def test_the_concept_text_comes_back_from_disk_not_the_snapshot():
+    """Not persisted, deliberately — so a re-hydrated concept resumes as it is
+    NOW rather than as it was when they paused."""
+    left = _fsm()
+    left.active_course_uid = "course_p"
+    left.current_lesson_node = {"uid": "con_5", "title": "Ohm's Law",
+                                "text": "OLD TEXT"}
+    left._save_current_course_progress()
+
+    back = _fsm()
+    back.storage.fsm.rows = left.storage.fsm.rows
+    back.storage.courses.get_concept_content = lambda c, u: "REWRITTEN TEXT"
+    back.transition({"type": "SET_CONTEXT",
+                     "payload": {"course_uid": "course_p"}})
+
+    assert back.current_lesson_node.get("text") == "REWRITTEN TEXT"
