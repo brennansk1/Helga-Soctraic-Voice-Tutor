@@ -1199,7 +1199,12 @@ async def _research_concept_async(title, module_title, course_title, mastery=1,
         # 4. Extract content from top pages
         _skipped_prefetch = 0
         for result in top_results[:4 if broaden else 3]:
-            if not _worth_fetching(query, result.get("title", ""),
+            # `_subject`, not a per-result query: results here are aggregated
+            # across every query in the ladder, so no single one owns a hit.
+            # An earlier version referenced `query`, which does not exist in
+            # this scope — the loop variable is `q` — and every call to this
+            # endpoint returned 500 until it was caught.
+            if not _worth_fetching(_subject, result.get("title", ""),
                                    result.get("snippet", ""),
                                    must_include=_subject):
                 _skipped_prefetch += 1
@@ -1223,7 +1228,7 @@ async def _research_concept_async(title, module_title, course_title, mastery=1,
                     "text": text, "tier": result["tier"],
                 })
 
-    if _skipped_prefetch:
+    if locals().get("_skipped_prefetch"):
         logger.info("pre-filter skipped %d page fetch(es) with no topic "
                     "overlap at all", _skipped_prefetch)
 

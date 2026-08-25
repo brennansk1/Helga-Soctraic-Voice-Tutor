@@ -496,6 +496,16 @@ def audit_course(structure, contents, sources_by_uid=None, mastery=None,
     for sysf in systemic:
         by_check[sysf["check"]] += sysf["concepts"]
         by_severity[sysf["severity"]] += sysf["concepts"]
+        # A FOLDED FINDING IS STILL A FINDING AGAINST ITS CONCEPTS.
+        #
+        # Folding moved these out of the per-concept list, and the affected
+        # concepts stopped being counted with it — so a 4-concept course whose
+        # every concept was missing three sections the tutor reads reported
+        # "0 concepts with findings" beside "serious: 16". A report that
+        # contradicts itself is the failure this whole stage exists to catch,
+        # and it must not contain one.
+        if sysf["severity"] in ("blocking", "serious"):
+            concepts_with_findings.update(sysf.get("affected") or [])
 
     return {
         "course_title": course_title,

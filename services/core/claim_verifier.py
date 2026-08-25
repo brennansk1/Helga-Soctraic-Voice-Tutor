@@ -224,3 +224,61 @@ def seeded_check():
         # the falsehoods, which is the only direction that matters here.
         "usable": caught == false_total,
     }
+
+# --- reaching a verifier that lives on the host ------------------------------
+#
+# The audit runs inside core-logic. This model needs torch + transformers, and
+# both were deliberately REMOVED from the core and rag images — their
+# requirements files say so in as many words, because the stack was being
+# pulled in for nothing. So `available()` is False in the container and always
+# will be, which is why this module had exactly one caller and never ran in a
+# build.
+#
+# The pattern already used twice here is a host-native service on a port:
+# Ollama at 11434 and Nemotron STT at 5001, both reached through
+# host.docker.internal. This is the third, and it keeps a 5.8 GB model and a
+# torch install out of an image that would otherwise carry them for one check.
+VERIFIER_URL = os.getenv("MINICHECK_URL", "")
+
+
+def _remote_supported(claim, passage, timeout=20):
+    """Ask a host-side verifier. Returns None when there is none to ask."""
+    if not VERIFIER_URL:
+        return None
+    try:
+        import requests
+        r = requests.post(f"{VERIFIER_URL.rstrip('/')}/verify",
+                          json={"claim": claim, "passage": passage},
+                          timeout=timeout)
+        if r.status_code != 200:
+            return None
+        return bool(r.json().get("supported"))
+    except Exception as e:
+        logger.debug("remote verifier unreachable: %s", e)
+        return None
+
+
+class RemoteVerifier:
+    """A verifier that speaks HTTP, with the same surface as the local one."""
+
+    def supported(self, claim, passage):
+        out = _remote_supported(claim, passage)
+        if out is None:
+            raise RuntimeError("remote verifier unavailable")
+        return out
+
+
+def get_any_verifier():
+    """The local model if this process can load it, otherwise a host-side one.
+
+    Returns None when neither is reachable — and None must be reported as
+    "truth not measured", never as a pass.
+    """
+    if available():
+        v = get_verifier()
+        if v is not None:
+            return v
+    if VERIFIER_URL and _remote_supported("a", "a") is not None:
+        logger.info("[VERIFY] using host-side verifier at %s", VERIFIER_URL)
+        return RemoteVerifier()
+    return None

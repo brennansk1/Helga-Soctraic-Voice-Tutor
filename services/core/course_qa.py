@@ -231,42 +231,196 @@ def _count_concepts(course_json):
     return n
 
 
+
+# A claim and a passage must be ABOUT the same thing before a verdict on one
+# against the other means anything.
+MIN_CLAIM_PASSAGE_OVERLAP = 0.12
+
+_WORD = None
+
+
+def _terms(text):
+    global _WORD
+    if _WORD is None:
+        import re as _re
+        _WORD = _re.compile(r"[a-z0-9_]{3,}")
+    stop = {"the", "and", "for", "with", "that", "this", "are", "was", "its",
+            "から", "which", "when", "from", "into", "than", "then", "not"}
+    return {w for w in _WORD.findall((text or "").lower()) if w not in stop}
+
+
+
+# How a retained source is broken up for retrieval. Paragraph-shaped, with a
+# floor so a heading or a stray line is not offered as evidence, and an overlap
+# so a fact split across a boundary still lands whole in one chunk.
+CHUNK_MIN_WORDS = 25
+CHUNK_MAX_WORDS = 180
+
+
+def _chunks(passage):
+    """A retained source, split into pieces a claim can actually match."""
+    import re as _re
+    text = (passage or "").strip()
+    if not text:
+        return []
+    paras = [p.strip() for p in _re.split(r"\n\s*\n", text) if p.strip()]
+    if len(paras) < 2:
+        # No paragraph structure — sentence-pack instead of handing back one
+        # undifferentiated block.
+        sents = _re.split(r"(?<=[.!?])\s+", text)
+        paras, cur = [], []
+        for sent in sents:
+            cur.append(sent)
+            if sum(len(x.split()) for x in cur) >= CHUNK_MAX_WORDS:
+                paras.append(" ".join(cur))
+                cur = []
+        if cur:
+            paras.append(" ".join(cur))
+
+    out, buf = [], []
+    for para in paras:
+        buf.append(para)
+        words = sum(len(x.split()) for x in buf)
+        if words >= CHUNK_MIN_WORDS:
+            out.append(" ".join(buf))
+            # Keep the last paragraph as overlap so a claim spanning a boundary
+            # is not split away from its evidence.
+            buf = [para] if words < CHUNK_MAX_WORDS else []
+    if buf and sum(len(x.split()) for x in buf) >= CHUNK_MIN_WORDS:
+        out.append(" ".join(buf))
+    return out or [text]
+
+
+def _overlap(claim, passage):
+    """Share of the claim's terms that appear in the passage."""
+    c = _terms(claim)
+    if not c:
+        return 0.0
+    return len(c & _terms(passage)) / len(c)
+
+
 def check_truth(conn, course_uid, verifier=None, limit=200):
-    """Are claims actually supported by the sources retained for them?
+    """Are claims actually supported by a passage retained for their concept?
 
     NOT RUN without a verifier, and never reported as passed in that case.
 
-    This is the only check here with a model in it, and the one measured to be
-    unreliable as a gate: on a seeded set it caught 3 of 3 false claims and
-    also flagged 2 of 3 TRUE ones, both needing a single inference step from
-    the passage. Treat an unsupported verdict as a question, not a defect.
+    ADVISORY, ALWAYS — `ok` is True whatever it finds, and that is deliberate.
+    On its seeded set this model caught 3 of 3 false claims and also rejected
+    2 of 3 TRUE ones, both needing one inference step from the passage ("its
+    mean is (1+20)/2 = 10.5" judged not to support "the expected value is
+    10.5"). Teaching material is written to rephrase and generalise its
+    sources, so that failure mode is the norm here rather than an edge case,
+    and failing a course on it would reject correct content faster than it
+    catches wrong content.
+
+    `verifier` is a CALLABLE — verifier(claim, passage) -> bool. An earlier
+    version of this function called `verifier.supported(...)`, which no
+    verifier in the repo exposes, so it could never have run against the real
+    one.
     """
     if verifier is None:
         return {"checked": False,
                 "reason": "no verifier available — truth NOT measured"}
+    judge = verifier if callable(verifier) else getattr(verifier, "supported", None)
+    if judge is None:
+        return {"checked": False, "reason": "verifier exposes no callable"}
+
     try:
+        # PAIRED BY CONCEPT, NOT BY SOURCE ROW.
+        #
+        # claim_sources links a claim to one source_id, and the code that
+        # writes it says the attribution is "coarse on purpose: it records
+        # THAT a concept's claims rest on this source set, not which sentence
+        # came from which passage". Joining on that exact row therefore throws
+        # away every other passage retained for the same concept — including
+        # every evidence row, which is where the recoverable text now lives.
         rows = conn.execute(
-            "SELECT cs.claim, s.passage FROM claim_sources cs "
-            "JOIN sources s ON s.source_id = cs.source_id "
-            "WHERE cs.course_uid=? AND s.passage IS NOT NULL "
+            "SELECT k.claim, s.passage FROM taught_claims k "
+            "JOIN sources s ON s.course_uid = k.course_uid "
+            "AND s.concept_uid = k.concept_uid "
+            "WHERE k.course_uid=? AND s.passage IS NOT NULL "
             "AND length(trim(s.passage)) > 50 LIMIT ?",
             (course_uid, limit)).fetchall()
     except sqlite3.OperationalError:
         return {"checked": False, "reason": "source tables absent"}
     if not rows:
-        # The common case until passages were retained: sources exist with no
-        # text, so there is nothing to check a claim against.
         return {"checked": False,
                 "reason": "no retained passages to check claims against"}
 
-    unsupported = 0
+    # RETRIEVE, THEN VERIFY. Checking every claim against every passage the
+    # concept retained is a cartesian product, not a fact check: most pairs are
+    # a claim held up against a passage on another subject, and the model
+    # correctly says "unsupported" to all of them. Measured before this step
+    # existed: 39 of 40 pairs unsupported, which is a number about the pairing,
+    # not about the course.
+    #
+    # Each claim is checked against its BEST passage — the one that shares most
+    # of its terms. Lexical rather than dense on purpose: the discriminating
+    # tokens here are `NULLS LAST`, `DENSE_RANK`, `EXCEPT ALL`, which exact
+    # matching nails and embeddings blur, and it needs no model to run.
+    # CHUNK THE PASSAGE, THEN PICK. A source is retained as one 4,000-character
+    # block, so choosing "the best passage" chose between whole documents and
+    # then handed the model the document's OPENING.
+    #
+    # Measured: every claim about frame semantics was being checked against the
+    # first paragraph of the Wikipedia window-function article — "a window
+    # function is a function which uses values from one or multiple rows" —
+    # which supports none of them. The verdicts were right and useless: the
+    # sentence that would settle the claim was 3,000 characters further down
+    # and never reached the model.
+    by_claim = {}
     for claim, passage in rows:
+        by_claim.setdefault(claim, []).extend(_chunks(passage))
+
+    unsupported = []
+    for claim, passages in by_claim.items():
+        best = max(passages, key=lambda p: _overlap(claim, p))
+        if _overlap(claim, best) < MIN_CLAIM_PASSAGE_OVERLAP:
+            # Nothing retained is about this claim. That is NOT a false claim;
+            # it is no evidence, and calling it a defect would manufacture one.
+            continue
         try:
-            if not verifier.supported(claim, passage):
-                unsupported += 1
+            if not judge(claim, best):
+                unsupported.append(claim)
         except Exception as e:
             logger.debug("verifier failed on a claim: %s", e)
-    share = unsupported / len(rows)
-    return {"checked": True, "claims": len(rows), "unsupported": unsupported,
-            "share": round(share, 3), "ok": share <= MAX_FALSE_CLAIM_SHARE,
-            "advisory": True}
+
+    judged = [c for c, ps in by_claim.items()
+              if _overlap(c, max(ps, key=lambda p: _overlap(c, p)))
+              >= MIN_CLAIM_PASSAGE_OVERLAP]
+    if not judged:
+        return {"checked": False,
+                "reason": "no retained passage was relevant to any claim"}
+    share = len(unsupported) / len(judged)
+    rows = judged
+
+    # A NEAR-TOTAL UNSUPPORTED SHARE IS A STATEMENT ABOUT THE EVIDENCE.
+    #
+    # Measured on Advanced SQL: 9 of 9 claims unsupported. Every verdict was
+    # correct on inspection — the claims were about frame defaults and tie
+    # semantics, and the retained evidence is the first 4,000 characters of a
+    # Wikipedia article that never reaches those details. The model was not
+    # wrong; the sentence that would settle each claim was never stored.
+    #
+    # Reporting that as "97% of this course is unsupported" would read as a
+    # quality collapse and send correct content to be rewritten. What it
+    # actually says is that the evidence is too thin to judge against, which
+    # is a different problem with a different fix — retain more of the source,
+    # not regenerate the concept.
+    thin = share >= 0.85
+    unsupported_note = (
+        "the retained evidence does not cover these claims — this is thin "
+        "SOURCING, not a finding about the content"
+        if thin else
+        "flagging only — this model rejects true claims that need one "
+        "inference step from the passage")
+    return {
+        "checked": True, "pairs": len(rows), "claims": len(rows),
+        "unsupported": len(unsupported), "share": round(share, 3),
+        "examples": unsupported[:3],
+        "advisory": True,
+        "evidence_too_thin": thin,
+        "note": unsupported_note,
+        # Never fails a course. See the docstring.
+        "ok": True,
+    }

@@ -4562,6 +4562,16 @@ class ContentHydrator:
         # A2: below this, grounding is too thin to present as verified. Set 0
         # to disable the retry+marker behaviour entirely.
         self.confidence_floor = float(os.getenv("HELGA_CONFIDENCE_FLOOR", "0.5"))
+        # Stage 4. On by default: it is deterministic, costs ~0.3s on a
+        # 95-concept course, and a build that skips its own audit is exactly
+        # the situation the audit exists to make visible.
+        self.audit_enabled = os.getenv("HELGA_AUDIT", "1").lower() not in (
+            "0", "false", "no")
+        # The truth pass needs a verifier that this process can reach — either
+        # torch+transformers locally, or MINICHECK_URL pointing at the
+        # host-side service. Absent both, it reports NOT MEASURED.
+        self.truth_check_enabled = os.getenv(
+            "HELGA_TRUTH_CHECK", "1").lower() not in ("0", "false", "no")
         self._low_confidence_concepts = []
         # A3: text of a user-supplied document (EPUB/markdown/text). When set,
         # concepts are grounded in the user's OWN material rather than only in
@@ -5415,6 +5425,31 @@ class ContentHydrator:
                 if self.status_callback:
                     self.status_callback(f"ASSET:ERROR:{str(e)[:120]}")
 
+        # ---- STAGE 4: THE AUDIT --------------------------------------------
+        #
+        # The last thing that happens before a course may be taught, and the
+        # only pass that reads the FINISHED course rather than one concept as
+        # it is written.
+        #
+        # It runs here, after assets, for two reasons. It sees the course a
+        # learner will actually get, aids included. And every check above it
+        # is per-concept and blind to the rest of the course, so nothing until
+        # now could notice two concepts teaching contradictory things, a
+        # definition printed twice, or a course whose depth verdict covers a
+        # seventh of it.
+        #
+        # Degradable by construction: an audit that cannot run must not destroy
+        # a course that built successfully. It records what it found, and the
+        # status it sets is the only thing it changes.
+        if total_concepts > 0 and self.audit_enabled:
+            try:
+                course["audit"] = self._run_audit(course_uid, course)
+            except Exception as e:
+                logger.warning("Stage 4 audit failed (course still usable): %s", e)
+                # NOT a pass. A course whose audit crashed is unaudited, and
+                # the reader must be able to tell that from a clean one.
+                course["audit"] = {"ran": False, "error": str(e)[:200]}
+
         self.storage.courses.update_course(course_uid, course)
 
         # COMPACT THE INDEX WHERE THE TOMBSTONES ARE MADE.
@@ -5971,6 +6006,148 @@ class ContentHydrator:
         return markdown
 
 
+
+
+    def _run_audit(self, course_uid, course):
+        """Stage 4 over the finished course. Returns the verdict to record.
+
+        Deliberately reads what is ON DISK rather than what this run produced:
+        a resumed build knows only its own segment, and the question here is
+        whether the whole course is fit to teach.
+        """
+        import time as _time
+        from services.core.course_audit import audit_course, walk_concepts
+        from services.core import course_qa
+
+        t0 = _time.time()
+        if self.status_callback:
+            self.status_callback("AUDIT:PHASE:START")
+
+        contents, sources_by_uid = {}, {}
+        for concept, _path in walk_concepts(course):
+            uid = concept.get("uid")
+            if not uid:
+                continue
+            try:
+                body = self.storage.courses.get_concept_content(course_uid, uid)
+            except Exception:
+                body = None
+            if body:
+                contents[uid] = body
+
+        conn = self._ledger_conn()
+        if conn is not None:
+            try:
+                for row in conn.execute(
+                        "SELECT concept_uid, title, url, passage, source_type "
+                        "FROM sources WHERE course_uid=?", (course_uid,)):
+                    sources_by_uid.setdefault(row[0], []).append(
+                        {"title": row[1], "url": row[2], "passage": row[3],
+                         "type": row[4]})
+            except Exception as e:
+                logger.debug("audit could not read sources: %s", e)
+
+        # THE DOMAIN COMES OFF THE COURSE, NEVER RE-INFERRED.
+        #
+        # Re-inferring is what made hydration demand a named theorem of every
+        # SQL concept when 0 of 16 known-good ones had one. The course already
+        # records what it is.
+        report = audit_course(
+            course, contents, sources_by_uid=sources_by_uid,
+            mastery=self.mastery_level,
+            course_title=course.get("title") or "",
+            domain=course.get("teaching_domain") or self.topic_domain)
+
+        # The ledger half: questions answerable only from what the build
+        # recorded, which the file-level pass cannot see.
+        ledger = {}
+        if conn is not None:
+            for name, fn in (("substance", course_qa.check_substance),
+                             ("hollowness", course_qa.check_hollowness),
+                             ("grounding", course_qa.check_grounding),
+                             ("supplementary", course_qa.check_supplementary)):
+                try:
+                    ledger[name] = fn(conn, course_uid)
+                except Exception as e:
+                    ledger[name] = {"checked": False, "reason": str(e)[:120]}
+        try:
+            ledger["depth"] = course_qa.check_depth(course)
+        except Exception as e:
+            ledger["depth"] = {"checked": False, "reason": str(e)[:120]}
+
+        # TRUTH — the only check here with a model in it, and the only one
+        # that is ADVISORY rather than binding.
+        #
+        # Measured on its own seeded set, reproduced 2026-08-25: it caught 3 of
+        # 3 false claims and also flagged 2 of 3 TRUE ones, both needing a
+        # single inference step from the passage. High recall on falsehood,
+        # poor precision on truth — so an unsupported verdict is a question,
+        # not a defect, and it never decides a course's verdict on its own.
+        #
+        # Both of its false flags were COMPUTABLE claims, which is why the
+        # deterministic execution tier runs first: it settles that exact class
+        # before this model ever sees it.
+        if conn is not None and self.truth_check_enabled:
+            try:
+                from services.core import claim_verifier
+                verifier = claim_verifier.get_any_verifier()
+                ledger["truth"] = course_qa.check_truth(
+                    conn, course_uid, verifier=verifier)
+            except Exception as e:
+                ledger["truth"] = {"checked": False, "reason": str(e)[:120]}
+        else:
+            ledger["truth"] = {"checked": False,
+                               "reason": "truth check disabled"}
+
+        report["ledger"] = ledger
+        report["ran"] = True
+        report["seconds"] = round(_time.time() - t0, 2)
+
+        blocking = report.get("by_severity", {}).get("blocking", 0)
+        serious = report.get("by_severity", {}).get("serious", 0)
+        # `truth` is left out of the binding set on purpose — see above. It is
+        # reported in full and counted separately so nobody has to read this
+        # code to know it was measured.
+        ledger_failed = sorted(k for k, v in ledger.items()
+                               if k != "truth"
+                               and v.get("checked") and not v.get("ok"))
+        _truth = ledger.get("truth") or {}
+        if _truth.get("checked") and not _truth.get("ok"):
+            report["truth_advisory"] = {
+                "claims": _truth.get("claims"),
+                "unsupported": _truth.get("unsupported"),
+                "share": _truth.get("share"),
+                "note": "advisory — this model flags true claims that need one "
+                        "inference step from the passage; treat as a question",
+            }
+        # UNCHECKED IS NOT CLEAN, and it is recorded as its own state.
+        ledger_unrun = sorted(k for k, v in ledger.items()
+                              if not v.get("checked"))
+        report["ledger_failed"] = ledger_failed
+        report["ledger_not_run"] = ledger_unrun
+
+        if blocking:
+            report["verdict"] = "blocking_findings"
+        elif serious or ledger_failed:
+            report["verdict"] = "needs_review"
+        elif ledger_unrun or report.get("concepts_not_audited"):
+            report["verdict"] = "incomplete"
+        else:
+            report["verdict"] = "clean"
+
+        logger.info(
+            "[AUDIT] %s: %s — %d blocking, %d serious, %d concept(s) with "
+            "findings, %.1fs", course.get("title") or course_uid,
+            report["verdict"], blocking, serious,
+            report.get("concepts_with_findings", 0), report["seconds"])
+        if self.status_callback:
+            self.status_callback(
+                f"AUDIT:DONE:{report['verdict']}:{blocking}:{serious}")
+
+        # Findings are the actionable part; the full list can run to hundreds
+        # on a bad course and this rides inside structure.json.
+        report["findings"] = report.get("findings", [])[:60]
+        return report
 
     def _fetch_more_evidence(self, title, h_ctx, course_title, existing):
         """One broadened research pass for a concept whose content fell short.
