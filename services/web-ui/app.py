@@ -1176,6 +1176,13 @@ def api_resume_points():
         return jsonify({}), 200
 
 
+# Longer than the inner LLM budget on purpose. fsm_logic allows 120s per turn
+# and llm_client escalates to 900s while a model loads; a 60s proxy in front of
+# that reports failure for work that is about to succeed. Measured cold load on
+# this hardware: 114s.
+EVENT_PROXY_TIMEOUT_S = int(os.getenv("HELGA_EVENT_PROXY_TIMEOUT", "300"))
+
+
 @app.route('/api/event', methods=['POST'])
 @csrf_protect
 def post_event():
@@ -1185,8 +1192,18 @@ def post_event():
     if not sid_student:
         return jsonify({'error': 'student session required'}), 401
     body = {**(request.json or {}), 'student_id': sid_student}
+    # THE OUTER TIMEOUT MUST OUTLAST THE INNER ONE.
+    #
+    # This waited 60s in front of a call whose own LLM budget is 120s
+    # (fsm_logic._call_llm_stream) and which escalates to as much as 900s while
+    # the model loads (llm_client). So the proxy manufactured an error for a
+    # request that was going to succeed — and it did so on the FIRST TURN OF
+    # THE DAY, every day, because a cold 14 GB model takes about two minutes
+    # to load on this hardware. The learner saw "could not reach the tutor
+    # service" while the tutor service was working.
     try:
-        resp = requests.post(f'{SERVICES["core"]}/event', json=body, timeout=60)
+        resp = requests.post(f'{SERVICES["core"]}/event', json=body,
+                             timeout=EVENT_PROXY_TIMEOUT_S)
         # push-on-completion: this student's fresh state to their room
         try:
             state = _fetch_student_state(sid_student)
@@ -1194,7 +1211,24 @@ def post_event():
         except Exception as push_err:
             logger.warning(f"post-event state push failed (non-fatal): {push_err}")
         return jsonify(resp.json()), resp.status_code
+    except requests.exceptions.Timeout:
+        # Logged, unlike before: this is the error a learner is most likely to
+        # see, and it wrote NOTHING to web-ui.log — so the one failure that
+        # matters was the one with no trace. Neighbouring handlers log; this
+        # one did not.
+        logger.error(
+            "event proxy timed out after %ss for student %s (event=%s). The "
+            "turn may still be running in core — check core.log before "
+            "concluding the tutor is down.",
+            EVENT_PROXY_TIMEOUT_S, sid_student, (body or {}).get("type"))
+        return jsonify({
+            'error': 'still_working',
+            'message': ("Helga is still working on this one. It is not lost — "
+                        "the answer will appear when it is ready."),
+        }), 504
     except Exception as e:
+        logger.error("event proxy failed for student %s (event=%s): %s",
+                     sid_student, (body or {}).get("type"), e)
         return jsonify({'error': str(e)}), 502
 
 # NOTE: Schedule routes are defined above (lines 305-355) using direct StorageManager access.

@@ -1640,31 +1640,43 @@
                         textInputEl.placeholder = 'Type your answer…';
                     }
                     if (chat) {
+                        // NOT IN HELGA'S VOICE, AND NOT AN ERROR.
+                        //
+                        // This rendered with Helga's avatar and the `error`
+                        // class, so the tutor herself appeared to say "The LLM
+                        // may be warming up" — the exact thing session.js
+                        // already documents she must never appear to say. The
+                        // rule was fixed in that file and left broken here.
+                        //
+                        // It is also not a failure: a cold 14 GB model takes
+                        // about two minutes to load on this hardware, and the
+                        // turn is still running. So this is a SYSTEM notice
+                        // that says what is happening and how long it takes,
+                        // with no Retry — retrying queues a second turn behind
+                        // the FSM lock and makes it slower, which is what the
+                        // button was inviting the learner to do.
                         const msg = document.createElement('div');
-                        msg.className = 'chat-msg incoming error';
-                        msg.innerHTML =
-                            '<div class="chat-msg-content">' +
-                            '  <img class="chat-msg-avatar" src="/static/img/helga-avatar.svg" alt="Helga">' +
-                            '  <div class="chat-msg-body">' +
-                            '    <div class="chat-msg-text">This concept is taking longer than usual to load. The LLM may be warming up.</div>' +
-                            '    <button type="button" class="nav-retry-btn" id="nav-retry-btn">Retry</button>' +
-                            '  </div>' +
-                            '</div>';
+                        msg.className = 'chat-sysnotice';
+                        const t = document.createElement('div');
+                        t.className = 'chat-sysnotice-text';
+                        t.textContent = warmingUpNotice();
+                        msg.appendChild(t);
                         chat.appendChild(msg);
                         chat.scrollTop = chat.scrollHeight;
-                        const retryBtn = document.getElementById('nav-retry-btn');
-                        if (retryBtn) {
-                            retryBtn.addEventListener('click', function(e) {
-                                e.preventDefault();
-                                msg.remove();
-                                enterNode(uid, title);
-                            });
-                        }
                     }
                 }
             }, 45000);
 
-            // Clear chat stream, optimistic user messages, streaming bubbles,
+            // Said once, so the wording cannot drift between the places that
+        // narrate the same wait.
+        function warmingUpNotice() {
+            return (window.__helgaModelWarm
+                ? 'Still thinking — this concept is a long one.'
+                : 'Loading the model. The first lesson of the day takes about '
+                  + 'two minutes; after that they start straight away.');
+        }
+
+        // Clear chat stream, optimistic user messages, streaming bubbles,
             // and session.js's module-local displayedMessagesCount counter.
             if (typeof window.resetChatSession === 'function') {
                 window.resetChatSession();

@@ -1428,7 +1428,13 @@ function sendEvent(eventType, payload) {
         .then(response => {
             console.log('[sendEvent] Response status:', response.status, response.statusText);
             if (!response.ok) {
-                throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                // Carry the STATUS, not just a sentence about it. The handler
+                // downstream has to tell "still working" (504) from "cannot
+                // reach" (502), and parsing that back out of the message text
+                // is how the two get conflated again.
+                const _err = new Error(`Server returned ${response.status}: ${response.statusText}`);
+                _err.status = response.status;
+                throw _err;
             }
             return response.json();
         })
@@ -1463,11 +1469,32 @@ function sendEvent(eventType, payload) {
                 body.className = 'chat-system-notice-text';
                 // Two sentences: what happened in the learner's terms, then the
                 // technical detail small and last, for whoever is debugging.
+                // A TIMEOUT IS NOT A FAILURE TO REACH.
+                //
+                // Every non-2xx landed here saying "could not reach the tutor
+                // service. Your progress is saved." On the first turn of the
+                // day both halves were false: the service was reached and was
+                // working, and nothing had been saved yet. The 504 the proxy
+                // now returns means the turn is STILL RUNNING, which is a
+                // different sentence and a different instruction to the
+                // learner — wait, do not retry.
+                const stillWorking = (error && (error.status === 504 ||
+                    /\b504\b|still_working|timed? ?out/i.test(String(error.message || ''))));
                 const lead = document.createElement('strong');
-                lead.textContent = 'Helga could not reach the tutor service.';
                 const detail = document.createElement('span');
                 detail.className = 'chat-system-notice-detail';
-                detail.textContent = 'Your progress is saved. ' + (error.message || 'unknown error') + '.';
+                if (stillWorking) {
+                    errorDiv.classList.remove('is-error');
+                    icon.textContent = '…';
+                    lead.textContent = 'Helga is still working on this one.';
+                    detail.textContent = 'It is not lost — the answer appears '
+                        + 'here when it is ready. The first lesson of the day '
+                        + 'waits for the model to load, about two minutes.';
+                } else {
+                    lead.textContent = 'Helga could not reach the tutor service.';
+                    detail.textContent = 'Anything you have already completed is '
+                        + 'saved. ' + (error.message || 'unknown error') + '.';
+                }
                 body.appendChild(lead);
                 body.appendChild(detail);
                 errorDiv.appendChild(icon);
