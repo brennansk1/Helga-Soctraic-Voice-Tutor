@@ -64,10 +64,10 @@ CACHE_TTL = 604800          # 7 days
 def _cache():
     """The shared research cache, or None if unavailable."""
     try:
-        try:  # container (flat layout: modules live at /app)
-            from research_server import cache
-        except ImportError:  # imported as a package
+        try:  # imported as a package (tests, other services)
             from services.research.research_server import cache
+        except ImportError:  # container: this image mounts the modules flat at /app
+            from research_server import cache
         return cache
     except Exception:
         try:

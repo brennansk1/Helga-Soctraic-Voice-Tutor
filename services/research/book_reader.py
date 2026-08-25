@@ -374,10 +374,10 @@ def _text_preserving_code(soup):
         for pre in soup.find_all("pre"):
             # Shared with doc_reader: line-level elements make lines,
             # inline spans do not. Neither separator alone is correct.
-            try:  # container (flat layout: modules live at /app)
-                from doc_reader import _code_text
-            except ImportError:  # imported as a package
+            try:  # imported as a package (tests, other services)
                 from services.research.doc_reader import _code_text
+            except ImportError:  # container: this image mounts the modules flat at /app
+                from doc_reader import _code_text
             code = _code_text(pre)
             if not (code or "").strip():
                 continue

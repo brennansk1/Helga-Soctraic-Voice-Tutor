@@ -81,10 +81,10 @@ import urllib.parse
 
 logger = logging.getLogger(__name__)
 
-try:  # container (flat)
-    import ratelimit as _rl
-except ImportError:  # imported as a package
+try:  # imported as a package (tests, other services)
     from services.research import ratelimit as _rl
+except ImportError:  # container: this image mounts the modules flat at /app
+    import ratelimit as _rl
 
 #: Which library hosts which subjects. LibreTexts splits by discipline, and
 #: asking the wrong one returns nothing rather than something wrong.

@@ -23,9 +23,9 @@ import trafilatura
 import wikipediaapi
 
 try:
-    import ratelimit as _rl
-except ImportError:
     from services.research import ratelimit as _rl
+except ImportError:
+    import ratelimit as _rl
 from diskcache import Cache
 from flask import Flask, request, jsonify
 
@@ -629,14 +629,14 @@ async def extract_page(session, url):
         return None
 
     try:
-        try:  # container (flat layout: modules live at /app)
-            from ranking import is_documentation
-        except ImportError:  # imported as a package
+        try:  # imported as a package (tests, other services)
             from services.research.ranking import is_documentation
-        try:  # container (flat layout: modules live at /app)
-            import doc_crawler
-        except ImportError:  # imported as a package
+        except ImportError:  # container: this image mounts the modules flat at /app
+            from ranking import is_documentation
+        try:  # imported as a package (tests, other services)
             from services.research import doc_crawler
+        except ImportError:  # container: this image mounts the modules flat at /app
+            import doc_crawler
         if is_documentation(url):
             links = doc_crawler.discover(url, html)
             if links:
@@ -692,11 +692,11 @@ def _lookup_subjects(title, module_title, course_title, broaden=False):
         # See api_research_concept: broadening must WIDEN the net, never swap
         # it, so the narrow subjects stay at the front of the list.
         try:
-            try:      # container (flat)
-                from syllabus_sources import discover_broader_subjects
-            except ImportError:
+            try:  # imported as a package (tests, other services)
                 from services.research.syllabus_sources import (
                     discover_broader_subjects)
+            except ImportError:
+                from syllabus_sources import discover_broader_subjects
             ordered += discover_broader_subjects(
                 module_title or course_title or title)
         except Exception as e:
@@ -934,10 +934,10 @@ async def _research_concept_async(title, module_title, course_title, mastery=1,
     # Routed, never global — an irrelevant hit is not neutral, it costs latency
     # AND inflates grounding confidence while teaching nothing.
     try:
-        from domain_sources import classify_domains, fetch_domain_sources
-    except ImportError:
         from services.research.domain_sources import (
             classify_domains, fetch_domain_sources)
+    except ImportError:
+        from domain_sources import classify_domains, fetch_domain_sources
     try:
         _domains = classify_domains(title, module_title, course_title)
         # The concept first here too: a museum or an archive is one of the few

@@ -47,9 +47,9 @@ import time
 import requests
 
 try:
-    import ratelimit as _rl
-except ImportError:
     from services.research import ratelimit as _rl
+except ImportError:
+    import ratelimit as _rl
 
 logger = logging.getLogger(__name__)
 
@@ -484,10 +484,10 @@ def _openstax_chapters(archive, uid, version, cap=60, title=None):
     if not title:
         return []
     try:
-        try:  # container (flat layout: modules live at /app)
-            from libretexts import chapters_for
-        except ImportError:  # imported as a package
+        try:  # imported as a package (tests, other services)
             from services.research.libretexts import chapters_for
+        except ImportError:  # container: this image mounts the modules flat at /app
+            from libretexts import chapters_for
     except ImportError:  # container (flat)
         try:
             from libretexts import chapters_for

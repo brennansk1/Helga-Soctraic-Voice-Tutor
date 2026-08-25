@@ -43,23 +43,23 @@ import time
 # is not a small mistake — the identical error hid in the research Dockerfile
 # and crash-looped that service for weeks, and here it silently returns "no
 # evidence", which looks exactly like a subject with no textbooks.
-try:  # container (flat)
-    from syllabus_sources import (
+try:  # imported as a package (tests, other services)
+    from services.research.syllabus_sources import (
         WIKIBOOKS_API, WIKIVERSITY_API, _chapters_of, _get_json, _search_book,
         discover_broader_subjects, fetch_stats, fetch_stats_reset,
         subject_outline, vocabulary_line,
     )
-except ImportError:  # imported as a package
-    from services.research.syllabus_sources import (
+except ImportError:  # container: this image mounts the modules flat at /app
+    from syllabus_sources import (
         WIKIBOOKS_API, WIKIVERSITY_API, _chapters_of, _get_json, _search_book,
         discover_broader_subjects, fetch_stats, fetch_stats_reset,
         subject_outline, vocabulary_line,
     )
 
 try:
-    import ratelimit as _rl
-except ImportError:
     from services.research import ratelimit as _rl
+except ImportError:
+    import ratelimit as _rl
 
 logger = logging.getLogger(__name__)
 

@@ -32,10 +32,10 @@ import re
 
 logger = logging.getLogger(__name__)
 
-try:  # container (flat)
-    from syllabus_sources import _get_json
-except ImportError:  # imported as a package
+try:  # imported as a package (tests, other services)
     from services.research.syllabus_sources import _get_json
+except ImportError:  # container: this image mounts the modules flat at /app
+    from syllabus_sources import _get_json
 
 
 # --- Licence filter ----------------------------------------------------------
