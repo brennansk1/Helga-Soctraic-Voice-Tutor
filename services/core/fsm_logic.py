@@ -4897,6 +4897,21 @@ class MnemosyneFSM:
                 # Remove style token from remaining topic text
                 topic = topic.replace(style_str, "").strip()
 
+        # GIVE THE LEARNER BACK THEIR OWN CAPITALISATION.
+        #
+        # Parsing lowercases the whole command so the prefix and style
+        # stripping can match, and the result was then used as the COURSE
+        # TITLE — so a learner who typed "Advanced SQL" got a course called
+        # "advanced sql", and the course list showed "sql". Title-casing it
+        # would be worse ("Sql"). The original text still holds the right
+        # answer, so take the span back from it.
+        if topic:
+            _i = text.lower().find(topic)
+            if _i >= 0:
+                _original = text[_i:_i + len(topic)].strip()
+                if _original:
+                    topic = _original
+
         # Try to extract depth if present
         if "with depth" in topic.lower():
             parts = topic.lower().split("with depth")

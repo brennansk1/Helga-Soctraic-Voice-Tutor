@@ -1485,6 +1485,24 @@ def resume_build(course_uid):
             return jsonify({"status": "already_resuming"}), 202
         _RESUMING.add(course_uid)
 
+    # SAY THAT IT IS BUILDING WHILE IT BUILDS.
+    #
+    # A course reaped as "failed" and then resumed kept advertising "failed"
+    # for the hours the resume took, so the course list told a learner their
+    # course was broken while it was actively being written. The status is
+    # what the UI renders from; leaving it stale is the same class of defect
+    # as leaving it wrong.
+    # READ, MODIFY, WRITE. update_course OVERWRITES structure.json with the
+    # dict it is given — passing {"status": "building"} would replace the
+    # entire course with a three-key stub and destroy every module in it.
+    try:
+        _c = storage.courses.get_course(course_uid)
+        if _c:
+            _c["status"] = "building"
+            storage.courses.update_course(course_uid, _c)
+    except Exception as e:
+        logger.warning("could not mark %s as building: %s", course_uid, e)
+
     def _run():
         try:
             from services.core.course_builder import ContentHydrator
