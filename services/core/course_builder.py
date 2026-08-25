@@ -4576,6 +4576,12 @@ class ContentHydrator:
         # host-side service. Absent both, it reports NOT MEASURED.
         self.truth_check_enabled = os.getenv(
             "HELGA_TRUTH_CHECK", "1").lower() not in ("0", "false", "no")
+        # Pass 3. Model time at the end of a build the learner is waiting on,
+        # so it is bounded — the deterministic audit has already named exactly
+        # which concepts are worth spending it on.
+        self.repair_enabled = os.getenv("HELGA_REPAIR", "1").lower() not in (
+            "0", "false", "no")
+        self.repair_budget = int(os.getenv("HELGA_REPAIR_BUDGET", "25"))
         self._low_confidence_concepts = []
         # A3: text of a user-supplied document (EPUB/markdown/text). When set,
         # concepts are grounded in the user's OWN material rather than only in
@@ -5448,6 +5454,16 @@ class ContentHydrator:
         if total_concepts > 0 and self.audit_enabled:
             try:
                 course["audit"] = self._run_audit(course_uid, course)
+                # PASS 3 — repair what it found, then re-audit so the
+                # recorded verdict describes the course as it now stands
+                # rather than as it was before the fixes.
+                if self.repair_enabled:
+                    course["repair"] = self._run_repair(
+                        course_uid, course, course["audit"])
+                    if (course["repair"].get("outcomes") or {}).get("fixed") \
+                            or (course["repair"].get("outcomes") or {}).get("escalated"):
+                        course["audit"] = self._run_audit(course_uid, course)
+                        course["audit"]["after_repair"] = True
             except Exception as e:
                 logger.warning("Stage 4 audit failed (course still usable): %s", e)
                 # NOT a pass. A course whose audit crashed is unaudited, and
@@ -6177,6 +6193,235 @@ class ContentHydrator:
         # on a bad course and this rides inside structure.json.
         report["findings"] = report.get("findings", [])[:60]
         return report
+
+
+    def _repair_one(self, uid, title, course_title, markdown, findings,
+                    mastery, domain, sources, escalate=False):
+        """One repair attempt, re-checked before it is allowed to count.
+
+        Returns (text, outcome, remaining_findings). `text` is the ORIGINAL
+        unless the re-check says the candidate is better — a repair that does
+        not verify is not a repair, and storing it on the model's say-so is
+        precisely the self-correction failure this design is built around.
+        """
+        from services.core import course_repair
+        from services.core.course_audit import audit_concept
+
+        evidence = course_repair.evidence_for(findings)
+        prompt = course_repair.build_prompt(
+            markdown, findings, title, course_title, evidence=evidence,
+            domain_guidance=self._domain_guidance(domain))
+
+        try:
+            raw = llm_generate(
+                prompt,
+                sys_prompt=course_repair.REPAIR_SYSTEM,
+                # Room for the whole document back, not just the fixed lines.
+                max_tokens=max(1200, int(len(markdown.split()) * 2.2)),
+                # Low temperature: this is a correction, not composition.
+                role="build",
+            )
+        except Exception as e:
+            logger.warning("  [REPAIR] '%s' generation failed: %s", title, e)
+            return markdown, "failed", findings
+
+        candidate = course_repair.clean_output(raw)
+        ok, why = course_repair.is_plausible_repair(markdown, candidate)
+        if not ok:
+            logger.info("  [REPAIR] '%s' rejected: %s", title, why)
+            return markdown, "rejected", findings
+
+        # RE-CHECK WITH THE SAME GATES THAT RAISED THE FINDING.
+        #
+        # This is the whole safety argument for letting a model rewrite taught
+        # content: a wrong repair is caught by the same external checks, so the
+        # worst case is a wasted generation rather than a new falsehood in a
+        # lesson.
+        concept = {"uid": uid, "title": title}
+        new_findings, _ran = audit_concept(
+            candidate, concept, course_title, mastery, domain, sources=sources)
+        before = len(course_repair.repairable(
+            [f.as_dict() if hasattr(f, "as_dict") else f for f in findings]))
+        after_list = [f.as_dict() for f in new_findings]
+        after = len(course_repair.repairable(after_list))
+
+        blocking_after = sum(1 for f in after_list
+                             if f.get("severity") == "blocking")
+        if blocking_after:
+            # A repair that leaves a false claim standing is not progress,
+            # whatever else it improved.
+            logger.info("  [REPAIR] '%s' still states something false", title)
+            return markdown, "still_false", after_list
+        if after >= before:
+            logger.info("  [REPAIR] '%s' no better (%d -> %d)", title,
+                        before, after)
+            return markdown, "unchanged", after_list
+
+        logger.info("  [REPAIR] '%s' %d -> %d finding(s)%s", title, before,
+                    after, " (escalated)" if escalate else "")
+        return candidate, ("escalated" if escalate else "fixed"), after_list
+
+    def _domain_guidance(self, domain):
+        """The domain's own voice, so a repaired maths concept does not come
+        back written like a history one."""
+        if not domain:
+            return ""
+        try:
+            from services.domains import registry
+            pack = registry.for_domain(domain)
+            line = getattr(pack, "prompt_line", None)
+            return line() if callable(line) else (line or "")
+        except Exception:
+            return ""
+
+    def _run_repair(self, course_uid, course, report):
+        """Pass 3 over everything the audit flagged as fixable.
+
+        Bounded on purpose: this is model time at the end of a build the
+        learner is already waiting on, and the deterministic half of the audit
+        has already told us exactly which concepts are worth spending it on.
+        """
+        import time as _time
+        from services.core import course_repair
+
+        t0 = _time.time()
+        by_concept = {}
+        for f in report.get("findings") or []:
+            if f.get("check") in course_repair.REPAIRABLE_CHECKS:
+                by_concept.setdefault(f.get("concept_uid"), []).append(f)
+        if not by_concept:
+            return {"ran": True, "attempted": 0, "seconds": 0.0}
+
+        # Worst first. If the budget runs out, it runs out on minor findings.
+        order = sorted(
+            by_concept.items(),
+            key=lambda kv: -sum(3 if f.get("severity") == "blocking"
+                                else 2 if f.get("severity") == "serious" else 1
+                                for f in kv[1]))
+        budget = self.repair_budget
+        if budget and len(order) > budget:
+            logger.info("[REPAIR] %d concept(s) flagged, repairing the worst "
+                        "%d — the rest are reported, not hidden",
+                        len(order), budget)
+            order = order[:budget]
+
+        titles = {c.get("uid"): c.get("title", "")
+                  for c, _ in self._walk(course)}
+        course_title = course.get("title") or ""
+        mastery = self.mastery_level
+        domain = course.get("teaching_domain") or self.topic_domain
+        outcomes = {"fixed": 0, "escalated": 0, "unchanged": 0,
+                    "rejected": 0, "failed": 0, "still_false": 0,
+                    "withheld": 0}
+        withheld = []
+
+        for uid, findings in order:
+            # MEMORY AND FAIRNESS. Every attempt is a model call, so this asks
+            # the same question the truth tier does — and stops rather than
+            # degrades, because a partial repair pass is a normal outcome and
+            # the audit already recorded what was found.
+            try:
+                from services.common import memory_guard as _mg
+                if not _mg.allow_background():
+                    logger.info("[REPAIR] stopping under memory pressure: %s",
+                                _mg.pressure_reason() or "low memory")
+                    break
+            except Exception:
+                pass
+
+            title = titles.get(uid) or ""
+            try:
+                markdown = self.storage.courses.get_concept_content(
+                    course_uid, uid)
+            except Exception:
+                markdown = None
+            if not markdown:
+                continue
+
+            sources = self._sources_for(course_uid, uid)
+            if self.status_callback:
+                self.status_callback(f"REPAIR:CONCEPT:{title}")
+
+            text, outcome, remaining = self._repair_one(
+                uid, title, course_title, markdown, findings, mastery,
+                domain, sources)
+
+            # ESCALATE. The small model failed; ask the builder model, with the
+            # same evidence, once.
+            if outcome in ("unchanged", "rejected", "still_false", "failed"):
+                text, outcome, remaining = self._repair_one(
+                    uid, title, course_title, markdown, remaining or findings,
+                    mastery, domain, sources, escalate=True)
+
+            if outcome in ("fixed", "escalated"):
+                try:
+                    self.storage.courses.save_concept_content(
+                        course_uid, uid, text)
+                except Exception as e:
+                    logger.warning("  [REPAIR] could not store '%s': %s",
+                                   title, e)
+                    outcome = "failed"
+
+            outcomes[outcome] = outcomes.get(outcome, 0) + 1
+
+            # WITHHELD. A concept that still states something a database
+            # contradicts is not served. A gap in a course is a worse course;
+            # a false claim is a lie told to someone who trusted it.
+            if any(f.get("severity") == "blocking" for f in (remaining or [])):
+                withheld.append({"concept_uid": uid, "title": title,
+                                 "why": (remaining or [{}])[0].get("detail")})
+                outcomes["withheld"] += 1
+
+        if withheld:
+            self._mark_withheld(course, withheld)
+
+        result = {
+            "ran": True,
+            "attempted": len(order),
+            "outcomes": outcomes,
+            "withheld": withheld[:25],
+            "seconds": round(_time.time() - t0, 2),
+        }
+        logger.info("[REPAIR] %d attempted: %s (%.0fs)", len(order),
+                    ", ".join(f"{k}={v}" for k, v in outcomes.items() if v),
+                    result["seconds"])
+        if self.status_callback:
+            self.status_callback(
+                f"REPAIR:DONE:{outcomes.get('fixed', 0)}:"
+                f"{outcomes.get('escalated', 0)}:{outcomes.get('withheld', 0)}")
+        return result
+
+    def _walk(self, course):
+        from services.core.course_audit import walk_concepts
+        return walk_concepts(course)
+
+    def _sources_for(self, course_uid, concept_uid):
+        conn = self._ledger_conn()
+        if conn is None:
+            return []
+        try:
+            return [{"title": r[0], "url": r[1], "passage": r[2], "type": r[3]}
+                    for r in conn.execute(
+                        "SELECT title, url, passage, source_type FROM sources "
+                        "WHERE course_uid=? AND concept_uid=?",
+                        (course_uid, concept_uid))]
+        except Exception:
+            return []
+
+    def _mark_withheld(self, course, withheld):
+        """Flag the concepts the learner must not be shown.
+
+        Written onto the concept node so every reader sees it — the path view,
+        the session, and search — rather than only whoever remembers to open
+        the audit report.
+        """
+        flagged = {w["concept_uid"] for w in withheld}
+        for concept, _path in self._walk(course):
+            if concept.get("uid") in flagged:
+                concept["withheld"] = True
+                concept["withheld_reason"] = next(
+                    (w.get("why") for w in withheld
+                     if w["concept_uid"] == concept.get("uid")), "")
 
     def _fetch_more_evidence(self, title, h_ctx, course_title, existing):
         """One broadened research pass for a concept whose content fell short.

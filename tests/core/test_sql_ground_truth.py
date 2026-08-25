@@ -112,3 +112,70 @@ def test_measured_file_matches_a_real_engine():
     assert "PostgreSQL" in rec["engine"]
     assert rec["measured_at"]
     assert rec["probes"]["nulls_order"] == {"asc": "last", "desc": "first"}
+
+
+# --- blind spots the REPAIR LOOP found --------------------------------------
+#
+# Pass 3 was asked to fix a concept and did: it corrected every sentence these
+# probes matched, and left two saying exactly the same false thing in wording
+# they missed. The audit then reported zero blocking findings on a concept
+# still teaching the wrong ordering.
+#
+# That is the failure mode of any repair loop — it optimises against the
+# DETECTOR — and it makes a gap in the detector a laundering mechanism rather
+# than merely a miss. These are pinned because the loop will keep finding them.
+
+@pytest.mark.parametrize("text", [
+    # No ASC/DESC token at all — the direction is a plain English word.
+    "PostgreSQL defaults to `NULLS FIRST` for ascending sorts and `NULLS LAST` "
+    "for descending sorts.",
+    # One NULL, two position claims. The old pattern needed a NULL before each.
+    "In PostgreSQL, NULLs are first in ASC and last in DESC by default.",
+    # Found in the corpus only after the patterns widened.
+    "PostgreSQL places `NULL`s first in ascending order, but other systems vary.",
+])
+def test_the_laundered_phrasings_are_caught(text):
+    findings, _ = gt.check_markdown(text)
+    assert findings, f"a repair could hide a falsehood in this wording: {text}"
+
+
+@pytest.mark.parametrize("text", [
+    "In PostgreSQL, NULLs are last in ASC and first in DESC by default.",
+    "PostgreSQL defaults to NULLS LAST for ascending sorts and NULLS FIRST "
+    "for descending sorts.",
+    # Naming the modifiers is not asserting which is the default.
+    "PostgreSQL supports `NULLS FIRST` and `NULLS LAST` clauses, which "
+    "override the default behaviour.",
+])
+def test_widening_did_not_convict_correct_prose(text):
+    findings, _ = gt.check_markdown(text)
+    assert findings == [], f"false positive after widening: {findings}"
+
+
+# --- the third vocabulary, also found by the repair loop --------------------
+#
+# After the patterns were widened once, a repaired concept came back reading
+# "ORDER BY treats NULL as the LOWEST value in ascending order (in PostgreSQL)"
+# — the same falsehood in a third wording, invisible again. In an ascending
+# sort the lowest value comes first and the highest comes last, so magnitude
+# words are position claims and have to be read as such.
+
+@pytest.mark.parametrize("text", [
+    "`ORDER BY` treats `NULL` as the lowest value in ascending order in PostgreSQL.",
+    "NULLs are treated as the smallest value when sorting ascending.",
+])
+def test_magnitude_wording_is_read_as_position(text):
+    findings, _ = gt.check_markdown(text)
+    assert findings, f"a falsehood could hide in magnitude wording: {text}"
+
+
+@pytest.mark.parametrize("text", [
+    "`ORDER BY` treats `NULL` as the highest value in ascending order in PostgreSQL.",
+    "PostgreSQL sorts NULLs last in ascending order, treating them as greater "
+    "than any other value.",
+    "NULL values are sorted as if they were the highest possible value in "
+    "ascending order.",
+])
+def test_correct_magnitude_wording_is_left_alone(text):
+    findings, _ = gt.check_markdown(text)
+    assert findings == [], f"false positive on correct magnitude wording: {findings}"

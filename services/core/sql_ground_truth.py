@@ -134,8 +134,54 @@ def _nulls_order_truth(container):
 # sentence is left alone. That is the conservative direction: a checker that
 # convicts correct prose teaches the pipeline to write worse prose.
 _SENTENCE = re.compile(r"[^.!?\n]+")
-_DIRECTION = re.compile(r"\b(ASC|DESC)\b", re.IGNORECASE)
-_NULL_POSITION = re.compile(r"\bNULLs?\b[^.\n]{0,40}?\b(first|last)\b", re.IGNORECASE)
+
+# BLIND SPOTS FOUND BY THE REPAIR LOOP, WHICH IS THE INTERESTING PART.
+#
+# Pass 3 was asked to fix this concept and did — it corrected every sentence
+# these patterns matched, and left two that say exactly the same false thing in
+# words the patterns missed:
+#
+#     "PostgreSQL defaults to NULLS FIRST for ascending sorts and NULLS LAST
+#      for descending sorts"                     <- no ASC/DESC token at all
+#     "NULLs are first in ASC and last in DESC"  <- one NULL, two positions
+#
+# The audit then reported zero blocking findings on a concept still teaching
+# the wrong thing. A repair loop optimises against the DETECTOR, so a gap in
+# the detector becomes a laundering mechanism: the falsehood survives and
+# acquires a clean bill of health. Every gap found this way is worth more than
+# one found by reading, because the loop will find them all eventually.
+_DIRECTION = re.compile(r"\b(ASC|DESC|ascending|descending)\b", re.IGNORECASE)
+
+# A position word inside a sentence that is about NULL ordering. The NULL token
+# no longer has to precede each one: "NULLs are first in ASC and last in DESC"
+# carries two claims and one NULL.
+# ORDERING IS ALSO SAID AS MAGNITUDE, and the repair loop found that too.
+#
+# After the first widening, a repaired concept came back reading "ORDER BY
+# treats NULL as the LOWEST value in ascending order (in PostgreSQL)" — the
+# same falsehood again, in a third vocabulary, and again invisible. In an
+# ascending sort the lowest value comes first and the highest comes last, so
+# these are position claims wearing different words.
+_POSITION_SYNONYM = {
+    "first": "first", "lowest": "first", "smallest": "first",
+    "last": "last", "highest": "last", "largest": "last", "greatest": "last",
+}
+_NULL_POSITION = re.compile(
+    r"\b(first|last|lowest|smallest|highest|largest|greatest)\b",
+    re.IGNORECASE)
+_MENTIONS_NULL = re.compile(r"\bNULLs?\b", re.IGNORECASE)
+
+# Sentences describing the OVERRIDE syntax rather than asserting a default.
+# "NULLS FIRST and NULLS LAST clauses, which override the default" names both
+# modifiers and claims nothing about which is the default.
+_ABOUT_OVERRIDE = re.compile(
+    r"\boverrid|\bexplicitl|\bspecif(?:y|ied|ying)\b|\bclauses?\b",
+    re.IGNORECASE)
+
+
+def _norm_dir(token):
+    t = (token or "").lower()
+    return "asc" if t.startswith("asc") else "desc"
 
 
 def _find_null_order_claims(body, truth):
@@ -144,8 +190,14 @@ def _find_null_order_claims(body, truth):
     findings = []
     for sent in _SENTENCE.finditer(body or ""):
         text = sent.group(0)
-        dirs = [(m.start(), m.group(1).lower()) for m in _DIRECTION.finditer(text)]
-        poss = [(m.start(), m.group(1).lower()) for m in _NULL_POSITION.finditer(text)]
+        if not _MENTIONS_NULL.search(text):
+            continue
+        if _ABOUT_OVERRIDE.search(text):
+            # Naming the modifiers is not asserting the default.
+            continue
+        dirs = [(m.start(), _norm_dir(m.group(1))) for m in _DIRECTION.finditer(text)]
+        poss = [(m.start(), _POSITION_SYNONYM[m.group(1).lower()])
+                for m in _NULL_POSITION.finditer(text)]
         if not dirs or not poss or len(dirs) != len(poss):
             continue
         for (_, direction), (_, position) in zip(dirs, poss):
