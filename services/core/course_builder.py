@@ -6097,6 +6097,32 @@ say what is being assumed.]"""
 [One non-trivial problem the learner should attempt, with enough setup to be
 answerable. Do NOT include the solution.]"""
 
+        # ASK FOR WHAT WE ARE ABOUT TO JUDGE.
+        #
+        # The depth contract requires `formal_definition` from mastery 3 up,
+        # and "## Core Explanation" never mentioned one. Measured on a live
+        # build: 8 of 8 consecutive concepts missed formal_definition on the
+        # first attempt and paid for a full regeneration — a 5600-token prompt
+        # and ~90s each — to be told something the first prompt could have
+        # asked for. That is half the build time spent discovering a
+        # requirement we already knew.
+        #
+        # The instruction names the form the detector recognises, because
+        # "state a definition" and "write **Definition.**" are the same
+        # request to a person and different requests to a regex.
+        definition_line = ""
+        try:
+            from services.core.depth_contract import contract_for as _contract_for
+            _c = _contract_for(self.mastery_level, course_title, self.topic_domain)
+            if "formal_definition" in (_c.get("required") or []):
+                definition_line = (
+                    "\nOpen with a one-sentence formal definition on its own "
+                    "line, in exactly this form:\n"
+                    "**Definition.** <the term> is <the precise definition>.\n"
+                    "It must be a definition, not a restatement of the title.\n")
+        except Exception as e:
+            logger.debug("contract lookup for the definition hint failed: %s", e)
+
         # Build the LLM-generated section template
         section_template = f"""## Mastery Criteria
 At Bloom {bloom_level} ({bloom_label}), the student demonstrates mastery by:
@@ -6104,7 +6130,7 @@ At Bloom {bloom_level} ({bloom_label}), the student demonstrates mastery by:
 Grade 3 requires: [Write one sentence describing the specific threshold for THIS concept]
 
 ## Core Explanation
-[{core_inst} ~{word_target} words.]
+[{core_inst} ~{word_target} words.]{definition_line}
 
 ## Key Facts
 [3-5 bullet points of verified facts. Use the KEY FACTS input if available, otherwise use your knowledge.]
