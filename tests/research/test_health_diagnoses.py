@@ -19,14 +19,24 @@ sys.path.insert(0, os.path.join(
     "services", "research"))
 
 
+# IMPORTABLE HERE, NOT ONLY IN THE CONTAINER.
+#
+# The first version of this file did `pytest.skip` when research_server would
+# not import, and it skipped on every run — a test that reads as coverage and
+# executes nothing, which is the failure this project keeps repeating. The
+# module only refuses because it opens a diskcache under DATA_ROOT at import
+# time, so the fixture gives it a temporary one instead of stepping aside.
 @pytest.fixture()
-def rs():
+def rs(tmp_path, monkeypatch):
     pytest.importorskip("flask")
-    try:
-        import research_server
-    except Exception as e:  # the module reaches for /app data at import
-        pytest.skip(f"research_server not importable here: {e}")
-    return research_server
+    pytest.importorskip("diskcache")
+    # CACHE_DIR is the one that matters: the module makedirs() it at import
+    # and defaults to /app/data/research_cache, which does not exist here.
+    monkeypatch.setenv("DATA_ROOT", str(tmp_path))
+    monkeypatch.setenv("CACHE_DIR", str(tmp_path / "research_cache"))
+    import importlib
+    import research_server
+    return importlib.reload(research_server)
 
 
 class _Boom:
