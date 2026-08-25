@@ -132,7 +132,16 @@ def audit_concept(markdown, concept, course_title, mastery, domain, sources=None
                 f"## {heading} is only {len(body.split())} words — present but "
                 f"empty of content", quote=" ".join(body.split())[:120]))
 
-    # 4. Claims a real engine can settle. Domain-gated: silence from a probe
+    # 4. Thin content — specific to this concept, or fluent and empty.
+    ran.append("thin_content")
+    thin, measures = audit_thinness(markdown, title)
+    if thin:
+        findings.append(Finding(
+            uid, title, "thin_content", "serious",
+            "meets its structure but teaches little: " + "; ".join(thin),
+            quote=str(measures)))
+
+    # 5. Claims a real engine can settle. Domain-gated: silence from a probe
     #    that does not apply is `not_applicable`, never a pass.
     haystack = f"{course_title} {title}".lower()
     if any(k in haystack for k in ("sql", "database", "postgres", "query")):
@@ -148,6 +157,176 @@ def audit_concept(markdown, concept, course_title, mastery, domain, sources=None
             logger.warning("ground truth failed for %s: %s", title, e)
 
     return findings, ran
+
+
+
+# --- thin content -----------------------------------------------------------
+#
+# A concept can pass everything above and still teach nothing.
+#
+# The depth contract counts words and required elements. content_guards catches
+# an obvious stub. `check_substance` counts claims and `check_hollowness` counts
+# filled slots in the teaching object — both real, both model-free, and both
+# COURSE-LEVEL AVERAGES. They report that half the course is hollow without
+# naming a single concept, so nothing downstream can repair what they find.
+#
+# This asks a per-concept question the others do not ask at all: is the text
+# SPECIFIC? A concept about DENSE_RANK that never writes `DENSE_RANK()`, quotes
+# no value, names no clause, and could have its title swapped for any other
+# concept in the course without a sentence becoming false, has met every
+# structural requirement and taught nobody anything.
+#
+# Three independent signals, because any one alone over-flags:
+#
+#   concrete density  — code spans, numerals, identifiers, and the concept's
+#                       own terms, as a share of content words. Generic prose
+#                       has almost none.
+#   self-repetition   — the same shingle recurring across paragraphs, which is
+#                       padding to a word count rather than explanation.
+#   empty sentences   — sentences carrying no concrete token whatsoever.
+#
+# A concept is reported only when it fails on MULTIPLE axes. One low number is
+# a style; two is thin content. That threshold is set deliberately high because
+# a false "thin" verdict sends good teaching to be rewritten.
+
+_CODE_SPAN = re.compile(r"`[^`\n]+`|```.*?```", re.DOTALL)
+_NUMERAL = re.compile(r"\b\d[\d,.]*\b")
+_IDENTIFIER = re.compile(r"\b[A-Z][A-Z_]{2,}\b|\b\w+\(\)")
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+
+# CALIBRATED AGAINST THE CORPUS, NOT INVENTED.
+#
+# The first version of these numbers was guessed, and every one of them was
+# dead. Measured across 177 concepts of SQL and Advanced SQL:
+#
+#     concrete_density       min 0.094  p05 0.130  med 0.198  max 0.551
+#     empty_sentence_share   min 0.000  med 0.176  max 0.404
+#     self_repetition        min 0.000  med 0.023  max 0.583
+#
+# The guessed floor for density was 0.020 — below the thinnest concept in the
+# corpus by a factor of five, so it could never fire. The empty-sentence
+# ceiling was 0.72 against an observed maximum of 0.404. Two of the three
+# checks were incapable of failing anything, which is the same as not having
+# written them, and the run reporting "0 findings" looked exactly like success.
+#
+# These sit in the measured tail instead: roughly the 5th percentile for
+# density and the 90th for the two ceilings. Combined with the two-axis rule
+# below, a concept has to be simultaneously in the tail on two independent
+# measures before anyone is asked to look at it.
+# A PERCENTILE OF GOOD CONTENT IS THE WRONG PLACE TO PUT A THRESHOLD.
+#
+# These were first set at p05/p95 of the corpus, which flags 5% of acceptable
+# content by construction. It duly did: five concepts, every one a false
+# positive on inspection — dense technical prose about declarative
+# partitioning, recursive CTE fixed-point iteration, cycle detection. Reading
+# them is what settled it; the numbers alone looked like a working check.
+#
+# A false "thin" verdict costs a rewrite of good teaching, so the bar belongs
+# OUTSIDE the range of content we accept, not at its edge. Observed across 178
+# concepts: density never below 0.109, empty-sentence share never above 0.389.
+# These sit past both, so the check fires only on content unlike anything in a
+# course we consider good — and reports nothing on a good course, which is the
+# correct answer rather than a failure to find something.
+MIN_CONCRETE_DENSITY = 0.090      # below the observed minimum (0.109)
+MAX_EMPTY_SENTENCE_SHARE = 0.450  # above the observed maximum (0.389)
+MAX_SELF_REPETITION = 0.500       # above p95 (0.443); >0.80 flags on its own
+
+
+def _concrete_tokens(text, title_terms):
+    """Tokens that could only belong to THIS concept."""
+    n = 0
+    for pat in (_CODE_SPAN, _NUMERAL, _IDENTIFIER):
+        n += len(pat.findall(text or ""))
+    words = re.findall(r"[a-z]{3,}", (text or "").lower())
+    n += sum(1 for w in words if w in title_terms)
+    return n
+
+
+def _self_repetition(text):
+    """Highest overlap between any two paragraphs of the same concept."""
+    paras = [p for p in re.split(r"\n\s*\n", text or "") if len(p.split()) > 25]
+    if len(paras) < 2:
+        return 0.0
+    def shing(p):
+        w = re.findall(r"[a-z]{3,}", p.lower())
+        return {tuple(w[i:i + 4]) for i in range(max(0, len(w) - 3))}
+    sets = [shing(p) for p in paras]
+    worst = 0.0
+    for i in range(len(sets)):
+        for j in range(i + 1, len(sets)):
+            a, b = sets[i], sets[j]
+            if not a or not b:
+                continue
+            worst = max(worst, len(a & b) / len(a | b))
+    return worst
+
+
+def audit_thinness(markdown, title):
+    """Is this concept specific, or fluent and empty? (findings, measures)"""
+    # MEASURE THE TEXT THAT WAS WRITTEN, NOT THE TEXT WITH THE EVIDENCE
+    # REMOVED.
+    #
+    # This used `teaching_text()`, which strips fenced code blocks. So density
+    # was computed on prose with the code taken out, and then the concept was
+    # penalised for containing no code. All four concepts it flagged on the
+    # first calibrated run carried between two and five code blocks each —
+    # every finding was false, and each one would have sent a good concept to
+    # be rewritten.
+    body = markdown or ""
+
+    words = re.findall(r"[a-z]{3,}", body.lower())
+    if len(words) < 60:
+        # Too short to measure density on; the depth contract owns that case
+        # and would already have failed it.
+        return [], {}
+
+    title_terms = {w for w in re.findall(r"[a-z]{3,}", (title or "").lower())
+                   if w not in _STOPWORDS}
+    concrete = _concrete_tokens(body, title_terms)
+    density = concrete / max(1, len(words))
+
+    sentences = [s for s in _SENTENCE_SPLIT.split(body) if len(s.split()) > 5]
+    empty = sum(1 for s in sentences
+                if _concrete_tokens(s, title_terms) == 0)
+    empty_share = empty / max(1, len(sentences))
+
+    repetition = _self_repetition(body)
+
+    measures = {"concrete_density": round(density, 4),
+                "empty_sentence_share": round(empty_share, 3),
+                "self_repetition": round(repetition, 3),
+                "words": len(words)}
+
+    failed = []
+    if density < MIN_CONCRETE_DENSITY:
+        failed.append(f"almost nothing specific to this concept "
+                      f"({concrete} concrete tokens in {len(words)} words)")
+    if empty_share > MAX_EMPTY_SENTENCE_SHARE:
+        failed.append(f"{empty}/{len(sentences)} sentences contain no code, "
+                      f"value, identifier or term of its own subject")
+    if repetition > MAX_SELF_REPETITION:
+        failed.append(f"paragraphs repeat each other "
+                      f"(overlap {repetition:.0%}) — padding, not explanation")
+
+    # NEAR-DUPLICATE PARAGRAPHS NEED NO CORROBORATION.
+    #
+    # The two-axis rule protects good writing from a single unusual measure.
+    # It also, on the validation set, cleared a concept whose paragraphs were
+    # 100% identical to each other — one real sentence about ROW_NUMBER()
+    # repeated eight times — because the repeated text was full of concrete
+    # SQL tokens and so passed the other two axes comfortably.
+    #
+    # Repetition at that level is not a stylistic signal to be weighed against
+    # others. It is the same paragraph twice, and no amount of concreteness
+    # makes reading it again worthwhile.
+    if repetition > 0.80:
+        return ([f"paragraphs are near-identical to each other "
+                 f"(overlap {repetition:.0%}) — the same text repeated"],
+                measures)
+
+    if len(failed) < 2:
+        return [], measures
+    return failed, measures
 
 
 def audit_citations(uid, title, sources):

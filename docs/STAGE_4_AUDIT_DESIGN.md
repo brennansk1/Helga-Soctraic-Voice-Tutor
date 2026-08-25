@@ -135,7 +135,33 @@ hash (tells a verdict whether it still describes the file), and the sources the
 prompt's **word budget** dropped — which passed relevance and lost a size
 contest with a context window a fact-checker does not have. **Built.**
 
-**N5 — Repair.** Nothing today fixes what a gate finds; `hydration_qa` reports
+**N5 — Thin content, per concept.** `check_substance` (claims per concept) and
+`check_hollowness` (teaching-object completeness) already measure thinness —
+as course-level averages. They report that half a course is hollow and name no
+concept, so nothing downstream can repair what they find. The per-concept form
+measures three independent signals on the whole body: concrete density,
+share of sentences carrying nothing specific, and paragraph self-repetition.
+
+Its thresholds are the interesting part, because they were wrong twice.
+Guessed first — the density floor landed five times below the thinnest concept
+in the corpus, so two of three checks could not fail anything and "0 findings"
+looked like success. Then set at p05/p95, which flags 5% of *acceptable*
+content by construction and produced five findings, all false on inspection:
+dense technical prose that used fewer code spans than average. They now sit
+outside the observed range of content we accept (density never below 0.109,
+empty-sentence share never above 0.389 across 178 concepts), so the check stays
+silent on a good course — which is the correct answer, not a failure to find
+something.
+
+Near-verbatim paragraph repetition flags on its own, without corroboration: it
+escaped the two-axis rule by being full of real SQL identifiers while being the
+same sentence eight times. Validated on the corpus, it found `INTERSECT ALL
+Logic`, whose definition paragraph appears **twice verbatim** — once standalone
+and once under `### Core Explanation`. Nothing else catches that: the depth
+contract sees required elements present, content guards see no stub, and
+`check_redundancy` compares across concepts, not within one.
+
+**N6 — Repair.** Nothing today fixes what a gate finds; `hydration_qa` reports
 and stops. Repair is extrinsic by rule (evidence in the prompt, never "this is
 wrong, fix it"), minimal (RARR), and re-verified by the same checks — so a bad
 repair costs a generation rather than putting a new falsehood in a lesson.
