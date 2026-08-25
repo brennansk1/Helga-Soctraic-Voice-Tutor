@@ -139,6 +139,54 @@ is what made research return generic pages), stores whatever comes back through
 0.1–0.2, and re-runs retrieval once. A second miss is recorded as
 `no-evidence`, which is an honest verdict and not a defect.
 
+### The research layer, integrated
+
+The research service already fetches, judges and caches far more than a course
+ends up citing. Stage 4 does not need a parallel evidence pipeline; it needs
+the existing one to stop throwing evidence away.
+
+**The cache is a speed layer, and only that.** It keeps its 24h/7d TTL and its
+job — not re-fetching what we just fetched, including negative results, so a
+known-empty lookup is not retried. What it must never be is the place evidence
+lives, which is what it had silently become: 529 sources with the text only in
+a store that expires. Verification always reads the durable store, never the
+cache, so an audit re-run gives the same answer next week as today.
+
+Gap-fill in 0.5 goes through the same cache, so a Stage 4 lookup that repeats a
+build-time lookup is free.
+
+**Keep what the word budget dropped.** Measured on the current build: the
+relevance gate discards **77% of fetched entries** (1,047 of 1,360), and
+`_assemble` then drops more — but for two completely different reasons, and
+they must not be treated alike.
+
+| dropped by | why | keep it? |
+|---|---|---|
+| relevance gate | judged off-topic for this concept | **No.** Storing it re-imports the off-topic-citation problem into retrieval. |
+| `_assemble` word budget | on-topic, lost a size contest with the prompt | **Yes.** It is relevant evidence discarded for a reason that does not apply to fact-checking. |
+
+The prompt has a word budget because a model has a context window. The audit
+index has neither constraint, so a source good enough to cite and merely too
+long to fit is exactly the evidence Pass 2 wants. It is already fetched, judged
+and in hand — keeping it costs a database write.
+
+**`doc_crawler` builds the corpora.** This replaces the first draft's
+"download the PostgreSQL docs tarball", which was both narrower and worse:
+`services/research/doc_crawler.py` already reads a documentation *set* rather
+than one page, and `ranking.is_documentation()` already weights official docs
+higher than anything except Wikipedia. It inherits `doc_fetch`'s per-host
+robots.txt parsing and the rate limiting, so corpus building is polite by
+construction rather than by a promise — which matters, since an existing
+provider was found violating a robots directive.
+
+What changes is the budget, and only the budget. `MAX_PAGES = 10` and
+`TOTAL_CHARS = 18000` are sized for a **prompt**. A corpus is for retrieval and
+has no context window, so corpus mode lifts both and writes to
+`data/corpora/{host}/` with a manifest recording the entry URL, the licence,
+the crawl date and the page list. One crawler, two budgets, and the domain
+generalisation comes free: any subject with official documentation gets a
+corpus without new code.
+
 > **Deadline note.** The two existing SQL courses have no passages, and their
 > cache entries expire ~08:00 tomorrow. Either backfill from cache before then,
 > or accept re-running research for those two courses.

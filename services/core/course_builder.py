@@ -4779,6 +4779,11 @@ class ContentHydrator:
             # Research service call (I/O-bound, benefits from parallelism)
             reference_material = ""
             research_sources = []
+            # Kept apart from research_sources on purpose: this is material to
+            # CHECK against, never material to cite. Merging the two would put
+            # a source into the citation list for a concept whose text the
+            # model never saw.
+            research_evidence = []
             research_confidence = 0.0
             # ABSENT IS NOT THE SAME AS THIN, and the learner-facing marker
             # below used to say the same thing for both. "The grounding pass
@@ -4804,6 +4809,7 @@ class ContentHydrator:
                     research_data = research_resp.json()
                     reference_material = research_data.get("combined_text", "")
                     research_sources = research_data.get("sources", [])
+                    research_evidence = research_data.get("evidence_sources", []) or []
                     research_confidence = research_data.get("confidence", 0.0)
                     research_reached = True
                     # Name the sources that grounded this concept. "Hydrating
@@ -5111,7 +5117,9 @@ class ContentHydrator:
             self._retain_sources(course_uid, uid, structured_md,
                                  research_sources,
                                  supplementary_books=getattr(
-                                     self, "_supplementary_books", None))
+                                     self, "_supplementary_books", None),
+                                 grounding_text=reference_material,
+                                 evidence_sources=research_evidence)
 
             if self.status_callback:
                 self.status_callback(f"STRUCT:HYDRATED:{uid}:{source_type}:{title}")
@@ -5795,6 +5803,15 @@ class ContentHydrator:
                 "INSERT OR REPLACE INTO teaching_objects "
                 "(course_uid, concept_uid, obj, completeness) VALUES (?,?,?,?)",
                 (course_uid, concept_uid, to_json(obj), c["score"]))
+            # The text the generator actually read, and a hash of what it
+            # wrote. Separately guarded: a failure to store either must not
+            # lose the sources, which are the more important record.
+            try:
+                self._retain_grounding(conn, course_uid, concept_uid,
+                                       markdown, grounding_text, now)
+            except Exception as e:
+                logger.debug("grounding context not stored for %s: %s",
+                             concept_uid, e)
             conn.commit()
             if c["score"] < 0.5:
                 logger.warning(f"  [HOLLOW] {title!r} filled only "
@@ -5896,8 +5913,39 @@ class ContentHydrator:
             logger.debug(f"[LEDGER] redundancy correction skipped: {e}")
         return markdown
 
+
+    def _retain_grounding(self, conn, course_uid, concept_uid, markdown,
+                          grounding_text, now):
+        """Store what the model was shown, and a fingerprint of what it wrote.
+
+        These answer two questions nothing else can. The grounding text
+        separates "the source was wrong" from "the model invented it" — without
+        it a false claim gives no clue which. The hash says whether a verdict
+        still describes the file it was written about, which matters the moment
+        anything repairs or edits a concept.
+        """
+        import hashlib
+        import zlib
+
+        cur = conn.cursor()
+        if grounding_text:
+            blob = zlib.compress(grounding_text.encode("utf-8", "replace"), 6)
+            cur.execute(
+                "INSERT OR REPLACE INTO grounding_context "
+                "(course_uid, concept_uid, text_z, chars, recorded_at) "
+                "VALUES (?,?,?,?,?)",
+                (course_uid, concept_uid, blob, len(grounding_text), now))
+        if markdown:
+            digest = hashlib.sha256(markdown.encode("utf-8", "replace")).hexdigest()
+            cur.execute(
+                "INSERT OR REPLACE INTO concept_content_hash "
+                "(course_uid, concept_uid, sha256, chars, recorded_at) "
+                "VALUES (?,?,?,?,?)",
+                (course_uid, concept_uid, digest, len(markdown), now))
+
     def _retain_sources(self, course_uid, concept_uid, markdown,
-                        research_sources, supplementary_books=None):
+                        research_sources, supplementary_books=None,
+                        grounding_text=None, evidence_sources=None):
         """Keep the passages a concept was built from, and link them to claims.
 
         The research cache is a SPEED layer with a 24h/7d TTL; a claim cannot be
@@ -5911,7 +5959,7 @@ class ContentHydrator:
         resting only on below-bar material, not of sources in a list.
         """
         conn = self._ledger_conn()
-        if conn is None or not research_sources:
+        if conn is None or not (research_sources or evidence_sources):
             return
         try:
             from services.core.taught_ledger import extract_claims
@@ -5930,20 +5978,24 @@ class ContentHydrator:
             cur.execute("DELETE FROM claim_sources WHERE course_uid=? AND concept_uid=?",
                         (course_uid, concept_uid))
             ids = []
-            for s in research_sources:
+            # Evidence rides through the same loop and is separated by its
+            # `cited` flag, so there is one write path and one place for the
+            # passage-truncation rule to live.
+            for s in list(research_sources or []) + list(evidence_sources or []):
                 if not isinstance(s, dict):
                     continue
                 text = s.get("snippet") or s.get("text") or s.get("passage") or ""
                 cur.execute(
                     "INSERT INTO sources (course_uid, concept_uid, title, url, "
                     "passage, source_type, domain_tier, grounding, degraded, "
-                    "retrieved_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    "retrieved_at, cited) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     (course_uid, concept_uid, s.get("title"), s.get("url"),
                      text[:4000], s.get("type"), s.get("domain_tier"),
                      s.get("grounding"), 1 if s.get("search_degraded") else 0,
-                     now))
-                ids.append((cur.lastrowid,
-                            (s.get("title") or "").lower() in supp))
+                     now, 0 if s.get("cited") is False else 1))
+                if s.get("cited") is not False:
+                    ids.append((cur.lastrowid,
+                                (s.get("title") or "").lower() in supp))
             # Attribution here is coarse on purpose: it records THAT a concept's
             # claims rest on this source set, not which sentence came from which
             # passage. Span-level attribution needs the generator to cite as it

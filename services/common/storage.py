@@ -916,9 +916,69 @@ class StorageManager:
                         domain_tier  TEXT,
                         grounding    REAL,
                         degraded     INTEGER DEFAULT 0,
-                        retrieved_at TEXT
+                        retrieved_at TEXT,
+                        -- 1 = shown to the model and citable to a learner.
+                        -- 0 = on-topic material that lost the prompt's word
+                        -- budget. It is real evidence for a fact check, which
+                        -- has no context window, but it must never render as
+                        -- a citation for a claim the model never saw it make.
+                        cited        INTEGER DEFAULT 1
                     )
                 """)
+                # Existing databases predate the column; adding it here keeps
+                # old rows at the default 1, which is correct — everything
+                # stored before this change WAS cited.
+                try:
+                    cursor.execute("ALTER TABLE sources ADD COLUMN "
+                                   "cited INTEGER DEFAULT 1")
+                except sqlite3.OperationalError:
+                    pass          # already present
+                # WHAT THE MODEL WAS ACTUALLY SHOWN.
+                #
+                # `sources` holds the passages we RETRIEVED. This holds the
+                # reference material as it was assembled and handed to the
+                # generator — which is not the same thing, and the difference
+                # is the whole diagnosis when a claim turns out false:
+                #
+                #   claim contradicts the source we stored  -> the source was
+                #       wrong, or was read wrong; reweight or replace it
+                #   claim appears nowhere in what we showed -> the model
+                #       invented it
+                #
+                # Without this, both failures look identical and every fix is a
+                # guess. It was computed on every concept and discarded.
+                #
+                # Compressed: this is the single largest thing the ledger
+                # stores, and text of this kind compresses 4-5x.
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS grounding_context (
+                        course_uid   TEXT NOT NULL,
+                        concept_uid  TEXT NOT NULL,
+                        text_z       BLOB,
+                        chars        INTEGER,
+                        recorded_at  TEXT,
+                        PRIMARY KEY (course_uid, concept_uid)
+                    )
+                """)
+
+                # WHETHER A VERDICT STILL DESCRIBES THE FILE.
+                #
+                # Every quality verdict is written once and read forever. A
+                # concept repaired by the audit, or edited by hand, keeps its
+                # old verdict with nothing anywhere able to notice: the badge
+                # says verified and the sentence it verified is gone. The hash
+                # is what makes staleness detectable instead of invisible.
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS concept_content_hash (
+                        course_uid   TEXT NOT NULL,
+                        concept_uid  TEXT NOT NULL,
+                        sha256       TEXT NOT NULL,
+                        chars        INTEGER,
+                        recorded_at  TEXT,
+                        PRIMARY KEY (course_uid, concept_uid)
+                    )
+                """)
+
                 # Which claims rest on which sources. This is what makes
                 # "claims grounded ONLY in supplementary material" a measurable
                 # share rather than an assertion — the policy recorded on the

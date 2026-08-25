@@ -193,6 +193,45 @@ def _content_terms(text):
             if w not in _TERM_STOPWORDS}
 
 
+def _worth_fetching(query, title, snippet, must_include=""):
+    """Is this search hit worth a full page fetch, judged on what we already have.
+
+    A DELIBERATELY WEAK BAR, and weak in a specific direction.
+
+    The relevance gate below is precise and runs on the full text — but by the
+    time it runs we have already fetched every page, and measured on the
+    current build it then discards 77% of them (1,047 of 1,360). That is four
+    times the network, four times the extraction, and four times the load on
+    other people's servers, spent on material we were always going to throw
+    away.
+
+    Moving the precise gate earlier would be wrong: it requires the subject
+    term to appear in the BODY, and a perfectly good page often has a snippet
+    that does not mention it. That would drop real sources.
+
+    So this asks a much smaller question — does this hit share ANY topic word
+    with the concept, anywhere in its title or its summary? A page that shares
+    literally none is not a borderline call. The gate's own recorded examples
+    are exactly this shape: "Merism", "Advanced Placement" and "Disk
+    partitioning" returned for a concept called "Partitioning Scope", each
+    obviously wrong from the title alone.
+
+    False negatives here cost a real source, so the bar stays at zero overlap.
+    Everything subtler is still decided later, on the full text, by the gate
+    that was built for it.
+    """
+    low_title = (title or "").lower()
+    if low_title.startswith(_OFF_TOPIC_PREFIXES):
+        return False
+
+    terms = _content_terms(query) | _content_terms(must_include)
+    if not terms:
+        return True                      # nothing to judge against
+
+    haystack = f"{title} {snippet}".lower()
+    return any(t in haystack for t in terms)
+
+
 def _is_relevant(query, title, text, must_include=""):
     """Does this page actually teach the subject, or merely mention the word?
 
@@ -874,28 +913,45 @@ def _interleave(entries):
 
 
 def _assemble(entries, budget=WORD_BUDGET):
-    """(combined_text, cited) — cited holds ONLY entries whose text got in."""
-    parts, cited, dropped = [], [], 0
+    """(combined_text, cited, evidence_only).
+
+    `cited` holds ONLY entries whose text got into the prompt. `evidence_only`
+    holds the ones that did not fit.
+
+    THOSE TWO GROUPS FAILED DIFFERENT TESTS, and the difference matters.
+
+    An entry reaches here having already passed the relevance gate, so it is
+    on-topic material we fetched, judged and hold in memory. What eliminates it
+    here is a WORD BUDGET — a limit that exists because the model has a context
+    window. A fact-checker has no context window: it retrieves the one passage
+    it needs. So a source that was good enough to cite and merely too long to
+    fit is exactly the evidence a later verification pass wants, and it was
+    being dropped on the floor at the last moment before use.
+
+    Entries with no text or no url stay dropped outright. They cannot be cited
+    (an empty url renders as "[Title]()") and they cannot be checked against
+    either, so they are not evidence in any sense.
+    """
+    parts, cited, evidence_only, dropped = [], [], [], 0
     remaining = budget
     for e in _interleave(entries):
         words = (e.get("text") or "").split()
         if not words or not e.get("url"):
-            # No text, or nothing to link to. Either way it cannot honestly be
-            # cited, and an empty url renders as "[Title]()" to the learner.
             dropped += 1
             continue
         if remaining < MIN_USEFUL_WORDS:
-            dropped += 1
+            evidence_only.append(e)
             continue
         take = words[:min(KIND_WORD_CAP.get(e["kind"], DEFAULT_WORD_CAP),
                           remaining)]
         parts.append(f"## Source: {e['label']} - {e['title']}\n{' '.join(take)}")
         remaining -= len(take)
         cited.append(e)
-    if dropped:
-        logger.debug(f"grounding: {dropped} source(s) not cited (no text, no "
-                     f"url, or past the {budget}-word budget)")
-    return "\n\n".join(parts), cited
+    if dropped or evidence_only:
+        logger.debug(f"grounding: {dropped} source(s) unusable, "
+                     f"{len(evidence_only)} past the {budget}-word budget and "
+                     f"kept as evidence")
+    return "\n\n".join(parts), cited, evidence_only
 
 
 # How much of a source travels back with the citation.
@@ -941,6 +997,11 @@ def _citation(entry):
 async def _research_concept_async(title, module_title, course_title, mastery=1,
                                   broaden=False):
     entries = []
+
+    # The subject, named once. Both the pre-fetch filter and the relevance gate
+    # need it, and the gate used to define it three hundred lines below the
+    # first fetch — which is fine when nothing above it asks.
+    _subject = " ".join(x for x in (title, course_title) if x).strip()
 
     subjects = _lookup_subjects(title, module_title, course_title, broaden)
     # Broadening widens the net: more subjects (above) and a higher ceiling on
@@ -1136,7 +1197,13 @@ async def _research_concept_async(title, module_title, course_title, mastery=1,
         top_results = unique_results[:5]
 
         # 4. Extract content from top pages
+        _skipped_prefetch = 0
         for result in top_results[:4 if broaden else 3]:
+            if not _worth_fetching(query, result.get("title", ""),
+                                   result.get("snippet", ""),
+                                   must_include=_subject):
+                _skipped_prefetch += 1
+                continue
             text = await extract_page(session, result["url"])
             if text:
                 entries.append({
@@ -1155,6 +1222,10 @@ async def _research_concept_async(title, module_title, course_title, mastery=1,
                     "title": result["title"], "url": result["url"],
                     "text": text, "tier": result["tier"],
                 })
+
+    if _skipped_prefetch:
+        logger.info("pre-filter skipped %d page fetch(es) with no topic "
+                    "overlap at all", _skipped_prefetch)
 
     # ONE GATE EVERY PROVIDER PASSES THROUGH.
     #
@@ -1176,7 +1247,7 @@ async def _research_concept_async(title, module_title, course_title, mastery=1,
     # machinery reports thin grounding, because "grounded on something loose"
     # and "not grounded at all" are different states and the caller acts on
     # them differently.
-    _subject_judge = " ".join(x for x in (title, course_title) if x).strip()
+    _subject_judge = _subject
     if _subject_judge and entries:
         _kept, _dropped = [], []
         for e in entries:
@@ -1193,8 +1264,12 @@ async def _research_concept_async(title, module_title, course_title, mastery=1,
         entries = _kept or entries[:1]
 
     # Assemble under the word budget, then cite ONLY what got in.
-    combined_text, cited = _assemble(entries)
+    combined_text, cited, evidence_only = _assemble(entries)
     sources = [_citation(e) for e in cited]
+    # Relevant, fetched, and too long for the prompt — not too weak for a
+    # fact check. Marked so the ledger can keep it without it ever appearing
+    # to a learner as a citation.
+    evidence = [dict(_citation(e), cited=False) for e in evidence_only]
 
     # Confidence is computed from the SOURCE DICTS, not from hand-counted
     # kinds. Counting by hand is what made this function blind to three of the
@@ -1214,6 +1289,7 @@ async def _research_concept_async(title, module_title, course_title, mastery=1,
     _ss = search_stats() or {}
     return {
         "sources": sources,
+        "evidence_sources": evidence,
         "wikipedia": wikipedia_data,
         "combined_text": combined_text,
         "confidence": confidence,
