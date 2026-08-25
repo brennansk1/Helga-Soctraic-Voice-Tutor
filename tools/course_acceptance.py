@@ -174,11 +174,26 @@ def gate_flashcards(rep, uid, concept_uid):
 
 
 def gate_quiz(rep, uid):
-    st, d = call("GET", f"{RAG}/api/quiz?course_uid={uid}&count=3", timeout=240)
-    qs = d.get("questions") or d.get("quiz") or []
-    ok = "PASS" if qs else "FAIL"
-    ev = str(qs[0].get("question"))[:90] if qs else json.dumps(d)[:200]
-    rep.add("quiz generates", ok, f"{len(qs)} question(s)", ev)
+    """/api/quiz returns ONE question plus the material it was written from.
+
+    Not a list: practice.js reads `q.question` and keeps `context_text` so the
+    grader can mark the answer against the same passage. Expecting `questions`
+    reported a working endpoint as broken.
+    """
+    st, d = call("GET", f"{RAG}/api/quiz?course_uid={uid}", timeout=300)
+    q = (d.get("question") or "").strip()
+    if not q:
+        rep.add("quiz generates", "FAIL", "no question came back",
+                json.dumps(d)[:200])
+        return
+    problems = []
+    if not (d.get("context_text") or "").strip():
+        problems.append("no context_text — the grader has nothing to mark against")
+    if not d.get("concept_uid"):
+        problems.append("no concept_uid")
+    rep.add("quiz generates", "WARN" if problems else "PASS",
+            "; ".join(problems) or f"1 question on '{d.get('concept_title','?')[:26]}'",
+            q[:160])
 
 
 # The headings the product reads back out of concept markdown. Kept in step
