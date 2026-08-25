@@ -197,14 +197,14 @@ class TestOnlyWhatReachedTheModelIsCited(unittest.TestCase):
     def test_a_source_with_no_text_is_not_cited(self):
         """Primary literature used to contribute a heading and a URL, and was
         still rendered to the learner as a citation worth 0.25 confidence."""
-        text, cited = rs._assemble([_entry("journal", text="")])
+        text, cited, _evidence = rs._assemble([_entry("journal", text="")])
         self.assertEqual(cited, [])
         self.assertEqual(text, "")
 
     def test_a_source_with_no_url_is_not_cited(self):
         """Domain sources were appended unconditionally, and an empty url
         rendered as "[Title]()" in the learner-facing citation list."""
-        _t, cited = rs._assemble([_entry("artefact", url="")])
+        _t, cited, _evidence = rs._assemble([_entry("artefact", url="")])
         self.assertEqual(cited, [])
 
     def test_the_budget_does_not_always_cut_the_same_kind(self):
@@ -215,7 +215,7 @@ class TestOnlyWhatReachedTheModelIsCited(unittest.TestCase):
                     for i in range(3)]
                    + [_entry("web", url=f"web{i}", text="word " * 4000)
                       for i in range(3)])
-        _text, cited = rs._assemble(entries)
+        _text, cited, _evidence = rs._assemble(entries)
         kinds = {c["kind"] for c in cited}
         self.assertIn("web", kinds,
                       "the concept-specific source must survive the budget")
@@ -226,7 +226,7 @@ class TestOnlyWhatReachedTheModelIsCited(unittest.TestCase):
                    _entry("textbook", url="t", title="Book chapter"),
                    _entry("journal", url="j", title="Paper", text=""),
                    _entry("web", url="e", title="Page")]
-        text, cited = rs._assemble(entries)
+        text, cited, _evidence = rs._assemble(entries)
         for c in cited:
             self.assertIn(c["title"], text)
         self.assertNotIn("Paper", text)
@@ -235,7 +235,7 @@ class TestOnlyWhatReachedTheModelIsCited(unittest.TestCase):
     def test_the_budget_is_respected(self):
         entries = [_entry("web", url=f"u{i}", text="word " * 5000)
                    for i in range(40)]
-        text, _cited = rs._assemble(entries)
+        text, _cited, _evidence = rs._assemble(entries)
         # Headers add a few words per part; the body must stay in budget.
         self.assertLess(len(text.split()), rs.WORD_BUDGET * 1.2)
 

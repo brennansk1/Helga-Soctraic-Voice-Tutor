@@ -4465,6 +4465,32 @@ RESEARCH_TIMEOUT_S = int(os.getenv("HELGA_RESEARCH_TIMEOUT", "90"))
 
 
 
+
+# WHICH FAILURES MORE EVIDENCE CAN ACTUALLY FIX.
+#
+# A concept that misses its contract for want of a primary source, a citation,
+# or specific material cannot be fixed by asking the model again — the material
+# is not there, and the only way it can comply is to invent something. Those
+# failures need more RESEARCH, not another generation.
+#
+# Failures of form are different. A missing heading, a section in the wrong
+# order, prose over the word cap: the model has everything it needs and simply
+# did not do it. Fetching more sources for those spends minutes to change
+# nothing.
+_EVIDENCE_SHAPED = (
+    "primary_source", "citation", "source", "reference",
+    "named_result", "worked_example", "derivation",
+    "nothing specific to this concept", "teaches little",
+    "contradicts what PostgreSQL actually does",
+)
+
+
+def _needs_more_evidence(problems):
+    """True when the named problems are ones more material could solve."""
+    blob = " ".join(problems or []).lower()
+    return any(marker.lower() in blob for marker in _EVIDENCE_SHAPED)
+
+
 def _ground_truth_problems(markdown, title, course_title, domain=""):
     """Claims a real SQL engine contradicts, phrased for the retry prompt.
 
@@ -4858,6 +4884,8 @@ class ContentHydrator:
                         if bd.get("confidence", 0.0) > research_confidence:
                             reference_material = bd.get("combined_text", "") or reference_material
                             research_sources = bd.get("sources", []) or research_sources
+                            research_evidence = (bd.get("evidence_sources")
+                                                 or research_evidence)
                             research_confidence = bd.get("confidence", 0.0)
                             logger.info(
                                 f"  [RESEARCH] '{title}' improved to "
@@ -5663,6 +5691,35 @@ class ContentHydrator:
                 f"retry {attempt + 1}/{self.max_depth_retries}")
             if self.status_callback:
                 self.status_callback(f"STRUCT:DEPTH_RETRY:{title}")
+
+            # GO AND LOOK AGAIN, BEFORE WRITING AGAIN.
+            #
+            # This loop re-prompted the model with the SAME research material
+            # and a hint naming what was missing. When the thing missing was a
+            # primary source or specific detail, that asks a model to produce
+            # from evidence it does not have, and the only way to comply is to
+            # invent — which is how a concept can fail a contract three times
+            # and come back more confident each time.
+            #
+            # Research otherwise ran at most twice per concept: once at the
+            # start, and once more only if research CONFIDENCE fell below the
+            # floor. Neither is triggered by the content being wrong.
+            #
+            # One broadened fetch, on the first retry only, and only when the
+            # problems are ones more material can solve.
+            if attempt == 0 and _needs_more_evidence(best_problems):
+                more = self._fetch_more_evidence(
+                    title, h_ctx, course_title, research_sources)
+                if more:
+                    research_sources = more["sources"] or research_sources
+                    content_to_use = more["text"] or content_to_use
+                    research_confidence = max(research_confidence,
+                                              more["confidence"])
+                    logger.info(
+                        "  [RESEARCH] refetched for '%s' — %d source(s), "
+                        "confidence %.2f", title, len(more["sources"]),
+                        more["confidence"])
+
             try:
                 candidate = self._condense_and_structure_content(
                     title, content_to_use, course_title, self.mastery_level,
@@ -5913,6 +5970,50 @@ class ContentHydrator:
             logger.debug(f"[LEDGER] redundancy correction skipped: {e}")
         return markdown
 
+
+
+    def _fetch_more_evidence(self, title, h_ctx, course_title, existing):
+        """One broadened research pass for a concept whose content fell short.
+
+        Returns None rather than raising: failing to find more evidence is a
+        normal outcome and must not end a build. The caller keeps what it had.
+        """
+        research_url = os.getenv("RESEARCH_URL", "http://helga-research:5006")
+        try:
+            resp = requests.post(
+                f"{research_url}/api/research_concept",
+                json={
+                    # The parent topic, not the narrow concept framing — a
+                    # concept-specific query is what returned too little the
+                    # first time.
+                    "title": f"{title} {h_ctx.get('module', '')}".strip(),
+                    "module_title": h_ctx.get("module", ""),
+                    "course_title": course_title,
+                    "mastery": self.mastery_level,
+                    "broaden": True,
+                },
+                timeout=RESEARCH_TIMEOUT_S,
+            )
+            if resp.status_code != 200:
+                return None
+            data = resp.json()
+        except Exception as e:
+            logger.warning("  [RESEARCH] refetch failed for %r: %s", title, e)
+            return None
+
+        sources = data.get("sources") or []
+        # Only worth using if it actually brought something new. Comparing by
+        # url keeps a re-fetch that returned the same page from looking like
+        # progress.
+        seen = {(s or {}).get("url") for s in (existing or []) if isinstance(s, dict)}
+        fresh = [s for s in sources if isinstance(s, dict) and s.get("url") not in seen]
+        if not fresh:
+            return None
+        return {
+            "sources": (existing or []) + fresh,
+            "text": data.get("combined_text") or "",
+            "confidence": float(data.get("confidence") or 0.0),
+        }
 
     def _retain_grounding(self, conn, course_uid, concept_uid, markdown,
                           grounding_text, now):
