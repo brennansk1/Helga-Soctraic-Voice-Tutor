@@ -875,6 +875,28 @@ async def _research_concept_async(title, module_title, course_title, mastery=1,
     _combo = f"{title} {module_title}".strip() if (title and module_title) else None
     ladder = [s for s in subjects if s != _combo][:4 if broaden else 3]
 
+    # THE SUBJECT GOES INTO THE SEARCH, NOT ONLY INTO THE JUDGING.
+    #
+    # The scholarly query already does this, with a note recording that
+    # "Common Table Expressions" alone returns RNA-sequencing papers and the
+    # subject prefix turns the top hit into the right one. The textbook and
+    # wiki ladder never got the same treatment, so a concept called "Clause
+    # Ordering Rules" was searched on those three words and grounded on the
+    # Federal Rules of Evidence and the rule against perpetuities — both
+    # genuinely about clauses and rules, neither about SQL.
+    #
+    # Judging with the subject (added earlier) throws those away AFTER paying
+    # for them and leaves the concept thin. Asking with the subject means the
+    # right pages come back in the first place. The bare rung is kept behind
+    # it, so a concept that IS a standalone topic still finds its own page.
+    _subject = (course_title or "").strip()
+    if _subject:
+        _prefixed = [f"{_subject} {r}".strip() for r in ladder
+                     if r and _subject.lower() not in r.lower()]
+        seen_r = set()
+        ladder = [r for r in (_prefixed + ladder)
+                  if not (r in seen_r or seen_r.add(r))][:6 if broaden else 5]
+
     # 1. Wikipedia (synchronous, fast)
     #
     # Cascade concept -> module -> course. wiki_lookup does an EXACT page-title

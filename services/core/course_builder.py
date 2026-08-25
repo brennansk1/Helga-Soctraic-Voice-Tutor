@@ -6149,8 +6149,11 @@ answerable. Do NOT include the solution.]"""
                 definition_line += (
                     "\nCite the NORMATIVE source for this behaviour — the "
                     "language standard or the implementation's own reference "
-                    "documentation (for example the PostgreSQL manual), not a "
-                    "blog post or a general encyclopaedia entry.\n")
+                    "documentation, not a blog post or a general encyclopaedia "
+                    "entry. GIVE THE URL, not just the name: write "
+                    "https://www.postgresql.org/docs/current/<page>.html . "
+                    "Naming 'the PostgreSQL documentation' in prose is not a "
+                    "citation a reader can follow.\n")
         except Exception as e:
             logger.debug("contract lookup for the definition hint failed: %s", e)
 
