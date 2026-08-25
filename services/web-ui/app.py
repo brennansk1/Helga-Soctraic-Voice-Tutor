@@ -1425,7 +1425,7 @@ def _num(value, default=None):
     return value if isinstance(value, (int, float)) and not isinstance(value, bool) else default
 
 
-def _quality_fact(fc):
+def _quality_fact(fc, course_concepts=None):
     """Verdict for the fact check.
 
     `fact_check.failures[].remaining` is the number of confirmed-false claims
@@ -1465,16 +1465,33 @@ def _quality_fact(fc):
         out['text'] = ('%d concept%s was rewritten around a false claim, and the '
                        're-check could not confirm the fix'
                        % (len(failures), '' if len(failures) == 1 else 's'))
-    elif sampled:
+    elif sampled or (course_concepts and checked < course_concepts):
         out['state'] = 'caution'
-        out['text'] = ('No false claims in the %d of %d concepts that were '
-                       'checked; the rest were not checked' % (checked, total))
+        # THE DENOMINATOR IS THE COURSE, NOT THE RUN.
+        #
+        # `total` comes from the fact-check record, which covers the concepts
+        # of the LAST BUILD RUN. A course that was resumed — which is normal
+        # here — records a small tail, so a 95-concept course reported "5 of
+        # 14", presenting 5% coverage as 36%.
+        #
+        # Coverage also leads the sentence now. The card renders this on one
+        # clipped line, and the old wording put "No false claims" first and the
+        # caveat last, so the clip removed exactly the half that made it
+        # honest: a learner read "No false claims in the 5 of 14…" about a
+        # course with three execution-verified false claims in it.
+        denom = course_concepts or total
+        unchecked = max(0, denom - checked)
+        out['covered'] = checked
+        out['course_concepts'] = denom
+        out['text'] = ('Only %d of %d concepts were fact-checked — no false '
+                       'claims in those, %d unchecked'
+                       % (checked, denom, unchecked))
     else:
         out['text'] = 'No false claims found in %d checked concepts' % checked
     return out
 
 
-def _quality_depth(dc):
+def _quality_depth(dc, course_concepts=None):
     """Verdict for the depth contract.
 
     `met_pct` is the share of the concepts VERIFIED THIS RUN that carried the
@@ -1493,6 +1510,12 @@ def _quality_depth(dc):
     # sample look as large as possible, so we never call a miss "too small a
     # sample to judge" when we cannot actually tell.
     verified = _num(dc.get('concepts_verified'), total) or 0
+    # Same correction as the fact check: `concepts_total` is the last build
+    # run's size, so on a resumed course `verified < total` was never true and
+    # a 14-concept tail reported as "All 14 concepts met the depth contract"
+    # for a 95-concept course.
+    if course_concepts and course_concepts > total:
+        total = course_concepts
     failures = dc.get('failures') or []
     out = {
         'state': 'pass',
@@ -1513,7 +1536,7 @@ def _quality_depth(dc):
                        % (missed, verified, met_pct))
     elif out['partial']:
         out['state'] = 'caution'
-        out['text'] = ('Depth was only verified for %d of %d concepts'
+        out['text'] = ('Depth was verified for only %d of %d concepts'
                        % (verified, total))
     else:
         out['text'] = 'All %d concepts met the depth contract' % verified
@@ -1630,6 +1653,16 @@ def _quality_sections(ms):
     return out
 
 
+def _count_concepts(course):
+    """How many concepts the course actually has, walking the structure."""
+    n = 0
+    for module in course.get('modules') or []:
+        for unit in module.get('units') or []:
+            for lesson in unit.get('lessons') or []:
+                n += len(lesson.get('concepts') or [])
+    return n
+
+
 def _quality_concepts(course):
     """Per-concept verdicts, keyed by concept uid.
 
@@ -1705,9 +1738,21 @@ def _quality_concepts(course):
 
 def _course_quality(course):
     """Roll the four build-time verdicts into one course-level judgement."""
+    # The course's OWN concept count, so every verdict is phrased against the
+    # course a learner is looking at rather than against whichever slice of it
+    # the last build run happened to cover.
+    # Counted from the structure, not read from `stats`.
+    #
+    # `stats` is assembled by the /api/courses endpoint; the dict that reaches
+    # here comes straight from get_course(), which has no such key. Reading it
+    # returned None, the denominator silently fell back to the build run's 14,
+    # and the fix looked applied while changing nothing — the same shape of
+    # defect as the one it was fixing.
+    course_concepts = _count_concepts(course) or None
+
     checks = {
-        'fact': _quality_fact(course.get('fact_check')),
-        'depth': _quality_depth(course.get('depth_contract')),
+        'fact': _quality_fact(course.get('fact_check'), course_concepts),
+        'depth': _quality_depth(course.get('depth_contract'), course_concepts),
         'level': _quality_level(course.get('level_calibration')),
         'grounding': _quality_grounding(course.get('grounding')),
         'sections': _quality_sections(course.get('missing_sections')),

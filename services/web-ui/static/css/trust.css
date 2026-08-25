@@ -384,6 +384,7 @@
     align-self: center;
 }
 
+
 /* The only card state that gets a surface of its own. Matched to the tinted
    `unsourced` treatment above so "flagged" means the same thing in the grid as
    it does inside a concept. */
@@ -399,14 +400,27 @@
 
 .course-card-quality.is-verified .i { color: var(--status-success); }
 
-/* Caution and unassessed are muted single lines on purpose — see the header
-   note. `is-caution` is truncated because its headline is a full sentence and
-   the `title` attribute carries the whole thing on hover. */
+/* Caution and unassessed stay muted, but they are NOT truncated.
+   They used to be, on the reasoning that the headline is a full sentence and
+   the `title` attribute carries the rest on hover. Measured on the SQL card:
+   577px of text in a 301px box, so 48% was invisible, and hover is not
+   available on a phone at all.
+   What made it serious is WHICH half was cut. `is-caution`'s entire content
+   is a caveat, so the ellipsis fell after "no false claims in the 5 of 14…"
+   and removed "the rest were not checked" — leaving a clean bill of health on
+   a course with three execution-verified false claims in it. A truncated
+   caveat does not degrade to a shorter caveat; it degrades to a reassurance.
+   Two lines, then ellipsis: enough for these sentences, still bounded so a
+   long headline cannot push the card's buttons out of alignment. */
 .course-card-quality.is-caution span,
 .course-card-quality.is-unassessed span {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-clamp: 2;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .course-card-quality.is-unassessed { opacity: 0.75; }
