@@ -158,6 +158,12 @@ def fetch_stats():
     return dict(d) if d is not None else None
 
 
+# The longest we will sit on a 429 before giving up on that source for
+# this concept. A build makes hundreds of these calls; waiting out a
+# multi-hour Retry-After would stall the whole course for one citation.
+MAX_429_SLEEP_S = 10.0
+
+
 def _tally(key):
     d = getattr(_FETCH_STATS, "d", None)
     if d is not None:
@@ -206,9 +212,21 @@ def _get_json(url, params, timeout=15, attempts=3):
             if r.status_code == 429:
                 # The server told us how long to wait; guessing is worse.
                 throttled = True
-                wait = float(r.headers.get("Retry-After", 0) or 0) or 1.5 * (attempt + 1)
-                logger.info(f"{url}: 429, waiting {wait:.1f}s")
-                time.sleep(min(wait, 10))
+                asked = float(r.headers.get("Retry-After", 0) or 0) or 1.5 * (attempt + 1)
+                # LOG WHAT WE ACTUALLY DO.
+                #
+                # This printed the server's Retry-After and then slept the
+                # capped value, so the log read "waiting 52740.0s" for a 10s
+                # sleep. Reading that line during a build cost a wrong
+                # diagnosis: it looks like the provider is out of action for
+                # fourteen hours when it is out for ten seconds.
+                wait = min(asked, MAX_429_SLEEP_S)
+                if asked > wait:
+                    logger.info(f"{url}: 429, asked for {asked:.0f}s — "
+                                f"waiting {wait:.1f}s and moving on")
+                else:
+                    logger.info(f"{url}: 429, waiting {wait:.1f}s")
+                time.sleep(wait)
                 continue
         except Exception as e:
             logger.debug(f"{url} attempt {attempt + 1} failed: {e}")
