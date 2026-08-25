@@ -1350,12 +1350,40 @@ def health():
     # the scar: "The container was diagnosed as 'SearXNG is down' for weeks.
     # SearXNG was fine." Reporting a subsystem's state and then ignoring it in
     # the verdict is the same mistake in a smaller box.
-    healthy = bool(searxng_reachable)
-    return jsonify({
+    # A HEALTH ENDPOINT THAT CRASHES DIAGNOSES NOTHING.
+    #
+    # `len(cache)` was called unguarded, so when diskcache's own tables were
+    # missing this returned a 500 HTML page — "Internal Server Error", no
+    # subsystem named, no remedy. Docker then reported the container unhealthy
+    # while the service was in fact answering research requests correctly.
+    # Measured 2026-08-25: /health 500ing on `no such table: Settings` while
+    # the running build was producing correctly grounded concepts.
+    #
+    # The cache is a SPEED dependency, not a correctness one: without it every
+    # lookup is a cold lookup. That is degraded, not dead, and it must be
+    # reported as itself rather than as a stack trace.
+    cache_entries, cache_error = None, None
+    try:
+        cache_entries = len(cache)
+    except Exception as e:
+        cache_error = str(e)[:120]
+        logger.warning("research cache is unreadable: %s", cache_error)
+
+    healthy = bool(searxng_reachable) and cache_error is None
+    body = {
         "status": "healthy" if healthy else "degraded",
         "searxng_reachable": searxng_reachable,
-        "cache_entries": len(cache),
-    }), (200 if healthy else 503)
+        "cache_entries": cache_entries,
+    }
+    if not searxng_reachable:
+        body["searxng"] = ("unreachable at " + str(SEARXNG_URL) +
+                           " — grounding falls back to Wikipedia and the "
+                           "scholarly indexes; check `docker compose ps searxng`")
+    if cache_error:
+        body["cache"] = (f"unreadable ({cache_error}) — research still works "
+                         f"and every lookup is cold. Restart this service to "
+                         f"rebuild it: docker compose restart research")
+    return jsonify(body), (200 if healthy else 503)
 
 
 if __name__ == "__main__":
