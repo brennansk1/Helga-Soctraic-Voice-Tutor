@@ -73,11 +73,36 @@ def test_a_plain_connection_shows_the_bug_this_prevents(db):
     conn.close()
 
 
-def test_a_leaked_transaction_is_rolled_back_on_reuse(db, caplog):
+def test_a_write_then_commit_through_two_get_calls_is_not_discarded(db):
+    """The regression the age check exists to prevent.
+
+    Real code fetches the handle again between its write and its commit:
+
+        conn = store._get_db(); conn.execute("INSERT ...")
+        store._get_db().commit()
+
+    A self-heal that rolls back on PRESENCE of a transaction destroys that
+    insert before the commit runs. Measured on a live build: every
+    hydration_provenance row was discarded this way, silently, so locally
+    built concepts had no recorded author.
+    """
+    pool = _ThreadLocalDB(db)
+    pool.get().execute("INSERT INTO t VALUES ('keep', '1')")
+    pool.get().commit()
+
+    check = sqlite3.connect(db, timeout=2)
+    row = check.execute("SELECT v FROM t WHERE k='keep'").fetchone()
+    check.close()
+    assert row is not None, "the write was rolled back by the self-heal"
+
+
+def test_a_leaked_transaction_is_rolled_back_on_reuse(db, caplog, monkeypatch):
     """A connection handed back mid-transaction is a leak, not a state: the
     previous caller returned or raised past its commit and is never coming
     back. Rolling back happens on the thread that owns the connection, which
     is the only thread allowed to do it."""
+    import services.common.storage as storage_mod
+    monkeypatch.setattr(storage_mod, "IDLE_TXN_LIMIT_S", 0.0)  # age it instantly
     pool = _ThreadLocalDB(db)
     conn = pool.get()
     conn.execute("INSERT INTO t VALUES ('c', '1')")     # no commit: leaked

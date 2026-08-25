@@ -17,6 +17,7 @@ import tempfile
 import uuid
 import shutil
 import threading
+import time
 from datetime import datetime, date, timedelta, timezone
 
 
@@ -114,6 +115,32 @@ def _atomic_write_json(path: str, payload: Any, indent: int = 2):
 class _SafeConnection(sqlite3.Connection):
     """A connection that cannot hold the write lock open through a failure."""
 
+    # WHAT WAS THE LAST THING THIS CONNECTION WROTE.
+    #
+    # The self-heal below fired 25 times during one live build and could not
+    # say what had leaked, which makes it a mop rather than a diagnosis.
+    # Remembering the last write statement costs one attribute assignment and
+    # turns "something left a transaction open" into a named culprit.
+    _last_write = None
+    _txn_opened_at = None
+
+    def _remember(self, sql):
+        try:
+            head = " ".join(str(sql).split())[:80]
+            if head[:6].upper() in ("INSERT", "UPDATE", "DELETE", "REPLAC",
+                                    "CREATE", "DROP T", "ALTER "):
+                self._last_write = head
+                if not self.in_transaction:
+                    self._txn_opened_at = time.monotonic()
+        except Exception:
+            pass
+
+    def transaction_age(self):
+        """Seconds this connection has been holding an open transaction."""
+        if not self.in_transaction or self._txn_opened_at is None:
+            return 0.0
+        return time.monotonic() - self._txn_opened_at
+
     def _rollback_quietly(self):
         try:
             if self.in_transaction:
@@ -122,6 +149,8 @@ class _SafeConnection(sqlite3.Connection):
             pass
 
     def execute(self, *a, **kw):
+        if a:
+            self._remember(a[0])
         try:
             return super().execute(*a, **kw)
         except Exception:
@@ -129,6 +158,8 @@ class _SafeConnection(sqlite3.Connection):
             raise
 
     def executemany(self, *a, **kw):
+        if a:
+            self._remember(a[0])
         try:
             return super().executemany(*a, **kw)
         except Exception:
@@ -136,11 +167,19 @@ class _SafeConnection(sqlite3.Connection):
             raise
 
     def executescript(self, *a, **kw):
+        if a:
+            self._remember(a[0])
         try:
             return super().executescript(*a, **kw)
         except Exception:
             self._rollback_quietly()
             raise
+
+
+# How long a transaction may stay open before it is treated as abandoned. A
+# write followed by its commit takes microseconds; anything still open after
+# this was left by an operation that is not coming back.
+IDLE_TXN_LIMIT_S = float(os.getenv("HELGA_IDLE_TXN_LIMIT", "30"))
 
 
 def connect_safely(db_path: str, timeout: float = 30.0) -> sqlite3.Connection:
@@ -173,22 +212,33 @@ class _ThreadLocalDB:
             self._local.conn = conn
             return conn
 
-        # A CONNECTION HANDED BACK MID-TRANSACTION IS A LEAK, NOT A STATE.
+        # AGE, NOT PRESENCE.
         #
-        # Every caller of get() starts a fresh piece of work. If the previous
-        # one left a transaction open, it is never coming back to commit it —
-        # it returned, or raised past its commit — and until something rolls it
-        # back this thread is holding the write lock against the whole system.
-        # Rolling back here is the same decision the caller's own error path
-        # would have made, taken on the thread that owns the connection, which
-        # is the only thread allowed to make it.
-        if conn.in_transaction:
+        # This rolled back ANY connection handed out mid-transaction, on the
+        # reasoning that a fresh caller means the previous one is gone. That
+        # reasoning is wrong, and it cost real data: legitimate code calls
+        # _get_db() a second time BETWEEN its write and its commit —
+        #
+        #     conn = store._get_db(); conn.execute("INSERT ...")
+        #     store._get_db().commit()
+        #
+        # — and the second call rolled the insert back before the commit could
+        # run. Measured on a live build: every hydration_provenance row was
+        # discarded that way, silently, so locally built concepts had no
+        # recorded author at all.
+        #
+        # What actually breaks the system is a transaction held INDEFINITELY.
+        # A write followed by a commit takes microseconds; a leak lasts until
+        # the process dies. Age separates them without guessing at intent.
+        if conn.in_transaction and conn.transaction_age() > IDLE_TXN_LIMIT_S:
             logger.error(
                 "SELF-HEAL: a previous operation on this thread left a "
                 "transaction open on %s and would have held the write lock "
-                "indefinitely. Rolling it back. Uncommitted changes from that "
-                "operation are lost — which is what its failure implied.",
-                os.path.basename(self.db_path))
+                "indefinitely. Rolling it back — its uncommitted changes are "
+                "lost, which is what its failure implied. Last write on this "
+                "connection: %s",
+                os.path.basename(self.db_path),
+                getattr(conn, "_last_write", None) or "unknown")
             try:
                 conn.rollback()
             except Exception as e:
