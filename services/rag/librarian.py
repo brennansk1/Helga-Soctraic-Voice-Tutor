@@ -1541,6 +1541,33 @@ def resume_build(course_uid):
     except Exception as e:
         logger.warning("could not mark %s as building: %s", course_uid, e)
 
+    # CLAIM THE BUILD SLOT, OR THE REAPER TAKES THE COURSE.
+    #
+    # background_ops' stale-build reaper skips whatever build_state.current()
+    # names as live. resume_build never claimed it, so `live_uid` was always
+    # None, the guard never matched, and the reaper stamped
+    # status="failed", error="Course creation timed out (>1 hour)" on a course
+    # that was actively hydrating — measured four times in twelve minutes on
+    # 2026-08-25, one of them fourteen seconds after this function started the
+    # hydration it was reaping.
+    #
+    # Its cutoff is measured from created_at, so a course created hours ago is
+    # permanently past it and the reap repeats every 300s for the life of the
+    # build. Claiming the slot is what makes the guard work.
+    _build_id = None
+    try:
+        from services.common import build_state
+        _build_id = build_state.start(
+            (course or {}).get("title") or course_uid,
+            course_uid=course_uid, source="resume", stage="hydration")
+        if _build_id is None:
+            logger.info("resume for %s proceeds without the build slot — "
+                        "another build owns it", course_uid)
+    except Exception as e:
+        logger.warning("could not claim the build slot for %s: %s — the stale "
+                       "reaper may mark this course failed while it builds",
+                       course_uid, e)
+
     def _run():
         try:
             from services.core.course_builder import ContentHydrator
@@ -1555,6 +1582,14 @@ def resume_build(course_uid):
         except Exception as e:
             logger.error(f"[RESUME] {course_uid} failed: {e}", exc_info=True)
         finally:
+            # Release the slot whatever happened, or the NEXT build is refused.
+            if _build_id is not None:
+                try:
+                    from services.common import build_state
+                    build_state.finish(course_uid=course_uid, build_id=_build_id)
+                except Exception as e:
+                    logger.warning("could not release the build slot for %s: %s",
+                                   course_uid, e)
             with _RESUMING_LOCK:
                 _RESUMING.discard(course_uid)
 

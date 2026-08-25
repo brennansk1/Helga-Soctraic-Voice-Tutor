@@ -19,6 +19,12 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# A concept written this recently means the build is alive. Generous on
+# purpose: one concept at mastery 4 with retries can take several minutes,
+# and the cost of waiting is a stale card while the cost of being wrong is
+# a course marked failed mid-build.
+_RECENT_WRITE_MINUTES = int(os.getenv('HELGA_RECENT_WRITE_MINUTES', '20'))
+
 DATA_ROOT = os.getenv("DATA_ROOT", "/app/data")
 
 
@@ -123,6 +129,26 @@ class BackgroundOperations:
 
     # --- Task implementations ---
 
+    def _wrote_recently(self, course_uid):
+        """Has this course written a concept lately? Direct proof of life."""
+        try:
+            content_dir = os.path.join(DATA_ROOT, "courses", course_uid, "content")
+            if not os.path.isdir(content_dir):
+                return False
+            newest = 0.0
+            with os.scandir(content_dir) as it:
+                for entry in it:
+                    if entry.name.endswith(".md"):
+                        newest = max(newest, entry.stat().st_mtime)
+            if not newest:
+                return False
+            return (time.time() - newest) < _RECENT_WRITE_MINUTES * 60
+        except Exception as e:
+            # Unknown is not "dead". Anything unreadable here must not be the
+            # reason a course gets stamped failed.
+            logger.debug("could not check recent writes for %s: %s", course_uid, e)
+            return True
+
     def _live_build_uid(self):
         """The course_uid of the build running right now, if any.
 
@@ -163,6 +189,27 @@ class BackgroundOperations:
                     uid = course.get("uid", "")
                     if uid and uid == live_uid:
                         logger.info(f"Skipping course {uid} — it is the build running right now")
+                        continue
+
+                    # AGE SINCE CREATION IS NOT EVIDENCE OF DEATH.
+                    #
+                    # The cutoff above is measured from created_at, so a course
+                    # created hours ago is permanently past it and this reap
+                    # repeats every 300s for the entire life of a long build.
+                    # The build-slot check is the only thing standing between a
+                    # healthy build and a "failed" stamp, and it fails open —
+                    # measured 2026-08-25: four reaps in twelve minutes on a
+                    # course that was actively hydrating, one of them fourteen
+                    # seconds after the hydration started.
+                    #
+                    # A concept file written in the last few minutes is direct
+                    # evidence of progress, independent of any bookkeeping the
+                    # builder may have failed to do.
+                    if uid and self._wrote_recently(uid):
+                        logger.info(
+                            "Skipping course %s — it wrote a concept in the "
+                            "last %d minutes, so it is building, not stale",
+                            uid, _RECENT_WRITE_MINUTES)
                         continue
                     logger.warning(f"Cleaning stale course '{course.get('title')}' ({uid}) — stuck in '{status}' since {created}")
                     # Mark as failed instead of deleting — user can see what happened
