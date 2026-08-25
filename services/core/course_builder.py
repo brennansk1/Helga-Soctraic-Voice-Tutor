@@ -4598,8 +4598,20 @@ class ContentHydrator:
         # concept from a topic string. Keyword matching on a title is fragile
         # ("the french revolution" contains no history keyword), so this is a
         # best-effort default that an explicit caller can override.
+        #
+        # THE COURSE ALREADY KNOWS. The skeleton resolves a teaching_domain and
+        # stores it; this then ignored it and re-guessed from the title, which
+        # for "advanced sql" returns None — so the contract fell back to the
+        # generic one and demanded a named theorem of every concept, the exact
+        # requirement just calibrated away for computing. Measured: three
+        # consecutive concepts failed on `named_result` while the course record
+        # said teaching_domain='computer_science' the whole time.
         if self.topic_domain is None:
-            self.topic_domain = infer_domain(course_title)
+            self.topic_domain = (course.get("teaching_domain")
+                                 or infer_domain(course_title))
+            if course.get("teaching_domain"):
+                logger.info("  [DOMAIN] %s, as recorded on the course",
+                            self.topic_domain)
         self._contract_failures = []
         self._low_confidence_concepts = []
         self._fact_failures = []

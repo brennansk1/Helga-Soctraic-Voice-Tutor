@@ -67,3 +67,25 @@ def test_the_applied_set_is_explicit():
     assert "computer_science" in DOMAIN_APPLIED
     assert "formal" not in DOMAIN_APPLIED
     assert "narrative" not in DOMAIN_APPLIED
+
+
+def test_hydration_uses_the_domain_the_course_recorded():
+    """The calibration is worthless if the hydrator never sees the domain.
+
+    The skeleton resolves teaching_domain and stores it; hydrate() ignored it
+    and re-guessed from the title. infer_domain('advanced sql') is None, so
+    the contract fell back to the generic one and demanded a named theorem of
+    every concept — the exact requirement just calibrated away for computing.
+    Measured: three consecutive concepts failed on named_result while the
+    course record said computer_science throughout.
+    """
+    import os
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    with open(os.path.join(root, "services", "core", "course_builder.py"),
+              encoding="utf-8") as f:
+        src = f.read()
+    i = src.find("def hydrate(self, course_uid")
+    assert i > 0
+    body = src[i:i + 5000]
+    assert 'course.get("teaching_domain")' in body, \
+        "hydrate() re-guesses the domain instead of reading what was stored"
