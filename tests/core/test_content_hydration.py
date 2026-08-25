@@ -207,9 +207,16 @@ If plants make their own food, why do they need water?
         saved = self.mock_storage.courses.save_concept_content.call_args[0][2]
         self.assertNotIn("[Hydration failed]", saved,
                          "real model content must not be recorded as a stub")
-        self.assertIn("grounding unavailable", saved.lower(),
-                      "a concept whose research call never completed must say "
-                      "so, not claim sources were scarce")
+        # NOT IN THE LESSON. This used to assert the apology was appended to
+        # the markdown, so a learner mid-concept read a paragraph about the
+        # research service being unreachable. It is true and it matters, and
+        # it is a fact about the BUILD — it now lives on the concept as
+        # `grounding_note`, where the course page and the depth verdict can
+        # surface it. The distinction the assertion was defending (nothing was
+        # CHECKED, versus little was FOUND) is preserved there.
+        self.assertNotIn("grounding unavailable", saved.lower(),
+                         "a build problem must not be narrated to the learner "
+                         "in the middle of a lesson")
 
 if __name__ == '__main__':
     unittest.main()

@@ -303,7 +303,7 @@ function submitImport() {
                     <span>Advanced</span>
                 </div>
             </div>
-            <div class="depth-estimate" id="qc-depth-estimate">~16 concepts in 4 modules · about 1.6 hours to study</div>
+            <div class="depth-estimate" id="qc-depth-estimate">About 1.6 hours of study once it is built</div>
             <div id="qc-preview" style="font-size: var(--font-size-sm, 0.82rem); color: var(--text-secondary); margin-top: var(--space-2, 0.5rem); padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem); background: var(--bg-subtle, rgba(0,0,0,0.08)); border-radius: 6px; line-height: 1.5;"></div>
             <div class="form-group-alpine">
                 <label for="qc-style">Teaching style</label>
@@ -387,7 +387,7 @@ function submitImport() {
 <link rel="stylesheet" href="{{ url_for('static', filename='css/trust.css') }}?v=2">
 <script src="{{ url_for('static', filename='js/socket.io.min.js') }}"></script>
 <script src="{{ url_for('static', filename='js/progress-tree.js') }}?v=1"></script>
-<script src="{{ url_for('static', filename='js/courses.js') }}?v=8"></script>
+<script src="{{ url_for('static', filename='js/courses.js') }}?v=9"></script>
 <script src="{{ url_for('static', filename='js/course-share.js') }}?v=1"></script>
 <script>
 (function () {
@@ -418,8 +418,10 @@ function submitImport() {
         var lo = concepts * MIN_PER_CONCEPT_LOW;
         var hi = concepts * MIN_PER_CONCEPT_HIGH;
         var inHours = hi >= 90;
-        var a = inHours ? Math.round(lo / 6) / 10 : Math.round(lo / 5) * 5;
-        var b = inHours ? Math.round(hi / 6) / 10 : Math.round(hi / 5) * 5;
+        // Five-minute steps under the hour, half-hour steps over it. Precision
+        // beyond that would be pretending the estimate is better than it is.
+        var a = inHours ? Math.round(lo / 30) / 2 : Math.round(lo / 5) * 5;
+        var b = inHours ? Math.round(hi / 30) / 2 : Math.round(hi / 5) * 5;
         var unit = inHours ? ' hours' : ' min';
         return (a === b ? String(a) : a + '–' + b) + unit;
     }
@@ -494,16 +496,36 @@ function submitImport() {
         var reqs = (p.requires || []).map(function (r) {
             return ELEMENT_LABELS[r] || r.replace(/_/g, ' ');
         });
-        var mins = p.est_minutes >= 90
-            ? (p.est_minutes / 60).toFixed(1) + ' hours'
-            : p.est_minutes + ' min';
         var d = document.getElementById('qc-preset-detail');
         d.innerHTML = '<strong>' + p.label + '</strong> — ' + p.blurb +
             '<br><span class="preset-meta">~' + p.concepts + ' concepts · ' +
-            'about ' + mins + ' to build · every concept must contain ' +
-            (reqs.length ? reqs.join(', ') : 'a source') + '.</span>';
+            'about ' + buildTime(p.concepts) + ' to build · every concept must ' +
+            'contain ' + (reqs.length ? reqs.join(', ') : 'a source') + '.</span>';
         d.hidden = false;
         updateQcPreview();
+    }
+
+    /* The endpoint returns presets sorted by concept count, which produced a
+       list whose names argued with its order: "Deep Dive · 16 concepts" sat
+       above "Quick Overview · 24", and "Graduate Seminar · 48" above
+       "High School · 96". Size is not what these names promise — level is.
+
+       So: the academic ladder first, in the order a person climbs it, then the
+       three presets that are about the SHAPE of a course rather than its level.
+       Anything the server adds later that is not named here keeps its place at
+       the end rather than being dropped. */
+    var PRESET_ORDER = [
+        'overview', 'high_school', 'college', 'college_advanced', 'graduate',
+        'refresher', 'deep_dive', 'survey'
+    ];
+
+    function orderPresets(list) {
+        return list.slice().sort(function (a, b) {
+            var ia = PRESET_ORDER.indexOf(a.key), ib = PRESET_ORDER.indexOf(b.key);
+            if (ia === -1) ia = PRESET_ORDER.length;
+            if (ib === -1) ib = PRESET_ORDER.length;
+            return ia - ib;
+        });
     }
 
     function loadPresets() {
@@ -515,16 +537,14 @@ function submitImport() {
                 var list = (data && data.presets) || [];
                 if (!list.length) { box.innerHTML = ''; return; }
                 box.innerHTML = '';
-                list.forEach(function (p) {
+                orderPresets(list).forEach(function (p) {
                     var card = document.createElement('button');
                     card.type = 'button';
                     card.className = 'preset-card';
-                    var mins = p.est_minutes >= 90
-                        ? (p.est_minutes / 60).toFixed(1) + 'h'
-                        : p.est_minutes + 'm';
                     card.innerHTML = '<span class="preset-name">' + p.label +
                         '</span><span class="preset-cost">' + p.concepts +
-                        ' concepts · ~' + mins + '</span>';
+                        ' concepts · about ' + buildTime(p.concepts) +
+                        ' to build</span>';
                     card.addEventListener('click', function () { applyPreset(p, card); });
                     box.appendChild(card);
                 });

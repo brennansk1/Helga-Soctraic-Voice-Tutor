@@ -1199,14 +1199,9 @@ class StorageManager:
                 # removal of the duplicate full-text index.
                 #
                 # Each of the four was confirmed with EXPLAIN QUERY PLAN on a
-                # copy of the live database (19 MB, 142 concepts) before being
-                # added; the plan each one fixes is named below.
+                # copy of the live database (21.8 MB, 156 concept rows)
+                # before and after; the plan each one fixes is named below.
 
-                # due_for_review(): "SCAN user_progress". idx_progress_student
-                # is (student_id, course_uid) — the right first column and the
-                # wrong second one, so it cannot serve a date range. Partial,
-                # because the query only ever wants rows that HAVE a due date
-                # and most rows in a big course do not.
                 # Each statement is attempted independently: an index on a
                 # table an older or partly built database does not have must
                 # not abort startup for everything else.
@@ -1216,6 +1211,11 @@ class StorageManager:
                     except sqlite3.OperationalError as e:
                         logger.warning("v19: %s -- skipped (%s)", sql.split("(")[0].strip(), e)
 
+                # due_for_review(): "SCAN user_progress". idx_progress_student
+                # is (student_id, course_uid) — the right first column and the
+                # wrong second one, so it cannot serve a date range. Partial,
+                # because the query only ever wants rows that HAVE a due date
+                # and most rows in a big course do not.
                 _try_ddl(
                     "CREATE INDEX IF NOT EXISTS idx_progress_due "
                     "ON user_progress(student_id, next_review_date) "
@@ -1223,9 +1223,10 @@ class StorageManager:
 
                 # taught_ledger's per-concept DELETE and SELECT narrow by
                 # (course_uid, concept_uid) but the only index is
-                # (course_uid, ordinal), so each one visits every claim in the
-                # course — ~880 rows per concept on a 142-concept build,
-                # ~83,000 row visits over a build, to delete a handful.
+                # (course_uid, ordinal), so each one visits every claim in
+                # the course. Measured on the largest live course: 879 claims
+                # over 95 concepts, so each per-concept DELETE walked all 879
+                # to touch ~9 — about 83,000 row visits across that build.
                 _try_ddl(
                     "CREATE INDEX IF NOT EXISTS idx_claims_concept "
                     "ON taught_claims(course_uid, concept_uid)")
@@ -1572,7 +1573,14 @@ class CourseStore:
         params = (
             uid,
             course_dict.get("title", ""),
-            course_dict.get("overview", ""),
+            # THE COLUMN IS `overview`; THE DOCUMENT SAYS `description`.
+                # Nothing ever mapped one to the other, so the row stayed empty
+                # while structure.json held the real text — and the course list,
+                # which reads the ROW, showed no description for any course.
+                # The front end then filled the gap with one identical sentence
+                # on every card.
+                (course_dict.get("overview")
+                 or course_dict.get("description") or ""),
             course_dict.get("status", "unknown"),
             course_dict.get("teaching_style", ""),
             cat.get("subject"), cat.get("grade_band"), cat.get("grade_numeric"),
@@ -1661,7 +1669,14 @@ class CourseStore:
             """, (
                 uid,
                 course_dict.get("title", ""),
-                course_dict.get("overview", ""),
+                # THE COLUMN IS `overview`; THE DOCUMENT SAYS `description`.
+                # Nothing ever mapped one to the other, so the row stayed empty
+                # while structure.json held the real text — and the course list,
+                # which reads the ROW, showed no description for any course.
+                # The front end then filled the gap with one identical sentence
+                # on every card.
+                (course_dict.get("overview")
+                 or course_dict.get("description") or ""),
                 course_dict.get("status", "unknown"),
                 course_dict.get("teaching_style", ""),
                 cat.get("subject"), cat.get("grade_band"), cat.get("grade_numeric"),
@@ -1875,7 +1890,14 @@ class CourseStore:
                     WHERE uid=?
                 """, (
                     course_dict.get("title", ""),
-                    course_dict.get("overview", ""),
+                    # THE COLUMN IS `overview`; THE DOCUMENT SAYS `description`.
+                # Nothing ever mapped one to the other, so the row stayed empty
+                # while structure.json held the real text — and the course list,
+                # which reads the ROW, showed no description for any course.
+                # The front end then filled the gap with one identical sentence
+                # on every card.
+                (course_dict.get("overview")
+                 or course_dict.get("description") or ""),
                     course_dict.get("status", "unknown"),
                     course_dict.get("teaching_style", ""),
                     cat.get("subject"), cat.get("grade_band"), cat.get("grade_numeric"),
@@ -2583,11 +2605,13 @@ class CourseStore:
             # and two test assertions — no MATCH, no SELECT on a request path.
             #
             # It was not free. Every concept save tokenised the same markdown
-            # twice: ~8.2 KB of the ~43.8 KB written per concept, 19% of the
-            # write volume of a build, on a virtiofs bind mount. The index it
-            # produced was 1.17 MB of a 20 MB database — and stale on top of
-            # that, since delete_course's cascade drops `concept_fts` rows but
-            # never listed `concepts_fts`.
+            # TWICE, on a virtiofs bind mount. Measured on the live database
+            # with dbstat: concepts_fts and its shadow tables held 2,879,488
+            # bytes across 156 concepts — 18.5 KB per concept, 13% of the whole
+            # 21.8 MB file, and nearly twice the size of the `concepts` table
+            # (1.54 MB) whose text it was copying. It was stale as well, since
+            # delete_course's cascade drops `concept_fts` rows and never listed
+            # `concepts_fts`.
             #
             # The live index is maintained by on_content_saved below, which
             # calls SearchStore.index_concept. That is the one search reads.

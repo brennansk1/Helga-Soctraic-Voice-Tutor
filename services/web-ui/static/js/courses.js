@@ -1028,12 +1028,13 @@ function updateDepthEstimate() {
     var modules = Math.max(2, moduleBase[scope] - skipFactor[start]);
     var total = modules * conceptBase[mastery];
     var hours = Math.round(total * 0.1 * 10) / 10;
-    // Named as STUDY time. The line underneath it estimates BUILD time, and two
-    // unlabelled hour figures side by side invite the reader to take the small
-    // one as the wait and the large one as the course.
+    /* STUDY time, and only study time. This line used to repeat the module and
+       concept counts that the line directly beneath it already gives, and to
+       print "~N hours" with no noun — directly above a second, much larger hour
+       figure for the BUILD. Two unlabelled durations stacked on each other is a
+       reader's problem, not a reader's information. */
     document.getElementById('qc-depth-estimate').textContent =
-        '~' + total + ' concepts in ' + modules + ' modules · about ' +
-        hours + ' hours to study';
+        'About ' + hours + ' hours of study once it is built';
 }
 
 // --- Build Progress State ---

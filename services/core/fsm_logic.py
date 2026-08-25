@@ -3581,10 +3581,12 @@ class MnemosyneFSM:
         own SYSTEM NOTE to the model.
         """
         for pair in reversed(self.conversation_history or []):
-            try:
-                said = str(pair[0] or "").strip()
-            except (IndexError, TypeError):
+            # A malformed entry is skipped rather than crashing the turn, but
+            # it is checked for rather than caught — an `except` here would
+            # also swallow real bugs in whatever put it in the list.
+            if not isinstance(pair, (tuple, list)) or not pair:
                 continue
+            said = str(pair[0] or "").strip()
             if said:
                 return said
         return ""

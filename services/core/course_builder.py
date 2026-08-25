@@ -5348,12 +5348,27 @@ class ContentHydrator:
 
         self.storage.courses.update_course(course_uid, course)
 
-        # Refresh the FTS5 search index now that this course's content exists, so
-        # a newly built course is immediately searchable (the index otherwise only
-        # builds lazily when empty). Best-effort — never fail creation on reindex.
+        # COMPACT THE INDEX WHERE THE TOMBSTONES ARE MADE.
+        #
+        # index_concept is DELETE+INSERT, and in FTS5 a delete writes a
+        # tombstone while the insert appends a segment — nothing is reclaimed.
+        # A build, its retries, the asset pass and every repair all rewrite the
+        # same concepts, so segment count grows monotonically and bm25() reads
+        # all of them. `optimize` was never run anywhere in the repo; measured
+        # on a copy of the live database it took the index from 218 blocks to
+        # 159 and 2.54 MB to 2.26 MB.
+        #
+        # Here rather than in a nightly job because this is the moment the
+        # tombstones exist, and the cost is paid once at the end of a build the
+        # learner is already waiting on.
+        #
+        # Best-effort throughout: a search index is a convenience and must
+        # never fail a build that produced real content.
         try:
             if hasattr(self.storage, "search"):
                 self.storage.search.rebuild_search_index()
+                if hasattr(self.storage.search, "optimize_index"):
+                    self.storage.search.optimize_index()
         except Exception as e:
             logger.warning(f"Search reindex after hydration failed: {e}")
 

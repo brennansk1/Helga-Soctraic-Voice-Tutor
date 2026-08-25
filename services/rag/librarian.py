@@ -435,7 +435,18 @@ def courses():
                 {
                     "uid": course["uid"],
                     "title": course.get("title", ""),
-                    "description": course.get("overview", ""),
+                    # THE KEY IS `description`, NOT `overview`.
+                    #
+                    # Courses are written with a `description`; this read
+                    # `overview` and fell back to "", so every card in the
+                    # library showed no description — and the front end filled
+                    # the gap with the identical sentence "A comprehensive
+                    # interactive course." on all four. The descriptions were
+                    # on disk the whole time ("Regex as a working tool for
+                    # parsing text."). Same shape as the dashboard reading
+                    # total_courses while the API returned courses.
+                    "description": (course.get("description")
+                                    or course.get("overview") or ""),
                     "status": course.get("status", "unknown"),
                     "teaching_style": course.get("teaching_style", ""),
                     # WHICH TEACHING LAYER THIS COURSE ACTUALLY GOT.
