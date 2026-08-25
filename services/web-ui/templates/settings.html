@@ -7,7 +7,7 @@
     <!-- Profile loading overlay — shown while /api/profile is being fetched -->
     <div id="settings-loading" class="settings-loading-overlay">
         <div class="settings-loading-spinner" aria-label="Loading settings"></div>
-        <span>Loading settings...</span>
+        <span>Loading settings…</span>
     </div>
     <!-- Profile load error banner — hidden by default -->
     <div id="settings-load-error" class="settings-load-error" style="display: none;">
@@ -19,7 +19,7 @@
     <section class="settings-section" id="section-profile">
         <h2>Profile</h2>
         <div class="setting-row profile-picture-row">
-            <label>Profile Picture</label>
+            <label>Profile picture</label>
             <div class="avatar-upload-group">
                 <img id="avatar-preview" class="avatar-preview" src="/static/img/user-avatar.svg" alt="Your avatar">
                 <div class="avatar-upload-controls">
@@ -31,7 +31,7 @@
             <p class="setting-hint">This picture appears next to your messages in the learning chat. Max 2MB.</p>
         </div>
         <div class="setting-row">
-            <label for="display-name">Display Name</label>
+            <label for="display-name">Display name</label>
             <input type="text" id="display-name" placeholder="Your name" maxlength="50" autocomplete="off">
             <p class="setting-hint">The tutor will address you by this name.</p>
         </div>
@@ -48,7 +48,7 @@
             </div>
         </div>
         <div class="setting-row">
-            <label for="font-scale">Font Size</label>
+            <label for="font-scale">Font size</label>
             <input type="range" id="font-scale" min="0.8" max="1.4" step="0.1" value="1.0">
             <span id="font-scale-label">100%</span>
         </div>
@@ -58,25 +58,27 @@
     <section class="settings-section" id="section-learning">
         <h2>Learning</h2>
         <div class="setting-row">
-            <label for="daily-goal">Daily Concept Goal</label>
+            <label for="daily-goal">Daily concept goal</label>
             <input type="number" id="daily-goal" min="1" max="20" value="5">
             <p class="setting-hint">Number of concepts to target each day.</p>
         </div>
     </section>
 
-    <!-- Gamification Section -->
+    {#  "Gamification" is a word product teams use about learners, not a word
+        learners use about themselves. The section is named for what it turns
+        on, and the toggle says what appears when it is on. #}
     <section class="settings-section" id="section-gamification">
-        <h2>Gamification</h2>
+        <h2>Progress and rewards</h2>
         <div class="setting-row">
-            <label for="gamification-toggle">Enable Gamification</label>
+            <label for="gamification-toggle">Show XP and streaks</label>
             <label class="switch">
                 <input type="checkbox" id="gamification-toggle" checked>
                 <span class="slider round"></span>
             </label>
-            <p class="setting-hint">Show XP, streaks, levels, and achievements. Learning features are always available.</p>
+            <p class="setting-hint">Points, streaks, levels and achievements appear as you learn. Turning this off changes nothing about the teaching itself.</p>
         </div>
         <div class="setting-row">
-            <label for="sound-toggle">Sound Effects</label>
+            <label for="sound-toggle">Sound effects</label>
             <label class="switch">
                 <input type="checkbox" id="sound-toggle" checked>
                 <span class="slider round"></span>
@@ -88,21 +90,35 @@
     <section class="settings-section" id="section-voice">
         <h2>Voice</h2>
         <div class="setting-row">
-            <label for="voice-select">TTS Voice</label>
+            {#  The old list mixed two conventions in one dropdown — "(Female)"
+                for some voices and "(British F)" for others — so the accent
+                was only stated for half of them. The accent and the voice are
+                separate facts, so they are on separate levels: the group says
+                the accent, the option says the voice. #}
+            <label for="voice-select">Helga’s voice</label>
             <select id="voice-select">
-                <option value="af_heart">Heart (Female)</option>
-                <option value="af_bella">Bella (Female)</option>
-                <option value="af_nicole">Nicole (Female)</option>
-                <option value="af_sarah">Sarah (Female)</option>
-                <option value="af_sky">Sky (Female)</option>
-                <option value="am_adam">Adam (Male)</option>
-                <option value="am_michael">Michael (Male)</option>
-                <option value="bf_emma">Emma (British F)</option>
-                <option value="bf_isabella">Isabella (British F)</option>
-                <option value="bm_george">George (British M)</option>
-                <option value="bm_lewis">Lewis (British M)</option>
+                <optgroup label="American — female">
+                    <option value="af_heart">Heart</option>
+                    <option value="af_bella">Bella</option>
+                    <option value="af_nicole">Nicole</option>
+                    <option value="af_sarah">Sarah</option>
+                    <option value="af_sky">Sky</option>
+                </optgroup>
+                <optgroup label="American — male">
+                    <option value="am_adam">Adam</option>
+                    <option value="am_michael">Michael</option>
+                </optgroup>
+                <optgroup label="British — female">
+                    <option value="bf_emma">Emma</option>
+                    <option value="bf_isabella">Isabella</option>
+                </optgroup>
+                <optgroup label="British — male">
+                    <option value="bm_george">George</option>
+                    <option value="bm_lewis">Lewis</option>
+                </optgroup>
             </select>
             <button id="voice-preview" class="btn-small" aria-label="Preview selected voice">Preview</button>
+            <p class="setting-hint">The voice Helga reads lessons aloud in. Preview plays a sample line.</p>
         </div>
     </section>
 
@@ -110,11 +126,11 @@
     <section class="settings-section" id="section-data">
         <h2>Data</h2>
         <div class="setting-row">
-            <button id="export-data" class="btn-secondary" aria-label="Export learning data as JSON">Export Learning Data</button>
+            <button id="export-data" class="btn-secondary" aria-label="Export learning data as JSON">Export learning data</button>
             <p class="setting-hint">Download your progress, courses, and review history as JSON.</p>
         </div>
         <div class="setting-row danger-zone">
-            <button id="reset-progress" class="btn-danger" aria-label="Reset all learning progress">Reset All Progress</button>
+            <button id="reset-progress" class="btn-danger" aria-label="Reset all learning progress">Reset all progress</button>
             <p class="setting-hint">This cannot be undone. Course content is preserved.</p>
         </div>
     </section>
@@ -156,9 +172,17 @@
                  aria-label="Disk use by course"></div>
             <ul class="res-legend" id="res-legend"></ul>
 
-            <table class="res-hw">
-                <tbody id="res-hw-body"></tbody>
-            </table>
+            <!-- The machine's internals — architecture, kernel string, which
+                 library took the reading. A self-hosted product should be able
+                 to show them, but they are the answer to a question almost
+                 nobody arrives with, and leading with them made this panel read
+                 as a debug console. Collapsed, and one click away. -->
+            <details class="res-tech" id="res-tech" hidden>
+                <summary>Technical details</summary>
+                <table class="res-hw">
+                    <tbody id="res-hw-body"></tbody>
+                </table>
+            </details>
         </div>
     </section>
 
@@ -182,7 +206,7 @@
         </div>
 
         <div class="setting-row">
-            <a href="/status" class="btn-secondary" role="button">Open System Status</a>
+            <a href="/status" class="btn-secondary" role="button">Open system status</a>
             <p class="setting-hint">Response times and per-service detail.
                Useful when something feels slow or a course will not build.</p>
         </div>
@@ -197,7 +221,7 @@
             <p>This resets every course, concept, and flashcard review. Course content itself is preserved, but all your completion data will be lost. This cannot be undone.</p>
             <div class="settings-confirm-actions">
                 <button type="button" class="btn-secondary" id="reset-cancel-btn">Cancel</button>
-                <button type="button" class="btn-danger" id="reset-confirm-btn">Reset Progress</button>
+                <button type="button" class="btn-danger" id="reset-confirm-btn">Reset progress</button>
             </div>
         </div>
     </div>
@@ -479,6 +503,38 @@ input:checked + .slider:before { transform: translateX(22px); }
     animation: settings-btn-spin 0.7s linear infinite;
 }
 @keyframes settings-btn-spin { to { transform: rotate(360deg); } }
+
+/* Collapsed machine internals. Styled as a quiet control, not a heading —
+   it is a door, and it should not compete with the figures above it. */
+.res-tech {
+    margin-top: var(--space-4);
+    border-top: 1px solid var(--border-color);
+    padding-top: var(--space-3);
+}
+.res-tech > summary {
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    font-weight: var(--font-weight-semibold);
+    list-style: revert;
+}
+.res-tech > summary:hover { color: var(--text-primary); }
+.res-tech[open] > summary { margin-bottom: var(--space-2); }
+.res-tech .res-hw { margin-top: 0; }
+
+/* Status badges sit inline with the thing they describe, in every row and in
+   the section heading alike. They used to be inserted before the title, so a
+   block-level <h3> pushed them onto their own line and only the panel heading
+   kept its badge beside the words. */
+.preflight-item-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin: 0 0 0.25em;
+}
+.preflight-item-head .preflight-item-label { margin: 0; }
+.preflight-item-head .preflight-pill { flex: none; }
 </style>
 
 <script>
@@ -702,7 +758,7 @@ input:checked + .slider:before { transform: translateX(22px); }
     document.getElementById('export-data').addEventListener('click', function() {
         const self = this;
         self.disabled = true;
-        self.textContent = 'Exporting...';
+        self.textContent = 'Exporting…';
         fetch('/api/stats').then(r => {
             if (!r.ok) throw new Error('HTTP ' + r.status);
             return r.json();
@@ -713,11 +769,11 @@ input:checked + .slider:before { transform: translateX(22px); }
             a.download = 'helga_data_export.json';
             a.click();
             self.disabled = false;
-            self.textContent = 'Export Learning Data';
+            self.textContent = 'Export learning data';
         }).catch(() => {
             showToast('Export failed — could not fetch data');
             self.disabled = false;
-            self.textContent = 'Export Learning Data';
+            self.textContent = 'Export learning data';
         });
     });
 })();

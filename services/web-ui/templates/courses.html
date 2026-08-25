@@ -8,8 +8,8 @@
 <div class="page-section">
     <div class="action-bar">
         <div>
-            <h1>My Courses</h1>
-            <p class="page-subtitle">Your library of personalized learning paths</p>
+            <h1>My courses</h1>
+            <p class="page-subtitle">Your library of personalised learning paths</p>
         </div>
         <!-- One entry point, not three.
              "Quick Create" and "Import a Book" were two modals asking the two
@@ -210,7 +210,7 @@ function submitImport() {
     <div id="courses-grid" class="course-card-grid">
         <div class="empty-state" id="courses-loading">
             <div class="empty-icon"><span class="i i-books" aria-hidden="true"></span></div>
-            <h3>Loading courses...</h3>
+            <h3>Loading your courses…</h3>
         </div>
     </div>
 </div>
@@ -218,7 +218,7 @@ function submitImport() {
 <!-- Delete Confirmation Modal -->
 <div id="delete-confirm-backdrop" class="alpine-modal-backdrop" onclick="if(event.target===this) closeDeleteConfirm();">
     <div class="alpine-modal" style="max-width: 440px;">
-        <h2 style="color: var(--color-danger);">Delete Course?</h2>
+        <h2 style="color: var(--color-danger);">Delete course?</h2>
         <p style="color: var(--text-secondary); margin: 0.75rem 0 0.5rem 0;">
             You are about to delete
             <strong id="delete-confirm-title" style="color: var(--text-primary);"></strong>.
@@ -228,7 +228,7 @@ function submitImport() {
         </p>
         <div style="display: flex; gap: 0.75rem; justify-content: flex-end;">
             <button type="button" class="btn-alpine btn-alpine-secondary" onclick="closeDeleteConfirm()">Cancel</button>
-            <button type="button" id="delete-confirm-btn" class="btn-alpine btn-alpine-danger" onclick="confirmDeleteCourse()">Delete Course</button>
+            <button type="button" id="delete-confirm-btn" class="btn-alpine btn-alpine-danger" onclick="confirmDeleteCourse()">Delete course</button>
         </div>
     </div>
 </div>
@@ -238,7 +238,7 @@ function submitImport() {
     <div class="alpine-modal">
         <!-- Phase 1: Form -->
         <div id="qc-form-phase">
-            <h2>Quick Create Course</h2>
+            <h2>Create a course</h2>
             <p style="color: var(--text-secondary); margin-bottom: 1.25rem;">
                 Enter a topic and Helga will generate a complete course with modules, lessons, and concepts.
             </p>
@@ -289,7 +289,7 @@ function submitImport() {
                 </div>
             </div>
             <div class="form-group-alpine">
-                <label>Starting From <span style="font-weight:var(--font-weight-normal);color:var(--text-secondary)">— your background</span></label>
+                <label>Starting from <span style="font-weight:var(--font-weight-normal);color:var(--text-secondary)">— your background</span></label>
                 <div class="depth-slider">
                     <span><span class="i i-user" aria-hidden="true"></span></span>
                     <input type="range" id="qc-start" min="1" max="5" value="1">
@@ -303,20 +303,20 @@ function submitImport() {
                     <span>Advanced</span>
                 </div>
             </div>
-            <div class="depth-estimate" id="qc-depth-estimate">~8 concepts · ~1.5 hours</div>
+            <div class="depth-estimate" id="qc-depth-estimate">~16 concepts in 4 modules · about 1.6 hours to study</div>
             <div id="qc-preview" style="font-size: var(--font-size-sm, 0.82rem); color: var(--text-secondary); margin-top: var(--space-2, 0.5rem); padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem); background: var(--bg-subtle, rgba(0,0,0,0.08)); border-radius: 6px; line-height: 1.5;"></div>
             <div class="form-group-alpine">
-                <label for="qc-style">Teaching Style</label>
+                <label for="qc-style">Teaching style</label>
                 <select id="qc-style">
                     <option value="">Default (Socratic)</option>
-                    <option value="ELI5">Explain Like I'm Five</option>
-                    <option value="Academic">Strict Academic</option>
-                    <option value="Analogies">Lots of Analogies</option>
-                    <option value="Drill">Quiz Drill</option>
+                    <option value="ELI5">Explain it like I’m five</option>
+                    <option value="Academic">Strict academic</option>
+                    <option value="Analogies">Lots of analogies</option>
+                    <option value="Drill">Quiz drill</option>
                 </select>
             </div>
             <div style="display: flex; gap: 0.75rem; margin-top: 1.5rem;">
-                <button id="qc-submit-btn" class="btn-alpine btn-alpine-primary" style="flex: 1;" onclick="submitQuickCreate(this)">Create Course</button>
+                <button id="qc-submit-btn" class="btn-alpine btn-alpine-primary" style="flex: 1;" onclick="submitQuickCreate(this)">Create course</button>
                 <button class="btn-alpine btn-alpine-secondary" onclick="closeQuickCreate()">Cancel</button>
             </div>
         </div>
@@ -332,14 +332,14 @@ function submitImport() {
                     <div class="phase-dot" id="phase-complete"></div>
                 </div>
                 <div class="build-phase-labels">
-                    <span class="active" id="phase-label-skeleton">Building Structure</span>
-                    <span id="phase-label-hydrate">Generating Content</span>
-                    <span id="phase-label-complete">Complete</span>
+                    <span class="active" id="phase-label-skeleton">Building structure</span>
+                    <span id="phase-label-hydrate">Writing concepts</span>
+                    <span id="phase-label-complete">Done</span>
                 </div>
             </div>
 
-            <h2 id="qc-progress-title" style="margin: 1rem 0 0.25rem 0; font-size: 1.2rem;">Building Course...</h2>
-            <p id="qc-progress-status" style="color: var(--text-secondary); font-size: 0.88rem; margin: 0 0 1rem 0;">Initializing skeleton builder...</p>
+            <h2 id="qc-progress-title" style="margin: 1rem 0 0.25rem 0; font-size: 1.2rem;">Building course…</h2>
+            <p id="qc-progress-status" style="color: var(--text-secondary); font-size: 0.88rem; margin: 0 0 1rem 0;">Starting the course builder…</p>
 
             <div class="alpine-progress" style="height: 6px;">
                 <div class="alpine-progress-fill" id="qc-progress-bar" style="width: 0%"></div>
@@ -349,13 +349,13 @@ function submitImport() {
             <div id="qc-progress-tree" class="build-tree" style="margin-top: 1.25rem;">
                 <div class="build-tree-placeholder">
                     <div class="skeleton-pulse"></div>
-                    <span>Waiting for structure...</span>
+                    <span>Waiting for the first modules…</span>
                 </div>
             </div>
 
             <!-- Collapsible Log Terminal -->
             <details class="build-logs-toggle" style="margin-top: 1rem;">
-                <summary style="cursor: pointer; font-size: 0.82rem; color: var(--text-secondary); font-weight: var(--font-weight-semibold);">System Logs</summary>
+                <summary style="cursor: pointer; font-size: 0.82rem; color: var(--text-secondary); font-weight: var(--font-weight-semibold);">Build log</summary>
                 <div id="qc-progress-logs" class="log-terminal" style="margin-top: 0.5rem;"></div>
             </details>
 
@@ -363,9 +363,9 @@ function submitImport() {
             <div id="qc-progress-actions" style="display: none; margin-top: 1.25rem;">
                 <div class="build-complete-card">
                     <div class="build-complete-icon"><span class="i i-check i-lg"></span></div>
-                    <h3 id="qc-complete-title">Course Created!</h3>
+                    <h3 id="qc-complete-title">Your course is ready</h3>
                     <p id="qc-complete-summary" style="color: var(--text-secondary); margin: 0.5rem 0 1rem 0;"></p>
-                    <button class="btn-alpine btn-alpine-primary" style="width: 100%;" id="qc-start-learning-btn">Start Learning</button>
+                    <button class="btn-alpine btn-alpine-primary" style="width: 100%;" id="qc-start-learning-btn">Start learning</button>
                 </div>
             </div>
         </div>
@@ -396,8 +396,33 @@ function submitImport() {
     var MASTERY_BLOOM_CEIL      = [0, 2, 3, 4, 5, 6];
     var START_SKIP_FACTOR       = [0, 0, 0, 1, 2, 3];
     var START_BLOOM_FLOOR       = [0, 1, 1, 2, 3, 4];
-    var BLOOM_LABELS            = ['', 'Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create'];
-    var SECS_PER_CONCEPT        = 6;
+    var BLOOM_LABELS            = ['', 'Remember', 'Understand', 'Apply', 'Analyse', 'Evaluate', 'Create'];
+
+    /* HOW LONG A BUILD ACTUALLY TAKES.
+       This was 6 SECONDS per concept, which put the default sliders at
+       "est. build ~2–2 min": a range whose two ends are the same number, and
+       wrong by a factor of about twenty-five. The measured figure on this
+       hardware is a 95-concept course in roughly five hours — about 3 minutes
+       per concept end to end (research, writing, fact check, depth check).
+
+       The server's own `est_minutes` on /api/course_presets is derived from
+       1.5 min/concept and is likewise around half of what a build costs here,
+       so the preset cards are timed from this rate too rather than from that
+       field. One number, from one measurement, everywhere in this modal. */
+    var MIN_PER_CONCEPT_LOW     = 2.5;
+    var MIN_PER_CONCEPT_HIGH    = 3.2;
+
+    /* Minutes below an hour and a half, hours above it. Never a range whose
+       ends are equal — that is a range that has stopped saying anything. */
+    function buildTime(concepts) {
+        var lo = concepts * MIN_PER_CONCEPT_LOW;
+        var hi = concepts * MIN_PER_CONCEPT_HIGH;
+        var inHours = hi >= 90;
+        var a = inHours ? Math.round(lo / 6) / 10 : Math.round(lo / 5) * 5;
+        var b = inHours ? Math.round(hi / 6) / 10 : Math.round(hi / 5) * 5;
+        var unit = inHours ? ' hours' : ' min';
+        return (a === b ? String(a) : a + '–' + b) + unit;
+    }
 
     function updateQcPreview() {
         var scope   = parseInt(document.getElementById('qc-scope').value,   10);
@@ -412,17 +437,18 @@ function submitImport() {
         var conceptsPer     = MASTERY_CONCEPTS[mastery];
         var approxConcepts  = modules * conceptsPer;
 
-        var totalSecs       = approxConcepts * SECS_PER_CONCEPT;
-        var minutesLow      = Math.round(totalSecs / 60);
-        var minutesHigh     = Math.round(totalSecs * 1.4 / 60);
-
         var el = document.getElementById('qc-preview');
         if (!el) return;
         el.textContent =
             '~' + Math.round(modules) + ' modules · ' +
             '~' + Math.round(approxConcepts) + ' concepts · ' +
-            'Bloom ' + BLOOM_LABELS[bloomFloor] + ' → ' + BLOOM_LABELS[bloomCeil] + ' · ' +
-            'est. build ~' + minutesLow + '–' + minutesHigh + ' min';
+            // "Bloom Remember → Understand" put a taxonomy's name and two of
+            // its rungs on screen with no sentence around them, so it read as a
+            // variable that had escaped. The rungs still describe the course;
+            // they just say what they are describing now.
+            'thinking from ' + BLOOM_LABELS[bloomFloor].toLowerCase() +
+            ' to ' + BLOOM_LABELS[bloomCeil].toLowerCase() + ' · ' +
+            'about ' + buildTime(Math.round(approxConcepts)) + ' to build';
     }
 
     function wireQcPreview() {

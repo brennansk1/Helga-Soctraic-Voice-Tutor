@@ -582,6 +582,46 @@ def get_band_profile(grade_band):
                                    GRADE_BAND_PROFILES[DEFAULT_GRADE_BAND])
 
 
+# --- THE ENFORCED CAP MUST BE THE CAP THE MODEL WAS ASKED FOR ---------------
+#
+# `dialogue_contract.MAX_WORDS` is 60 and `_enforce_dialogue_contract` used to
+# pass no `max_words`, so 60 was applied to EVERY turn. But this file asks a
+# 9-12 learner's tutor for up to 110 words, and the lecture prompt asks for up
+# to 100 words of explanation PLUS a mandatory follow-up question. The contract
+# was therefore refusing, and paying a regeneration call for, exactly the turns
+# the prompt had commissioned — most reliably on the LECTURE turns, which fire
+# when the learner is already struggling.
+#
+# One number, computed here where the prompts' own caps live, so the prompt and
+# the enforcer cannot drift apart again.
+
+#: Ceiling on a micro-lecture's explanation, independent of band. A K-1
+#: micro-lecture is two tiny sentences; 9-12 gets the full 100 words.
+LECTURE_WORD_CEILING = 100
+
+#: The lecture prompt caps the EXPLANATION and then mandates one follow-up
+#: question on top of it, so the turn the enforcer measures is legitimately
+#: longer than the number written into the prompt. One question's worth.
+LECTURE_QUESTION_ALLOWANCE = 25
+
+
+def lecture_word_budget(profile):
+    """Words of explanation a micro-lecture may spend, for this band."""
+    return min(LECTURE_WORD_CEILING, profile["max_words"] * 2)
+
+
+def turn_word_cap(grade_band=None, teaching_mode="QUESTION"):
+    """The word cap the tutor turn was actually ASKED for, per mode.
+
+    Hand this to `dialogue_contract.check(max_words=...)`. Enforcing anything
+    else means either punishing a compliant turn or letting a lecture through.
+    """
+    profile = get_band_profile(grade_band)
+    if str(teaching_mode or "").upper() == "LECTURE":
+        return lecture_word_budget(profile) + LECTURE_QUESTION_ALLOWANCE
+    return profile["max_words"]
+
+
 def get_typed_socratic_prompt(question_type_key, context_text, conversation_history,
                               aid_policy=None,
                                system_note=None, misconceptions=None, analogies=None,
@@ -1153,10 +1193,30 @@ INSTRUCTOR NOTES (pedagogical guidance only — the student has NOT seen any of 
 # JSON Schema for grading output. Passed to Ollama's `format` so generation is
 # grammar-constrained to a valid grade object (Ollama >= 0.5), eliminating the
 # JSON-parse failures the free-text path suffered from.
+#
+# TWO RUBRICS USED TO COEXIST AND THE GRAMMAR ENFORCED THE WRONG ONE.
+#
+# This schema capped `grade` at 4 while every consumer of the number is written
+# for 1-5: `fsm_logic._parse_grade_response` clamps with `min(5, ...)`,
+# `librarian` says "Map Socratic grade (1-5) to FSRS rating (1-4)" and clamps
+# again, `spaced_repetition` documents "grade: user grade (1-5)", and
+# `services/core/grading.py` carries five named ANCHORS plus the measurement
+# that a 5-point rubric agrees best across judges and degrades monotonically
+# at 6+ points. Because this schema is handed to Ollama's `format`, the
+# grammar made a 5 literally ungeneratable — so the top of the scale was
+# unreachable no matter what the rubric text said.
+#
+# The 1-4 wording that used to sit in the rubric below was the FSRS rating
+# scale (Again/Hard/Good/Easy) leaking upward. That mapping is derived
+# DOWNSTREAM (`librarian`, and `fsrs_engine.calculate_memory` clamps to 1-4
+# itself), so the grader was being asked to emit the downstream representation
+# rather than the assessment. The five-level scale is the one kept.
+GRADE_MIN, GRADE_MAX = 1, 5
+
 GRADE_JSON_SCHEMA = {
     "type": "object",
     "properties": {
-        "grade": {"type": "integer", "minimum": 1, "maximum": 4},
+        "grade": {"type": "integer", "minimum": GRADE_MIN, "maximum": GRADE_MAX},
         "reason": {"type": "string"},
         "missing_concepts": {"type": "array", "items": {"type": "string"}},
         "feedback": {"type": "string"},
@@ -1227,18 +1287,20 @@ Student Answer:
 {safe_answer}
 {UNTRUSTED_FENCE}
 {context_str}
-Evaluate the student's mastery. Be STRICT — do not give Grade 3 unless the answer truly demonstrates understanding.
+Evaluate the student's mastery on a scale of {GRADE_MIN} to {GRADE_MAX}. Grade 3 is the PASS MARK. Be STRICT — do not give Grade 3 unless the answer truly demonstrates understanding.
 
-- Grade 1 (Again): Wrong, "I don't know", admitted ignorance, off-topic, or answer is just restating the question.
-- Grade 2 (Hard): Partially correct but vague, just keywords without reasoning, restating facts without explaining WHY, or missing the core mechanism. If the student copies text without showing they understand it, this is Grade 2.
-- Grade 3 (Good): Correct AND explains the reasoning/mechanism. The student must show they understand WHY, not just WHAT. They connect cause to effect or explain the underlying logic.
-- Grade 4 (Easy): EXCEPTIONAL — novel connection, unprompted edge case, precise mechanism explanation, or multi-concept synthesis. RARE (1 in 5 correct answers).
+- Grade 1: Incorrect, "I don't know", admitted ignorance, off-topic, or correct only by restating the question without reasoning.
+- Grade 2: Partially correct — the right general direction with a material gap, omission, or one clear error. Just keywords without reasoning, or restating facts without explaining WHY, is Grade 2. If the student copies text without showing they understand it, this is Grade 2.
+- Grade 3: Meets the pass mark. Correct AND explains the reasoning/mechanism — the student shows they understand WHY, not just WHAT, connecting cause to effect or explaining the underlying logic.
+- Grade 4: Meets the pass mark cleanly — correct reasoning with no significant gap left over.
+- Grade 5: Goes beyond it — correct, AND connects the idea to something else or identifies where it breaks down. RARE.
 {bloom_criteria}{objectives_str}{band_calibration}
 GRADING RULES:
 - If the student admits they don't know -> Grade 1, always.
 - If the answer is just keywords or definitions without reasoning -> Grade 2, not 3.
 - If the answer restates content without explaining the mechanism -> Grade 2.
-- Only Grade 3 if the student demonstrates causal reasoning or applies the concept.
+- Only Grade 3 or above if the student demonstrates causal reasoning or applies the concept.
+- Reserve Grade 5 for an answer that adds something the question did not ask for — a connection, a limitation, an edge case.
 - The "feedback" field is MANDATORY and SPOKEN aloud. It must reference something SPECIFIC from the student's answer. NEVER write generic feedback like "Correct" or "Good answer".
 
 You MUST output valid JSON only, nothing else:
@@ -1466,7 +1528,9 @@ def get_micro_lecture_prompt(topic, context_text, history=[], style_modifier="st
     # B17.4: band caps the lecture too — a K-2 micro-lecture is 1-2 tiny
     # sentences with a concrete example; 9-12 gets the full 100 words.
     profile = get_band_profile(grade_band)
-    lecture_words = min(100, profile["max_words"] * 2)
+    # Shared with `turn_word_cap`, so the number the model is asked for and the
+    # number the dialogue contract enforces are the same number.
+    lecture_words = lecture_word_budget(profile)
     lecture_sentences = f"1-{profile['max_sentences']}"
 
     # B13: the lecture path is where a diagram earns the most — it fires exactly

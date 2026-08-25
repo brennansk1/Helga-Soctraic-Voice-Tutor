@@ -10,3 +10,10 @@ reportlab==4.2.5
 # evdev is Linux-only (physical input devices) and does not build on macOS,
 # where this suite is developed. Optional so `pip install -r` works on both.
 evdev==1.7.1; sys_platform == "linux"
+# services/common/llm_utils.validate_schema — the suite asserts real
+# JSON-Schema rejection, which needs the library actually installed. 4.26.0
+# requires Python 3.10 (what every service image runs); this suite is also run
+# on the macOS system Python 3.9, so that host pins the last release that
+# supports it. Same API, same Draft 2020-12 behaviour.
+jsonschema==4.26.0; python_version >= "3.10"
+jsonschema==4.25.1; python_version < "3.10"

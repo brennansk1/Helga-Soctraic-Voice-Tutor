@@ -100,6 +100,13 @@ function mkIcon(name) {
 
 // --- Course Loading ---
 
+/* The status line's opening text, and the exact string the 45s stall-detector
+   compares against. It used to say "Initializing skeleton builder..." and the
+   detector matched on the substring "Initializing" — so both the American
+   spelling and the internal class name were on screen, and any rewording of one
+   silently broke the other. */
+var QC_STARTING = 'Starting the course builder…';
+
 let coursesBuildingPollTimer = null;
 
 /**
@@ -122,6 +129,34 @@ async function loadCourseQuality() {
     }
 }
 
+/* The build's verdicts are written for the person who built the checker.
+   "do not match the depth contract for this level (75% met)" names an internal
+   artefact, restates its own numbers as a percentage, and — because the count
+   is interpolated into a fixed plural — says "1 ... do not" whenever exactly one
+   concept failed.
+
+   Rewritten here because this is the presentation layer; the strings themselves
+   are generated server-side (the course-quality endpoint) and that is where the
+   vocabulary should eventually be fixed. Anything not matched is passed through
+   untouched rather than guessed at. */
+function humaniseHeadline(text) {
+    if (!text) return '';
+    var depth = text.match(
+        /^(\d+) of (\d+) checked concepts? do(?:es)? not match the depth contract for this level/);
+    if (depth) {
+        var missed = Number(depth[1]), checked = Number(depth[2]);
+        return missed + ' of the ' + checked + ' concepts we checked ' +
+               (missed === 1 ? 'is' : 'are') +
+               ' not pitched at the level you asked for';
+    }
+    var partial = text.match(/^Depth was only verified for (\d+) of (\d+) concepts$/);
+    if (partial) {
+        return 'Only ' + partial[1] + ' of ' + partial[2] +
+               ' concepts were checked against the level you asked for';
+    }
+    return text;
+}
+
 /**
  * One line per card, describing what the build's own checks concluded.
  *
@@ -133,7 +168,7 @@ async function loadCourseQuality() {
  */
 function qualityRow(quality) {
     if (!quality || !quality.verdict) return '';
-    const headline = escapeHtml(quality.headline || '');
+    const headline = escapeHtml(humaniseHeadline(quality.headline || ''));
     switch (quality.verdict) {
         case 'failed':
             return `<div class="course-card-quality is-failed">`
@@ -239,7 +274,7 @@ async function loadCourses() {
                 actionButton = mkEl('button', 'btn-alpine btn-alpine-primary');
                 actionButton.style.cssText = 'flex: 1; opacity: 0.6;';
                 actionButton.disabled = true;
-                actionButton.textContent = 'Building...';
+                actionButton.textContent = 'Building…';
             } else if (isReady) {
                 actionButton = mkEl('button', 'btn-alpine btn-alpine-primary');
                 // NOT flex:1. That split the row evenly with three 40px icon buttons,
@@ -258,7 +293,7 @@ async function loadCourses() {
                     actionButton.title = 'Resume ' + rp.concept_title +
                         (rp.saved_at ? ' — last studied ' + relativeDay(rp.saved_at) : '');
                 } else {
-                    actionButton.textContent = progress > 0 ? 'Continue' : 'Start Learning';
+                    actionButton.textContent = progress > 0 ? 'Continue' : 'Start learning';
                 }
             } else if (status === 'partial' || status === 'hydration_failed' ||
                        status === 'failed') {
@@ -279,7 +314,7 @@ async function loadCourses() {
                     : 'This build stopped early. This continues it.';
                 actionButton.addEventListener('click', function () {
                     actionButton.disabled = true;
-                    actionButton.textContent = 'Resuming...';
+                    actionButton.textContent = 'Resuming…';
                     fetch('/api/course/' + course.uid + '/resume_build',
                           { method: 'POST' })
                         .then(function (r) { return r.json().catch(function () { return {}; })
@@ -289,12 +324,12 @@ async function loadCourses() {
                             /* The build outlives this request, so hand over to
                                the same poller a fresh build uses rather than
                                inventing a second progress path. */
-                            actionButton.textContent = 'Building...';
+                            actionButton.textContent = 'Building…';
                             pollCourseStatus(course.uid, actionButton);
                         })
                         .catch(function (e) {
                             actionButton.disabled = false;
-                            actionButton.textContent = 'Resume failed - retry';
+                            actionButton.textContent = 'Resume failed — retry';
                             actionButton.title = String(e && e.message || e);
                         });
                 });
@@ -303,7 +338,7 @@ async function loadCourses() {
                 actionButton = mkEl('button', 'btn-alpine btn-alpine-primary');
                 actionButton.style.cssText = 'flex: 1; opacity: 0.6;';
                 actionButton.disabled = true;
-                actionButton.textContent = 'Not Ready';
+                actionButton.textContent = 'Not ready';
             }
 
             // A5.3 — the header was a full-bleed gradient slab in a colour
@@ -348,9 +383,24 @@ async function loadCourses() {
             }
             body.appendChild(h3);
 
-            const desc = mkEl('p', 'course-card-desc');
-            desc.textContent = course.description || 'A comprehensive interactive course.';
-            body.appendChild(desc);
+            /* NO PLACEHOLDER DESCRIPTION.
+               This fell back to "A comprehensive interactive course." — a
+               sentence true of nothing in particular, printed identically on
+               every card, so a grid of four different subjects read as four
+               copies of one course. A card with no description now simply has
+               none: the title, the counts and the build verdict are all real,
+               and a gap is more honest than filler that calls the course
+               comprehensive.
+
+               Descriptions ARE written at build time — structure.json carries
+               them for the courses that have one — but /api/courses returns ''
+               for every course. That belongs to the course-list endpoint, not
+               to this file. */
+            if (course.description) {
+                const desc = mkEl('p', 'course-card-desc');
+                desc.textContent = course.description;
+                body.appendChild(desc);
+            }
 
             const statsRow = mkEl('div', 'course-card-stats');
             if (isEmpty) {
@@ -444,7 +494,7 @@ async function loadCourses() {
         grid.innerHTML = `
             <div class="empty-state" style="grid-column: 1/-1;">
                 <div class="empty-icon"><span class="i i-warning" aria-hidden="true"></span></div>
-                <h3>${isAbort ? 'Loading is taking too long' : 'Failed to load courses'}</h3>
+                <h3>${isAbort ? 'Loading is taking too long' : 'Could not load your courses'}</h3>
                 <p>${escapeHtml(isAbort ? 'The server is slow to respond. Check that rag-engine is running.' : (e.message || 'Unknown error'))}</p>
                 <button class="btn-alpine btn-alpine-primary" onclick="loadCourses()" style="margin-top: 1rem;">Retry</button>
             </div>
@@ -558,7 +608,7 @@ function closeDeleteConfirm() {
     const backdrop = document.getElementById('delete-confirm-backdrop');
     if (backdrop) backdrop.classList.remove('active');
     const btn = document.getElementById('delete-confirm-btn');
-    if (btn) { btn.disabled = false; btn.textContent = 'Delete Course'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Delete course'; }
 }
 
 async function confirmDeleteCourse() {
@@ -570,12 +620,12 @@ async function confirmDeleteCourse() {
         const resp = await fetch('/api/delete_course?uid=' + encodeURIComponent(uid), { method: 'DELETE' });
         closeDeleteConfirm();
         if (!resp.ok && window.showToast) {
-            window.showToast('Failed to delete course', 'error');
+            window.showToast('Could not delete the course', 'error');
         }
         loadCourses();
     } catch (e) {
         closeDeleteConfirm();
-        if (window.showToast) window.showToast('Failed to delete course', 'error');
+        if (window.showToast) window.showToast('Could not delete the course', 'error');
     }
 }
 
@@ -662,12 +712,12 @@ function reattachToActiveBuild() {
             }
             var statusEl = document.getElementById('qc-progress-status');
             var phaseText = {
-                skeleton:  'Building course skeleton...',
-                audit:     'Running quality audit...',
-                hydration: 'Generating concept content...',
+                skeleton:  'Building the course outline…',
+                audit:     'Running quality checks…',
+                hydration: 'Writing the concepts…',
                 complete:  'Build complete.',
                 error:     'Build encountered an error.'
-            }[d.phase] || 'Working...';
+            }[d.phase] || 'Working…';
             if (statusEl) statusEl.textContent = phaseText;
 
             // Tree is empty because we missed prior STRUCT events — show a
@@ -784,7 +834,7 @@ function setupCreationSocket(topic) {
             var phase = msg.split(':')[2];
             if (phase === '1_SKELETON') {
                 setPhase('skeleton');
-                statusEl.textContent = 'Building course skeleton...';
+                statusEl.textContent = 'Building the course outline…';
             }
         }
         else if (msg.startsWith('AUDIT:')) {
@@ -882,7 +932,7 @@ function handlePipelineStage(ev, message) {
         statusEl.style.color = 'var(--status-error)';
         statusEl.textContent = message || 'Build failed.';
         addLogEntry(ev.detail || message || 'Build failed', 'error');
-        if (window.showToast) window.showToast('Course build failed', 'error');
+        if (window.showToast) window.showToast('The course build failed', 'error');
         return;
     }
 
@@ -978,8 +1028,12 @@ function updateDepthEstimate() {
     var modules = Math.max(2, moduleBase[scope] - skipFactor[start]);
     var total = modules * conceptBase[mastery];
     var hours = Math.round(total * 0.1 * 10) / 10;
+    // Named as STUDY time. The line underneath it estimates BUILD time, and two
+    // unlabelled hour figures side by side invite the reader to take the small
+    // one as the wait and the large one as the course.
     document.getElementById('qc-depth-estimate').textContent =
-        '~' + total + ' concepts · ~' + hours + ' hours · ' + modules + ' modules';
+        '~' + total + ' concepts in ' + modules + ' modules · about ' +
+        hours + ' hours to study';
 }
 
 // --- Build Progress State ---
@@ -1109,11 +1163,11 @@ function showCompletion(topic, info) {
     var bar = document.getElementById('qc-progress-bar');
     if (bar) { bar.style.width = '100%'; bar.style.background = 'var(--status-success)'; }
 
-    document.getElementById('qc-progress-status').textContent = 'Course created successfully!';
+    document.getElementById('qc-progress-status').textContent = 'Course built.';
     document.getElementById('qc-progress-actions').style.display = 'block';
 
     var titleEl = document.getElementById('qc-complete-title');
-    if (titleEl) titleEl.textContent = (topic || 'Course') + ' — Ready!';
+    if (titleEl) titleEl.textContent = (topic || 'Your course') + ' is ready';
 
     // Prefer the counts the builder itself reported; fall back to what this
     // tab observed. The old fallback that fetched /api/courses and picked
@@ -1123,7 +1177,7 @@ function showCompletion(topic, info) {
         var modCount = typeof info.modules === 'number' ? info.modules : buildState.moduleOrder.length;
         var conCount = typeof info.concepts === 'number' ? info.concepts : buildState.totalConcepts;
         if (modCount > 0 && conCount > 0) {
-            summary.textContent = modCount + ' modules, ' + conCount + ' concepts generated';
+            summary.textContent = modCount + ' modules, ' + conCount + ' concepts';
         } else {
             summary.textContent = 'Course created';
         }
@@ -1175,8 +1229,8 @@ async function submitQuickCreate(submitBtn) {
         setTimeout(function() { progressPhase.classList.remove('fade-in'); }, 400);
     }, 300);
     document.getElementById('qc-progress-title').textContent = 'Building: ' + topic;
-    document.getElementById('qc-progress-status').textContent = 'Initializing skeleton builder...';
-    document.getElementById('qc-progress-tree').innerHTML = '<div class="build-tree-placeholder"><div class="skeleton-pulse"></div><span>Waiting for structure...</span></div>';
+    document.getElementById('qc-progress-status').textContent = QC_STARTING;
+    document.getElementById('qc-progress-tree').innerHTML = '<div class="build-tree-placeholder"><div class="skeleton-pulse"></div><span>Waiting for the first modules…</span></div>';
     document.getElementById('qc-progress-logs').innerHTML = '';
     document.getElementById('qc-progress-actions').style.display = 'none';
     setPhase('skeleton');
@@ -1185,12 +1239,12 @@ async function submitQuickCreate(submitBtn) {
     setupCreationSocket(topic);
 
     // Submit via REST — three-slider system. A 45s safety timeout rescues
-    // the UI from a stuck "Initializing..." state when the core-logic
+    // the UI from a stuck "Starting…" state when the core-logic
     // service is unreachable or the socket never reports its first event.
     var submitTimeout = setTimeout(function() {
         var statusEl = document.getElementById('qc-progress-status');
         var tree = document.getElementById('qc-progress-tree');
-        if (statusEl && statusEl.textContent.indexOf('Initializing') !== -1) {
+        if (statusEl && statusEl.textContent === QC_STARTING) {
             statusEl.textContent = 'Still waiting for the build to start… the server may be slow.';
             statusEl.style.color = 'var(--status-warning)';
             if (tree) {
@@ -1244,7 +1298,7 @@ async function submitQuickCreate(submitBtn) {
         clearTimeout(submitTimeout);
         var statusEl = document.getElementById('qc-progress-status');
         if (statusEl) {
-            statusEl.textContent = 'Failed to start build: ' + e.message;
+            statusEl.textContent = 'Could not start the build: ' + e.message;
             statusEl.style.color = 'var(--status-error)';
         }
         // Replace placeholder tree with retry affordance
@@ -1256,7 +1310,7 @@ async function submitQuickCreate(submitBtn) {
                 '<button type="button" class="btn-alpine btn-alpine-secondary" onclick="retryQuickCreate()">Try again</button>' +
                 '</div>';
         }
-        if (window.showToast) window.showToast('Failed to start course build', 'error');
+        if (window.showToast) window.showToast('Could not start the course build', 'error');
     }
 
     // Start Learning button

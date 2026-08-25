@@ -50,3 +50,13 @@ pymupdf==1.28.2
 # via scikit-learn, which means a scikit-learn change could have removed it.
 numpy==1.26.4
 pillow==12.3.0
+
+# Real JSON-Schema validation of LLM output (services/common/llm_utils.
+# validate_schema). MIT. The schemas the builder passes to llm_generate_json
+# are real JSON Schema ('object'/'array') because the same dict grammar-
+# constrains Ollama; without this, validate_schema fell through to a legacy
+# 'list'/'dict' branch that returned True for all of them, so nothing was
+# checked. OPTIONAL at import (llm_utils degrades to the legacy check and warns
+# once) but declared here so the degraded path is a safety net, not the normal
+# one.
+jsonschema==4.26.0

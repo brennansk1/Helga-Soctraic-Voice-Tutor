@@ -347,48 +347,146 @@ def repair_json(text: str) -> str:
     return work                                  # best effort; caller decides
 
 
-def validate_schema(data: Any, schema: dict) -> bool:
-    """LLM-2: Validate LLM output against a simple schema.
+# --- Schema validation ------------------------------------------------------
+#
+# `validate_schema` understood exactly two schema shapes -- 'list' and 'dict' --
+# and RETURNED TRUE for everything else. Every production caller passes real
+# JSON Schema ('object' / 'array'), because the same dict is handed to Ollama's
+# `format` field for constrained decoding. So validation was a no-op on the
+# path that generates every concept of every course, and the named-deficiency
+# retry in llm_generate_json -- which is only reachable when validation FAILS --
+# had therefore never once executed there.
+#
+# Two contracts live here on purpose:
+#   * legacy  {'type': 'list'|'dict', 'items': {'required_keys': [...]}}
+#   * real JSON Schema, validated with Draft 2020-12
+# The legacy form is not valid JSON Schema (there is no 'list' type), so the
+# two are told apart by the value of 'type' and never collide.
+try:
+    from jsonschema import Draft202012Validator as _Draft202012Validator
+    from jsonschema.exceptions import SchemaError as _JsonSchemaSchemaError
+    _JSONSCHEMA_AVAILABLE = True
+except ImportError:                  # fail SAFE -- degraded, never dead
+    _Draft202012Validator = None
 
-    Schema format:
-    {
-        'type': 'list',  # or 'dict'
-        'items': {       # for lists
-            'required_keys': ['title', 'uid'],  # required dict keys
-            'optional_keys': ['description']
-        }
-    }
-    """
-    if not schema:
-        return True
+    class _JsonSchemaSchemaError(Exception):
+        pass
 
+    _JSONSCHEMA_AVAILABLE = False
+
+_LEGACY_SCHEMA_TYPES = ("list", "dict")
+_degraded_warned = False
+
+
+def _warn_validation_degraded():
+    """Say once, at WARNING, that JSON-Schema validation is not happening."""
+    global _degraded_warned
+    if not _degraded_warned:
+        _degraded_warned = True
+        logger.warning(
+            "jsonschema is not installed: LLM output is NOT validated against "
+            "JSON Schema and the schema-mismatch retry cannot fire. Legacy "
+            "list/dict schemas are still checked. Install jsonschema to "
+            "restore full validation."
+        )
+
+
+def _legacy_schema_violation(data: Any, schema: dict) -> str:
+    """The original 'list'/'dict' contract, phrased as a reason string."""
     expected_type = schema.get("type", "any")
 
     if expected_type == "list":
         if not isinstance(data, list):
-            return False
-        items_schema = schema.get("items", {})
-        required_keys = items_schema.get("required_keys", [])
+            return f"root must be a list, got {type(data).__name__}"
+        items_schema = schema.get("items", {}) or {}
+        required_keys = items_schema.get("required_keys", []) or []
         if required_keys and data:
-            for item in data:
+            for idx, item in enumerate(data):
                 if not isinstance(item, dict):
-                    return False
+                    return (f"root[{idx}] must be an object, got "
+                            f"{type(item).__name__}")
                 for key in required_keys:
                     if key not in item:
                         logger.warning(
                             f"Schema validation: missing required key '{key}' in item"
                         )
-                        return False
+                        return f"root[{idx}] is missing the required key '{key}'"
     elif expected_type == "dict":
         if not isinstance(data, dict):
-            return False
-        required_keys = schema.get("required_keys", [])
-        for key in required_keys:
+            return f"root must be an object, got {type(data).__name__}"
+        for key in schema.get("required_keys", []) or []:
             if key not in data:
                 logger.warning(f"Schema validation: missing required key '{key}'")
-                return False
+                return f"root is missing the required key '{key}'"
 
-    return True
+    return ""
+
+
+def _error_location(error) -> str:
+    """'root.units[0].lessons' from a jsonschema error path."""
+    out = "root"
+    for part in error.path:
+        out += f"[{part}]" if isinstance(part, int) else f".{part}"
+    return out
+
+
+def schema_violation(data: Any, schema: dict) -> str:
+    """Name the FIRST way `data` violates `schema`, or "" if it is valid.
+
+    The string is retry material: it is fed back to the model verbatim, so it
+    is phrased by `_describe_schema_mismatch` where that function has an
+    opinion, and only falls back to jsonschema's raw wording (deeper or more
+    exotic keywords -- minItems, enum, pattern) when it does not.
+    """
+    if not schema or not isinstance(schema, dict):
+        return ""
+
+    if schema.get("type") in _LEGACY_SCHEMA_TYPES:
+        return _legacy_schema_violation(data, schema)
+
+    if not _JSONSCHEMA_AVAILABLE:
+        _warn_validation_degraded()
+        return ""                    # today's behaviour: accept, do not crash
+
+    try:
+        # check_schema explicitly: the validator does NOT verify its schema on
+        # construction, so a malformed one (e.g. "required": "units" instead of
+        # ["units"]) silently produces nonsense errors and would reject the
+        # model's correct answer for a defect on OUR side.
+        _Draft202012Validator.check_schema(schema)
+        validator = _Draft202012Validator(schema)
+        errors = sorted(validator.iter_errors(data),
+                        key=lambda e: (len(list(e.path)), list(map(str, e.path))))
+    except _JsonSchemaSchemaError as e:
+        # A malformed schema is OUR bug, not the model's. Refusing the model's
+        # answer over it would fail builds for a defect no retry can fix.
+        logger.error("Invalid JSON Schema supplied to validate_schema: %s", e)
+        return ""
+    except Exception as e:           # never let validation kill a build
+        logger.warning("Schema validation raised, treating as valid: %s", e)
+        return ""
+
+    if not errors:
+        return ""
+
+    described = _describe_schema_mismatch(data, schema)
+    if described:
+        return described
+    err = errors[0]
+    return f"{_error_location(err)}: {err.message}"
+
+
+def validate_schema(data: Any, schema: dict) -> bool:
+    """LLM-2: Validate LLM output against a schema. True when it conforms.
+
+    Accepts BOTH the legacy shorthand and real JSON Schema:
+    {
+        'type': 'list',  # or 'dict'   <- legacy shorthand
+        'items': {'required_keys': ['title', 'uid']}
+    }
+    {'type': 'object', 'required': ['units'], 'properties': {...}}  <- JSON Schema
+    """
+    return not schema_violation(data, schema)
 
 
 # A COLD LOAD IS NOT A HANG.
@@ -940,16 +1038,29 @@ def llm_generate_json(
                 break
             continue
 
-        result = parse_llm_json(raw, expected_type=expected_type)
+        # An object schema means the answer is an object, whatever the
+        # caller's expected_type default says. This matters now that the
+        # schema is actually enforced: extract_python_list wraps a parsed
+        # object as [obj] (see its step 3), so an object-schema call left at
+        # the default expected_type="list" would hand a LIST to the validator
+        # and fail every attempt on a correct answer. Two callers already
+        # unwrap that wrapping by hand downstream ("SHAPE DRIFT, third
+        # occurrence" in course_builder); parse_llm_json does it properly when
+        # it is told to expect a dict.
+        _expected = expected_type
+        if (isinstance(schema, dict) and schema.get("type") == "object"
+                and _expected != "dict"):
+            _expected = "dict"
+        result = parse_llm_json(raw, expected_type=_expected)
         if result is not None:
             # LLM-2: Validate against schema if provided
-            if schema and not validate_schema(result, schema):
-                # Retry against the NAMED mismatch rather than re-rolling blind.
-                # This is the pattern the depth contract already proved on this
-                # project: regenerating "against the named missing element"
-                # converges, while an identical re-roll mostly reproduces the
-                # same defect and burns a call.
-                _detail = _describe_schema_mismatch(result, schema)
+            # Retry against the NAMED mismatch rather than re-rolling blind.
+            # This is the pattern the depth contract already proved on this
+            # project: regenerating "against the named missing element"
+            # converges, while an identical re-roll mostly reproduces the
+            # same defect and burns a call.
+            _detail = schema_violation(result, schema) if schema else ""
+            if _detail:
                 failure = record_failure_reason(LLMSchemaMismatch(_detail))
                 logger.warning(
                     f"Attempt {attempt + 1}/{retries}: Schema validation failed "

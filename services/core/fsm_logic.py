@@ -57,8 +57,15 @@ from services.common.prompts import (
     SOCRATIC_QUESTION_TYPES,
     GRADE_JSON_SCHEMA,
     get_band_profile,
+    turn_word_cap,
 )
 from fsrs_engine import FSRSEngine
+
+#: Set once, the first time `dialogue_contract` fails to import, so the ERROR
+#: that says every turn is now unchecked is loud but not repeated per turn.
+#: Module-level rather than per-instance because the failure is a property of
+#: the deployment, not of one session.
+_CONTRACT_IMPORT_FAILURE_LOGGED = False
 
 
 def _repair_mojibake(text):
@@ -1254,6 +1261,19 @@ class MnemosyneFSM:
             if index is not None and 0 <= index < len(self.transcript):
                 msg = self.transcript[index]
                 if msg["sender"] == "user":
+                    # EDITING WAS A HOLE STRAIGHT PAST THE SAFETY GATE.
+                    #
+                    # This branch `return`s before the TEXT_INPUT block below,
+                    # which is where `check_safety_detailed` lives. So the
+                    # cheapest possible bypass was: send something benign, then
+                    # edit it into whatever you liked. The edited text reached
+                    # the grader and the tutor prompt, and NOTHING was logged —
+                    # not even a warning — so the bypass was also invisible.
+                    #
+                    # Checked BEFORE the transcript is mutated, so a blocked
+                    # payload never lands in the record either.
+                    if self._safety_gate(new_text):
+                        return
                     msg["text"] = new_text
                     # Reprocess the edited input
                     if self.state == "SOCRATIC_LEARNING":
@@ -1439,24 +1459,7 @@ class MnemosyneFSM:
             if len(self.transcript) > 50:
                 self.transcript = self.transcript[-50:]
             # Safety gate: check all user text input
-            node_title = (
-                self.current_lesson_node.get("title")
-                if self.current_lesson_node
-                else None
-            )
-            safety_result = check_safety_detailed(text, node_title,
-                                                  grade_band=self.grade_band)
-            if not safety_result.is_safe:
-                redirect_msg = get_safety_redirect_message(safety_result)
-                logging.warning(
-                    f"Safety block [{safety_result.category}]: '{text[:60]}...' confidence={safety_result.confidence:.2f}"
-                )
-                # B21.5: self-harm / abuse signals pause the lesson, surface
-                # crisis resources, and alert the parent immediately — never a
-                # silent redirect back into the material.
-                if safety_result.category in ("self_harm", "abuse_disclosure"):
-                    self._escalate_safety(safety_result.category)
-                self.speak(redirect_msg)
+            if self._safety_gate(text):
                 return
 
         if self.state == "LOBBY":
@@ -2177,6 +2180,41 @@ class MnemosyneFSM:
                 detail={"category": category, "concept": node_title})
         except Exception as e:
             logging.warning(f"safety incident log failed: {e}")
+
+    def _safety_gate(self, text):
+        """THE one gate every piece of learner text passes through.
+
+        Returns True when the text was blocked and fully handled (redirect
+        spoken, incident logged, escalation raised if warranted) — the caller
+        must then stop processing it.
+
+        This lived inline inside the TEXT_INPUT branch, which meant it guarded
+        exactly one entry point. EDIT_MESSAGE returns before that branch, so an
+        edited message reached the grader and the tutor prompt unchecked. A gate
+        with a second door is not a gate; it is now a method, so adding a new
+        way to submit text cannot silently skip it.
+        """
+        node_title = (
+            self.current_lesson_node.get("title")
+            if self.current_lesson_node
+            else None
+        )
+        safety_result = check_safety_detailed(text, node_title,
+                                              grade_band=self.grade_band)
+        if safety_result.is_safe:
+            return False
+        redirect_msg = get_safety_redirect_message(safety_result)
+        logging.warning(
+            f"Safety block [{safety_result.category}]: '{str(text)[:60]}...' "
+            f"confidence={safety_result.confidence:.2f}"
+        )
+        # B21.5: self-harm / abuse signals pause the lesson, surface
+        # crisis resources, and alert the parent immediately — never a
+        # silent redirect back into the material.
+        if safety_result.category in ("self_harm", "abuse_disclosure"):
+            self._escalate_safety(safety_result.category)
+        self.speak(redirect_msg)
+        return True
 
     def _escalate_safety(self, category):
         """B21.5 §5.4: immediate parent alert on self-harm/abuse signals. The
@@ -3455,8 +3493,28 @@ class MnemosyneFSM:
         # ONE extra call and happens only when a rule actually trips, so the
         # common case is unchanged. An interactive turn is ~4.5s, so a second
         # call still lands well inside the budget.
+        #
+        # THE FOURTH ARGUMENT IS `learner_said`, NOT THE SYSTEM NOTE.
+        #
+        # This used to pass `context_trigger` — the FSM's OWN instruction to
+        # itself, e.g. "[SYSTEM NOTE: Student's answer was incorrect. Their
+        # feedback: '...']". Two rules read that argument and both were
+        # defeated by it:
+        #   `reference`      asked whether the turn engaged with what the
+        #                    learner said, and was handed our own note instead.
+        #                    Every turn overlaps the note's vocabulary, so the
+        #                    rule passed vacuously and never once fired.
+        #   `grounded_claim` pools those words as things the learner "said", so
+        #                    an invented "you said X" cleared the bar on words
+        #                    the FSM wrote, not the student.
+        #
+        # The learner's actual last message is what both rules were written
+        # against, and `max_words` is what the model was actually asked for
+        # in this mode — see `prompts.turn_word_cap`.
         question = self._enforce_dialogue_contract(
-            question, prompt, token_limit, context_trigger)
+            question, prompt, token_limit,
+            learner_said=self._last_learner_message(),
+            max_words=turn_word_cap(self.grade_band, teaching_mode))
 
         self.last_question = question
         self._get_turn_state().ask(question)
@@ -3509,8 +3567,103 @@ class MnemosyneFSM:
                     seen.add(w.lower())
         return seen
 
+    def _last_learner_message(self):
+        """The learner's most recent actual message, or "".
+
+        `conversation_history` holds (student_text, tutor_text) pairs, and the
+        student half is legitimately empty on tutor-only entries — the opening
+        question, a bridge sentence between concepts. Walking backwards for the
+        last non-empty one is therefore the only correct read; taking [-1][0]
+        returns "" on exactly the turns that follow a tutor-only entry.
+
+        This is what the dialogue contract's `reference` and `grounded_claim`
+        rules are asking about. It is NOT `context_trigger`, which is the FSM's
+        own SYSTEM NOTE to the model.
+        """
+        for pair in reversed(self.conversation_history or []):
+            try:
+                said = str(pair[0] or "").strip()
+            except (IndexError, TypeError):
+                continue
+            if said:
+                return said
+        return ""
+
+    def _grounded_feedback(self, feedback, learner_said=""):
+        """The grader's spoken feedback, minus claims the learner did not earn.
+
+        THE ONE TUTOR UTTERANCE THAT PASSED ZERO CHECKS. On the mastery path
+        the grader's raw `feedback` was concatenated straight into the spoken
+        completion message. The grading prompt REQUIRES it to "reference
+        something SPECIFIC from the student's answer" — which is precisely the
+        claim-about-the-learner that `grounded_claim` exists to police, and it
+        is generated by the same small model that produced the measured
+        failures the rule was written for ("incorrectly claims the student made
+        a calculation error", "apologizing for confusion that never existed").
+
+        Sentence-level rather than all-or-nothing: a feedback that names one
+        real thing and invents another should keep the real half. Anything that
+        attributes something to the learner and is not grounded in their own
+        words is dropped, and the caller's generic fallback speaks instead.
+        """
+        text = str(feedback or "").strip()
+        if not text:
+            return ""
+        dc = self._dialogue_contract()
+        if dc is None:
+            # Unverifiable. A claim about what the learner said is exactly the
+            # thing not to assert on faith, so the caller's generic line wins.
+            return ""
+        recent = [p[0] for p in (self.conversation_history or [])[-3:] if p[0]]
+        kept = []
+        for sentence in re.split(r"(?<=[.!?])\s+", text):
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+            try:
+                invented = (dc.attributes_to_learner(sentence)
+                            and not dc.attribution_is_grounded(
+                                sentence, learner_said, recent))
+            except Exception as e:
+                logging.warning(
+                    f"[CONTRACT] grader-feedback check failed, dropping the "
+                    f"claim rather than speaking it: {e}")
+                invented = True
+            if invented:
+                logging.info("[CONTRACT] dropped ungrounded grader claim: %r",
+                             sentence[:120])
+                continue
+            kept.append(sentence)
+        return " ".join(kept)
+
+    def _dialogue_contract(self):
+        """The contract module, or None — and it says so, loudly, exactly once.
+
+        This import used to fail into a bare `except Exception: return question`
+        with NO log line at all. If `dialogue_contract` ever failed to import,
+        every tutor turn shipped completely unchecked, forever, and the only
+        symptom was that quality quietly stopped being enforced. A silent
+        failure that disables a whole safety net is worse than a crash.
+
+        ERROR, not warning: nothing about this is recoverable at runtime. Once,
+        not per turn: a message on every turn is a message nobody reads.
+        """
+        try:
+            from services.common import dialogue_contract as dc
+            return dc
+        except Exception as e:
+            global _CONTRACT_IMPORT_FAILURE_LOGGED
+            if not _CONTRACT_IMPORT_FAILURE_LOGGED:
+                _CONTRACT_IMPORT_FAILURE_LOGGED = True
+                logging.error(
+                    "[CONTRACT] dialogue_contract failed to import (%s). EVERY "
+                    "tutor turn from here on ships UNCHECKED: no word cap, no "
+                    "question requirement, no grounded-claim check, no repeat "
+                    "detection. This will not be logged again.", e, exc_info=True)
+            return None
+
     def _enforce_dialogue_contract(self, question, prompt, token_limit,
-                                   learner_said=""):
+                                   learner_said="", max_words=None):
         """Regenerate once against NAMED violations, and only if any trip.
 
         Returns the better of the two turns. A retry that fixes nothing is not
@@ -3518,9 +3671,8 @@ class MnemosyneFSM:
         0/5 in this repo, and an unchecked retry is prompt-only enforcement
         wearing a second call.
         """
-        try:
-            from services.common import dialogue_contract as dc
-        except Exception:
+        dc = self._dialogue_contract()
+        if dc is None:
             return question
 
         kw = {"learner_said": learner_said or "",
@@ -3541,6 +3693,15 @@ class MnemosyneFSM:
               # "Correct." and moving on is what a 2/5 adaptation turn does.
               "missing_concepts": list(
                   getattr(self, "_last_missing_concepts", []) or [])}
+        # F — enforce the cap the model was ASKED for, not the module default.
+        # `dialogue_contract.MAX_WORDS` is 60; `prompts` asks a 9-12 tutor for
+        # up to 110 and a micro-lecture for up to 100 of explanation plus a
+        # mandatory question. Leaving max_words unset meant the `length` rule
+        # fired — and burned a regeneration call — on the compliant turns, most
+        # often the LECTURE turns, which are the ones meant to explain and the
+        # ones that only happen when the learner is already stuck.
+        if max_words:
+            kw["max_words"] = int(max_words)
         try:
             violations = dc.check(question, **kw)
         except Exception as e:
@@ -3935,7 +4096,11 @@ class MnemosyneFSM:
             self.socratic_type_index += 1
             if self.socratic_type_index >= len(self._question_types()):
                 if self._check_mastery_gate():
-                    completion_msg = (feedback or "Excellent work.") + " You've mastered this concept. Let's move on to the next one."
+                    # E — the grader's feedback is a claim about the learner,
+                    # so it goes through the same grounded_claim check every
+                    # tutor turn does before it is spoken.
+                    safe_feedback = self._grounded_feedback(feedback, learner_said=text)
+                    completion_msg = (safe_feedback or "Excellent work.") + " You've mastered this concept. Let's move on to the next one."
                     self.speak(completion_msg)
                     if self.transcript and self.transcript[-1].get("sender") == "helga":
                         self.transcript[-1]["grade"] = grade
@@ -3968,7 +4133,11 @@ class MnemosyneFSM:
             self.socratic_type_index += 1
             if self.socratic_type_index >= len(self._question_types()):
                 if self._check_mastery_gate():
-                    completion_msg = (feedback or "Well done.") + " You've demonstrated solid understanding of this concept. Let's move on."
+                    # E — same check as the grade>=4 path above: an invented
+                    # "your answer showed X" is exactly the failure the
+                    # grounded_claim rule was written for.
+                    safe_feedback = self._grounded_feedback(feedback, learner_said=text)
+                    completion_msg = (safe_feedback or "Well done.") + " You've demonstrated solid understanding of this concept. Let's move on."
                     self.speak(completion_msg)
                     if self.transcript and self.transcript[-1].get("sender") == "helga":
                         self.transcript[-1]["grade"] = grade

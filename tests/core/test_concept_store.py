@@ -63,9 +63,13 @@ class TestConceptStore(unittest.TestCase):
         self.assertNotEqual(h1, h2)
 
     def test_fts5_indexes_the_content(self):
+        # Asserted against `concept_fts` — the index SearchStore queries.
+        # This used to name `concepts_fts`, a second index written on every
+        # save and read by nothing, which has been removed; asserting on it
+        # was what made a write-only index look load-bearing.
         self.cs.save_concept_content("c1", "con_a", "An eigenvalue scales its eigenvector.")
         hits = self.sm.progress._get_db().execute(
-            "SELECT concept_uid FROM concepts_fts WHERE concepts_fts MATCH 'eigenvector'"
+            "SELECT concept_uid FROM concept_fts WHERE concept_fts MATCH 'eigenvector'"
         ).fetchall()
         self.assertEqual([h[0] for h in hits], ["con_a"])
 
@@ -76,7 +80,7 @@ class TestConceptStore(unittest.TestCase):
             "SELECT COUNT(*) FROM concepts WHERE concept_uid='con_a'").fetchone()[0]
         self.assertEqual(n, 1)
         n_fts = self.sm.progress._get_db().execute(
-            "SELECT COUNT(*) FROM concepts_fts WHERE concept_uid='con_a'").fetchone()[0]
+            "SELECT COUNT(*) FROM concept_fts WHERE concept_uid='con_a'").fetchone()[0]
         self.assertEqual(n_fts, 1, "the FTS row must be replaced too")
 
     def test_a_disk_only_concept_is_still_readable(self):

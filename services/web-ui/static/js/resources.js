@@ -108,19 +108,31 @@
             legend.appendChild(li);
         });
 
+        /* Machine internals, behind the "Technical details" disclosure in
+           settings.html. Two of the labels were also wrong for what they
+           printed: `processor` is the CPU architecture ("aarch64"), and
+           `model` is the LANGUAGE model — sitting between "Cores" and
+           "Platform" it read as the make of the machine. */
         var hw = d.hardware || {}, tb = document.getElementById("res-hw-body");
+        var tech = document.getElementById("res-tech");
         tb.textContent = "";
-        [["Processor", hw.processor], ["Cores", hw.cpu_count],
-         ["Memory", mem.total_gb ? mem.total_gb.toFixed(0) + " GB" : null],
-         ["Model", hw.model], ["Platform", hw.platform],
-         ["Measured by", mem.source]
+        var rows = 0;
+        [["Language model", hw.model],
+         ["Processor cores", hw.cpu_count],
+         ["Architecture", hw.processor || hw.machine],
+         ["Memory installed", mem.total_gb ? mem.total_gb.toFixed(0) + " GB" : null],
+         ["Operating system", hw.platform],
+         ["Memory reading taken by", mem.source]
         ].forEach(function (row) {
             if (!row[1]) return;
             var tr = document.createElement("tr");
             tr.appendChild(el("th", null, row[0]));
             tr.appendChild(el("td", null, String(row[1])));
             tb.appendChild(tr);
+            rows++;
         });
+        // Nothing measurable: don't offer a door onto an empty room.
+        if (tech) tech.hidden = rows === 0;
     }
 
     /* ---------------------------------------------------------- the card */
@@ -194,33 +206,103 @@
     var STATE_WORDS = { ok: "Ready", degraded: "Working around it",
                         blocked: "Cannot start", unknown: "Not measured" };
 
-    /* The measured numbers, restated compactly under the prose. The prose
-       already contains them; this line is for the person who wants to read the
-       figures without reading the sentence. */
+    /* The measured numbers, restated compactly under the prose — for the
+       person who wants the figures without the sentence.
+
+       EVERY ROW USED TO SAY ITSELF TWICE. The disk check's prose is
+       "20.8 GB free." and this function then printed "20.8 GB free on disk"
+       directly underneath it; the memory rows did the same with their own
+       numbers. So a figure is only restated when the prose does not already
+       contain it, and a line with nothing new left in it is not drawn at all. */
     function figuresFor(check) {
         var m = check.measured || {}, bits = [];
-        if (m.available_gb != null) bits.push(m.available_gb.toFixed(1) + " GB free");
-        if (m.total_gb != null) bits.push(m.total_gb.toFixed(1) + " GB installed");
-        if (m.required_gb != null) bits.push(m.required_gb.toFixed(1) + " GB needed");
-        if (m.free_gb != null) bits.push(m.free_gb.toFixed(1) + " GB free on disk");
-        if (m.model) bits.push(String(m.model));
-        if (m.weights_gb != null) bits.push(m.weights_gb.toFixed(1) + " GB of weights");
-        if (m.pressure_level != null) bits.push("pressure level " + m.pressure_level);
+        var prose = String(check.reason || "") + " " + String(check.remedy || "");
+
+        function add(value, text) {
+            // The number is the thing that would repeat; if the prose already
+            // states it, the phrasing around it is noise.
+            if (value != null && prose.indexOf(String(value)) !== -1) return;
+            bits.push(text);
+        }
+        if (m.available_gb != null)
+            add(m.available_gb.toFixed(1), m.available_gb.toFixed(1) + " GB free");
+        if (m.total_gb != null)
+            add(m.total_gb.toFixed(1), m.total_gb.toFixed(1) + " GB installed");
+        if (m.required_gb != null)
+            add(m.required_gb.toFixed(1), m.required_gb.toFixed(1) + " GB needed");
+        if (m.free_gb != null)
+            add(m.free_gb.toFixed(1), m.free_gb.toFixed(1) + " GB free on disk");
+        if (m.model) add(m.model, String(m.model));
+        if (m.weights_gb != null)
+            add(m.weights_gb.toFixed(1), m.weights_gb.toFixed(1) + " GB of weights");
+        if (m.pressure_level != null)
+            bits.push("pressure level " + m.pressure_level);
         return bits.join(" · ");
     }
 
+    /* Remedies come from the preflight module, which is also a command-line
+       tool, and one of them tells the reader to run
+       `python3 -m services.common.startup_preflight`. That is an instruction to
+       a developer with a checkout and a shell, not to the person looking at
+       Settings — and it is offered at exactly the moment they are told
+       something might be wrong. The fact it is reporting (Docker can only see
+       the container's memory) is kept; the shell command is replaced by the
+       thing a person can actually do, which is open the setup guide. */
+    function humanRemedy(text) {
+        if (!text) return "";
+        if (text.indexOf("services.common.") !== -1) {
+            return "Helga is running inside Docker, so it can only measure the " +
+                   "container. The setup guide shows how to read this machine's " +
+                   "own memory.";
+        }
+        return text;
+    }
+
     /* One check, rendered as prose then remedy then figures. Every value comes
-       from the server, so every one of them goes in via textContent. */
-    function checkItem(check, withFigures) {
+       from the server, so every one of them goes in via textContent.
+
+       `pill` — when a state word is supplied it goes on the same line as the
+       label. It used to be inserted as the item's first child, in front of a
+       block-level heading, so it sat ABOVE the title while the panel's own
+       badge sat beside its title: the same badge, two placements, one panel.
+
+       `seen` — an optional set of sentences already printed elsewhere in this
+       panel. The summary line is verbatim one of the check reasons, so without
+       it the panel opens by saying the same sentence twice. */
+    function checkItem(check, withFigures, pill, seen) {
         var li = el("li", "preflight-item is-" + (check.state || "unknown"));
-        li.appendChild(el("h3", "preflight-item-label", check.label || check.id));
-        li.appendChild(el("p", "preflight-item-reason", check.reason || ""));
-        if (check.remedy && check.state !== "ok") {
-            li.appendChild(el("p", "preflight-item-remedy", check.remedy));
+
+        var head = el("div", "preflight-item-head");
+        head.appendChild(el("h3", "preflight-item-label", check.label || check.id));
+        if (pill) head.appendChild(pill);
+        li.appendChild(head);
+
+        var reason = check.reason || "";
+        if (reason && (!seen || seen.take(reason))) {
+            li.appendChild(el("p", "preflight-item-reason", reason));
+        }
+        var remedy = check.state !== "ok" ? humanRemedy(check.remedy) : "";
+        if (remedy && (!seen || seen.take(remedy))) {
+            li.appendChild(el("p", "preflight-item-remedy", remedy));
         }
         var fig = withFigures ? figuresFor(check) : "";
         if (fig) li.appendChild(el("p", "preflight-item-figures", fig));
         return li;
+    }
+
+    /* Say-it-once ledger for one render pass. Normalises whitespace and case so
+       a sentence that differs only in punctuation still counts as a repeat. */
+    function ledger() {
+        var seen = {};
+        return {
+            take: function (text) {
+                var k = String(text).toLowerCase().replace(/\s+/g, " ")
+                        .replace(/[.\s]+$/, "");
+                if (!k || seen[k]) return false;
+                seen[k] = true;
+                return true;
+            }
+        };
     }
 
     /* ---- the blocking gate ---- */
@@ -266,7 +348,10 @@
             "stops producing usable output at all. Here is what is wrong:"));
 
         var list = el("ul", "preflight-list");
-        blocking.forEach(function (c) { list.appendChild(checkItem(c, true)); });
+        var seen = ledger();
+        blocking.forEach(function (c) {
+            list.appendChild(checkItem(c, true, null, seen));
+        });
         p.appendChild(list);
 
         var foot = el("div", "preflight-gate-foot");
@@ -346,8 +431,9 @@
         items.forEach(function (c) {
             var line = el("p", "preflight-note-line");
             line.appendChild(el("strong", null, (c.label || c.id) + ": "));
+            var fix = humanRemedy(c.remedy);
             line.appendChild(document.createTextNode(
-                c.reason + (c.remedy ? " " + c.remedy : "")));
+                c.reason + (fix ? " " + fix : "")));
             body.appendChild(line);
         });
         n.appendChild(body);
@@ -377,21 +463,31 @@
                             STATE_WORDS[st] || st));
         box.appendChild(head);
 
-        box.appendChild(el("p", "res-preflight-summary",
-                           (v && v.summary) || "Not measured."));
+        /* One ledger for the whole panel. The summary is verbatim one of the
+           check reasons and the scope note said the same thing a third time in
+           different words, so a Docker deployment opened this panel with the
+           identical sentence three times over. */
+        var seen = ledger();
+        var summary = (v && v.summary) || "Not measured.";
+        seen.take(summary);
+        box.appendChild(el("p", "res-preflight-summary", summary));
 
-        if (v && v.scope === "container") {
-            box.appendChild(el("p", "res-preflight-scope",
-                "Memory was measured inside Docker, so it describes the " +
-                "container VM rather than this machine."));
+        // Only when the summary has not already said it — on a Docker
+        // deployment the summary IS this sentence, and a caveat repeated
+        // immediately underneath itself reads as a stutter, not as emphasis.
+        if (v && v.scope === "container" && !/docker/i.test(summary)) {
+            var scopeNote = "Memory was measured inside Docker, so it describes " +
+                            "the container rather than this machine.";
+            if (seen.take(scopeNote)) {
+                box.appendChild(el("p", "res-preflight-scope", scopeNote));
+            }
         }
 
         var list = el("ul", "preflight-list is-compact");
         ((v && v.checks) || []).forEach(function (c) {
-            var li = checkItem(c, true);
-            li.insertBefore(el("span", "preflight-pill is-" + (c.state || "unknown"),
-                               STATE_WORDS[c.state] || c.state), li.firstChild);
-            list.appendChild(li);
+            var pill = el("span", "preflight-pill is-" + (c.state || "unknown"),
+                          STATE_WORDS[c.state] || c.state);
+            list.appendChild(checkItem(c, true, pill, seen));
         });
         box.appendChild(list);
 

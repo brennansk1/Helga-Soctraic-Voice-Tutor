@@ -192,6 +192,49 @@ def connect_safely(db_path: str, timeout: float = 30.0) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path, timeout=timeout, factory=_SafeConnection)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=30000")
+
+    # THE PRAGMAS BELOW ARE SET BECAUSE THE ALTERNATIVE IS INHERITING THEM.
+    #
+    # Every one of these has a compile-time default, so leaving them unset does
+    # not mean "the documented default" — it means "whatever the SQLite in this
+    # container image was built with". Five services run from different images
+    # against the SAME helga.db, so durability and memory use were varying by
+    # which process happened to open the file. Measured on this host, the
+    # inherited cache_size was `2000` — POSITIVE, i.e. 2000 *pages* = 8 MB per
+    # connection, not the 2 MB that the modern default (-2000 KiB) implies.
+    #
+    # synchronous=NORMAL: safe under WAL. The WAL is still fsynced at each
+    # checkpoint; only the per-commit fsync goes away. The documented exposure
+    # is losing the last commits on an OS/host crash — not corruption — and
+    # this is a bind-mounted file on virtiofs where a per-commit fsync is the
+    # most expensive thing a write can do.
+    conn.execute("PRAGMA synchronous=NORMAL")
+
+    # temp_store=MEMORY: temp B-trees (ORDER BY, GROUP BY, the FTS rebuild)
+    # stop being written through virtiofs to the container's temp dir.
+    conn.execute("PRAGMA temp_store=MEMORY")
+
+    # cache_size is PER CONNECTION, and connections here are thread-local per
+    # STORE: ~18 stores x N threads x 5 services. A four-worker hydration pool
+    # touching six stores is ~24 live connections in one service alone, so a
+    # plausible fleet-wide worst case is low hundreds. At the inherited 8 MB
+    # that is over a gigabyte of page cache on a 24 GB box with a 14 GB model
+    # resident — which is why this is pinned rather than raised. The negative
+    # form is KiB and therefore build-independent: 2 MB each, ~300 MB at a
+    # 150-connection worst case, and the whole database is only ~20 MB so the
+    # hot pages of any one store's working set still fit.
+    conn.execute("PRAGMA cache_size=-2000")
+
+    # Foreign keys default to OFF in SQLite and were being enabled on exactly
+    # one connection path (_ThreadLocalDB), so CourseStore's connections — the
+    # ones that write concepts, concept_math and the ledgers — silently had
+    # them off. Declared-and-unenforced is worse than not declared.
+    conn.execute("PRAGMA foreign_keys=ON")
+
+    # DELIBERATELY NOT SET: mmap_size. helga.db lives on a virtiofs bind mount
+    # from macOS. With mmap I/O, a read error surfaces as SIGBUS inside the
+    # process instead of as an SQLITE_IOERR that the code above can handle, so
+    # a hiccup on the mount would kill the service rather than fail a query.
     return conn
 
 
@@ -208,7 +251,9 @@ class _ThreadLocalDB:
         if conn is None:
             conn = connect_safely(self.db_path)
             conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA foreign_keys=ON")
+            # foreign_keys (and the rest of the pragmas) are set in
+            # connect_safely now, so every connection gets them, not just this
+            # one path.
             self._local.conn = conn
             return conn
 
@@ -997,17 +1042,11 @@ class StorageManager:
                 """)
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_concepts_course "
                                "ON concepts(course_uid)")
-                # FTS5 over content, so search stops being a substring scan.
-                try:
-                    cursor.execute("""
-                        CREATE VIRTUAL TABLE IF NOT EXISTS concepts_fts
-                        USING fts5(concept_uid UNINDEXED, course_uid UNINDEXED,
-                                   title, content)
-                    """)
-                except sqlite3.OperationalError as e:
-                    # FTS5 is compiled in on every build we target, but a search
-                    # index that cannot be created must not stop a migration.
-                    logger.warning(f"FTS5 unavailable, search stays substring: {e}")
+                # A SECOND FTS5 INDEX WAS CREATED HERE AND NEVER READ.
+                # `concepts_fts` duplicated `concept_fts` (SearchStore), which
+                # is the one every search actually queries. Creating it is
+                # dropped from this migration and v19 removes it from databases
+                # that already have it; see the note in save_concept_content.
                 cursor.execute("UPDATE schema_version SET version = 15")
                 logger.info("Schema migrated to v15: concept bodies in SQLite + FTS5")
 
@@ -1154,6 +1193,77 @@ class StorageManager:
                                    "ADD COLUMN completed_at TEXT")
                 cursor.execute("UPDATE schema_version SET version = 18")
                 logger.info("Schema migrated to v18: programme completion")
+
+            if current_version < 19:
+                # INDEXES FOR THE QUERIES THIS SYSTEM ACTUALLY RUNS, plus the
+                # removal of the duplicate full-text index.
+                #
+                # Each of the four was confirmed with EXPLAIN QUERY PLAN on a
+                # copy of the live database (19 MB, 142 concepts) before being
+                # added; the plan each one fixes is named below.
+
+                # due_for_review(): "SCAN user_progress". idx_progress_student
+                # is (student_id, course_uid) — the right first column and the
+                # wrong second one, so it cannot serve a date range. Partial,
+                # because the query only ever wants rows that HAVE a due date
+                # and most rows in a big course do not.
+                # Each statement is attempted independently: an index on a
+                # table an older or partly built database does not have must
+                # not abort startup for everything else.
+                def _try_ddl(sql):
+                    try:
+                        cursor.execute(sql)
+                    except sqlite3.OperationalError as e:
+                        logger.warning("v19: %s -- skipped (%s)", sql.split("(")[0].strip(), e)
+
+                _try_ddl(
+                    "CREATE INDEX IF NOT EXISTS idx_progress_due "
+                    "ON user_progress(student_id, next_review_date) "
+                    "WHERE next_review_date IS NOT NULL")
+
+                # taught_ledger's per-concept DELETE and SELECT narrow by
+                # (course_uid, concept_uid) but the only index is
+                # (course_uid, ordinal), so each one visits every claim in the
+                # course — ~880 rows per concept on a 142-concept build,
+                # ~83,000 row visits over a build, to delete a handful.
+                _try_ddl(
+                    "CREATE INDEX IF NOT EXISTS idx_claims_concept "
+                    "ON taught_claims(course_uid, concept_uid)")
+
+                # list_catalog_courses(): "SCAN courses". NOTE: the audit note
+                # asked for (is_catalog, status); the predicate in the code is
+                # is_catalog = 1 AND catalog_status = 'published' — `status` is
+                # the build-state column and is already indexed on its own by
+                # idx_courses_status. The two sort columns are included so the
+                # ORDER BY is served from the index too.
+                _try_ddl(
+                    "CREATE INDEX IF NOT EXISTS idx_courses_catalog "
+                    "ON courses(is_catalog, catalog_status, subject, grade_numeric, title)")
+
+                # get_concept_math() is on the tutoring latency path and its
+                # plan said "USE TEMP B-TREE FOR ORDER BY": the index stopped
+                # at (course_uid, concept_uid) and the ORDER BY ordinal was
+                # sorted at runtime. Widening it makes the read ordered.
+                _try_ddl("DROP INDEX IF EXISTS idx_math_concept")
+                _try_ddl(
+                    "CREATE INDEX IF NOT EXISTS idx_math_concept "
+                    "ON concept_math(course_uid, concept_uid, ordinal)")
+
+                # The write-only duplicate. Nothing reads it (see
+                # save_concept_content); the rows it holds are a stale copy of
+                # `concepts`, which is authoritative, so this loses no
+                # information that cannot be regenerated.
+                try:
+                    cursor.execute("DROP TABLE IF EXISTS concepts_fts")
+                except sqlite3.OperationalError as e:
+                    # A search index that cannot be dropped must not stop a
+                    # migration; it is inert either way now.
+                    logger.warning(f"could not drop the dead concepts_fts: {e}")
+
+                cursor.execute("UPDATE schema_version SET version = 19")
+                logger.info("Schema migrated to v19: query indexes "
+                            "(due reviews, taught claims, catalog, concept math) "
+                            "+ dropped the unread concepts_fts index")
 
             conn.commit()
         finally:
@@ -2462,22 +2572,25 @@ class CourseStore:
                 "VALUES (?,?,?,?,?,?,?,?)",
                 (course_uid, concept_uid, title, markdown, h, path,
                  len((markdown or "").split()), datetime.now().isoformat()))
-            try:
-                db.execute("DELETE FROM concepts_fts WHERE concept_uid=?",
-                           (concept_uid,))
-                db.execute("INSERT INTO concepts_fts (concept_uid, course_uid, "
-                           "title, content) VALUES (?,?,?,?)",
-                           (concept_uid, course_uid, title, markdown))
-            except sqlite3.OperationalError as e:
-                # WAS A BARE `pass` WITH NO LOG. "database is locked" is an
-                # OperationalError too, and hydration writes concurrently from
-                # a thread pool — so a contended write silently never reached
-                # the index and the concept became invisible to search, with
-                # nothing recorded at any level. FTS5 genuinely being absent is
-                # a different and much rarer thing; both now say so.
-                logger.warning(
-                    f"concept index write failed for {concept_uid}: {e} "
-                    f"(search will not find this concept)")
+            # TWO FULL-TEXT INDEXES WERE BEING WRITTEN HERE, AND ONLY ONE WAS
+            # EVER READ.
+            #
+            # `concepts_fts` (v15) was written on every save and queried by
+            # NOTHING: the only searcher is SearchStore, which reads
+            # `concept_fts`, and the only other reference anywhere was a
+            # best-effort DELETE in the share-bundle rollback. A grep of the
+            # repository for `concepts_fts` returned this write, that DELETE,
+            # and two test assertions — no MATCH, no SELECT on a request path.
+            #
+            # It was not free. Every concept save tokenised the same markdown
+            # twice: ~8.2 KB of the ~43.8 KB written per concept, 19% of the
+            # write volume of a build, on a virtiofs bind mount. The index it
+            # produced was 1.17 MB of a 20 MB database — and stale on top of
+            # that, since delete_course's cascade drops `concept_fts` rows but
+            # never listed `concepts_fts`.
+            #
+            # The live index is maintained by on_content_saved below, which
+            # calls SearchStore.index_concept. That is the one search reads.
             db.commit()
         except sqlite3.OperationalError:
             pass  # pre-v15 database
@@ -2575,6 +2688,10 @@ class SearchStore:
         self.courses = course_store
         self._db = _ThreadLocalDB(db_path)
         self._available = None  # tri-state: None=unknown, True/False once probed
+        # Whether the "is the index empty?" question has been asked yet on this
+        # instance. See search().
+        self._populated_checked = False
+        self._populate_lock = threading.Lock()
         self._ensure_table()
 
     def _get_db(self) -> sqlite3.Connection:
@@ -2706,7 +2823,46 @@ class SearchStore:
                          exc_info=True)
             raise
         logger.info(f"Rebuilt concept FTS index with {count} concept(s)")
+        # A rebuild leaves the index as many small segments; merging them here
+        # is the one optimize call that needs no caller outside this module.
+        self.optimize_index()
         return count
+
+    def optimize_index(self) -> bool:
+        """Merge the FTS5 index's segments. Cheap to call, never required.
+
+        index_concept is DELETE-then-INSERT, and in FTS5 a delete is a
+        tombstone appended to a new segment rather than an edit in place. So a
+        corpus that is rewritten during a build (every concept is saved at
+        least once, many several times) ends up with many small segments plus
+        the tombstones that cancel them, and every bm25() query afterwards
+        reads all of them — permanently, because nothing in this repository
+        has ever run `optimize`. There were zero occurrences of it.
+
+        `INSERT INTO concept_fts(concept_fts) VALUES('optimize')` rewrites the
+        index into one segment and discards the tombstones. It is O(index) and
+        takes a write lock, so it belongs after a build or in the nightly
+        maintenance window, NEVER on a request path.
+
+        Returns True if the merge ran.
+        """
+        if not self.is_available():
+            return False
+        try:
+            conn = self._get_db()
+            conn.execute("INSERT INTO concept_fts(concept_fts) VALUES('optimize')")
+            conn.commit()
+            logger.info("FTS index optimized (segments merged)")
+            return True
+        except sqlite3.Error as e:
+            # Never fatal: an unoptimized index answers the same questions,
+            # only slower.
+            logger.warning(f"FTS optimize skipped: {e}")
+            try:
+                conn.rollback()
+            except sqlite3.Error:
+                pass
+            return False
 
     def search(self, query: str, course_uid: str = None, limit: int = 10) -> List[dict]:
         """Full-text search concepts ranked by bm25.
@@ -2719,9 +2875,25 @@ class SearchStore:
         if not query or not query.strip():
             return []
 
-        # Lazy population: only walk the corpus when the index is empty.
-        if self._row_count() == 0:
-            self.rebuild_search_index()
+        # Lazy population, asked ONCE per process rather than once per search.
+        #
+        # This was `if self._row_count() == 0: rebuild()`, and _row_count() is
+        # SELECT COUNT(*) over an FTS5 table that is not external-content —
+        # there is no shortcut, so it reads the whole B-tree: ~744 KB off a
+        # virtiofs bind mount on EVERY search, to re-answer a question that has
+        # been False since the first course was built.
+        #
+        # It cannot become True again behind our back in a way this helps with:
+        # index_concept keeps the index current on every write, and an index
+        # emptied by deleting every course is correctly empty. So the check
+        # belongs where a one-time cost belongs.
+        if not self._populated_checked:
+            with self._populate_lock:
+                if not self._populated_checked:
+                    self._populated_checked = True    # set first: a failed
+                    # rebuild must not make every subsequent search retry it
+                    if self._row_count() == 0:
+                        self.rebuild_search_index()
 
         match_expr = self._sanitize_query(query)
         if not match_expr:
