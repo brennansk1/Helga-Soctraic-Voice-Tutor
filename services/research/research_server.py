@@ -1210,11 +1210,42 @@ async def _research_concept_async(title, module_title, course_title, mastery=1,
 # and a dropped connection is not.
 RESEARCH_DEADLINE_S = float(os.getenv("HELGA_RESEARCH_DEADLINE", "75"))
 
-# Small on purpose: a build researches one concept at a time, and abandoned
-# lookups keep running here until they finish and cache themselves.
+# ABANDONED WORK STILL HOLDS ITS WORKER.
+#
+# The deadline below returns an empty answer at 75s, but the task keeps
+# running — that is deliberate, because it finishes and caches itself for the
+# retry. The consequence was not: with 4 workers and an unbounded queue, once
+# 4 lookups were slow, every later request sat in the QUEUE, never started,
+# and returned empty after exactly 75 seconds of waiting for a worker it was
+# never going to get.
+#
+# That produces a CONTIGUOUS RUN of uncited concepts, which fits the observed
+# "14 of 95 with no citation" far better than fourteen independently unlucky
+# topics. A cascading failure, from a design that reasoned correctly about one
+# request at a time.
+#
+# So: bound the queue and refuse rather than enqueue. A caller told "busy" in
+# 5ms can write the concept llm-only and move on; a caller told "empty" after
+# 75s has lost 75 seconds AND still has nothing.
+_RESEARCH_WORKERS = int(os.getenv("HELGA_RESEARCH_WORKERS", "4"))
 _RESEARCH_POOL = _futures.ThreadPoolExecutor(
-    max_workers=int(os.getenv("HELGA_RESEARCH_WORKERS", "4")),
-    thread_name_prefix="research")
+    max_workers=_RESEARCH_WORKERS, thread_name_prefix="research")
+
+# How many are actually executing, as opposed to submitted. ThreadPoolExecutor
+# will not tell us, so we count.
+_inflight_lock = threading.Lock()
+_inflight = 0
+
+
+def _research_with_census(*a, **kw):
+    global _inflight
+    with _inflight_lock:
+        _inflight += 1
+    try:
+        return research_concept_sync(*a, **kw)
+    finally:
+        with _inflight_lock:
+            _inflight -= 1
 
 
 def research_concept_sync(title, module_title, course_title, mastery=1,
@@ -1281,7 +1312,20 @@ def api_research_concept():
     # work is not wasted — it finishes and populates the research cache, so the
     # retry that follows a timeout is usually instant. That is the same
     # behaviour that used to be thrown away when the hydrator gave up.
-    fut = _RESEARCH_POOL.submit(research_concept_sync, title, module_title,
+    # Refuse rather than queue behind work that has already outlived its own
+    # deadline. See the note on the pool above.
+    with _inflight_lock:
+        busy = _inflight >= _RESEARCH_WORKERS
+    if busy:
+        logger.warning(
+            "research is saturated (%d/%d workers still on abandoned lookups) "
+            "— refusing %r immediately rather than queueing it behind them. "
+            "The concept will be written llm-only.",
+            _inflight, _RESEARCH_WORKERS, title)
+        return jsonify({"sources": [], "wikipedia": None, "combined_text": "",
+                        "confidence": 0.0, "busy": True}), 200
+
+    fut = _RESEARCH_POOL.submit(_research_with_census, title, module_title,
                                 course_title, mastery, broaden)
     try:
         result = fut.result(timeout=RESEARCH_DEADLINE_S)
