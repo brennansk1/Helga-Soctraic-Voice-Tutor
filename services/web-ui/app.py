@@ -1415,7 +1415,10 @@ _FAILURE_LIST_CAP = 25
 # (the judge is known to swing between identical runs), and thin grounding is a
 # fact about how much material exists on the subject — both are real, neither
 # justifies shouting. `sections` has a conditional rule; see _course_quality().
-_LOUD_DIMENSIONS = ('fact', 'depth')
+# A blocking audit finding means the course states something a real database
+# contradicts. That is the loudest thing a card can say, so it joins the set
+# that overrides a quiet verdict.
+_LOUD_DIMENSIONS = ('fact', 'depth', 'audit')
 
 _STATE_RANK = {'absent': 0, 'pass': 1, 'caution': 2, 'fail': 3}
 
@@ -1488,6 +1491,65 @@ def _quality_fact(fc, course_concepts=None):
                        % (checked, denom, unchecked))
     else:
         out['text'] = 'No false claims found in %d checked concepts' % checked
+    return out
+
+
+
+def _quality_audit(au):
+    """Verdict for Stage 4 — the pass that reads the FINISHED course.
+
+    Every other verdict here is recorded per concept as it is generated, which
+    is why none of them could see a course whose every concept was missing the
+    sections the tutor reads, or two concepts teaching contradictory things.
+    This one looked at the whole course at once.
+    """
+    if not isinstance(au, dict) or not au.get("ran"):
+        # A course built before the audit existed, or one whose audit crashed.
+        # Neither is a pass, and they must not read like one.
+        if isinstance(au, dict) and au.get("error"):
+            return {"state": "caution",
+                    "text": "The audit could not run on this course"}
+        return {"state": "absent"}
+
+    sev = au.get("by_severity") or {}
+    blocking = sev.get("blocking", 0)
+    serious = sev.get("serious", 0)
+    total = au.get("concepts_total") or 0
+    flagged = au.get("concepts_with_findings") or 0
+
+    out = {
+        "state": "pass",
+        "verdict": au.get("verdict"),
+        "blocking": blocking,
+        "serious": serious,
+        "concepts_total": total,
+        "concepts_with_findings": flagged,
+        "not_audited": au.get("concepts_not_audited") or 0,
+    }
+
+    if blocking:
+        out["state"] = "fail"
+        out["text"] = ("%d claim%s in this course %s contradicted by a real "
+                       "database" % (blocking, "" if blocking == 1 else "s",
+                                     "is" if blocking == 1 else "are"))
+    elif serious:
+        out["state"] = "caution"
+        out["text"] = ("%d of %d concepts have something worth reviewing"
+                       % (flagged, total))
+    elif out["not_audited"]:
+        out["state"] = "caution"
+        out["text"] = ("%d concept%s could not be audited"
+                       % (out["not_audited"],
+                          "" if out["not_audited"] == 1 else "s"))
+    else:
+        out["text"] = "Audited as a whole course — nothing found"
+
+    # Truth is ADVISORY and says so, because this model rejects true claims
+    # that need one inference step from their passage. Surfacing it as a
+    # finding would send correct content to be rewritten.
+    adv = au.get("truth_advisory")
+    if isinstance(adv, dict) and adv.get("share") is not None:
+        out["truth_advisory"] = adv
     return out
 
 
@@ -1756,6 +1818,7 @@ def _course_quality(course):
         'level': _quality_level(course.get('level_calibration')),
         'grounding': _quality_grounding(course.get('grounding')),
         'sections': _quality_sections(course.get('missing_sections')),
+        'audit': _quality_audit(course.get('audit')),
     }
     assessed = [k for k, v in checks.items() if v['state'] != 'absent']
 
@@ -1787,13 +1850,13 @@ def _course_quality(course):
     # The single line a course card shows. Loud problems win; among equals the
     # order below is the order a learner would care about them.
     headline = ''
-    for key in ('fact', 'sections', 'depth', 'level', 'grounding'):
+    for key in ('audit', 'fact', 'sections', 'depth', 'level', 'grounding'):
         c = checks[key]
         if c['state'] == 'fail' and c.get('text'):
             headline = c['text']
             break
     if not headline:
-        for key in ('fact', 'sections', 'depth', 'grounding', 'level'):
+        for key in ('audit', 'fact', 'sections', 'depth', 'grounding', 'level'):
             c = checks[key]
             if c['state'] == 'caution' and c.get('text'):
                 headline = c['text']

@@ -235,6 +235,28 @@
                    m[3] + ' concept(s) needed none (' + m[4] + 's)'; }],
         [/^ASSETS:READY:(\d+):(\d+):(\d+)/, function (m) {
             return 'Loaded ' + m[1] + ' concept(s) of pre-built visuals'; }],
+        [/^AUDIT:PHASE:START/,           function () {
+            return 'Auditing the finished course — every concept, and the '
+                 + 'course as a whole'; }],
+        [/^AUDIT:DONE:(\w+):(\d+):(\d+)/, function (m) {
+            // Said plainly. "blocking_findings" means something is FALSE, and
+            // a learner reading this deserves the word rather than the enum.
+            var verdict = m[1], blocking = +m[2], serious = +m[3];
+            if (verdict === 'clean') {
+                return 'Audit passed — nothing found';
+            }
+            if (verdict === 'blocking_findings') {
+                return 'Audit found ' + blocking + ' claim(s) contradicted by a '
+                     + 'real database' + (serious ? ', and ' + serious
+                     + ' other problem(s)' : '');
+            }
+            if (verdict === 'needs_review') {
+                return 'Audit found ' + serious + ' thing(s) worth reviewing';
+            }
+            if (verdict === 'incomplete') {
+                return 'Audit could not check everything — see the course page';
+            }
+            return 'Audit finished: ' + verdict; }],
         [/^STRUCT:MODULE:(.+)/,          function (m) { return 'Module: ' + m[1]; }],
         [/^STRUCT:(?:UNIT|LESSON):(.+)/, function (m) { return '   ' + m[1]; }],
         // The concept/hydration lines carry the uid in field 2. The old
@@ -469,6 +491,19 @@
         if (msg.indexOf('ASSET:ERROR:') === 0 || msg.indexOf('ASSET:SKIPPED:') === 0) {
             // Degradable by design: no pictures is not a failed build.
             setStage('assets', 'warn');
+        }
+
+        // Stage 4 — the audit. The last thing between a finished build and a
+        // course a learner can open, and the only pass that reads the whole
+        // course at once. Its verdict is the honest headline for the build, so
+        // it must be visible rather than folded into "done".
+        if (msg.indexOf('AUDIT:PHASE:START') === 0) {
+            setStage('assets', 'done');
+            setStage('audit', 'active');
+        }
+        if (msg.indexOf('AUDIT:DONE:') === 0) {
+            var av = msg.split(':');           // AUDIT:DONE:verdict:blocking:serious
+            setStage('audit', av[2] === 'clean' ? 'done' : 'warn');
         }
         if (msg.indexOf('CHECK:PREFLIGHT:PASS') === 0) {
             setStage('preflight', 'done'); setStage('research', 'active');

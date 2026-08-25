@@ -4485,6 +4485,10 @@ _EVIDENCE_SHAPED = (
 )
 
 
+class _SkipTruth(Exception):
+    """Raised to skip the truth tier without losing the reason it was skipped."""
+
+
 def _needs_more_evidence(problems):
     """True when the named problems are ones more material could solve."""
     blob = " ".join(problems or []).lower()
@@ -6023,6 +6027,11 @@ class ContentHydrator:
         if self.status_callback:
             self.status_callback("AUDIT:PHASE:START")
 
+        # Everything the audit reads is held at once, because the whole point
+        # is questions that need the whole course. A 200-concept course is a
+        # few megabytes of markdown, which is affordable — but only because
+        # concepts are bounded by the depth contract's word cap. If that ever
+        # stops being true this is where it will show.
         contents, sources_by_uid = {}, {}
         for concept, _path in walk_concepts(course):
             uid = concept.get("uid")
@@ -6089,10 +6098,30 @@ class ContentHydrator:
         # before this model ever sees it.
         if conn is not None and self.truth_check_enabled:
             try:
+                # MEMORY GUARD. The deterministic tiers above are arithmetic
+                # over text and cost about 0.3s on a 95-concept course, so they
+                # always run. This one calls a model holding roughly 3 GB
+                # resident, and it is batch work at the end of a build — the
+                # exact thing `allow_background` exists to hold back.
+                #
+                # It degrades rather than waits. Truth is advisory: a course
+                # that ships with it unmeasured is honest, and blocking a
+                # finished build behind memory headroom is not a trade worth
+                # making for an advisory number.
+                from services.common import memory_guard as _mg
+                if not _mg.allow_background():
+                    ledger["truth"] = {
+                        "checked": False,
+                        "reason": "skipped under memory pressure: %s"
+                                  % (_mg.pressure_reason() or "low memory"),
+                    }
+                    raise _SkipTruth()
                 from services.core import claim_verifier
                 verifier = claim_verifier.get_any_verifier()
                 ledger["truth"] = course_qa.check_truth(
                     conn, course_uid, verifier=verifier)
+            except _SkipTruth:
+                pass          # already recorded, with its reason
             except Exception as e:
                 ledger["truth"] = {"checked": False, "reason": str(e)[:120]}
         else:

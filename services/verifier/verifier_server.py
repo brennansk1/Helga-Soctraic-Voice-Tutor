@@ -51,6 +51,48 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# THIS PROCESS HOLDS ABOUT 3 GB RESIDENT WHILE THE MODEL IS LOADED.
+#
+# It sits beside Ollama, which is holding 13.5 GB of builder, on a machine
+# measured at 13% free with 8 GB of swap in use. A verifier that never lets go
+# is a verifier that pushes the thing the learner is waiting on into swap — and
+# reading a model back under load measured 84 MB/s here.
+#
+# So it releases: after a stretch of no questions, and immediately whenever the
+# kernel reports pressure. Reloading costs about 3 seconds from page cache,
+# which is nothing against an audit that runs once per build.
+IDLE_UNLOAD_S = float(os.getenv("VERIFIER_IDLE_UNLOAD", "900"))
+_last_used = [0.0]
+
+
+def _touch():
+    import time
+    _last_used[0] = time.time()
+
+
+def _release_if_idle():
+    import time
+    if not _last_used[0] or claim_verifier._STATE.get("model") is None:
+        return
+    if time.time() - _last_used[0] < IDLE_UNLOAD_S:
+        return
+    logger.info("idle for %.0fs — unloading the model", IDLE_UNLOAD_S)
+    claim_verifier.unload()
+
+
+def _release_if_pressured():
+    """The kernel's own view, not a guess from free-memory arithmetic."""
+    try:
+        from services.common import memory_guard as mg
+        reason = mg.pressure_reason()
+    except Exception:
+        return False
+    if reason and claim_verifier._STATE.get("model") is not None:
+        logger.warning("memory pressure (%s) — unloading the model", reason)
+        claim_verifier.unload()
+        return True
+    return False
+
 
 @app.route("/health", methods=["GET"])
 def health():
@@ -75,6 +117,12 @@ def verify():
     if not claim or not passage:
         return jsonify({"error": "claim and passage are both required"}), 400
     try:
+        _release_if_idle()
+        if _release_if_pressured():
+            # Refusing is honest; answering by pushing the learner's model into
+            # swap is not. The caller records truth as NOT MEASURED.
+            return jsonify({"error": "verifier unloaded under memory pressure"}), 503
+        _touch()
         return jsonify({"supported": bool(
             claim_verifier.supported(claim, passage))}), 200
     except Exception as e:
@@ -97,6 +145,10 @@ def verify_batch():
     claims = data.get("claims") or []
     if not passage or not isinstance(claims, list):
         return jsonify({"error": "passage and claims[] are required"}), 400
+    _release_if_idle()
+    if _release_if_pressured():
+        return jsonify({"error": "verifier unloaded under memory pressure"}), 503
+    _touch()
     out = []
     for c in claims[:200]:
         c = (c or "").strip()
