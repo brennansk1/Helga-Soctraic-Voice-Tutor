@@ -104,10 +104,13 @@ def gate_depth_contract(rep, d):
 
 def gate_grounding(rep, uid, d):
     """Sources are the difference between teaching and recall."""
-    total = len(d.get("concepts") or [])
+    # Only concepts that HAVE a body can cite anything. Counting the unwritten
+    # ones as ungrounded reported 32% for a course that was 30/95 hydrated —
+    # a progress figure dressed up as a quality one.
+    written = [c for c in (d.get("concepts") or []) if c.get("has_content")]
     with_src = 0
     sampled = 0
-    for c in (d.get("concepts") or []):
+    for c in written:
         st, cd = call("GET", f"{RAG}/api/pipeline/course/{uid}/concept/{c['uid']}")
         if st != 200:
             continue
@@ -116,12 +119,12 @@ def gate_grounding(rep, uid, d):
         if re.search(r"https?://", body):
             with_src += 1
     if not sampled:
-        rep.add("grounding", "SKIP", "no concept bodies could be read")
+        rep.add("grounding", "SKIP", "no concept has a body yet")
         return
     pct = with_src / sampled * 100
     ok = "PASS" if pct >= 80 else ("WARN" if pct >= 40 else "FAIL")
     rep.add("grounding", ok,
-            f"{with_src}/{sampled} concepts cite at least one source ({pct:.0f}%)",
+            f"{with_src}/{sampled} written concepts cite a source ({pct:.0f}%)",
             "llm-only content is the known quality gap" if pct < 80 else "")
 
 
@@ -176,6 +179,49 @@ def gate_quiz(rep, uid):
     ok = "PASS" if qs else "FAIL"
     ev = str(qs[0].get("question"))[:90] if qs else json.dumps(d)[:200]
     rep.add("quiz generates", ok, f"{len(qs)} question(s)", ev)
+
+
+# The headings the product reads back out of concept markdown. Kept in step
+# with services/rag/pipeline_api.CONSUMED_SECTIONS, which a test enforces.
+TUTOR_SECTIONS = ["Misconceptions", "Analogies", "Socratic Hooks",
+                  "Key Facts", "Real-World Examples", "Core Explanation"]
+
+
+def gate_tutor_sections(rep, uid, d):
+    """The tutor reads sections out of the markdown, not just prose.
+
+    `teaching_context` pulls Misconceptions and Analogies straight from the
+    body. A course can meet 100% of its depth contract and still hand the
+    tutor nothing here — measured on a Claude-authored course, which passed
+    every gate and taught with less than a locally built one.
+    """
+    concepts = [c for c in (d.get("concepts") or []) if c.get("has_content")]
+    if not concepts:
+        rep.add("tutor sections present", "SKIP", "no concepts with content")
+        return
+    found = {s: 0 for s in TUTOR_SECTIONS}
+    read = 0
+    for c in concepts:
+        st, cd = call("GET", f"{RAG}/api/pipeline/course/{uid}/concept/{c['uid']}")
+        if st != 200:
+            continue
+        body = cd.get("content") or cd.get("body") or ""
+        if not body:
+            continue
+        read += 1
+        for sec in TUTOR_SECTIONS:
+            if re.search(rf"^##\s+{re.escape(sec)}", body, re.M):
+                found[sec] += 1
+    if not read:
+        rep.add("tutor sections present", "SKIP", "no bodies could be read")
+        return
+    worst = min(found, key=lambda k: found[k])
+    pct = found[worst] / read * 100
+    ok = "PASS" if pct >= 95 else ("WARN" if pct >= 60 else "FAIL")
+    rep.add("tutor sections present", ok,
+            f"weakest is '## {worst}' at {found[worst]}/{read} ({pct:.0f}%)",
+            "the tutor reads these out of the markdown; without them it "
+            "teaches with less" if ok != "PASS" else "")
 
 
 def gate_teaching_context(rep, uid, d):
@@ -326,6 +372,7 @@ def main():
     gate_structure_renders(rep, a.course_uid)
     gate_grounding(rep, a.course_uid, d)
     gate_search_finds_it(rep, a.course_uid, d)
+    gate_tutor_sections(rep, a.course_uid, d)
     gate_teaching_context(rep, a.course_uid, d)
     if a.no_model:
         for name in ("tutoring", "flashcards generate", "quiz generates"):
