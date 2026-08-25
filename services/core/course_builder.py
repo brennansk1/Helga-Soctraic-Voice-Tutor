@@ -4983,23 +4983,40 @@ class ContentHydrator:
                     uid,
                 )
 
-            # A2: an honest marker on thin content. Previously a 0.0-confidence
-            # concept was visually identical to a well-sourced one.
+            # A2: an honest marker on thin content — RECORDED, not narrated.
+            #
+            # These were appended to the lesson body, so a learner mid-concept
+            # read a paragraph about the research service being unreachable.
+            # It is true, it matters, and it is a fact about the BUILD: it
+            # belongs to the concept's metadata, where the course page and the
+            # depth verdict can surface it, not in the middle of teaching.
+            #
+            # Appending here also happened AFTER validation, so content_guards
+            # never saw it — measured: 5 concepts carrying the banner while
+            # every gate reported them clean.
+            grounding_note = None
             if low_confidence and not research_reached:
-                structured_md += (
-                    "\n\n> **Grounding unavailable.** The research service could "
-                    "not be reached while this concept was written, so no "
-                    "sources were consulted at all and it rests entirely on the "
-                    "model's own knowledge. That is not the same as a subject "
-                    "with thin coverage — nothing was checked. Verify specifics "
-                    "before relying on them.\n")
+                grounding_note = {
+                    "state": "unreached",
+                    "detail": ("The research service could not be reached while "
+                               "this concept was written, so nothing was checked. "
+                               "That is not the same as a subject with thin "
+                               "coverage."),
+                }
             elif low_confidence:
-                structured_md += (
-                    "\n\n> **Limited sources.** The grounding pass found little "
-                    "corroborating material for this concept "
-                    f"(confidence {research_confidence:.2f}), so it leans more "
-                    "on the model's own knowledge. Treat specifics with extra "
-                    "care and verify before relying on them.\n")
+                grounding_note = {
+                    "state": "thin",
+                    "confidence": round(research_confidence, 2),
+                    "detail": ("The grounding pass found little corroborating "
+                               "material, so this concept leans more on the "
+                               "model's own knowledge."),
+                }
+            if grounding_note:
+                logger.warning("  [GROUNDING] %s: %s", title,
+                               grounding_note["detail"])
+                with _course_lock:
+                    if uid in concept_ref_map:
+                        concept_ref_map[uid]["grounding_note"] = grounding_note
 
             # Append research citations
             if research_sources:
@@ -6347,8 +6364,21 @@ Now write the sections for "{title}".
         context_path: str,
     ) -> str:
         """Validate that LLM output contains all required Markdown sections. Inject stubs for missing ones."""
+        # THE PIPELINE WAS FIGHTING ITSELF.
+        #
+        # Every stub here is content-free by construction — the title restated
+        # as an objective, "can be found in everyday applications", "See
+        # further reading on". content_guards rejects exactly that wording, so
+        # the loop became: model omits a section -> pipeline injects
+        # boilerplate -> guard flags the boilerplate -> retry -> model omits it
+        # again -> inject again -> store it flagged. Measured on the live
+        # build: 10 of 39 concepts carrying injected placeholder wording.
+        #
+        # A missing section is a GENERATION problem and the retry loop is where
+        # it belongs. What is left here is the structural minimum the readers
+        # need to not crash on a missing heading, with no invented content in
+        # it: an empty section is honest and a fabricated one is not.
         required_sections = {
-            "## Mastery Criteria": f"## Mastery Criteria\nStudent should demonstrate understanding of {title}.\n",
             # NO STUB FOR THE SECTION THAT IS THE LESSON.
             #
             # This injected "{title} is a key concept in {course_title}." when
@@ -6360,21 +6390,23 @@ Now write the sections for "{title}".
             # Likewise: "Belief: None identified / Correction: N/A" is a
             # misconception section with no misconception in it, and the tutor
             # reads this section before every turn.
-            "## Socratic Hooks": f"## Socratic Hooks\n- Bloom 1-2: What do you think {title} means?\n- Bloom 3-4: How would you apply {title}?\n- Bloom 5-6: When does {title} break down?\n",
         }
+
+
+        # Report what is missing so the caller's retry can name it; do not
+        # paper over it. The guards will fail this body if a section the tutor
+        # reads is absent, which is the correct outcome.
+        wanted = ["## Mastery Criteria", "## Core Explanation", "## Misconceptions",
+                  "## Socratic Hooks"]
         if depth >= 2:
-            required_sections["## Key Facts"] = f"## Key Facts\n- {title} is a fundamental concept in {course_title}.\n"
-            required_sections["## Real-World Examples"] = f"## Real-World Examples\nExamples of {title} can be found in everyday applications.\n"
+            wanted += ["## Key Facts", "## Real-World Examples"]
         if depth >= 3:
-            required_sections["## Edge Cases & Limitations"] = f"## Edge Cases & Limitations\n- See further reading on {title}.\n"
-
-        for section_header, stub in required_sections.items():
-            if section_header not in content:
-                logger.warning(
-                    f"  [MARKDOWN] Missing '{section_header}' in LLM output for {title}. Injecting stub."
-                )
-                content += f"\n{stub}"
-
+            wanted += ["## Edge Cases & Limitations"]
+        missing = [h for h in wanted if h not in content]
+        if missing:
+            logger.warning(
+                "  [MARKDOWN] %s is missing %s — regenerating rather than "
+                "filling it with boilerplate", title, ", ".join(missing))
         return content
 
 

@@ -31,14 +31,40 @@ class TestConfidenceFloorConfig(unittest.TestCase):
 class TestHydratorActsOnConfidence(unittest.TestCase):
     """The hydration path must retry and then mark, not silently accept."""
 
-    def test_source_marks_low_confidence_in_the_artifact(self):
-        """The learner must be able to see that content is thinly sourced."""
+    def test_thin_grounding_is_recorded_on_the_concept(self):
+        """Thin content must be MARKED — but not by talking to the learner.
+
+        This used to append "**Limited sources.** The grounding pass found
+        little corroborating material…" and "**Grounding unavailable.** The
+        research service could not be reached…" to the lesson body, so a
+        learner mid-concept read a paragraph about the research service. It is
+        true and it matters, and it is a fact about the BUILD: it belongs to
+        the concept's metadata where the course page and the depth verdict can
+        surface it.
+
+        It was also appended AFTER validation, so content_guards never saw it —
+        measured 2026-08-25: 5 concepts carrying the banner while every gate
+        reported them clean.
+        """
         import inspect
         from services.core.course_builder import ContentHydrator
         src = inspect.getsource(ContentHydrator.hydrate)
-        self.assertIn("Limited sources", src,
-                      "thin content must carry a visible marker in the artifact")
         self.assertIn("low_confidence", src)
+        self.assertIn("grounding_note", src,
+                      "thin grounding must still be recorded somewhere")
+        self.assertIn("research_reached", src,
+                      "'nothing was checked' and 'little was found' are "
+                      "different states and must stay distinguishable")
+
+    def test_the_apology_is_not_in_the_lesson_body(self):
+        import inspect
+        from services.core.course_builder import ContentHydrator
+        src = inspect.getsource(ContentHydrator.hydrate)
+        for phrase in ("structured_md += (\n                    \"\\n\\n> **Grounding unavailable",
+                       "structured_md += (\n                    \"\\n\\n> **Limited sources"):
+            self.assertNotIn(phrase, src,
+                             "a build problem is being narrated to the learner "
+                             "in the middle of a lesson")
 
     def test_low_confidence_triggers_a_broadened_research_retry(self):
         import inspect
