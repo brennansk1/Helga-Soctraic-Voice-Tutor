@@ -48,14 +48,22 @@ sys.path.insert(0, os.path.abspath(os.path.join(
 # depends on — so what is bounded is concepts that RE-INTRODUCE rather than
 # build.
 
-MAX_REDUNDANT_SHARE = 0.10      # concepts re-introducing >=half their claims
-MIN_CLAIMS_PER_CONCEPT = 2.0    # below this, concepts assert nothing
-MIN_COMPLETENESS = 0.70         # teaching-object fields actually filled
-MAX_HOLLOW_SHARE = 0.10         # concepts below half their fields
-MIN_GROUNDED_SHARE = 0.80       # claims linked to a retained source
-MAX_SUPPLEMENTARY_SHARE = 0.20  # claims resting ONLY on below-bar sources
-MIN_DEPTH_PASS = 0.90           # concepts meeting their depth contract
-MAX_FALSE_CLAIM_SHARE = 0.05    # claims a verifier judges unsupported
+
+
+# The checks themselves now live in services/core/course_qa.py so the pipeline
+# can run them, not only a person at a terminal. This file is the CLI over
+# them — the same move level_audit.py -> level_calibration.py made, for the
+# same reason: a check only a human can run is a check that does not run.
+#
+# check_redundancy stays here: it rebuilds a body from stored claims to feed
+# the ledger's own comparator, which is reporting work rather than a check.
+from services.core.course_qa import (            # noqa: F401  (CLI surface)
+    check_substance, check_hollowness, check_grounding, check_supplementary,
+    check_depth, check_truth,
+    MAX_REDUNDANT_SHARE, MIN_CLAIMS_PER_CONCEPT, MIN_COMPLETENESS,
+    MAX_HOLLOW_SHARE, MIN_GROUNDED_SHARE, MAX_SUPPLEMENTARY_SHARE,
+    MIN_DEPTH_PASS, MAX_FALSE_CLAIM_SHARE,
+)
 
 
 def _db(data_root):
@@ -99,148 +107,6 @@ def check_redundancy(conn, course_uid):
             "ok": share <= MAX_REDUNDANT_SHARE}
 
 
-def check_substance(conn, course_uid):
-    """Do concepts assert anything, or are they fluent and empty?
-
-    The measured failure was ~half of concepts 'hollow' — structurally complete,
-    passing the section template, saying little. Claims per concept is the
-    cheapest model-free proxy for that.
-    """
-    rows = conn.execute(
-        "SELECT c.concept_uid, COUNT(k.claim) FROM taught_concepts c "
-        "LEFT JOIN taught_claims k ON k.course_uid=c.course_uid "
-        "AND k.concept_uid=c.concept_uid WHERE c.course_uid=? "
-        "GROUP BY c.concept_uid", (course_uid,)).fetchall()
-    if not rows:
-        return {"checked": False, "reason": "no ledger rows"}
-    counts = [n for _, n in rows]
-    mean = sum(counts) / len(counts)
-    empty = sum(1 for n in counts if n == 0)
-    return {"checked": True, "concepts": len(counts),
-            "claims_per_concept": round(mean, 2), "empty": empty,
-            "ok": mean >= MIN_CLAIMS_PER_CONCEPT and empty == 0}
-
-
-def check_hollowness(conn, course_uid):
-    """Structurally complete and substantively empty — the measured defect.
-
-    ~half of concepts were found hollow: passing the section template, saying
-    little. The section template cannot see this by construction, because
-    passing it IS having the headings. The teaching object counts what each
-    concept actually FILLED.
-    """
-    try:
-        rows = conn.execute(
-            "SELECT completeness FROM teaching_objects WHERE course_uid=?",
-            (course_uid,)).fetchall()
-    except sqlite3.OperationalError:
-        return {"checked": False, "reason": "teaching_objects absent (pre-v14)"}
-    scores = [r[0] for r in rows if r[0] is not None]
-    if not scores:
-        return {"checked": False, "reason": "no teaching objects"}
-    mean = sum(scores) / len(scores)
-    hollow = sum(1 for s in scores if s < 0.5)
-    share = hollow / len(scores)
-    return {"checked": True, "concepts": len(scores),
-            "mean_completeness": round(mean, 3), "hollow": hollow,
-            "hollow_share": round(share, 3),
-            "ok": mean >= MIN_COMPLETENESS and share <= MAX_HOLLOW_SHARE}
-
-
-def check_grounding(conn, course_uid):
-    """Are claims linked to a retained source, or asserted from nowhere?"""
-    try:
-        total = conn.execute(
-            "SELECT COUNT(*) FROM taught_claims WHERE course_uid=?",
-            (course_uid,)).fetchone()[0]
-        linked = conn.execute(
-            "SELECT COUNT(*) FROM claim_sources WHERE course_uid=? "
-            "AND source_id IS NOT NULL", (course_uid,)).fetchone()[0]
-    except sqlite3.OperationalError:
-        return {"checked": False, "reason": "source tables absent (pre-v12)"}
-    if not total:
-        return {"checked": False, "reason": "no claims"}
-    share = linked / total
-    return {"checked": True, "claims": total, "grounded": linked,
-            "share": round(share, 3), "ok": share >= MIN_GROUNDED_SHARE}
-
-
-def check_supplementary(conn, course_uid):
-    """Share of claims resting ONLY on below-bar sources.
-
-    Measured in claims, not sources: one weak book can dominate content while
-    being a small minority of the source list.
-    """
-    try:
-        row = conn.execute(
-            "SELECT COUNT(*), SUM(supplementary) FROM claim_sources "
-            "WHERE course_uid=?", (course_uid,)).fetchone()
-    except sqlite3.OperationalError:
-        return {"checked": False, "reason": "claim_sources absent (pre-v12)"}
-    total, supp = (row or (0, 0))
-    if not total:
-        return {"checked": False, "reason": "no claim-source links"}
-    share = (supp or 0) / total
-    return {"checked": True, "claims": total, "supplementary_only": supp or 0,
-            "share": round(share, 3), "ok": share <= MAX_SUPPLEMENTARY_SHARE}
-
-
-def check_depth(course_json):
-    """Did concepts meet the depth contract for their mastery level?"""
-    d = (course_json or {}).get("depth_contract") or {}
-    if not d:
-        return {"checked": False, "reason": "no depth_contract on the course"}
-    total = d.get("checked") or d.get("total") or 0
-    missed = d.get("missed") or d.get("failures") or 0
-    if not total:
-        return {"checked": False, "reason": "depth_contract recorded no totals"}
-    share = (total - missed) / total
-    return {"checked": True, "concepts": total, "passed": total - missed,
-            "share": round(share, 3), "ok": share >= MIN_DEPTH_PASS}
-
-
-def check_truth(conn, course_uid, verifier=None):
-    """Are claims actually supported by the sources retained for them?
-
-    NOT RUN without a verifier — never reported as passed. This is the only
-    check here with a model in it, and the plan is explicit that it must be
-    validated on a seeded false-claim set before anything is gated on it.
-    """
-    if verifier is None:
-        return {"checked": False,
-                "reason": "no verifier available — truth NOT measured"}
-    try:
-        rows = conn.execute(
-            "SELECT cs.claim, s.passage FROM claim_sources cs "
-            "JOIN sources s ON s.source_id = cs.source_id "
-            "WHERE cs.course_uid=? AND s.passage != ''", (course_uid,)).fetchall()
-    except sqlite3.OperationalError:
-        return {"checked": False, "reason": "source tables absent"}
-    if not rows:
-        return {"checked": False, "reason": "no claim/passage pairs to check"}
-    unsupported = [c for c, p in rows if not verifier(c, p)]
-    share = len(unsupported) / len(rows)
-    return {"checked": True, "pairs": len(rows), "unsupported": len(unsupported),
-            "share": round(share, 3), "examples": unsupported[:3],
-            # ADVISORY, NOT A GATE — measured, not assumed.
-            #
-            # On the seed set MiniCheck caught 3/3 falsehoods and also rejected
-            # 2/3 TRUE claims that needed one step of inference from their
-            # passage ("mean is (1+20)/2 = 10.5" was judged not to support "the
-            # expected value is 10.5"). Teaching material is written to rephrase
-            # and generalise its sources, so that failure mode is the norm here,
-            # not an edge case.
-            #
-            # Failing a course on this would reject correct content at a rate
-            # that swamps the defect it is looking for. It reports and flags for
-            # review until the false-positive rate is measured on real content.
-            "advisory": True,
-            "note": ("flagging only — MiniCheck rejected 2/3 true claims "
-                     "needing inference on the seed set"),
-            "ok": True,
-            "would_fail_if_gated": share > MAX_FALSE_CLAIM_SHARE}
-
-
 def run(conn, course_uid, course_json=None, verifier=None):
     checks = {
         "redundancy": check_redundancy(conn, course_uid),
@@ -254,12 +120,29 @@ def run(conn, course_uid, course_json=None, verifier=None):
     ran = {k: v for k, v in checks.items() if v.get("checked")}
     failed = sorted(k for k, v in ran.items() if not v.get("ok"))
     not_run = sorted(k for k, v in checks.items() if not v.get("checked"))
+    # Checks that ran over only part of the course. `coverage` is set when a
+    # check knows the course is bigger than the slice it measured.
+    partial = sorted(k for k, v in ran.items()
+                     if v.get("partial_run") or (v.get("coverage") or 1) < 0.9)
     return {
         "checks": checks, "failed": failed, "not_run": not_run,
         # Conjunctive, and NOT RUN is reported rather than counted — the same
         # rule the skeleton harness uses, for the same reason.
-        "verdict": "CONTENT_READY" if not failed else "NOT_READY",
-        "complete": not not_run,
+        # A CHECK THAT SAW A SIXTH OF THE COURSE HAS NOT CLEARED THE COURSE.
+        #
+        # `failed` only counts checks that ran AND returned ok=False, so a
+        # depth check covering 14 concepts of 95 — a resumed build recording
+        # only its last segment — reported PASS, and the course came out
+        # CONTENT_READY on 15% coverage. That is the same defect as reporting
+        # clean because nothing was measured, wearing a passing badge.
+        #
+        # Partial coverage is neither a pass nor a failure; it is an unfinished
+        # measurement, and it belongs with `not_run` where the discipline
+        # already says it cannot count as clean.
+        "verdict": ("CONTENT_READY" if not failed and not partial
+                    else "NOT_READY" if failed else "INCOMPLETE"),
+        "partial": partial,
+        "complete": not not_run and not partial,
         "instrument": ("arithmetic on the ledger (no model), except `truth`"
                        if verifier else "arithmetic only (no model)"),
     }
@@ -278,8 +161,20 @@ def main():
 
     conn = _db(a.data_root)
     cj = None
-    if a.structure and os.path.exists(a.structure):
-        cj = json.load(open(a.structure))
+    # DEFAULT TO THE COURSE'S OWN STRUCTURE.
+    #
+    # --structure was optional and unset by default, so the depth check
+    # received no course JSON and reported "no depth_contract on the course"
+    # on every ordinary invocation. Combined with the key-name bug it was
+    # fixed for, depth had two independent reasons never to run — and the tool
+    # printed CONTENT_READY for a course that fails it 20 concepts out of 33.
+    #
+    # The file is always at a known path; there is no reason to make the
+    # operator remember to point at it.
+    structure_path = a.structure or os.path.join(
+        a.data_root, "courses", a.course, "structure.json")
+    if structure_path and os.path.exists(structure_path):
+        cj = json.load(open(structure_path))
 
     verifier = None
     if a.verify:
@@ -303,7 +198,9 @@ def main():
             print(f"       e.g. {c['examples'][:2]}")
     print(f"\n  VERDICT: {r['verdict']}"
           + (f" — failed: {', '.join(r['failed'])}" if r["failed"] else "")
-          + (f"\n  NOT RUN: {', '.join(r['not_run'])}" if r["not_run"] else ""))
+          + (f"\n  NOT RUN: {', '.join(r['not_run'])}" if r["not_run"] else "")
+          + (f"\n  PARTIAL: {', '.join(r['partial'])} — measured on only part "
+             f"of the course" if r.get("partial") else ""))
     if a.out:
         json.dump(r, open(a.out, "w"), indent=2)
     return 0 if r["verdict"] == "CONTENT_READY" else 1
