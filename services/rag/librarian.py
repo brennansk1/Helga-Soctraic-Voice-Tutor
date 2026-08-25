@@ -467,9 +467,37 @@ def stats():
             for c in courses
         )
         streak = storage.activity.get_streak()
-        return jsonify(
-            {"courses": len(courses), "concepts": total_concepts, "streak": streak}
-        )
+
+        # HOW MANY THE LEARNER HAS ACTUALLY LEARNED.
+        #
+        # This returned only a TOTAL concept count, and the dashboard's card is
+        # labelled "Concepts learned" — so there was no number to show and the
+        # page displayed 0 next to "You have 4 courses". Studied means the
+        # learner has been through it: a user_progress row that is completed or
+        # reviewed, not merely one that exists.
+        studied = 0
+        try:
+            row = storage.courses._get_db().execute(
+                "SELECT COUNT(*) FROM user_progress "
+                "WHERE status IN ('completed', 'reviewed', 'mastered')"
+            ).fetchone()
+            studied = int(row[0]) if row else 0
+        except Exception as e:
+            logger.warning("studied-concept count unavailable: %s", e)
+
+        return jsonify({
+            "courses": len(courses),
+            "concepts": total_concepts,
+            "concepts_studied": studied,
+            "streak": streak,
+            # The names home.js has always asked for. It read total_courses and
+            # concepts_mastered, this endpoint returned courses and concepts,
+            # and the mismatch fell through to a literal "0" — so the dashboard
+            # reported no courses while listing four of them underneath.
+            "total_courses": len(courses),
+            "total_concepts": total_concepts,
+            "concepts_mastered": studied,
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

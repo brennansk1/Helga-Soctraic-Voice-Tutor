@@ -39,7 +39,7 @@ at. No item is satisfied by reading code.
 - **A3** No error dialog, console exception, or 500 appears during a normal
   session.
 
-### B. The course is there and opens
+### B. The course is there and opens  *(visual)*
 
 - **B1** Both courses appear in the course list with their real titles and a
   status a learner can act on.
@@ -49,7 +49,7 @@ at. No item is satisfied by reading code.
 - **B4** A course that is still building is visibly distinguishable from one
   that is ready, and does not block the ready one.
 
-### C. It teaches
+### C. It teaches  *(visual)*
 
 - **C1** The opening turn is about the concept selected, is under the turn cap,
   and ends in a question.
@@ -63,7 +63,7 @@ at. No item is satisfied by reading code.
   against the concept's own cited source, on a sample.
 - **C8** The tutor never claims the learner said something they did not say.
 
-### D. It remembers
+### D. It remembers  *(visual)*
 
 - **D1** Completing a concept marks it complete in the path view without a
   manual refresh.
@@ -71,7 +71,7 @@ at. No item is satisfied by reading code.
 - **D3** Resume returns to the concept last worked on, named correctly.
 - **D4** A completed concept appears in the review schedule with a due date.
 
-### E. The rest of Mode A's surface
+### E. The rest of Mode A's surface  *(visual)*
 
 - **E1** Search finds a concept from these courses by its words, and clicking
   the result opens that concept in that course.
@@ -104,3 +104,27 @@ anything is fixed, and re-verified after.
 
 A finding is closed only when the same steps produce the right result on the
 running stack. "The code now looks correct" does not close a finding.
+
+### Sections marked *(visual)* must be LOOKED AT
+
+An endpoint returning 200 with the right JSON is not evidence that a learner
+can use the screen built from it. Every defect this product has shipped in the
+last day — a course list showing "sql", a card advertising "failed", a search
+result linking to a course uid that does not exist — returned a perfectly
+good 200.
+
+So for B, C, D and E the check is: open the page in a browser, look at it, and
+record what is on the screen. Specifically —
+
+- **Layout**: nothing overlapping, clipped, or spilling outside its container,
+  at desktop width and at 375px.
+- **State**: every element that represents state (status pills, progress,
+  completion ticks, due counts) shows the state the API actually reports.
+- **Text**: no lorem, no placeholder, no raw uid, no untranslated key, no
+  double-escaped entity, no "undefined" or "[object Object]".
+- **Contrast**: body and secondary text readable against their background in
+  both themes.
+- **Live**: the console shows no errors during the walk, and no request 4xx/5xxs
+  that the page then ignores.
+
+A screenshot is taken for each screen inspected and read, not merely captured.

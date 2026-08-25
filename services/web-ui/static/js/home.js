@@ -74,12 +74,26 @@
                     var meta = document.createElement("p");
                     // Status is stated plainly. A course still building is not
                     // a broken course, and saying so beats a dead link.
+                    // EVERY STATUS IS A SENTENCE, NOT AN ENUM.
+                    //
+                    // The fall-through printed the raw value, so the shelf read
+                    // "Ready", "Still being prepared", "partial" and "failed"
+                    // side by side — two sentences and two database words. A
+                    // learner cannot act on "partial", and "failed" on a course
+                    // that is mid-repair is worse than uninformative.
                     var status = (c.status || "").toLowerCase();
-                    meta.textContent = status === "ready" || status === "complete"
+                    var LABEL = {
+                        ready: null, complete: null,          // handled below
+                        skeleton: "Still being prepared",
+                        building: "Still being prepared",
+                        resuming: "Still being prepared",
+                        partial: "Partly built — open it to finish",
+                        hydration_failed: "Stopped part-way — can be resumed",
+                        failed: "Stopped part-way — can be resumed"
+                    };
+                    meta.textContent = (status === "ready" || status === "complete")
                         ? "Ready" + (c.concept_count ? " · " + c.concept_count + " concepts" : "")
-                        : status === "skeleton" || status === "building"
-                          ? "Still being prepared"
-                          : (c.status || "");
+                        : (LABEL[status] || "Still being prepared");
                     if (status !== "ready" && status !== "complete") {
                         a.classList.add("home-course-pending");
                     }
