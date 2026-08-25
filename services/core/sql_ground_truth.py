@@ -174,6 +174,10 @@ _MENTIONS_NULL = re.compile(r"\bNULLs?\b", re.IGNORECASE)
 # Sentences describing the OVERRIDE syntax rather than asserting a default.
 # "NULLS FIRST and NULLS LAST clauses, which override the default" names both
 # modifiers and claims nothing about which is the default.
+_CONTRAST = re.compile(
+    r"\b(?:or|whereas|while|but|however)\b(?=[^.\n]*\b(?:other|some|most|"
+    r"different|dialect|engine|database|system|vendor)\b)", re.IGNORECASE)
+
 _ABOUT_OVERRIDE = re.compile(
     r"\boverrid|\bexplicitl|\bspecif(?:y|ied|ying)\b|\bclauses?\b",
     re.IGNORECASE)
@@ -198,8 +202,28 @@ def _find_null_order_claims(body, truth):
         dirs = [(m.start(), _norm_dir(m.group(1))) for m in _DIRECTION.finditer(text)]
         poss = [(m.start(), _POSITION_SYNONYM[m.group(1).lower()])
                 for m in _NULL_POSITION.finditer(text)]
-        if not dirs or not poss or len(dirs) != len(poss):
+        if not dirs or not poss:
             continue
+        if len(dirs) != len(poss):
+            # ONE DIRECTION, SEVERAL POSITIONS: a contrast, not an ambiguity.
+            #
+            # "treats NULL as the lowest value in ascending order (in
+            # PostgreSQL) or highest (in some other dialects)" names one
+            # direction and two positions, so the equal-counts rule skipped it
+            # — and it is false about PostgreSQL. This was the THIRD gap the
+            # repair loop found by rewriting around the detector.
+            #
+            # The general shape: what precedes the contrast marker is the claim
+            # about the engine in question; what follows is about something
+            # else. Judge the first, ignore the rest.
+            if len(dirs) == 1 and len(poss) > 1 and _CONTRAST.search(text):
+                marker = _CONTRAST.search(text).start()
+                before = [p for p in poss if p[0] < marker]
+                if len(before) != 1:
+                    continue
+                poss = before
+            else:
+                continue
         for (_, direction), (_, position) in zip(dirs, poss):
             if truth.get(direction) and position != truth[direction]:
                 findings.append({

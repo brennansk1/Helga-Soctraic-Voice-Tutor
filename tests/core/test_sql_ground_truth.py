@@ -179,3 +179,35 @@ def test_magnitude_wording_is_read_as_position(text):
 def test_correct_magnitude_wording_is_left_alone(text):
     findings, _ = gt.check_markdown(text)
     assert findings == [], f"false positive on correct magnitude wording: {findings}"
+
+
+# --- the fourth gap: a contrast reads as an ambiguity -----------------------
+#
+# "treats NULL as the lowest value in ascending order (in PostgreSQL) or
+# highest (in some other dialects)" names ONE direction and TWO positions, so
+# the equal-counts pairing skipped it as ambiguous — and it is false about
+# PostgreSQL. Found, again, by watching a repair rewrite around the detector.
+#
+# The general shape: what precedes a contrast marker is the claim about the
+# engine in question, and what follows is about something else.
+
+@pytest.mark.parametrize("text", [
+    "`ORDER BY` treats `NULL` as the lowest value in ascending order (in "
+    "PostgreSQL) or highest (in some other dialects).",
+    "NULLs sort first in ascending order in PostgreSQL, whereas other engines "
+    "put them last.",
+])
+def test_a_contrasted_claim_is_judged_on_its_first_half(text):
+    findings, _ = gt.check_markdown(text)
+    assert findings, f"a falsehood hid behind a dialect contrast: {text}"
+
+
+@pytest.mark.parametrize("text", [
+    "`ORDER BY` treats `NULL` as the highest value in ascending order (in "
+    "PostgreSQL) or lowest (in some other dialects).",
+    "PostgreSQL sorts NULLs last in ascending order, whereas some other "
+    "engines sort them first.",
+])
+def test_a_correct_contrasted_claim_is_left_alone(text):
+    findings, _ = gt.check_markdown(text)
+    assert findings == [], f"false positive on a correct contrast: {findings}"
