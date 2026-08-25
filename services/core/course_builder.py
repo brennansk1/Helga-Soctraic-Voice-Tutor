@@ -4933,10 +4933,17 @@ class ContentHydrator:
             _ch = (concept_ref_map.get(uid) or {}).get("book_chapter")
             if _ch and getattr(self, "book", None) is not None:
                 try:
-                    from services.core.book_source import passage_for
-                    user_excerpt = passage_for(
-                        self.book, _ch, title,
-                        learning_objectives_list) or ""
+                    # THE CHAPTER IS PARTITIONED ACROSS ITS CONCEPTS, not
+                    # picked over by each of them.
+                    #
+                    # passage_for chose the best 7,000 characters for THIS
+                    # concept, and every concept chose independently — so on a
+                    # 30,000-character chapter the sections matching no concept
+                    # title were read by nobody, and nothing said so. Measured
+                    # on a four-section chapter: one concept saw 15% of it, and
+                    # two whole sections were invisible.
+                    user_excerpt = self._book_passage(
+                        _ch, uid, concept_ref_map) or ""
                     if user_excerpt:
                         source_type = "book"
                 except Exception as e:
@@ -4950,6 +4957,32 @@ class ContentHydrator:
                 if reference_material:
                     content_to_use += "\n\n---\n\n" + reference_material
                 source_type = "user-document+research" if reference_material else "user-document"
+
+                # THE BOOK IS THE SOURCE, SO RETAIN IT AS ONE.
+                #
+                # A book course is written FROM this passage, and it was the
+                # one source never stored: `sources` held only what web
+                # research returned, so a book-built concept had no retained
+                # text at all and the audit's truth check could not verify a
+                # single claim against the very chapter it came from. The most
+                # authoritative material in the whole pipeline was the only
+                # material with no record.
+                #
+                # Stored as EVIDENCE rather than a citation: a chapter has no
+                # URL, and rendering "[Chapter 3]()" to a learner is a broken
+                # link. It is for checking against, which is what was missing.
+                _origin = (_ch if _ch else
+                           (getattr(self, "source_document_name", None)
+                            or "uploaded document"))
+                research_evidence = list(research_evidence or []) + [{
+                    "title": f"{course_title}: {_origin}" if course_title
+                             else str(_origin),
+                    "url": "",
+                    "passage": user_excerpt[:4000],
+                    "type": "book",
+                    "domain_tier": 1,
+                    "cited": False,
+                }]
                 # Material supplied by the learner is authoritative for them,
                 # so it should not be penalised by the web-grounding floor.
                 research_confidence = max(research_confidence, self.confidence_floor)
@@ -5464,6 +5497,17 @@ class ContentHydrator:
                             or (course["repair"].get("outcomes") or {}).get("escalated"):
                         course["audit"] = self._run_audit(course_uid, course)
                         course["audit"]["after_repair"] = True
+
+                # THE GATE. Everything above reports; this is what decides
+                # whether a learner may open the course.
+                gated, why = self._gate_status(course, course["audit"])
+                if gated and gated != course.get("status"):
+                    logger.warning("[GATE] %s -> %s: %s",
+                                   course.get("status"), gated, why)
+                    course["status"] = gated
+                    course["gate_reason"] = why
+                    if self.status_callback:
+                        self.status_callback(f"AUDIT:GATE:{gated}:{why[:90]}")
             except Exception as e:
                 logger.warning("Stage 4 audit failed (course still usable): %s", e)
                 # NOT a pass. A course whose audit crashed is unaudited, and
@@ -6273,6 +6317,154 @@ class ContentHydrator:
             return line() if callable(line) else (line or "")
         except Exception:
             return ""
+
+
+
+    def _book_passage(self, chapter_order, concept_uid, concept_ref_map):
+        """This concept's share of its chapter, from a partition of the whole.
+
+        Computed once per chapter and cached: the assignment needs every
+        concept of the chapter at once, which is exactly why per-concept
+        selection could not see what it was leaving out.
+        """
+        from services.core.book_source import partition_chapter, passage_for
+
+        cache = getattr(self, "_chapter_partitions", None)
+        if cache is None:
+            cache = self._chapter_partitions = {}
+        if chapter_order not in cache:
+            siblings = [
+                {"uid": u,
+                 "title": (ref or {}).get("title", ""),
+                 "learning_objectives": (ref or {}).get(
+                     "learning_objectives", [])}
+                for u, ref in (concept_ref_map or {}).items()
+                if (ref or {}).get("book_chapter") == chapter_order
+            ]
+            try:
+                passages, report = partition_chapter(
+                    self.book, chapter_order, siblings)
+            except Exception as e:
+                logger.warning("[BOOK] partition failed for chapter %s: %s — "
+                               "falling back to per-concept selection",
+                               chapter_order, e)
+                passages, report = {}, None
+            cache[chapter_order] = passages
+            if report:
+                self._chapter_coverage = getattr(self, "_chapter_coverage", {})
+                self._chapter_coverage[chapter_order] = report
+                logger.info(
+                    "[BOOK] chapter %s: %d concept(s) read %.0f%% of %d chars"
+                    "%s", chapter_order, report["concepts"],
+                    report["coverage"] * 100, report["total_chars"],
+                    " (CAPPED, %d chunk(s) unread)" % report["chunks_unread"]
+                    if report.get("chunks_unread") else "")
+
+        got = cache.get(chapter_order, {}).get(concept_uid)
+        if got:
+            return got
+        # No partition (missing chapter, or this concept was not in the map):
+        # the old behaviour is still better than nothing.
+        return passage_for(self.book, chapter_order,
+                           (concept_ref_map.get(concept_uid) or {}).get("title", ""),
+                           (concept_ref_map.get(concept_uid) or {}).get(
+                               "learning_objectives", []))
+
+    _MIN_CONCEPTS_FOR_SHARE = 4
+
+    def _gate_status(self, course, audit):
+        """Pass 4.2 — may this course be taught, and under what name.
+
+        Until this existed the audit REPORTED and the course opened anyway.
+        "Reading a Query Plan" was status=ready, badged "Passed its build
+        checks", with all four concepts carrying nothing but a title and a
+        worked example — no Core Explanation, no Misconceptions, no Analogies —
+        and a learner was 25% through it.
+
+        WHAT THIS DOES NOT DO IS LOCK A COURSE OVER ONE BAD CONCEPT.
+        A false claim is already handled better than a lock: the concept is
+        withheld, so it cannot reach anybody, and the other ninety-four are
+        untouched. Blocking the whole course would cost the learner far more
+        than the defect does.
+
+        So it gates on the two things withholding cannot fix:
+
+          * a blocking finding on a concept that is NOT withheld — the course
+            still says something a real database contradicts, to somebody
+          * most of the course missing the sections the tutor reads — there is
+            no teaching here to do, whatever the status claims
+
+        Returns the status the course should carry, and why.
+        """
+        if not isinstance(audit, dict) or not audit.get("ran"):
+            # An audit that did not run cannot clear a course. It also must not
+            # condemn one, so the existing status stands.
+            return course.get("status"), "audit did not run"
+
+        # AN AUDIT THAT READ NOTHING MEASURED NOTHING.
+        #
+        # If not a single concept could be read, every one of them is reported
+        # as `missing_content` and the gate condemns the whole course — on the
+        # strength of a storage layer that answered nothing, not on the
+        # content. That is the same situation as the audit not running, and it
+        # gets the same treatment: it can neither clear a course nor condemn
+        # one.
+        if not audit.get("concepts_audited"):
+            return course.get("status"), "audit could read no content"
+
+        withheld = {c.get("uid") for c, _ in self._walk(course)
+                    if c.get("withheld")}
+        # BLOCKING IS NOT ONE THING, and the gate has to say which.
+        #
+        # `missing_content` is also blocking, so treating severity alone as
+        # "states something false" made the gate report "4 concepts state
+        # something a database contradicts" about a course whose concepts had
+        # no content at all. A gate that misnames what it found is worse than
+        # one that stays quiet: the reader goes looking for a falsehood that
+        # was never there.
+        false_claims = [f for f in (audit.get("findings") or [])
+                        if f.get("severity") == "blocking"
+                        and f.get("check") == "executable_claims"
+                        and f.get("concept_uid") not in withheld]
+        if false_claims:
+            return "needs_review", (
+                "%d concept(s) state something a database contradicts and are "
+                "still being served" % len({f.get("concept_uid")
+                                            for f in false_claims}))
+
+        other_blocking = [f for f in (audit.get("findings") or [])
+                          if f.get("severity") == "blocking"
+                          and f.get("check") != "executable_claims"
+                          and f.get("concept_uid") not in withheld]
+        if other_blocking:
+            checks = sorted({f.get("check") for f in other_blocking})
+            return "needs_review", (
+                "%d concept(s) have a blocking problem (%s)"
+                % (len({f.get("concept_uid") for f in other_blocking}),
+                   ", ".join(checks)))
+
+        total = audit.get("concepts_total") or 0
+        missing_sections = 0
+        for sysf in audit.get("systemic") or []:
+            if sysf.get("check") == "tutor_sections":
+                missing_sections = max(missing_sections, sysf.get("concepts", 0))
+        # A SHARE NEEDS A DENOMINATOR WORTH DIVIDING BY.
+        #
+        # With one concept, "more than half" is that one concept, and a course
+        # too small to have a majority gets condemned by arithmetic rather than
+        # by evidence. _fold_systemic already refuses to call anything systemic
+        # below four concepts, for the same reason; this uses the same floor.
+        if total >= self._MIN_CONCEPTS_FOR_SHARE and missing_sections / total > 0.5:
+            return "needs_review", (
+                "%d of %d concepts are missing sections the tutor reads — "
+                "there is no lesson to teach" % (missing_sections, total))
+
+        if audit.get("concepts_not_audited"):
+            return "needs_review", (
+                "%d concept(s) have no content"
+                % audit["concepts_not_audited"])
+
+        return course.get("status"), ""
 
     def _run_repair(self, course_uid, course, report):
         """Pass 3 over everything the audit flagged as fixable.

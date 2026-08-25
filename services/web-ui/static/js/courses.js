@@ -295,6 +295,32 @@ async function loadCourses() {
                 } else {
                     actionButton.textContent = progress > 0 ? 'Continue' : 'Start learning';
                 }
+            } else if (status === 'needs_review') {
+                /* THE AUDIT GATE. Not "failed" — the build finished — and not
+                   "ready", because the audit found something that makes the
+                   course unteachable as it stands: concepts missing every
+                   section the tutor reads, or a claim a real database
+                   contradicts that is still being served.
+                   Resume is the right action: it re-hydrates what is missing
+                   rather than discarding the concepts that ARE good. */
+                actionButton = mkEl('button', 'btn-alpine btn-alpine-primary');
+                actionButton.style.cssText = 'flex: 1;';
+                actionButton.textContent = 'Fix and finish';
+                actionButton.title = course.gate_reason
+                    || 'A check found something that has to be fixed before '
+                       + 'this course can be taught.';
+                actionButton.addEventListener('click', function () {
+                    actionButton.disabled = true;
+                    actionButton.textContent = 'Working…';
+                    fetch('/api/course/' + course.uid + '/resume_build',
+                          { method: 'POST' })
+                        .then(function (r) { return r.json().catch(function () { return {}; }); })
+                        .then(function () { setTimeout(function () { location.reload(); }, 1500); })
+                        .catch(function () {
+                            actionButton.disabled = false;
+                            actionButton.textContent = 'Fix and finish';
+                        });
+                });
             } else if (status === 'partial' || status === 'hydration_failed' ||
                        status === 'failed') {
                 /* A DEAD CARD USED TO BE THE ONLY OUTCOME HERE.

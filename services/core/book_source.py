@@ -493,3 +493,144 @@ def attach_concepts(course, book, llm_json_fn, per_lesson=3,
                 lesson["concepts"] = [s for s in slots if s.get("title")]
     logger.info(f"[BOOK] named {named} concept(s) from the book, {skipped} skipped")
     return {"named": named, "skipped": skipped}
+
+# --- reading the WHOLE chapter, across its concepts -------------------------
+#
+# `passage_for` picks the best PASSAGE_CHARS of a chapter for one concept, and
+# every concept picks independently. On a 30,000-character chapter with four
+# concepts that is four overlapping 7,000-character windows chosen by the same
+# scoring function — so the parts of the chapter that match no concept title
+# well are read by nobody, and nothing reports it. A course built "from the
+# book" was built from whichever slices scored highest.
+#
+# A chapter's concepts should PARTITION it, not compete for it. Every chunk is
+# assigned to exactly one concept — its best match, then the next best with
+# room — so the union of the passages is the whole chapter by construction,
+# and each concept still reads a bounded amount.
+#
+# Chunks are taken with NO overlap here, so the spans tile the text exactly and
+# coverage is a real measurement rather than an estimate.
+PARTITION_CHUNK_CHARS = 2500
+# Per-concept ceiling. Beyond this the prefill cost per retry
+# outweighs the coverage, and the shortfall is reported.
+PARTITION_MAX_CHARS = 24_000
+
+
+def partition_chapter(book, chapter_order, concepts, max_chars=PASSAGE_CHARS,
+                      chunk_size=PARTITION_CHUNK_CHARS):
+    """Divide one chapter among its concepts so all of it is read.
+
+    `concepts` is a list of dicts with at least `uid` and `title`, optionally
+    `learning_objectives`. Returns (passages_by_uid, report) where report
+    carries the coverage actually achieved — the number that answers "is the
+    course built from the whole book".
+
+    Assignment is by best term overlap, with a per-concept budget. A chunk
+    whose best concept is full goes to the next with room; a chunk nothing
+    scores on still goes somewhere, because leaving it out is the defect this
+    exists to remove.
+    """
+    ch = book.chapter(chapter_order) if book else None
+    if ch is None or not (ch.text or "").strip():
+        return {}, {"covered_chars": 0, "total_chars": 0, "coverage": 0.0,
+                    "reason": "chapter missing"}
+
+    text = ch.text
+    chunks = ch.chunks(size=chunk_size, overlap=0)
+    if not chunks:
+        return {}, {"covered_chars": 0, "total_chars": len(text),
+                    "coverage": 0.0, "reason": "no chunks"}
+
+    specs = [c for c in (concepts or []) if c.get("uid")]
+    if not specs:
+        return {}, {"covered_chars": 0, "total_chars": len(text),
+                    "coverage": 0.0, "reason": "no concepts"}
+
+    wants = {}
+    for c in specs:
+        objectives = c.get("learning_objectives") or []
+        wants[c["uid"]] = _words(f"{c.get('title', '')} {' '.join(objectives)}")
+
+    # Budget: enough that the concepts together can hold the chapter. Without
+    # this a long chapter simply would not fit and the leftovers would be
+    # dropped again, which is the bug rather than a smaller version of it.
+    needed = -(-len(text) // max(1, len(specs)))       # ceil
+    budget = max(max_chars, needed)
+
+    # A CEILING, AND AN HONEST REPORT WHEN IT BINDS.
+    #
+    # A chapter with few concepts would otherwise hand each one an enormous
+    # passage — and on this machine prefill is roughly 80% of turn latency, so
+    # that is paid on every retry of every concept. book_skeleton already gives
+    # a long chapter more concepts (2-6 by length), which is what normally
+    # keeps this in range.
+    #
+    # When it still binds, the shortfall is REPORTED rather than silently
+    # dropped. Quietly truncating is how the partial reading this replaces
+    # became invisible in the first place.
+    capped = False
+    if budget > PARTITION_MAX_CHARS:
+        budget = PARTITION_MAX_CHARS
+        capped = True
+
+    order = {c["uid"]: i for i, c in enumerate(specs)}
+    unread = []
+    assigned = {c["uid"]: [] for c in specs}
+    used = {c["uid"]: 0 for c in specs}
+
+    for idx, chunk in enumerate(chunks):
+        cw = _words(chunk)
+        ranked = sorted(
+            specs,
+            key=lambda c: (
+                -(len(wants[c["uid"]] & cw) / len(wants[c["uid"]])
+                  if wants[c["uid"]] else 0.0),
+                used[c["uid"]],            # spread ties toward the emptier
+                order[c["uid"]],           # stable
+            ))
+        placed = False
+        for c in ranked:
+            if used[c["uid"]] + len(chunk) <= budget:
+                assigned[c["uid"]].append((idx, chunk))
+                used[c["uid"]] += len(chunk)
+                placed = True
+                break
+        if not placed:
+            if capped:
+                # The ceiling is real: this chunk genuinely goes unread, and
+                # the report says so instead of pretending to full coverage.
+                unread.append(idx)
+                continue
+            # Everyone is full but no ceiling binds — it still goes somewhere,
+            # because a chunk read by nobody is what this function removes.
+            c = min(specs, key=lambda c: used[c["uid"]])
+            assigned[c["uid"]].append((idx, chunk))
+            used[c["uid"]] += len(chunk)
+
+    passages = {}
+    for uid, pairs in assigned.items():
+        # READING ORDER. The author sequenced the chapter; handing the model
+        # relevance-sorted fragments would discard that ordering, and an
+        # explanation that builds across paragraphs stops making sense.
+        pairs.sort(key=lambda p: p[0])
+        passages[uid] = "\n\n".join(c for _, c in pairs)
+
+    covered = sum(len(c) for pairs in assigned.values() for _, c in pairs)
+    report = {
+        "chapter": chapter_order,
+        "total_chars": len(text),
+        "covered_chars": covered,
+        "coverage": round(covered / max(1, len(text)), 4),
+        "concepts": len(specs),
+        "chunks": len(chunks),
+        "per_concept_chars": {u: used[u] for u in used},
+        "capped": capped,
+        "chunks_unread": len(unread),
+    }
+    if unread:
+        logger.warning(
+            "chapter %s: %d chunk(s) went unread — %d concepts could not hold "
+            "%d chars within the %d-char ceiling",
+            chapter_order, len(unread), len(specs), len(text),
+            PARTITION_MAX_CHARS)
+    return passages, report

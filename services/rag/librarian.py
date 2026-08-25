@@ -1516,7 +1516,11 @@ _RESUMING_LOCK = __import__("threading").Lock()
 #: Statuses a resume is allowed to act on. "ready" is excluded deliberately:
 #: re-running hydration over a finished course would spend an hour of model
 #: time to rewrite content that is already good.
-_RESUMABLE = ("partial", "hydration_failed", "skeleton", "building", "failed")
+# `needs_review` is the audit gate's verdict: the build finished but the course
+# is not teachable as it stands. Resume is exactly the right remedy — it
+# re-hydrates what is missing rather than discarding the concepts that are fine.
+_RESUMABLE = ("partial", "hydration_failed", "skeleton", "building", "failed",
+              "needs_review")
 
 
 @app.route("/api/course/<course_uid>/resume_build", methods=["POST"])
