@@ -487,6 +487,37 @@ function _renderTrustChecks(checks) {
  * every tick. */
 let _trustLastKey = null;
 
+
+function _trustFromLedger(conceptUid) {
+    /* The sources the build actually recorded, shaped like the markdown parse
+       so everything downstream is unchanged. Returns null when the ledger has
+       not answered yet, so the caller falls back rather than rendering a
+       verdict from an empty list. */
+    if (!window.HelgaTrust || typeof window.HelgaTrust.current !== 'function') {
+        return null;
+    }
+    const cur = window.HelgaTrust.current();
+    if (!cur || !cur.data || cur.concept !== conceptUid) return null;
+    if (cur.data.available === false) return null;
+
+    const rows = cur.data.sources || [];
+    return {
+        sources: rows.map(r => ({
+            title: r.title || '',
+            url: r.url || '',
+            type: r.source_type || '',
+            tier: r.domain_tier,
+            excerpt: r.excerpt || '',
+            supplementary: !!r.supplementary,
+        })),
+        // The build's own per-source grounding, when it recorded one.
+        confidence: rows.length && typeof rows[0].grounding === 'number'
+            ? rows[0].grounding : null,
+        limitedMarker: false,
+        supplementaryShare: cur.data.supplementary_share || 0,
+    };
+}
+
 function updateTrustSurface(state) {
     const wrap = document.getElementById('trust-surface');
     if (!wrap) return;   // not the learn page
@@ -500,7 +531,20 @@ function updateTrustSurface(state) {
         return;
     }
 
-    const trust = parseTrustFromMarkdown(node.text);
+    // THE LEDGER, NOT THE MARKDOWN.
+    //
+    // This parsed `node.text` for a "## Sources" section. The FSM's graph_node
+    // has no `text` key at all — analogies, bloom_level, complexity_role,
+    // concept_domain, concept_kind, learning_objectives, misconceptions, title,
+    // uid, and nothing else. So the parse ran on `undefined` every time and
+    // returned zero sources for every concept ever displayed, which made this
+    // panel announce "no sources cited · Mostly the model's own knowledge"
+    // beside a pill reading "1 source" fetched from the ledger.
+    //
+    // The markdown parse stays as a fallback: it is correct when it has input,
+    // and a course whose sources predate the ledger still has them in its text.
+    const trust = _trustFromLedger(state.current_lesson_uid)
+        || parseTrustFromMarkdown(node.text);
     const checks = _conceptChecks(state.current_lesson_uid);
     const grounding = _classifyGrounding(trust, node);
     const surfaceState = _escalateForChecks(grounding, checks);

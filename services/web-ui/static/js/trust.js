@@ -214,5 +214,22 @@
         });
     });
 
-    window.HelgaTrust = { load: load, toggle: toggle };
+    // The panel in session.js needs the same answer this pill already has.
+    //
+    // It was deriving its own from `graph_node.text`, a field the FSM does not
+    // send — its node carries analogies, bloom_level, misconceptions, title and
+    // uid, and no body. So the parse always returned zero sources and the panel
+    // told every learner on every concept "no sources cited · Mostly the
+    // model's own knowledge", six inches from this pill reading "1 source".
+    //
+    // One fetch, one answer, no second opinion to disagree with.
+    function current() {
+        return {
+            course: state.course,
+            concept: state.concept,
+            data: state.data || null,
+        };
+    }
+
+    window.HelgaTrust = { load: load, toggle: toggle, current: current };
 })();
