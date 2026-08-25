@@ -630,6 +630,10 @@ def _looks_alphabetical(titles, sample=25, threshold=0.9):
 # course structure rather than failing.
 MIN_CONTEXT_TOKENS = 8192
 
+# What the pipeline is actually written for. Above MIN it runs; below
+# this it runs DEGRADED, which is the harder failure to see.
+WANTED_CONTEXT_TOKENS = int(os.getenv('HELGA_WANTED_CONTEXT', '16384'))
+
 
 def _detect_context_window():
     """The serving context window, or None if it cannot be determined.
@@ -1240,6 +1244,26 @@ class SkeletonBuilder:
                               f"Modelfile — course structure will silently "
                               f"degrade otherwise")
             all_passed = False
+        elif ctx < WANTED_CONTEXT_TOKENS:
+            # ABOVE THE FLOOR IS NOT THE SAME AS RIGHT.
+            #
+            # The floor stops a build that cannot work at all. It said nothing
+            # about a model served at HALF the context the pipeline is written
+            # for, which does not fail — it quietly truncates the research and
+            # ledger material injected into each concept, and the course comes
+            # out thinner with every check still green.
+            #
+            # Measured 2026-08-25: the `-ctx` tag on this machine was 8192, not
+            # the 16384 deploy.sh builds and docs/MODEL.md documents. It passed
+            # preflight with a tick. deploy.sh only creates that tag when it is
+            # MISSING, so a tag that drifts once stays wrong forever, and this
+            # was the only place that could have noticed.
+            log_and_emit("!", f"Context window is {ctx} tokens, not the "
+                              f"{WANTED_CONTEXT_TOKENS} this pipeline is built "
+                              f"for. It will run, but research and prior-concept "
+                              f"context get truncated per concept. Rebuild the "
+                              f"model tag: ollama create $OLLAMA_MODEL with "
+                              f"'PARAMETER num_ctx {WANTED_CONTEXT_TOKENS}'")
         else:
             log_and_emit("✓", f"Context window {ctx} tokens")
 
@@ -1300,15 +1324,36 @@ class SkeletonBuilder:
         # concept, after the learner had been told everything was fine.
         if llm_ok:
             try:
+                # A COLD MODEL IS NOT A BROKEN ONE.
+                #
+                # This probe asks for 8 tokens and gave up after one 90s
+                # attempt, which is shorter than the time this hardware needs
+                # to page a 13.7 GB model into memory. Measured 2026-08-25: a
+                # build was refused at preflight — "the model is probably still
+                # loading" — and the model was, in fact, still loading. The
+                # check was right about the cause and wrong about the verdict.
+                #
+                # The first attempt therefore pays for the load. If it comes
+                # back empty, the load is what we were waiting on, so try once
+                # more now that it is resident rather than failing a build the
+                # model could have run.
                 probe = llm_generate(
                     prompt="Reply with the single word: ready",
                     sys_prompt="You reply with one word.",
                     max_tokens=8, retries=1)
+                if not (probe and probe.strip()):
+                    log_and_emit("…", "Model did not answer in time — it is "
+                                      "loading; waiting for it once more")
+                    probe = llm_generate(
+                        prompt="Reply with the single word: ready",
+                        sys_prompt="You reply with one word.",
+                        max_tokens=8, retries=1)
                 if probe and probe.strip():
                     log_and_emit("✓", "Model generated a test response")
                 else:
                     log_and_emit("✗", "Model is reachable but generated nothing "
-                                      "— it is probably still loading")
+                                      "after a second attempt — it is wedged, "
+                                      "not merely loading")
                     all_passed = False
             except Exception as e:
                 log_and_emit("✗", f"Model could not generate ({type(e).__name__})")

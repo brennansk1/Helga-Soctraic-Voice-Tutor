@@ -53,6 +53,28 @@ have() { ollama list 2>/dev/null | awk '{print $1}' | grep -qx "$1" \
 
 if have "$MODEL"; then
     echo "  $MODEL already installed"
+    # INSTALLED IS NOT THE SAME AS CORRECT.
+    #
+    # This branch trusted the tag's existence and never looked at what it was
+    # built with, so a tag created once at the wrong num_ctx stayed wrong
+    # forever — deploy.sh would not rebuild it, and nothing else checked.
+    # Found on 2026-08-25: nail-35b-a3b-ctx was serving 8192 tokens, half what
+    # this file builds and what docs/MODEL.md documents. The pipeline ran and
+    # silently truncated per-concept research.
+    ctx_now="$(ollama show "$MODEL" 2>/dev/null | grep -o 'num_ctx[[:space:]]*[0-9]*' | grep -o '[0-9]*' | head -1)"
+    if [ -n "$ctx_now" ] && [ "$ctx_now" -lt 16384 ] 2>/dev/null; then
+        echo "  ! $MODEL is serving $ctx_now tokens, not 16384 — rebuilding the tag"
+        if have "$BASE_MODEL"; then
+            printf 'FROM %s\nPARAMETER num_ctx 16384\n' "$BASE_MODEL" > /tmp/Helga.Modelfile.ctx
+            ollama create "$MODEL" -f /tmp/Helga.Modelfile.ctx \
+                && echo "  + $MODEL rebuilt at 16384" \
+                || echo "  ! Could not rebuild $MODEL. See docs/MODEL.md."
+            rm -f /tmp/Helga.Modelfile.ctx
+        else
+            echo "  ! $BASE_MODEL is not installed, so the tag cannot be rebuilt."
+            echo "    Course structure will silently degrade. See docs/MODEL.md."
+        fi
+    fi
 elif [ "$BASE_MODEL" != "$MODEL" ] && have "$BASE_MODEL"; then
     echo "  $BASE_MODEL is installed but $MODEL is not."
     echo "  Creating $MODEL from it (reuses the blob, no re-download)..."
