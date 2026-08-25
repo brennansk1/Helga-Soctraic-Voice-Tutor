@@ -11,6 +11,7 @@ import time
 import json
 import shutil
 import sqlite3
+from contextlib import closing
 import logging
 import threading
 from datetime import datetime, date, timedelta
@@ -20,6 +21,24 @@ logger = logging.getLogger(__name__)
 
 DATA_ROOT = os.getenv("DATA_ROOT", "/app/data")
 
+
+
+def _connect(db_path):
+    """Open helga.db the way the rest of the system does.
+
+    Every conn.close() in this module used to sit inside its own `try:` with no
+    `finally`, so any raise above it — a locked database, a failed integrity
+    check — leaked the connection WITH ITS OPEN TRANSACTION, and the process
+    kept the SQLite write lock until it was restarted. The except clauses here
+    log at debug, so it was silent as well as permanent.
+    """
+    try:
+        from services.common.storage import connect_safely
+        return connect_safely(db_path)
+    except Exception:
+        conn = sqlite3.connect(db_path, timeout=30)
+        conn.execute("PRAGMA busy_timeout=30000")
+        return conn
 
 class BackgroundOperations:
     """Manages all periodic background tasks."""
@@ -201,8 +220,9 @@ class BackgroundOperations:
         db_path = os.path.join(DATA_ROOT, "helga.db")
         if not os.path.exists(db_path):
             return
+        conn = None
         try:
-            conn = sqlite3.connect(db_path)
+            conn = _connect(db_path)
             conn.row_factory = sqlite3.Row
             row = conn.execute("SELECT value FROM gamification WHERE key='daily_date'").fetchone()
             if row:
@@ -213,9 +233,14 @@ class BackgroundOperations:
                     conn.execute("UPDATE gamification SET value=? WHERE key='daily_date'", (today,))
                     conn.commit()
                     logger.debug(f"Daily XP reset for new day: {today}")
-            conn.close()
         except Exception as e:
             logger.debug(f"Daily streak reset skipped: {e}")
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     def _check_data_integrity(self):
         """Verify course structures match filesystem content."""
@@ -284,7 +309,7 @@ class BackgroundOperations:
             cache_db = os.path.join(cache_dir, "cache.db")
             if os.path.exists(cache_db):
                 size_before = os.path.getsize(cache_db)
-                conn = sqlite3.connect(cache_db)
+                conn = _connect(cache_db)
                 # diskcache stores expiry — just let it handle TTL naturally
                 conn.close()
                 # If cache DB is > 100MB, log a warning
@@ -299,8 +324,9 @@ class BackgroundOperations:
         db_path = os.path.join(DATA_ROOT, "helga.db")
         if not os.path.exists(db_path):
             return
+        conn = None
         try:
-            conn = sqlite3.connect(db_path)
+            conn = _connect(db_path)
             # Integrity check
             result = conn.execute("PRAGMA integrity_check").fetchone()
             if result and result[0] != "ok":
@@ -310,28 +336,39 @@ class BackgroundOperations:
 
             # Optimize
             conn.execute("PRAGMA optimize")
-            conn.close()
         except Exception as e:
             logger.warning(f"SQLite maintenance failed: {e}")
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     def _cleanup_old_interactions(self):
         """Remove interaction records older than 90 days to keep DB lean."""
         db_path = os.path.join(DATA_ROOT, "helga.db")
         if not os.path.exists(db_path):
             return
+        conn = None
         try:
-            conn = sqlite3.connect(db_path)
+            conn = _connect(db_path)
             cutoff = (datetime.utcnow() - timedelta(days=90)).isoformat()
             cursor = conn.execute(
                 "DELETE FROM activity_log WHERE created_at < ?", (cutoff,)
             )
             deleted = cursor.rowcount
             conn.commit()
-            conn.close()
             if deleted > 0:
                 logger.info(f"Cleaned {deleted} activity log entries older than 90 days")
         except Exception as e:
             logger.debug(f"Old interaction cleanup skipped: {e}")
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     def get_status(self):
         """Return background ops status for the health endpoint."""

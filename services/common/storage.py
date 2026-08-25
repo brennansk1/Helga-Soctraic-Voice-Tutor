@@ -89,6 +89,73 @@ def _atomic_write_json(path: str, payload: Any, indent: int = 2):
                 pass
 
 
+# HOW ONE FAILED STATEMENT LOCKS THE WHOLE PRODUCT.
+#
+# Python's sqlite3 opens an implicit transaction on the first write and holds
+# it until commit(). On a THREAD-LOCAL connection in a service that runs for
+# days, an exception between the write and the commit leaves that transaction
+# open forever — and with it SQLite's single write lock. Every other writer in
+# every other process then fails with "database is locked", including the ones
+# that would have written a learner's progress.
+#
+# There are 104 writes across the services that are not inside a `with conn:`
+# or a try/finally, so the failure is not exotic; it is the default outcome of
+# any raise on a write path, and these services swallow exceptions widely
+# enough that it happens silently.
+#
+# Measured on 2026-08-25: every write failed with "database is locked" while
+# core-logic, web-ui and research each reported healthy. Restarting rag alone
+# did not clear it — the holder was another process, and nothing in any log
+# said so.
+#
+# Fixing 104 call sites would leave the 105th. This fixes the connection
+# instead: a statement that raises rolls its transaction back before the
+# exception propagates, so a failure can no longer hold the lock.
+class _SafeConnection(sqlite3.Connection):
+    """A connection that cannot hold the write lock open through a failure."""
+
+    def _rollback_quietly(self):
+        try:
+            if self.in_transaction:
+                self.rollback()
+        except Exception:
+            pass
+
+    def execute(self, *a, **kw):
+        try:
+            return super().execute(*a, **kw)
+        except Exception:
+            self._rollback_quietly()
+            raise
+
+    def executemany(self, *a, **kw):
+        try:
+            return super().executemany(*a, **kw)
+        except Exception:
+            self._rollback_quietly()
+            raise
+
+    def executescript(self, *a, **kw):
+        try:
+            return super().executescript(*a, **kw)
+        except Exception:
+            self._rollback_quietly()
+            raise
+
+
+def connect_safely(db_path: str, timeout: float = 30.0) -> sqlite3.Connection:
+    """The only way this codebase should open helga.db.
+
+    `timeout` is not decoration: the default is 5 seconds, which is shorter
+    than a single hydration write under load, so contention surfaced as a hard
+    failure rather than a wait.
+    """
+    conn = sqlite3.connect(db_path, timeout=timeout, factory=_SafeConnection)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=30000")
+    return conn
+
+
 class _ThreadLocalDB:
     """Thread-local SQLite connection manager. One connection per thread, reused
     across calls. WAL mode enables concurrent reads from different threads."""
@@ -100,11 +167,32 @@ class _ThreadLocalDB:
     def get(self) -> sqlite3.Connection:
         conn = getattr(self._local, 'conn', None)
         if conn is None:
-            conn = sqlite3.connect(self.db_path)
+            conn = connect_safely(self.db_path)
             conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA foreign_keys=ON")
             self._local.conn = conn
+            return conn
+
+        # A CONNECTION HANDED BACK MID-TRANSACTION IS A LEAK, NOT A STATE.
+        #
+        # Every caller of get() starts a fresh piece of work. If the previous
+        # one left a transaction open, it is never coming back to commit it —
+        # it returned, or raised past its commit — and until something rolls it
+        # back this thread is holding the write lock against the whole system.
+        # Rolling back here is the same decision the caller's own error path
+        # would have made, taken on the thread that owns the connection, which
+        # is the only thread allowed to make it.
+        if conn.in_transaction:
+            logger.error(
+                "SELF-HEAL: a previous operation on this thread left a "
+                "transaction open on %s and would have held the write lock "
+                "indefinitely. Rolling it back. Uncommitted changes from that "
+                "operation are lost — which is what its failure implied.",
+                os.path.basename(self.db_path))
+            try:
+                conn.rollback()
+            except Exception as e:
+                logger.error("rollback of the leaked transaction failed: %s", e)
         return conn
 
     def close(self):
@@ -1221,10 +1309,17 @@ class CourseStore:
             self._tl = threading.local()
         conn = getattr(self._tl, "conn", None)
         if conn is None:
-            conn = sqlite3.connect(os.path.join(self.data_dir, "helga.db"),
-                                   timeout=30)
-            conn.execute("PRAGMA journal_mode=WAL")
+            conn = connect_safely(os.path.join(self.data_dir, "helga.db"))
             self._tl.conn = conn
+            return conn
+        # Same self-heal as _ThreadLocalDB.get(); see the note there.
+        if conn.in_transaction:
+            logger.error("SELF-HEAL: leaked transaction on the CourseStore "
+                         "connection — rolling back so the write lock is freed")
+            try:
+                conn.rollback()
+            except Exception as e:
+                logger.error("rollback failed: %s", e)
         return conn
 
     def _structure_path(self, uid: str) -> str:

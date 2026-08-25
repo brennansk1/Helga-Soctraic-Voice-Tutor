@@ -4438,6 +4438,9 @@ class ContentHydrator:
         # to notice. Checked per concept: the concept just written is on disk
         # and the next has not started, so a resume picks up cleanly.
         self.should_cancel = should_cancel
+        # Remembered so hydrate() can tell "the caller chose 3" from "nobody
+        # said, so it defaulted to course_depth" — see the note in hydrate().
+        self._mastery_was_given = mastery is not None
         self.mastery_level = mastery if mastery is not None else course_depth
         self.used_source_ids = set()
         self.model = None
@@ -4506,6 +4509,24 @@ class ContentHydrator:
         # and the one that mattered most is the handback, where the local
         # model is finishing somebody else's course and has the least context
         # of all. An explicit constructor argument still wins if given.
+        # THE CONTRACT THE CONTENT IS WRITTEN TO MUST BE THE ONE IT IS JUDGED
+        # BY. The resume path builds a hydrator with `course_depth=3` and no
+        # mastery, so a course at mastery 2 was hydrated against the mastery-3
+        # contract — 320-1500 words — and then failed at finalize against
+        # mastery 2's 200-1300. Measured: a concept came back at 1306 words and
+        # was reported "too long for Understanding", after a retry loop that
+        # had been checking a different bar the whole time. The course carries
+        # its own mastery; nobody should have to pass it in again.
+        if not self._mastery_was_given and course.get("mastery") is not None:
+            try:
+                declared = int(course["mastery"])
+            except (TypeError, ValueError):
+                declared = None
+            if declared and declared != self.mastery_level:
+                logger.info("  [CONTRACT] hydrating at the course's own mastery "
+                            "%d, not the default %d", declared, self.mastery_level)
+                self.mastery_level = declared
+
         if not self.learner_context:
             self.learner_context = (course.get("learner_context") or "").strip()
         if self.learner_context:

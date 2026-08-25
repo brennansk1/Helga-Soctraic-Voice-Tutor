@@ -1098,6 +1098,23 @@ def create_pipeline_blueprint(storage):
             import requests as _rq
             base = os.getenv("SELF_URL", "http://localhost:5002")
             r = _rq.post(f"{base}/api/course/{course_uid}/resume_build", timeout=15)
+            # DO NOT REPORT WHAT THE OTHER LAYER DID NOT DO. This said
+            # "resuming" on any reply, including the 200 that means "refused,
+            # nothing started" — so a caller was told the local model had
+            # picked the work up when nothing had.
+            if r.status_code != 202:
+                body = {}
+                try:
+                    body = r.json() or {}
+                except Exception:
+                    pass
+                return jsonify({
+                    "status": "not_started",
+                    "concepts_remaining": missing,
+                    "upstream": r.status_code,
+                    "reason": body.get("message") or body.get("error")
+                              or "the local build service declined to start",
+                }), 409
             return jsonify({"status": "resuming", "concepts_remaining": missing,
                             "upstream": r.status_code}), 202
         except Exception as e:

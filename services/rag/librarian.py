@@ -1431,10 +1431,42 @@ def resume_build(course_uid):
     if not course:
         return jsonify({"error": "no such course"}), 404
 
+    # THE CONTENT IS THE TRUTH; THE STATUS IS A CACHED JUDGEMENT ABOUT IT.
+    #
+    # This refused on status alone, so a course marked "ready" that is missing
+    # a concept — because the concept was cleared, a write failed, or the
+    # status was written before the last one landed — could not be resumed at
+    # all. The reply said "nothing to resume" while a concept sat empty, and
+    # the pipeline handback above it reported "resuming" to its own caller, so
+    # two layers disagreed and the learner's course stayed broken.
+    #
+    # Counting what is actually missing costs one read per concept and cannot
+    # disagree with reality. If nothing is missing, "ready" is right and there
+    # is genuinely nothing to do; if something is missing, that is precisely
+    # what resume exists for, whatever the status says.
+    missing = 0
+    for m in course.get("modules") or []:
+        for u in m.get("units") or []:
+            for l in u.get("lessons") or []:
+                for c in l.get("concepts") or []:
+                    try:
+                        body = storage.courses.get_concept_content(
+                            course_uid, c.get("uid")) or ""
+                    except Exception:
+                        body = ""
+                    if len(body.split()) < 40:
+                        missing += 1
+
     status = (course.get("status") or "").lower()
+    if not missing:
+        return jsonify({"status": status or "ready",
+                        "message": "nothing to resume"}), 200
     if status == "ready":
-        return jsonify({"status": "ready", "message": "nothing to resume"}), 200
-    if status not in _RESUMABLE:
+        logger.warning(
+            "%s is marked ready but %d concept(s) have no content — resuming "
+            "anyway and letting the finalize verdict reset the status",
+            course_uid, missing)
+    elif status not in _RESUMABLE:
         return jsonify({"error": f"cannot resume a course in state {status!r}"}), 409
 
     with _RESUMING_LOCK:

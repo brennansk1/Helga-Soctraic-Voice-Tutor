@@ -82,3 +82,32 @@ def test_the_rag_service_logs_at_info():
     assert "basicConfig" in src, "the rag service configures no logging"
     i = src.find("basicConfig")
     assert "LOG_LEVEL" in src[i:i + 400]
+
+
+# ---------------------------------------------------- the contract it is judged by
+
+def test_hydration_uses_the_courses_own_mastery():
+    """Written to one bar, judged by another.
+
+    The resume path builds `ContentHydrator(course_depth=3)` with no mastery,
+    so a course at mastery 2 was hydrated against the mastery-3 contract
+    (320-1500 words) and then failed at finalize against mastery 2's 200-1300.
+    Measured: a concept came back at 1306 words, reported "too long for
+    Understanding" — after a retry loop that had been checking a different bar
+    the whole time.
+    """
+    src = _read("services", "core", "course_builder.py")
+    i = src.find("def hydrate(self, course_uid")
+    assert i > 0
+    body = src[i:i + 4000]
+    assert 'course.get("mastery")' in body or 'course["mastery"]' in body, \
+        "hydrate() never consults the mastery the course declares"
+
+
+def test_a_caller_that_states_mastery_still_wins():
+    from services.core.course_builder import ContentHydrator
+    h = ContentHydrator(mastery=5, course_depth=2)
+    assert h.mastery_level == 5
+    assert h._mastery_was_given is True
+    # and one that says nothing is marked as not having said it
+    assert ContentHydrator(course_depth=2)._mastery_was_given is False
