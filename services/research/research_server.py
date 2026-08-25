@@ -898,12 +898,42 @@ def _assemble(entries, budget=WORD_BUDGET):
     return "\n\n".join(parts), cited
 
 
+# How much of a source travels back with the citation.
+#
+# Enough to settle a claim, not so much that a concept's response carries a
+# textbook. The storage layer truncates at 4000 characters anyway, so sending
+# more would only be discarded further down.
+PASSAGE_CHARS = 4000
+
+
 def _citation(entry):
     """The public source record for an entry that made it into the prompt."""
     out = {"url": entry["url"], "title": entry["title"],
            "domain_tier": entry.get("tier", 1), "type": entry["kind"]}
     if entry.get("source"):
         out["source"] = entry["source"]
+
+    # THE TEXT COMES WITH IT. Without this the evidence is unrecoverable.
+    #
+    # This dropped `text` and returned identity only — url, title, tier, kind.
+    # The text still reached the model through `combined_text`, so generation
+    # looked fine and nothing failed. What broke was everything downstream:
+    # `sources.passage` in the ledger is written from this dict, so it was
+    # stored empty 529 times out of 529, and the schema comment above it says
+    # in as many words that the research cache "must never be the only copy: a
+    # claim cannot be verified against a passage that has expired."
+    #
+    # It was the only copy. The cache is a speed layer with a 24h/7d TTL, so
+    # the evidence for any course older than a day was already gone — 1,480
+    # recorded claims with nothing to check them against, and no way to build
+    # a verifier over them without re-fetching the whole internet.
+    #
+    # The generated Markdown is a lossy re-expression of the source; the source
+    # itself is what a fact-check has to compare against, and it is free to
+    # keep at the moment we already have it in hand.
+    text = (entry.get("text") or "").strip()
+    if text:
+        out["passage"] = text[:PASSAGE_CHARS]
     return out
 
 
