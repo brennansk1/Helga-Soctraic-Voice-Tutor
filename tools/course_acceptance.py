@@ -306,6 +306,11 @@ def main():
     ap.add_argument("course_uid")
     ap.add_argument("--quick", action="store_true",
                     help="one tutor turn instead of three")
+    ap.add_argument("--no-model", action="store_true",
+                    help="skip the gates that call the LLM (tutoring, "
+                         "flashcards, quiz). Use while a build is hydrating: "
+                         "they contend for the same model and take minutes "
+                         "each under load.")
     ap.add_argument("--json")
     a = ap.parse_args()
 
@@ -322,9 +327,13 @@ def main():
     gate_grounding(rep, a.course_uid, d)
     gate_search_finds_it(rep, a.course_uid, d)
     gate_teaching_context(rep, a.course_uid, d)
-    gate_tutoring(rep, a.course_uid, d, a.quick)
-    gate_flashcards(rep, a.course_uid, first_uid)
-    gate_quiz(rep, a.course_uid)
+    if a.no_model:
+        for name in ("tutoring", "flashcards generate", "quiz generates"):
+            rep.add(name, "SKIP", "--no-model")
+    else:
+        gate_tutoring(rep, a.course_uid, d, a.quick)
+        gate_flashcards(rep, a.course_uid, first_uid)
+        gate_quiz(rep, a.course_uid)
     gate_progress_and_review(rep, a.course_uid, d)
     gate_resume(rep, a.course_uid)
     gate_stats(rep, a.course_uid)

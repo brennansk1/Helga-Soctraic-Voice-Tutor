@@ -185,7 +185,51 @@ def _writing_standard(mastery):
         "bloom_ceiling": p.get("bloom_ceiling"),
         "vocabulary": p.get("vocabulary"),
         "writing": p.get("writing"),
+        "sections_the_product_reads": CONSUMED_SECTIONS,
+        "sections_note": (
+            "Not required and not enforced: a concept without them is stored "
+            "and teaches. It teaches WORSE — the tutor reads Misconceptions "
+            "and Analogies straight out of the markdown, and the locally built "
+            "courses always have them. Match the headings exactly."),
     }
+
+
+# SECTIONS THE PRODUCT READS BACK OUT OF THE MARKDOWN.
+#
+# The tutor does not only read a concept as prose. `teaching_context` pulls
+# "## Misconceptions" and "## Analogies" out of the body and hands them to the
+# turn; the asset collector reads Misconceptions too. The local generator emits
+# these headings on every concept, so the local pipeline gets them for free.
+#
+# An external author is told the word range and the required elements and
+# nothing about this, so a Claude-written concept comes back with its own
+# headings, `teaching_context` returns {"misconceptions": [], "analogies": []},
+# and the tutor teaches it with less than it teaches a locally-built one.
+# Measured: a 4-concept course that met 100% of its depth contract returned an
+# empty teaching context for every concept.
+#
+# Nothing here is required — a concept without them is still stored and still
+# teaches. It teaches WORSE, and the caller should be told that rather than
+# discovering it.
+CONSUMED_SECTIONS = {
+    "## Misconceptions": (
+        "Read by the tutor before it responds, and by the asset collector. "
+        "Format: '- **Belief**: … / **Correction**: …'. Without it the tutor "
+        "cannot name the wrong idea a learner is most likely holding."),
+    "## Analogies": (
+        "Read by the tutor. Format: '- **Simple**: …' and "
+        "'- **Technical**: …'. Without it the tutor has no ready analogy and "
+        "invents one per turn."),
+    "## Socratic Hooks": (
+        "Bloom-banded question stems the tutor can open with: "
+        "'- Bloom 1-2: …', '- Bloom 3-4: …', '- Bloom 5-6: …'."),
+    "## Key Facts": "3-5 verified bullet points.",
+    "## Real-World Examples": (
+        "ONE worked example carried through to a result, with concrete "
+        "values — not a description of where the idea gets used."),
+    "## Edge Cases & Limitations": "Where the concept breaks down.",
+    "## Core Explanation": "The body of the teaching.",
+}
 
 
 def create_pipeline_blueprint(storage):
