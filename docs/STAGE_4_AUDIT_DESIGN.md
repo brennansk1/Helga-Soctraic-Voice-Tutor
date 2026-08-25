@@ -185,17 +185,56 @@ without a model, because the source's own title and text are on hand.
 
 Only claims Pass 1 could not settle. One small model.
 
+**2.0 Extract only VERIFIABLE claims.** This is a correction to the first
+draft, which decomposed everything. VeriScore's finding is that extracting only
+claims that describe a checkable state — rather than every sentence, as
+FactScore and SAFE do — is what makes the metric meaningful. Half of a lesson
+is pedagogical framing ("this trips people up", "we will come back to this"),
+which has no truth value. Verifying it produces `no-evidence` for prose that
+was never a claim, which both wastes the checker and *understates* real
+coverage. Non-claims are `not-applicable`, a fourth verdict, not a gap.
+
+The current `taught_claims` extractor takes sentences indiscriminately — 1,509
+rows across four courses — so this is a change to it, not only to Stage 4.
+
+**Decomposition is not free.** NAACL 2025 measured a trade-off: it improves
+accuracy on less complex claims but injects noise, and can *burden* a strong
+verifier. Our verifier is deliberately small and weak, which is the regime
+where decomposition helps most — but the noise is why 2.0 and 2.1 exist rather
+than a naive split.
+
 **2.1 Decontextualise.** "It sorts them last" is unverifiable. Each
 `taught_claims` row is rewritten to stand alone, carrying its concept title —
 SAFE's self-contained step, and the reason naive claim extraction under-reports.
 
-**2.2 Retrieve.** Top-k chunks per claim from the Pass 0 index, preferring
+**2.2 Retrieve — hybrid, then rerank.** bge-m3 (**Apache 2.0**) is unusual in
+carrying dense, lexical and multi-vector retrieval in one model, and the
+lexical leg is not a nicety here: `NULLS LAST`, `DENSE_RANK`, `EXCEPT ALL` are
+exact tokens that dense retrieval blurs and lexical matching nails. Top-k from
+the hybrid retrieval, then **bge-reranker-v2-m3** (Apache 2.0, cross-encoder)
+over the candidates, since scoring (claim, passage) jointly beats comparing
+independent embeddings. Source preference breaks ties:
 corpus > textbook > primary > wiki > web.
 
-**2.3 Entail.** For each (claim, evidence) pair: **supported / contradicted /
-not-enough-evidence**. A purpose-built grounding model, not a general one —
-this is pure prefill with a three-token answer, which is the workload a
-0.8–4B checker is built for and a 35B MoE is wasted on.
+**2.3 Entail — in two stages, because the cheap model answers a binary.**
+
+This is the correction that matters most, and it was not in the first draft.
+**MiniCheck outputs 1 or 0 — supported or unsupported. It cannot tell
+"contradicted" from "absent from this document."** Treating unsupported as
+contradicted would send every true-but-uncited claim to the repair stage, which
+is a mass false-repair event on exactly the content that is fine.
+
+So:
+
+1. **Support screen** (MiniCheck-Flan-T5-Large, 0.78B, **MIT**, verified on the
+   model card): every verifiable claim, binary. Supported → done, and this is
+   the overwhelming majority.
+2. **Three-way NLI** on the remainder only: entailment / neutral /
+   **contradiction**. Only `contradiction` is a defect. `neutral` is
+   `no-evidence` and is reported, never repaired.
+
+The expensive distinction runs on the small minority that fails the cheap
+screen — which is also what keeps the audit affordable.
 
 Model choice, licence-first, because an AGPL dependency in an Apache repo is
 already an open finding:
@@ -215,6 +254,16 @@ machine where **80% of turn latency is prefill**.
 ## Pass 3 — Repair
 
 Only what failed. Never a blanket rewrite.
+
+**3.0 Repair is extrinsic, always.** Huang et al. measured that LLMs cannot
+reliably self-correct reasoning without external feedback, and that performance
+often *degrades* after intrinsic self-correction; the FlipFlop result adds that
+merely challenging a model makes it abandon correct answers. So no Stage 4
+prompt ever says "this is wrong, fix it". Every repair carries the retrieved
+evidence span and the specific contradiction, and every repair is re-verified
+by the same external checks. Self-correction works when it is grounded in a
+tool or a knowledge base — an executor, a corpus — which is precisely the
+feedback Passes 1 and 2 produce.
 
 **3.1 Revise minimally.** RARR's finding is the design constraint: revise the
 claim to agree with the evidence *while preserving the original as much as
@@ -243,11 +292,12 @@ evidence in front of it, and it re-enters at 3.2 like any other repair.
 **4.1 The report** — per course and per concept:
 
 ```
-claims            1,204
-  supported         881   (73%)
+sentences         2,140
+  verifiable      1,204   (the rest is framing, not claims)
+  supported         881   (73% of verifiable)
   contradicted        6   → 5 repaired, 1 escalated, 0 unresolved
   no-evidence       291   (24%)   ← honest coverage, not a pass
-  not-applicable     26
+  not-applicable    936   (not a claim; never counted as a gap)
 concepts            83
   clean              77
   repaired            5
@@ -319,3 +369,37 @@ Each phase is independently useful and independently shippable.
 | **E** | Pass 4 gate + report in the UI | `ready` starts meaning something |
 
 Phase A alone would have caught six of the seven audit errors.
+
+
+---
+
+## Verification of this design
+
+The architecture was checked against published work after it was drafted, not
+before. Four things changed as a result — recorded because the changes are the
+point of doing it.
+
+| Checked | Result |
+|---|---|
+| Decompose everything, as SAFE/FactScore do | **Changed.** VeriScore extracts only *verifiable* claims. Framing prose has no truth value, and verifying it manufactures fake `no-evidence` gaps. |
+| Decomposition is straightforwardly good | **Qualified.** NAACL 2025 measured a noise cost that can burden strong verifiers. Ours is small and weak — the regime it helps — but it is why extraction is selective. |
+| MiniCheck gives supported/contradicted/unknown | **Wrong.** It is **binary**. Conflating "unsupported" with "contradicted" would mass-repair correct content. Added a three-way NLI stage on the remainder. |
+| Small editor repairs failures | **Confirmed and constrained.** LLMs cannot self-correct without external feedback and often degrade; challenging a model flips correct answers. Repair is extrinsic and re-verified, never "fix this". |
+| bge-m3 for retrieval | **Confirmed and extended.** Apache 2.0, and its lexical leg matters for exact tokens like `NULLS LAST`. Added a cross-encoder rerank. |
+| MiniCheck licence | **Verified on the model card**: MiniCheck-Flan-T5-Large is MIT, 0.78B. Bespoke-MiniCheck-7B requires a commercial agreement — not used. |
+
+Still open, and honestly so: no cost or latency model has been calculated, so
+"efficient" remains an argument from structure rather than a measurement. The
+first thing Phase A should produce is a measured per-concept audit cost.
+
+**Sources.**
+[RARR](https://arxiv.org/abs/2210.08726) ·
+[SAFE / long-form factuality](https://arxiv.org/abs/2403.18802) ·
+[VeriScore](https://arxiv.org/html/2406.19276) ·
+[DnDScore](https://arxiv.org/pdf/2412.13175) ·
+[Decomposition Dilemmas](https://arxiv.org/abs/2411.02400) ·
+[LLMs Cannot Self-Correct Reasoning Yet](https://arxiv.org/abs/2310.01798) ·
+[FlipFlop](https://arxiv.org/pdf/2311.08596) ·
+[MiniCheck](https://github.com/Liyan06/MiniCheck) ·
+[bge-m3](https://huggingface.co/BAAI/bge-m3) ·
+[bge-reranker-v2-m3](https://huggingface.co/BAAI/bge-reranker-v2-m3)
