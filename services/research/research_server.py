@@ -239,15 +239,24 @@ def _is_relevant(query, title, text):
     return max((body.count(t) for t in present), default=0) >= 3
 
 
-def textbook_lookup(query, limit=2):
+def textbook_lookup(query, limit=2, context=""):
     """Open-textbook passages for a concept, newest-canon-first.
 
     Returns [] on any failure — grounding degrades, it never raises.
+
+    `context` is the SUBJECT, and it is what the relevance filter is judged
+    against — not what is searched for. The ladder searches each rung on its
+    own words, so a concept called "Partitioning Scope" is searched as those
+    words, and _is_relevant then compares a candidate page against them alone.
+    Measured: with query="Tie Interaction" the page "Interacting boson model"
+    is judged RELEVANT; with "Tie Interaction window function SQL" it is
+    correctly rejected. Same filter, same page — the query was the problem.
+    Searching stays broad, judging gets the subject.
     """
     # Version the key. When the extraction or filtering logic changes, entries
     # cached under the old behaviour are wrong, not merely old — the relevance
     # filter shipped and "Pinyin/Cell (biology)" kept being served from cache.
-    key = cache_key("textbook", f"v3|{query}|{limit}")
+    key = cache_key("textbook", f"v4|{query}|{context}|{limit}")
     cached = cache.get(key)
     if cached is not None:
         return cached
@@ -281,8 +290,10 @@ def textbook_lookup(query, limit=2):
             # confidence point while teaching the learner nothing.
             if len(text) < TEXTBOOK_MIN_CHARS:
                 continue
-            if not _is_relevant(query, title, text):
-                logger.debug(f"{label}: rejected {title!r} as off-topic")
+            _judge = f"{query} {context}".strip() if context else query
+            if not _is_relevant(_judge, title, text):
+                logger.debug(f"{label}: rejected {title!r} as off-topic "
+                             f"for {_judge!r}")
                 continue
             out.append({
                 "type": "textbook",
@@ -711,7 +722,15 @@ def _lookup_subjects(title, module_title, course_title, broaden=False):
     return out
 
 
-def _gather(fn, subjects, limit):
+def _signature_params(fn):
+    try:
+        import inspect
+        return set(inspect.signature(fn).parameters)
+    except Exception:
+        return set()
+
+
+def _gather(fn, subjects, limit, context=""):
     """Run a lookup over `subjects` until `limit` distinct results are held.
 
     Falls back down the specificity ladder AND tops up from it: a concept that
@@ -723,7 +742,10 @@ def _gather(fn, subjects, limit):
         if len(out) >= limit:
             break
         try:
-            found = fn(subject, limit=limit - len(out)) or []
+            if context and "context" in _signature_params(fn):
+                found = fn(subject, limit=limit - len(out), context=context) or []
+            else:
+                found = fn(subject, limit=limit - len(out)) or []
         except Exception as e:
             logger.debug(f"lookup failed for {subject!r}: {e}")
             continue
@@ -883,6 +905,26 @@ async def _research_concept_async(title, module_title, course_title, mastery=1,
             # is a real, resolvable difference.
             if resolved and resolved != candidate:
                 wiki_result = wiki_lookup(resolved)
+                # A SEARCHED PAGE IS A GUESS, AND GUESSES GET CHECKED.
+                #
+                # An exact title match is the subject by construction; a SEARCH
+                # result is whatever Wikipedia thought was closest, and this
+                # path accepted it unchecked. Measured on the Advanced SQL
+                # build: wiki_search_title('advanced sql') resolves to
+                # "Advanced Placement" — an American high-school programme —
+                # and it was cited as the grounding source for a window
+                # function concept. The textbook path has judged its hits for
+                # months; this one never did.
+                if wiki_result:
+                    _judge = f"{candidate} {course_title}".strip()
+                    _text = (wiki_result.get("text")
+                             or wiki_result.get("summary") or "")
+                    if _text and not _is_relevant(_judge, resolved, _text):
+                        logger.info(
+                            "wiki: %r resolved to %r, which is not about %r "
+                            "— discarding rather than citing it",
+                            candidate, resolved, _judge)
+                        wiki_result = None
                 if wiki_result:
                     logger.info(f"wiki: {candidate!r} -> {resolved!r}")
         if wiki_result:
@@ -922,7 +964,8 @@ async def _research_concept_async(title, module_title, course_title, mastery=1,
     # introductory biology from a 2024 Nature letter, you build it from a
     # textbook. Wikibooks and Wikiversity are exactly that: content already
     # selected, sequenced and explained for a learner.
-    for tb in _gather(textbook_lookup, ladder, n_textbook):
+    for tb in _gather(textbook_lookup, ladder, n_textbook,
+                      context=(course_title or "").strip()):
         entries.append({
             "kind": "textbook", "label": tb["source"], "title": tb["title"],
             "url": tb["url"], "text": tb["text"], "tier": 1,
@@ -1004,6 +1047,41 @@ async def _research_concept_async(title, module_title, course_title, mastery=1,
                     "title": result["title"], "url": result["url"],
                     "text": text, "tier": result["tier"],
                 })
+
+    # ONE GATE EVERY PROVIDER PASSES THROUGH.
+    #
+    # Five providers append here and each judged relevance its own way or not
+    # at all, so an off-topic hit only had to satisfy the weakest of them.
+    # Measured on the Advanced SQL build: a concept called "Partitioning Scope"
+    # was grounded on "Merism" (a linguistics term), "Disk partitioning" and
+    # "Advanced Placement", because each rung of the ladder is searched on its
+    # own words and "partitioning" means something in five different fields.
+    #
+    # A wrong source is not neutral. It is still a citation: it satisfies the
+    # depth contract's any_source requirement and raises the confidence figure,
+    # so the concept reads as well grounded while pointing the learner at a
+    # museum object or a storage manual.
+    #
+    # The gate judges every entry against the concept AND its subject, which is
+    # the comparison the individual providers could not make. It will not empty
+    # the list: if nothing survives, the best entry is kept and the confidence
+    # machinery reports thin grounding, because "grounded on something loose"
+    # and "not grounded at all" are different states and the caller acts on
+    # them differently.
+    _subject_judge = " ".join(x for x in (title, course_title) if x).strip()
+    if _subject_judge and entries:
+        _kept, _dropped = [], []
+        for e in entries:
+            body = e.get("text") or ""
+            if not body or _is_relevant(_subject_judge, e.get("title") or "", body):
+                _kept.append(e)
+            else:
+                _dropped.append(e)
+        if _dropped:
+            logger.info("relevance gate dropped %d of %d source(s) for %r: %s",
+                        len(_dropped), len(entries), _subject_judge,
+                        ", ".join((d.get("title") or "?")[:40] for d in _dropped[:4]))
+        entries = _kept or entries[:1]
 
     # Assemble under the word budget, then cite ONLY what got in.
     combined_text, cited = _assemble(entries)
