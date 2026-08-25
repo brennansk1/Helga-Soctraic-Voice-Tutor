@@ -2271,6 +2271,33 @@ class MnemosyneFSM:
                 concept = self.storage.courses.get_concept_by_uid(
                     self.active_course_uid, uid
                 )
+                # WITHHELD — the audit found this concept states something a
+                # real database contradicts, and repair could not fix it.
+                #
+                # The flag was being WRITTEN by Pass 3 and read by nothing, so
+                # a concept marked as still teaching a falsehood was served
+                # exactly as before. Building the safety mechanism and not
+                # enforcing it is worse than not building it: the report says
+                # the course is protected and the learner is told the wrong
+                # thing anyway.
+                #
+                # A gap in a course is a worse course. A false claim is a lie
+                # told to someone who trusted it, and this refuses to tell it.
+                if concept and concept.get("withheld"):
+                    why = concept.get("withheld_reason") or ""
+                    logging.warning(
+                        "refusing to teach withheld concept %s (%s): %s",
+                        uid, concept.get("title", ""), why[:120])
+                    self.send_status_update(
+                        "This concept is held back — a check found something "
+                        "wrong with it.",
+                        event={"type": "CONCEPT_WITHHELD", "concept_uid": uid,
+                               "reason": why})
+                    self.speak(
+                        "I'm holding this one back. A check found something in "
+                        "it that isn't right, and I'd rather skip it than "
+                        "teach you something wrong. Let's take the next one.")
+                    return None
                 if concept:
                     content = self.storage.courses.get_concept_content(
                         self.active_course_uid, uid

@@ -1245,6 +1245,26 @@
                                 nodeEl.classList.add('low-confidence');
                             }
 
+                            // WITHHELD. Pass 3 found this concept states
+                            // something a real database contradicts and could
+                            // not fix it, so the tutor refuses to teach it.
+                            //
+                            // The node has to say so BEFORE the click. Without
+                            // this the learner taps a concept, waits for a
+                            // session to open, and is told it is being skipped
+                            // — which reads as a fault rather than a decision.
+                            if (concept.withheld) {
+                                nodeEl.classList.add('is-withheld');
+                                nodeEl.disabled = true;
+                                nodeEl.setAttribute(
+                                    'aria-label',
+                                    concept.title + ' (held back — a check '
+                                    + 'found something wrong with it)');
+                                nodeEl.title = concept.withheld_reason
+                                    || 'Held back: a check found something '
+                                       + 'wrong with this concept.';
+                            }
+
                             // A confirmed-false claim that survived the
                             // corrective rewrite. Marked on the node itself
                             // because it is the one build verdict a learner

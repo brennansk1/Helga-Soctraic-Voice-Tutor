@@ -714,3 +714,22 @@
         transform: translateX(calc(var(--path-amp) * var(--node-x-mult, 0)));
     }
 }
+
+/* WITHHELD — the audit found a false claim that repair could not fix, so the
+   tutor will not teach this concept.
+   Muted and struck rather than hidden: a learner who sees a gap in their path
+   with no explanation assumes the product is broken. A visible, labelled
+   omission is the honest version, and the tooltip carries the reason. */
+.path-node.is-withheld {
+    opacity: 0.45;
+    cursor: not-allowed;
+    border-style: dashed;
+}
+.path-node.is-withheld:hover {
+    transform: none;
+}
+.path-node.is-withheld + .node-label,
+.path-node.is-withheld ~ .node-label {
+    text-decoration: line-through;
+    opacity: 0.6;
+}

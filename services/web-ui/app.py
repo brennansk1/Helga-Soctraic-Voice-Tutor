@@ -1553,6 +1553,32 @@ def _quality_audit(au):
     return out
 
 
+def _quality_repair(rp, out=None):
+    """Verdict for Pass 3 — what the audit's findings led to."""
+    if not isinstance(rp, dict) or not rp.get("ran"):
+        return {"state": "absent"}
+    o = rp.get("outcomes") or {}
+    fixed = (o.get("fixed", 0) or 0) + (o.get("escalated", 0) or 0)
+    withheld = o.get("withheld", 0) or 0
+    res = {"state": "pass", "fixed": fixed, "withheld": withheld,
+           "attempted": rp.get("attempted", 0)}
+    if withheld:
+        # The loudest outcome: a concept the learner will NOT be shown.
+        res["state"] = "caution"
+        res["text"] = ("%d concept%s held back — a check found something wrong "
+                       "that could not be fixed"
+                       % (withheld, "" if withheld == 1 else "s"))
+    elif fixed:
+        res["text"] = ("%d concept%s corrected after the audit"
+                       % (fixed, "" if fixed == 1 else "s"))
+    else:
+        res["text"] = "Nothing needed correcting"
+    return res
+
+
+
+
+
 def _quality_depth(dc, course_concepts=None):
     """Verdict for the depth contract.
 
@@ -1819,6 +1845,7 @@ def _course_quality(course):
         'grounding': _quality_grounding(course.get('grounding')),
         'sections': _quality_sections(course.get('missing_sections')),
         'audit': _quality_audit(course.get('audit')),
+        'repair': _quality_repair(course.get('repair')),
     }
     assessed = [k for k, v in checks.items() if v['state'] != 'absent']
 
@@ -1856,7 +1883,7 @@ def _course_quality(course):
             headline = c['text']
             break
     if not headline:
-        for key in ('audit', 'fact', 'sections', 'depth', 'grounding', 'level'):
+        for key in ('audit', 'repair', 'fact', 'sections', 'depth', 'grounding', 'level'):
             c = checks[key]
             if c['state'] == 'caution' and c.get('text'):
                 headline = c['text']

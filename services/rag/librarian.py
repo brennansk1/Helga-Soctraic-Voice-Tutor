@@ -600,6 +600,18 @@ def structure():
                                 "title": concept["title"],
                                 "completed": completed,
                                 "bloom_level": bloom_level,
+                                # WITHHELD travels with the node.
+                                #
+                                # Pass 3 marks a concept it could not fix, and
+                                # this endpoint is what the path view renders
+                                # from. Dropping the flag here — the same way
+                                # source_confidence was dropped, which is why
+                                # the low-confidence badge never had a value —
+                                # would leave the learner clicking a concept
+                                # the tutor will then refuse to teach.
+                                "withheld": bool(concept.get("withheld")),
+                                "withheld_reason": concept.get(
+                                    "withheld_reason", ""),
                             }
                         )
                     unit_dict["lessons"].append(lesson_dict)

@@ -238,6 +238,18 @@
         [/^AUDIT:PHASE:START/,           function () {
             return 'Auditing the finished course — every concept, and the '
                  + 'course as a whole'; }],
+        [/^REPAIR:CONCEPT:(.+)/,         function (m) {
+            return '   repairing ' + m[1]; }],
+        [/^REPAIR:DONE:(\d+):(\d+):(\d+)/, function (m) {
+            // Said in the terms that matter: what was fixed, and what is being
+            // held back rather than taught.
+            var fixed = +m[1] + +m[2], withheld = +m[3];
+            var parts = [];
+            if (fixed) parts.push(fixed + ' concept(s) corrected');
+            if (withheld) parts.push(withheld + ' held back — a check found '
+                                   + 'something wrong that could not be fixed');
+            return parts.length ? 'Repair: ' + parts.join('; ')
+                                : 'Repair: nothing needed fixing'; }],
         [/^AUDIT:DONE:(\w+):(\d+):(\d+)/, function (m) {
             // Said plainly. "blocking_findings" means something is FALSE, and
             // a learner reading this deserves the word rather than the enum.
@@ -499,6 +511,9 @@
         // it must be visible rather than folded into "done".
         if (msg.indexOf('AUDIT:PHASE:START') === 0) {
             setStage('assets', 'done');
+            setStage('audit', 'active');
+        }
+        if (msg.indexOf('REPAIR:CONCEPT:') === 0) {
             setStage('audit', 'active');
         }
         if (msg.indexOf('AUDIT:DONE:') === 0) {
