@@ -87,8 +87,25 @@
         li.className = 'hsr-item';
         li.setAttribute('role', 'option');
 
-        // Navigation target: both Course and Concept go to /learn
-        var href = '/learn?course_uid=' + encodeURIComponent(r.uid || '');
+        // A CONCEPT HIT'S uid IS A CONCEPT, NOT A COURSE.
+        //
+        // This put r.uid in the course slot for every result, so clicking a
+        // concept went to /learn?course_uid=con_xxxxxxxx — a course that does
+        // not exist, and the learn page bounced back to /courses. Every
+        // concept result in the header search was a dead link, which is most
+        // of them: the endpoint only returns concepts once no course title
+        // matched.
+        //
+        // learn.html already reads ?course_uid=&concept_uid= and opens that
+        // concept directly, so the landing place was built and only the link
+        // was wrong.
+        var href;
+        if (r.course_uid) {
+            href = '/learn?course_uid=' + encodeURIComponent(r.course_uid) +
+                   '&concept_uid=' + encodeURIComponent(r.uid || '');
+        } else {
+            href = '/learn?course_uid=' + encodeURIComponent(r.uid || '');
+        }
 
         var typeLabel = escHtml(r.type || 'Result');
         var title     = escHtml(r.title || '(untitled)');

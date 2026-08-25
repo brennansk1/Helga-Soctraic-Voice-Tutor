@@ -265,6 +265,7 @@ def _substring_concept_search(query, course_uid):
             results.append(
                 {
                     "uid": concept["uid"],
+                    "course_uid": c_course,
                     "title": concept["title"],
                     "text": content[:500] if content else "",
                     "type": "Concept",
@@ -347,6 +348,16 @@ def search():
             results.append(
                 {
                     "uid": row["concept_uid"],
+                    # WHICH COURSE THIS CONCEPT IS IN.
+                    #
+                    # The storage layer has always returned it and this
+                    # response dropped it, so the header search sent every
+                    # concept hit to /learn?course_uid=con_xxxxxxxx — a
+                    # concept uid in the course slot, naming a course that
+                    # does not exist. learn.html already deep-links to
+                    # ?course_uid=&concept_uid=, so the destination was built
+                    # and only the link to it was wrong.
+                    "course_uid": row.get("course_uid"),
                     "title": row.get("title", ""),
                     "text": content[:500] if content else "",
                     "type": "Concept",
