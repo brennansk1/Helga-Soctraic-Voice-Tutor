@@ -378,8 +378,43 @@ def search():
     return jsonify(payload)
 
 
+def _course_progress_pct(course_uid, stats, student_id=None):
+    """How much of this course the learner has actually done, 0-100.
+
+    Counted from user_progress rather than from the course document, because
+    progress belongs to the learner and the document belongs to the build.
+    A concept counts once it has been completed or reviewed; `locked` and
+    `in_progress` do not, so the number cannot drift upward on a concept that
+    was merely opened.
+    """
+    if not course_uid:
+        return 0
+    total = 0
+    try:
+        total = int((stats or {}).get("concepts") or 0)
+    except (TypeError, ValueError):
+        total = 0
+    if total <= 0:
+        return 0
+    try:
+        rows = storage.progress.get_course_progress(course_uid, student_id=student_id)
+        done = sum(1 for r in rows
+                   if (r.get("status") or "").lower() in
+                   ("completed", "reviewed", "mastered"))
+        return max(0, min(100, round(done * 100 / total)))
+    except Exception as e:
+        # A progress read that fails must not cost the learner the course list.
+        # Zero is the honest answer here — it is what we know.
+        logger.warning("progress unavailable for %s: %s", course_uid, e)
+        return 0
+
+
 @app.route("/api/courses", methods=["GET", "DELETE"])
 def courses():
+    # The learner whose progress this is. Without it every card would report
+    # the default profile's progress to whoever asked.
+    student_id = request.args.get("student_id") or None
+
     if request.method == "DELETE":
         uid = request.args.get("uid")
         if not uid:
@@ -412,7 +447,16 @@ def courses():
                     # quietly getting the lesser path looked identical to one
                     # getting the better path.
                     "teaching_domain": course.get("teaching_domain") or None,
-                    "progress": 0,
+                    # A LITERAL ZERO, FOR EVERY COURSE, ALWAYS.
+                    #
+                    # courses.js gates the resume affordance on `progress > 0`,
+                    # so the card could never render "Continue: <concept>" and
+                    # always read "Start Learning" — no matter how much of the
+                    # course the learner had done. Every session began at
+                    # concept one. That is READY_FOR_USE D1, D3 and E4 failing
+                    # on a single hard-coded value.
+                    "progress": _course_progress_pct(
+                        course.get("uid"), stats, student_id),
                     "stats": stats,
                 }
             )

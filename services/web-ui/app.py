@@ -1273,7 +1273,12 @@ def proxy_search():
 @app.route('/api/courses', methods=['GET'])
 def get_courses():
     try:
-        resp = requests.get(f'{SERVICES["rag"]}/api/courses', timeout=2)
+        # WHOSE PROGRESS. Without student_id the RAG side falls back to the
+        # default profile, so a multi-profile install would show one learner's
+        # completion on another's cards.
+        resp = requests.get(f'{SERVICES["rag"]}/api/courses',
+                            params={'student_id': current_student_id()},
+                            timeout=5)
         return jsonify(resp.json()), resp.status_code
     except Exception as e:
         # The courses page has a real error state with a Retry button; this
