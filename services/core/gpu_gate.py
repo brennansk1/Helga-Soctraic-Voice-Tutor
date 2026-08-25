@@ -100,13 +100,30 @@ class GpuGate:
         # 70 LLM calls, ~35,500 generated tokens, and decode is 93% of the wall
         # clock — so the serialisation was costing roughly the whole build.
         #
-        # Raising it does not put a student behind a course build. The reserved
-        # slot is what protects them: `_can_dispatch_now` refuses background
-        # beyond `bg_slots`, so with cap=4 at most three slots are background
-        # and an arriving interactive turn always finds the fourth free — it is
-        # dispatched immediately rather than queued behind a 30-second
-        # generation. `_dispatch_next` also drains interactive waiters first,
-        # and background is never granted while any interactive turn waits.
+        # A RESERVED SLOT IS NOT RESERVED BANDWIDTH. This is the part that was
+        # wrong, and it was wrong in the direction that hurts the learner.
+        #
+        # The paragraph here used to claim that raising bg_slots "does not put
+        # a student behind a course build", because an arriving interactive
+        # turn always finds a free slot and is dispatched immediately. Both
+        # halves of that are true and the conclusion still does not follow.
+        # Measured on 2026-08-25, during a live build, with the slot free and
+        # dispatch immediate:
+        #
+        #     two concurrent 4-token generations: 145 SECONDS
+        #
+        # Four tokens. The slot was granted at once; what the learner queued
+        # behind was memory bandwidth. This is a 120 GB/s machine whose decode
+        # already runs at ~85% of that ceiling, so three background generations
+        # do not leave a quarter of the machine for the fourth request — they
+        # leave a sliver. The gate can schedule slots. It cannot schedule the
+        # memory bus.
+        #
+        # So background yields by COUNT when someone is actually learning:
+        # full width while nobody is in a session, one slot while somebody is.
+        # `_dispatch_next` still drains interactive waiters first, and
+        # background is still never granted while an interactive turn waits —
+        # those were right, they were just not sufficient on their own.
         #
         # Set HELGA_BG_SLOTS=1 to restore the old single-file behaviour.
         if bg_slots is None:
@@ -115,6 +132,16 @@ class GpuGate:
         self.busy_after = busy_after_s
         self.max_queue = max_queue
         self.admit_timeout = admit_timeout_s
+
+        # How long after an interactive turn the machine is still treated as
+        # "in use by a learner". A Socratic turn is followed by the learner
+        # READING and typing, which is exactly when a build would grab the
+        # bandwidth back and be mid-generation when the next turn arrives.
+        # Long enough to cover thinking time, short enough that a build is not
+        # throttled all evening by someone who left.
+        self.interactive_window_s = float(
+            os.getenv("HELGA_INTERACTIVE_WINDOW_S", "180"))
+        self._last_interactive_at = 0.0
 
         self._inflight = 0
         self._bg_inflight = 0
@@ -202,11 +229,29 @@ class GpuGate:
 
     # ------------------------------------------------------------- internal
 
+    def _effective_bg_slots(self):
+        """How many background slots background may hold right now.
+
+        Full width when nobody is learning. One while a learner is in a
+        session, because the second and third concurrent generation cost that
+        learner more than they gain the build — see the 145s measurement above.
+        """
+        if self._is_learner_active():
+            return 1
+        return self.bg_slots
+
+    def _is_learner_active(self):
+        if any(self._iq.values()):
+            return True
+        if self._inflight > self._bg_inflight:
+            return True   # an interactive turn is generating right now
+        return (time.time() - self._last_interactive_at) < self.interactive_window_s
+
     def _can_dispatch_now(self, ctx):
         if self._inflight >= self.cap:
             return False
         if ctx.klass == BACKGROUND:
-            if self._bg_inflight >= self.bg_slots:
+            if self._bg_inflight >= self._effective_bg_slots():
                 return False
             # never let background jump while any interactive turn waits
             if any(self._iq.values()):
@@ -214,6 +259,8 @@ class GpuGate:
         return True
 
     def _grant_locked(self, klass):
+        if klass != BACKGROUND:
+            self._last_interactive_at = time.time()
         self._inflight += 1
         if klass == BACKGROUND:
             self._bg_inflight += 1
