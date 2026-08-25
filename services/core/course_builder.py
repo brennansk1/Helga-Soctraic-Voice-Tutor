@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 # Checked at the same point as the depth contract — see the module
 # docstring there for what it exists to stop reaching a learner.
 from services.core import content_guards
+from services.core import sql_ground_truth
 
 
 class CourseCreationError(Exception):
@@ -4463,6 +4464,38 @@ class SkeletonBuilder:
 RESEARCH_TIMEOUT_S = int(os.getenv("HELGA_RESEARCH_TIMEOUT", "90"))
 
 
+
+def _ground_truth_problems(markdown, title, course_title, domain=""):
+    """Claims a real SQL engine contradicts, phrased for the retry prompt.
+
+    Applies only where a SQL engine is the authority. For a history course the
+    probes have nothing to say, and saying nothing is the correct output — an
+    empty list here means "not applicable", not "verified".
+    """
+    haystack = f"{course_title} {title}".lower()
+    if not any(k in haystack for k in ("sql", "database", "postgres", "query")):
+        return []
+    try:
+        findings, checked = sql_ground_truth.check_markdown(markdown)
+    except Exception as e:
+        # A checker that cannot run must not silently become a pass, but it
+        # also must not fail a build over a missing side-car file.
+        logger.warning("SQL ground truth could not run for %r (%s) — the "
+                       "concept is stored UNCHECKED", title, e)
+        return []
+    if not checked:
+        logger.warning("no measured SQL ground truth available — %r stored "
+                       "unchecked (run: python -m services.core.sql_ground_truth)",
+                       title)
+        return []
+    problems = []
+    for f in findings:
+        problems.append(
+            f"a factual claim contradicts what PostgreSQL actually does: "
+            f"{f['engine_says']}. Correct the sentence \"{f['claim'][:120]}\"")
+    return problems
+
+
 class ContentHydrator:
     def __init__(
         self,
@@ -5599,6 +5632,15 @@ class ContentHydrator:
             problems = list(problems) + guard_problems
             ok = False
 
+        # AND WHETHER IT IS TRUE, where that can be settled by running it.
+        truth_problems = _ground_truth_problems(
+            structured_md, title, course_title, self.topic_domain)
+        if truth_problems:
+            for tp in truth_problems:
+                logger.warning("  [FALSE] %s: %s", title, tp)
+            problems = list(problems) + truth_problems
+            ok = False
+
         if ok:
             return structured_md, {"ok": True, "problems": [], **detail}
 
@@ -5640,8 +5682,10 @@ class ContentHydrator:
                                                  course_title=course_title)
             except Exception:
                 c_guard = ["the content guards could not be evaluated"]
-            if c_guard:
-                c_problems = list(c_problems) + c_guard
+            c_truth = _ground_truth_problems(
+                candidate, title, course_title, self.topic_domain)
+            if c_guard or c_truth:
+                c_problems = list(c_problems) + list(c_guard) + list(c_truth)
                 c_ok = False
             if c_ok:
                 logger.info(f"  [DEPTH] '{title}' met contract on retry {attempt + 1}")

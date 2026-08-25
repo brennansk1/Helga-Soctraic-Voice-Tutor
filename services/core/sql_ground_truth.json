@@ -1,0 +1,28 @@
+{
+  "engine": "PostgreSQL 16.13 on aarch64-unknown-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+  "measured_at": "2026-08-25T17:12:50+00:00",
+  "probes": {
+    "count_star_vs_column": {
+      "column": 2,
+      "star": 3
+    },
+    "null_equality": "NULL",
+    "nulls_order": {
+      "asc": "last",
+      "desc": "first"
+    },
+    "rank_vs_dense_rank": {
+      "dense_rank": [
+        "1",
+        "1",
+        "2"
+      ],
+      "rank": [
+        "1",
+        "1",
+        "3"
+      ]
+    },
+    "short_circuit": "unspecified"
+  }
+}
