@@ -33,6 +33,7 @@ cd "$(dirname "$0")/.." || exit 1
 STT_PORT="${STT_PORT:-5001}"
 TTS_PORT="${TTS_PORT:-5005}"
 OLLAMA_PORT="${OLLAMA_PORT:-11434}"
+VERIFIER_PORT="${VERIFIER_PORT:-5007}"
 PIDS=".host_pids"
 mkdir -p logs
 
@@ -107,6 +108,14 @@ start)
     start_one stt "$STT_PORT" env STT_BACKEND="${STT_BACKEND:-nemotron-mlx}" \
         STT_PORT="$STT_PORT" "$HOST_PY" services/stt/stt_server.py
 
+    # The Stage 4 claim verifier, host-native for the same reason as the two
+    # above: it needs torch + transformers, and both were deliberately removed
+    # from the core and rag images. Without it running, the audit reports truth
+    # as NOT MEASURED, which is honest but blind — so it starts with the stack
+    # rather than being remembered separately.
+    start_one verifier "$VERIFIER_PORT" env VERIFIER_PORT="$VERIFIER_PORT" \
+        "$HOST_PY" services/verifier/verifier_server.py
+
     echo
     echo "Then: docker compose up -d"
     echo "Check: scripts/host_services.sh status"
@@ -122,7 +131,8 @@ stop)
 
 status)
     fail=0
-    for pair in "ollama $OLLAMA_PORT" "stt $STT_PORT" "tts $TTS_PORT"; do
+    for pair in "ollama $OLLAMA_PORT" "stt $STT_PORT" "tts $TTS_PORT" \
+                "verifier $VERIFIER_PORT"; do
         set -- $pair
         if listening "$2"; then
             printf "  %-8s up    :%s\n" "$1" "$2"
