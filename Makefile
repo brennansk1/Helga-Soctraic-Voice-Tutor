@@ -54,6 +54,16 @@ backup:
 
 test: test-unit test-integration
 
+# Does one real course work everywhere the product touches it? The test suite
+# checks the machinery; this drives the live stack against a course that
+# actually exists — tutoring, flashcards, quiz, review, search, the path.
+#   make accept COURSE=course_xxxxxxxx
+# Add QUICK=1 for one tutor turn, NOMODEL=1 while a build is hydrating.
+accept:
+	@test -n "$(COURSE)" || { echo "usage: make accept COURSE=course_xxxxxxxx"; exit 2; }
+	python3 tools/course_acceptance.py $(COURSE) \
+		$(if $(QUICK),--quick,) $(if $(NOMODEL),--no-model,)
+
 test-unit:
 	python3 -m pytest tests/ -v --tb=short -k "not integration" 2>/dev/null || echo "No unit tests found or pytest not installed"
 
