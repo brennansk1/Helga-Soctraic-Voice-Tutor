@@ -289,6 +289,40 @@ def contract_for(mastery, topic="", domain=None):
     return c
 
 
+
+# WHAT THE WORD CAP IS ACTUALLY BOUNDING.
+#
+# The hydrator validates the body it generated, then the caller APPENDS the
+# low-confidence banner, the "## Sources" citation list and "## Visual Aids",
+# and stores that. So hydration judged one artefact and finalize judged a
+# longer one: a concept passed at write time and failed at finalize on
+# "1343 words (max 1300)" — a bar the retry loop had never been shown.
+#
+# The cap exists to bound how much EXPLANATION a learner has to read. A
+# citation list is not explanation, and penalising a concept for being well
+# sourced is backwards — the same run that added 291 words of citations was
+# the best-grounded concept in the course.
+#
+# So: count the teaching text, detect elements across the whole document (a
+# URL in "## Sources" still satisfies `any_source`). Measured across the
+# existing library before switching: median machine overhead 7 words (1.8%),
+# max 291 (39%); one concept starts passing, none start failing.
+_MACHINE_SECTION = re.compile(
+    r"^##\s+(Metadata|Sources|Visual Aids|Prerequisites|Mastery Criteria)\s*$",
+    re.IGNORECASE)
+
+
+def teaching_text(body):
+    """The body minus the sections the pipeline appends around it."""
+    keep, taking = [], True
+    for line in (body or "").split("\n"):
+        if line.startswith("## "):
+            taking = not _MACHINE_SECTION.match(line.strip())
+        if taking:
+            keep.append(line)
+    return "\n".join(keep)
+
+
 def validate_concept(body, mastery, topic="", domain=None, sources=None):
     """Check one concept body against its depth contract.
 
@@ -297,7 +331,7 @@ def validate_concept(body, mastery, topic="", domain=None, sources=None):
     retrying blindly.
     """
     c = contract_for(mastery, topic, domain)
-    words = len(body.split())
+    words = len(teaching_text(body).split())
 
     # Source requirements are satisfied by the RETRIEVED sources, not by the
     # body text. Validation deliberately runs BEFORE the "## Sources" block is
