@@ -86,14 +86,27 @@ def _memoized(fn):
 DOMAIN_KEYWORDS = {
     "art": ("art", "painting", "sculpture", "artist", "renaissance", "baroque",
             "impressionis", "modernis", "gallery", "museum", "aesthetic",
-            "drawing", "portrait", "landscape art", "art history", "design",
-            "architecture", "photography"),
+            "drawing", "portrait", "landscape art", "art history",
+            # QUALIFIED ON PURPOSE. Bare "design" and "architecture" are art
+            # words that computing uses constantly — "Constraint Design",
+            # "Software Architecture", "design patterns", "schema design" —
+            # and routing those to museum archives is how an SQL course ends
+            # up citing the Met. Art history keeps plenty of unambiguous
+            # signals (painting, sculpture, renaissance, gallery, artist), so
+            # these two earn their place only in an art-shaped phrase.
+            "graphic design", "design history", "art and design",
+            "architectural history", "architecture of the", "photography"),
     "history": ("history", "historical", "war", "revolution", "century",
                 "ancient", "medieval", "colonial", "empire", "civilization",
                 "civilisation", "dynasty", "treaty", "suffrage", "movement",
                 "reconstruction", "depression", "immigration"),
     "philosophy": ("philosophy", "ethic", "moral", "metaphysic", "epistem",
-                   "logic", "existential", "phenomenolog", "aesthetics",
+                   # "logic" is qualified for the same reason as "design":
+                   # computing is full of "logical operators", "logical
+                   # validation", "logical plan", none of which wants a
+                   # philosophy archive.
+                   "formal logic", "symbolic logic", "philosophical logic",
+                   "existential", "phenomenolog", "aesthetics",
                    "political theory", "rationality", "consciousness"),
     "science": ("biology", "chemistry", "physics", "geology", "astronomy",
                 "ecology", "genetic", "molecul", "organism", "quantum",
@@ -104,11 +117,38 @@ DOMAIN_KEYWORDS = {
 }
 
 
+# WORD STARTS, NOT SUBSTRINGS.
+#
+# This matched with `w in blob`, so "art" matched "P-ART-itioning" and every
+# window-function concept in an SQL course routed to the art archives. Measured
+# on 2026-08-25: classify_domains('Tie Interaction', 'Window Function Frame
+# Semantics and Partitioning', 'advanced sql') returned ['art'], and the
+# resulting course cited the Metropolitan Museum of Art for SQL window frames.
+# "war" inside "software" does the same thing to history, and "logic" inside
+# "logical" to philosophy.
+#
+# The stems here are deliberate — "impressionis", "sociolog", "epistem" are
+# meant to catch their whole families — so the anchor is at the START of a word
+# only, which keeps every intended match and drops the accidental ones.
+_DOMAIN_PATTERNS = {
+    # A BOUNDED SUFFIX, NOT AN OPEN ONE.
+    #
+    # A word-start anchor alone still matches "war" inside "WAR-ehouse", which
+    # sent a data-warehouse course to the history archives. The entries here
+    # are a mix of whole words ("war", "art") and deliberate stems
+    # ("impressionis", "sociolog", "epistem"), so the rule allows a short
+    # inflection and no more: sociolog+ical and epistem+ology match, war+ehouse
+    # (six letters) does not.
+    d: re.compile(r"\b(?:" + "|".join(re.escape(w) for w in words)
+                  + r")\w{0,5}\b", re.IGNORECASE)
+    for d, words in DOMAIN_KEYWORDS.items()
+}
+
+
 def classify_domains(*texts):
     """Which domains a topic plausibly belongs to. May be several, or none."""
     blob = " ".join(t for t in texts if t).lower()
-    hits = {d for d, words in DOMAIN_KEYWORDS.items()
-            if any(w in blob for w in words)}
+    hits = {d for d, pat in _DOMAIN_PATTERNS.items() if pat.search(blob)}
     return sorted(hits)
 
 
