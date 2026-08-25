@@ -172,15 +172,54 @@ _OFF_TOPIC_PREFIXES = ("pinyin/", "wikijunior:", "subject:", "shelf:",
 MIN_ANCHOR_DENSITY = 1.0
 
 
-def _is_relevant(query, title, text):
-    """Does this page actually teach the subject, or merely mention the word?"""
+# WORDS OF THREE LETTERS CARRY SUBJECTS.
+#
+# The term extractor used [a-z]{4,}, so "sql" — three letters — was dropped
+# from every query. Appending the subject to the relevance check therefore
+# added nothing for an SQL course: the only token that could have
+# discriminated was the one being discarded, and the same holds for AI, ML,
+# DNA, RNA, GDP. Three letters and up, minus the function words that a
+# shorter floor would otherwise let in.
+_TERM_STOPWORDS = frozenset("""
+the and for its with from into that this than then них when what which
+was are were has have had not but all any can how why who whom whose
+one two use used using both each more most other some such only own same
+new old very via per etc via out off over under between during
+""".split())
+
+
+def _content_terms(text):
+    return {w for w in re.findall(r"[a-z]{3,}", (text or "").lower())
+            if w not in _TERM_STOPWORDS}
+
+
+def _is_relevant(query, title, text, must_include=""):
+    """Does this page actually teach the subject, or merely mention the word?
+
+    `must_include` names the SUBJECT when the caller knows it. Its terms are
+    required, not counted: a source for an SQL course has to mention SQL.
+    """
     low_title = (title or "").lower()
     if low_title.startswith(_OFF_TOPIC_PREFIXES):
         return False
 
-    terms = {w for w in re.findall(r"[a-z]{4,}", (query or "").lower())}
+    terms = _content_terms(query)
     if not terms:
         return True                      # nothing to check against
+
+    # THE SUBJECT MUST ACTUALLY APPEAR.
+    #
+    # Half the query's words matching is a low bar when the words are generic.
+    # "Sequential Scan Cost" against a radiation-oncology page matches
+    # sequential, scan and cost — a workup is sequential, it involves scans,
+    # and it has a cost — so the page was cited as the grounding source for a
+    # query-planner concept. When the caller names the subject, that is the
+    # term that decides it, and it is required rather than counted.
+    if must_include:
+        need = _content_terms(must_include)
+        body_l = (text or "").lower()
+        if need and not any(t in body_l for t in need):
+            return False
 
     body = (text or "").lower()
     # A page that teaches the subject uses its vocabulary repeatedly, not once
@@ -1095,7 +1134,8 @@ async def _research_concept_async(title, module_title, course_title, mastery=1,
         _kept, _dropped = [], []
         for e in entries:
             body = e.get("text") or ""
-            if not body or _is_relevant(_subject_judge, e.get("title") or "", body):
+            if not body or _is_relevant(_subject_judge, e.get("title") or "",
+                                        body, must_include=course_title or ""):
                 _kept.append(e)
             else:
                 _dropped.append(e)

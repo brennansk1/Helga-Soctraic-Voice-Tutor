@@ -77,3 +77,42 @@ class TestRelevance(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestShortSubjectTerms(unittest.TestCase):
+    """'sql' is three letters, and the extractor required four.
+
+    _is_relevant built its term set with [a-z]{4,}, so the subject word of an
+    SQL course was discarded from every query. Appending the subject to the
+    relevance check therefore added nothing — the only token that could
+    discriminate was the one being dropped. Same for AI, ML, DNA, RNA, GDP.
+
+    Measured on the Advanced SQL build: "Sequential Scan Cost" was grounded on
+    a radiation-oncology page, because a workup is sequential, involves scans
+    and has a cost.
+    """
+
+    def setUp(self):
+        self.mod = _load()
+
+    def test_a_three_letter_subject_survives_extraction(self):
+        terms = self.mod._content_terms("Sequential Scan Cost advanced sql")
+        self.assertIn("sql", terms)
+
+    def test_function_words_do_not(self):
+        terms = self.mod._content_terms("the cost of the scan and its use")
+        for w in ("the", "and", "its", "use"):
+            self.assertNotIn(w, terms)
+
+    def test_the_subject_is_required_not_counted(self):
+        med = ("Radiation oncology for prostate cancer. Workup includes PSA and "
+               "staging. The sequential workup determines cost and scan protocols. ") * 30
+        self.assertFalse(self.mod._is_relevant(
+            "Sequential Scan Cost", "Radiation Oncology", med,
+            must_include="advanced sql"))
+
+    def test_a_real_page_still_passes(self):
+        sql = ("In SQL a sequential scan reads every page of the table. The planner "
+               "estimates the cost of a sequential scan against an index scan. ") * 30
+        self.assertTrue(self.mod._is_relevant(
+            "Sequential Scan Cost", "Seq Scan", sql, must_include="advanced sql"))
