@@ -67,18 +67,31 @@ engines:
     engine: wikipedia
     shortcut: wp
     categories: [general]
+  # `disabled: false` IS AS LOad-BEARING AS `categories`.
+  #
+  # The note above covers categories and misses the other half of the same
+  # merge: yep and mojeek ship `disabled: true` in SearXNG's defaults, and
+  # redefining an engine by name merges your keys OVER the default — so an
+  # entry that does not say `disabled: false` inherits the default and is
+  # never queried. Measured on 2026-08-25: /config reported
+  # yep {categories: [general], enabled: False} and mojeek the same, so a
+  # combined search ran wikipedia and stackexchange only, every query returned
+  # 0 results while stackexchange 400'd, and 14 of 95 concepts in the SQL
+  # course shipped with no citation.
   - name: yep
     engine: yep
     shortcut: yep
     categories: [general]
+    disabled: false
   - name: mojeek
     engine: mojeek
     shortcut: mjk
     categories: [general]
-  - name: marginalia
-    engine: marginalia
-    shortcut: mrg
-    categories: [general]
+    disabled: false
+  # marginalia is ABSENT from this SearXNG image — /config lists 246 engines
+  # and none of them is marginalia, so the entry that used to be here was
+  # silently ignored rather than adding a source. Left out until the image
+  # ships it; naming an engine that does not exist looks like coverage.
   - name: stackexchange
     engine: stackexchange
     shortcut: stex
@@ -95,4 +108,22 @@ engines:
   - name: bing
     engine: bing
     shortcut: bi
+    disabled: true
+  # THESE COME FROM use_default_settings AND FAIL FROM A DATACENTRE IP.
+  #
+  # Neither was chosen here; both arrive with the default engine set and then
+  # return "Suspended: CAPTCHA" or "too many requests" on every query. That is
+  # not merely wasted — the research service treats a query with engines DOWN
+  # as NO SEARCH rather than "no results", so a permanently broken engine
+  # discards what the working ones found. Measured on the SQL build: every
+  # NULL-semantics query reported "3 engine(s) down (brave, stackexchange,
+  # startpage)" and returned nothing, and 14 of 95 concepts shipped with no
+  # citation at all.
+  - name: brave
+    engine: brave
+    shortcut: br
+    disabled: true
+  - name: startpage
+    engine: startpage
+    shortcut: sp
     disabled: true

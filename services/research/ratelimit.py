@@ -133,6 +133,21 @@ def _host(url):
         return ""
 
 
+# How long a caller will sit in wait() before we say the host is unusable for
+# now. A concept's whole research budget is 75s; sleeping 300s inside it for
+# one provider spends the budget and returns nothing.
+MAX_BLOCK_WAIT_S = float(os.getenv("HELGA_MAX_BLOCK_WAIT", "5"))
+
+
+def blocked_for(url):
+    """Seconds until this host will accept a call, 0 if it will accept now."""
+    host = _host(url)
+    if not host:
+        return 0.0
+    with _lock:
+        return max(0.0, _blocked_until.get(host, 0.0) - time.monotonic())
+
+
 def wait(url):
     """Block until this host may be called again. Returns seconds slept.
 

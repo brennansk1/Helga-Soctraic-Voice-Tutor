@@ -197,6 +197,22 @@ def _get_json(url, params, timeout=15, attempts=3):
     throttled = False
     for attempt in range(attempts):
         try:
+            # A HOST UNDER A LONG BLOCK IS UNUSABLE, NOT SLOW.
+            #
+            # wait() sleeps out the whole Retry-After. With OpenAlex handing
+            # back multi-hour 429s (capped at 300s here), three lookups spent
+            # the concept's entire 75s research budget sleeping, and the
+            # working provider — SearXNG, which answers in under a second —
+            # was never reached. Measured: every NULL-semantics concept came
+            # back with zero sources while a plain SearXNG query for the same
+            # words returned twenty results.
+            _blocked = _rl.blocked_for(url)
+            if _blocked > _rl.MAX_BLOCK_WAIT_S:
+                logger.info("%s is rate-limited for another %.0fs — skipping "
+                            "it for this lookup rather than spending the "
+                            "budget waiting", url, _blocked)
+                _tally("throttled")
+                return None
             _rl.wait(url)
             r = requests.get(url, params=params, headers=UA, timeout=timeout)
             _rl.note_response(url, r.status_code, r.headers)
@@ -468,7 +484,10 @@ def _openstax_chapters(archive, uid, version, cap=60, title=None):
     if not title:
         return []
     try:
-        from services.research.libretexts import chapters_for
+        try:  # container (flat layout: modules live at /app)
+            from libretexts import chapters_for
+        except ImportError:  # imported as a package
+            from services.research.libretexts import chapters_for
     except ImportError:  # container (flat)
         try:
             from libretexts import chapters_for

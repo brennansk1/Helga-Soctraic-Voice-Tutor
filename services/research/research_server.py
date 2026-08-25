@@ -6,6 +6,8 @@ Only used during course creation (batch), never during live tutoring.
 """
 
 import asyncio
+import concurrent.futures as _futures
+from concurrent.futures import TimeoutError as _FuturesTimeout
 import hashlib
 import json
 import logging
@@ -627,8 +629,14 @@ async def extract_page(session, url):
         return None
 
     try:
-        from services.research.ranking import is_documentation
-        from services.research import doc_crawler
+        try:  # container (flat layout: modules live at /app)
+            from ranking import is_documentation
+        except ImportError:  # imported as a package
+            from services.research.ranking import is_documentation
+        try:  # container (flat layout: modules live at /app)
+            import doc_crawler
+        except ImportError:  # imported as a package
+            from services.research import doc_crawler
         if is_documentation(url):
             links = doc_crawler.discover(url, html)
             if links:
@@ -1031,14 +1039,44 @@ async def _research_concept_async(title, module_title, course_title, mastery=1,
     }
 
 
+# A RESEARCH CALL MUST END.
+#
+# This ran the coroutine to completion however long it took. Measured on the
+# SQL build: calls for the NULL-semantics concepts ran past 280 seconds while
+# providers 429'd and documentation crawls ground on. The hydrator gives up at
+# HELGA_RESEARCH_TIMEOUT and writes the concept llm-only, so every one of those
+# concepts cost the full client timeout AND arrived with no citations — 14 of
+# 95 on that build.
+#
+# The deadline sits below the client's, so the service answers rather than
+# being abandoned: an answer of "nothing, and I ran out of time" is actionable
+# and a dropped connection is not.
+RESEARCH_DEADLINE_S = float(os.getenv("HELGA_RESEARCH_DEADLINE", "75"))
+
+# Small on purpose: a build researches one concept at a time, and abandoned
+# lookups keep running here until they finish and cache themselves.
+_RESEARCH_POOL = _futures.ThreadPoolExecutor(
+    max_workers=int(os.getenv("HELGA_RESEARCH_WORKERS", "4")),
+    thread_name_prefix="research")
+
+
 def research_concept_sync(title, module_title, course_title, mastery=1,
                           broaden=False):
     loop = asyncio.new_event_loop()
     try:
         return loop.run_until_complete(
-            _research_concept_async(title, module_title, course_title, mastery,
-                                    broaden)
+            asyncio.wait_for(
+                _research_concept_async(title, module_title, course_title,
+                                        mastery, broaden),
+                timeout=RESEARCH_DEADLINE_S)
         )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "research for %r hit the %.0fs deadline — returning empty rather "
+            "than holding the caller. The concept will be written llm-only.",
+            title, RESEARCH_DEADLINE_S)
+        return {"sources": [], "wikipedia": None, "combined_text": "",
+                "confidence": 0.0, "timed_out": True}
     finally:
         loop.close()
 
@@ -1075,8 +1113,28 @@ def api_research_concept():
     if not title:
         return jsonify({"error": "title required"}), 400
 
-    result = research_concept_sync(title, module_title, course_title, mastery,
-                                   broaden)
+    # THE DEADLINE HAS TO BE ENFORCED OFF THE BLOCKING THREAD.
+    #
+    # asyncio.wait_for cannot help here: it cancels at an await point, and this
+    # path blocks on synchronous HTTP inside the coroutine, so the loop never
+    # gets control back. Measured: a 75s wait_for still returned nothing after
+    # 280 seconds.
+    #
+    # Running it on a worker and bounding the WAIT does work, and the abandoned
+    # work is not wasted — it finishes and populates the research cache, so the
+    # retry that follows a timeout is usually instant. That is the same
+    # behaviour that used to be thrown away when the hydrator gave up.
+    fut = _RESEARCH_POOL.submit(research_concept_sync, title, module_title,
+                                course_title, mastery, broaden)
+    try:
+        result = fut.result(timeout=RESEARCH_DEADLINE_S)
+    except _FuturesTimeout:
+        logger.warning(
+            "research for %r exceeded %.0fs — answering empty now; the lookup "
+            "continues in the background and will be cached for the retry",
+            title, RESEARCH_DEADLINE_S)
+        result = {"sources": [], "wikipedia": None, "combined_text": "",
+                  "confidence": 0.0, "timed_out": True}
     return jsonify(result)
 
 

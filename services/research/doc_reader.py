@@ -161,7 +161,10 @@ def search_for_docs(subject, fetch=None, searxng_url=None, limit=10):
     except Exception:
         return None
     try:
-        from services.research.ranking import is_documentation
+        try:  # container (flat layout: modules live at /app)
+            from ranking import is_documentation
+        except ImportError:  # imported as a package
+            from services.research.ranking import is_documentation
     except Exception:                        # pragma: no cover - defensive
         def is_documentation(_):
             return False
@@ -507,7 +510,10 @@ def sitemap_urls(entry_url, fetch, limit=2000):
     # local. Keyed on the entry URL because the doc root filters the result.
     _ck = f"sitemap:{entry_url}"
     try:
-        from services.research.doc_fetch import _cache as _dc
+        try:  # container (flat layout: modules live at /app)
+            from doc_fetch import _cache as _dc
+        except ImportError:  # imported as a package
+            from services.research.doc_fetch import _cache as _dc
         _c = _dc()
         if _c is not None:
             _hit = _c.get(_ck)
@@ -619,7 +625,10 @@ def crawl(entry_url, fetch, max_pages=DEFAULT_MAX_PAGES,
     prefetched = {}
     if seeded:
         try:
-            from services.research.doc_fetch import PoliteFetcher
+            try:  # container (flat layout: modules live at /app)
+                from doc_fetch import PoliteFetcher
+            except ImportError:  # imported as a package
+                from services.research.doc_fetch import PoliteFetcher
             pf = PoliteFetcher()
             prefetched = pf.fetch_many([entry_url] + seeded[:max_pages])
             logger.info(f"[DOCS] prefetch {pf.stats}")
@@ -676,7 +685,10 @@ def to_book(docset, title=None):
     if not docset or not docset.pages:
         return None
     try:
-        from services.research.book_reader import Book, Chapter
+        try:  # container (flat layout: modules live at /app)
+            from book_reader import Book, Chapter
+        except ImportError:  # imported as a package
+            from services.research.book_reader import Book, Chapter
     except Exception as e:                   # pragma: no cover - defensive
         logger.warning(f"[DOCS] book_reader unavailable: {e}")
         return None
