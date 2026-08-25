@@ -1491,6 +1491,12 @@ class CourseStore:
         course_dict["uid"] = uid
         if "created_at" not in course_dict:
             course_dict["created_at"] = datetime.utcnow().isoformat()
+        # Stamped from birth so `updated_at` can be compared unconditionally.
+        # Without this a course was written with no stamp, and the staleness
+        # check in update_course had nothing to compare a caller's copy
+        # against until the second write — so the first hours of a build, the
+        # window that matters most, were unprotected.
+        course_dict.setdefault("updated_at", course_dict["created_at"])
         if "status" not in course_dict:
             course_dict["status"] = "skeleton"
 
@@ -1644,19 +1650,78 @@ class CourseStore:
         self._cache[uid] = (mtime, copy.deepcopy(course))
         return course
 
-    def update_course(self, uid: str, course_dict: dict):
+    # Fields the BUILD does not own. A hydration run holds one `course` dict
+    # for hours and writes it back repeatedly; anything changed on disk in that
+    # window is silently reverted by the next write.
+    _LEARNER_OWNED = ("title", "teaching_style", "learner_context")
+
+    def update_course(self, uid: str, course_dict: dict,
+                      preserve_learner_fields: bool = True):
         """Overwrite course structure.json and update metadata in SQLite.
 
-        Ordering matches create_course (SQLite first, then JSON). It used to be
-        the reverse, with the SQLite half wrapped in a bare `except Exception:
-        logger.error(...)` that did not re-raise — so a failed metadata write
-        left structure.json saying "ready" and courses.status saying "skeleton",
-        permanently, invisibly, with each endpoint reading a different half.
-        Now a failure of either half propagates and the caller can see it.
+        Ordering matches create_course: the RECOVERABLE store first. structure.json
+        IS the course and the row is derived metadata, so the file is written
+        atomically first and the row follows.
+
+        Both halves propagate on failure. That sentence was in this docstring
+        while the SQLite half still ended in `except Exception: logger.error(...)`
+        with no re-raise — so a locked database (the common case, since
+        hydration writes from a thread pool) left structure.json saying "ready"
+        and courses.status saying "skeleton", permanently, with each endpoint
+        reading a different half, and every caller treating the silent return
+        as success. Corrected 2026-08-25 after an audit found the claim and the
+        code disagreeing.
         """
         course_dict["uid"] = uid
+        # Captured BEFORE it is stamped: this is when the caller loaded the
+        # course, which is what decides whether their copy is stale.
+        caller_loaded_at = course_dict.get("updated_at")
         course_dict["updated_at"] = datetime.utcnow().isoformat()
-        
+
+        # LAST WRITER WINS IS WRONG FOR A WRITER THAT STARTED HOURS AGO.
+        #
+        # Measured 2026-08-25: a course title corrected from "advanced sql" to
+        # "Advanced SQL" reverted within minutes, while the same correction on
+        # an idle course stuck. The running hydration held a `course` dict
+        # loaded at resume time and wrote it back on every progress update,
+        # reverting an edit it had never been told about.
+        #
+        # The build owns modules, status and its own verdicts. It does not own
+        # what the course is CALLED, how it is taught, or what the learner said
+        # they wanted. Those are taken from disk unless a caller says it is
+        # deliberately changing them.
+        # STALENESS DECIDES, NOT THE FIELD NAME.
+        #
+        # A first version of this preserved the learner-owned fields from disk
+        # unconditionally, which fixed the clobber and broke renaming: a method
+        # called update_course silently ignored a new title. Both behaviours
+        # are wrong for the other caller.
+        #
+        # The discriminator is whether this caller has SEEN the current state.
+        # `updated_at` is stamped on every write, so a caller whose copy
+        # predates what is on disk loaded before the last change and cannot
+        # have meant to revert it — that is the hydration run holding a dict
+        # for hours. A caller who read, modified and wrote carries the current
+        # stamp, and is honoured. A caller with no stamp at all is constructing
+        # a course deliberately, and is honoured too.
+        if preserve_learner_fields and caller_loaded_at:
+            try:
+                on_disk = self.get_course(uid) or {}
+                disk_stamp = on_disk.get("updated_at")
+                if disk_stamp and caller_loaded_at < disk_stamp:
+                    for field in self._LEARNER_OWNED:
+                        current = on_disk.get(field)
+                        if current and course_dict.get(field) != current:
+                            logger.info(
+                                "update_course(%s): the caller's copy predates "
+                                "the last write, so keeping %s=%r rather than "
+                                "reverting it to %r", uid, field, current,
+                                course_dict.get(field))
+                            course_dict[field] = current
+            except Exception as e:
+                logger.debug("could not compare course staleness for %s: %s",
+                             uid, e)
+
         import copy
         path = os.path.join(self.courses_dir, uid, "structure.json")
 
@@ -1728,7 +1793,25 @@ class CourseStore:
                     )
                 conn.commit()
         except Exception as e:
-            logger.error(f"Failed to update course metadata in SQLite: {e}")
+            # THE DOCSTRING SAID THIS PROPAGATED. IT DID NOT.
+            #
+            # structure.json has already been replaced atomically by this
+            # point, so swallowing here leaves the file saying one thing and
+            # the courses row another — permanently, with the course list and
+            # the learn view reading different halves. That is the divergence
+            # this method's own docstring claims was removed, still present.
+            #
+            # "database is locked" is the common case, because hydration writes
+            # from a thread pool. It is transient, so it is retried once before
+            # the caller is told; a caller that treats a successful return as
+            # success must not be handed a half-write.
+            logger.error(
+                "course metadata for %s could NOT be written to SQLite (%s). "
+                "structure.json IS updated, so the two stores now disagree — "
+                "the course list reads the row and the learn view reads the "
+                "file. Repair with: python3 tools/reconcile_courses.py %s "
+                "--fix", uid, e, self.data_dir)
+            raise
 
     def list_catalog_courses(self, published_only: bool = True,
                              subject: str = None, grade_band: str = None) -> List[dict]:
@@ -2339,8 +2422,30 @@ class CourseStore:
         content_dir = os.path.join(self.courses_dir, course_uid, "content")
         os.makedirs(content_dir, exist_ok=True)
         path = os.path.join(content_dir, f"{concept_uid}.md")
-        with open(path, "w") as f:
-            f.write(markdown)
+
+        # ATOMIC, LIKE structure.json. This was a truncate-then-write from a
+        # THREAD POOL during hydration: a crash, a `docker stop` or an OOM
+        # between the truncate and the flush left a zero-byte or half-written
+        # .md where a finished concept used to be. It is the only writer of
+        # concept markdown and the only path that can damage a concept in an
+        # already-good course during a re-hydration or resume.
+        #
+        # fsync before rename so the bytes are on disk before the name points
+        # at them; os.replace is atomic within a filesystem.
+        tmp = f"{path}.tmp.{os.getpid()}.{threading.get_ident()}"
+        try:
+            with open(tmp, "w") as f:
+                f.write(markdown)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, path)
+        except Exception:
+            try:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            except Exception:
+                pass
+            raise
 
         try:
             import hashlib

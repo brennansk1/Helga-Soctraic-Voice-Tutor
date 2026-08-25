@@ -649,6 +649,34 @@ def create_pipeline_blueprint(storage):
         course_uid = data.get("course_uid") or f"course_{_uuid.uuid4().hex[:8]}"
         model = data.get("model") or AUTHOR_EXTERNAL
 
+        # CREATE MEANS CREATE.
+        #
+        # A caller may name the uid, which is useful for a retry — and a POST
+        # naming an EXISTING course wrote the request body straight over it:
+        # create_course does INSERT OR REPLACE plus an os.replace of
+        # structure.json, so a learner's modules were replaced wholesale and
+        # their concept files left orphaned from the new tree. Nothing in the
+        # request says "I meant to do that", so it is refused unless it does.
+        if data.get("course_uid"):
+            try:
+                _existing = storage.courses.get_course(course_uid)
+            except Exception:
+                _existing = None
+            if _existing and not data.get("replace"):
+                return jsonify({
+                    "error": f"course {course_uid} already exists",
+                    "why": ("this endpoint CREATES a course; writing to an "
+                            "existing uid would replace its structure and "
+                            "orphan its content"),
+                    "existing": {"title": _existing.get("title"),
+                                 "status": _existing.get("status"),
+                                 "modules": len(_existing.get("modules") or [])},
+                    "do_instead": (f"PUT /api/pipeline/course/{course_uid}/concepts "
+                                   f"to write content, or POST again with "
+                                   f"\"replace\": true if you truly mean to "
+                                   f"discard the existing structure"),
+                }), 409
+
         # Preset resolution, so a caller can say "college" instead of guessing
         # the three dials it stands for.
         scope = data.get("scope")

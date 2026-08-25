@@ -1415,8 +1415,18 @@ def auto_generate_flashcards_endpoint():
                 for card_info in added:
                     try:
                         storage.flashcards.grade_card_fsrs(card_info["uid"], fsrs_rating, fsrs)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        # THIS IS THE WRITE THAT SCHEDULES THE REVIEW.
+                        #
+                        # It was `except Exception: pass` — silent at every log
+                        # level. The card gets created and never scheduled, and
+                        # nothing distinguishes that from "not due yet", so a
+                        # concept the learner completed simply never comes back.
+                        # That is READY_FOR_USE D4 failing invisibly.
+                        logger.error(
+                            "could not schedule review for card %s (%s) — the "
+                            "concept was completed but will not come up for "
+                            "review", card_info.get("uid"), e)
             except Exception as e:
                 logger.warning(f"FSRS initial scheduling failed: {e}")
 

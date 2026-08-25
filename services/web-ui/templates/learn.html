@@ -1966,10 +1966,14 @@
 
         // Mode label map used by the state_update handler
         const _modeLabels = {
-            'SOCRATIC_LEARNING': { label: 'Socratic', icon: '<span class="i i-graduation" aria-hidden="true"></span>' },
-            'SPACED_REPETITION': { label: 'Review',   icon: '<span class="i i-note" aria-hidden="true"></span>' },
-            'MEMORY_PALACE':     { label: 'Palace',   icon: '<span class="i i-palace" aria-hidden="true"></span>' },
-            'LOBBY':             { label: 'Ready',    icon: '⏸' }
+            // A CLASS NAME, NOT A BLOB OF HTML. These held markup strings and
+            // the badge set them with textContent, which escapes — so the
+            // learner read the tag itself. The '⏸' glyph also mixed a third
+            // icon language into a row of mask icons.
+            'SOCRATIC_LEARNING': { label: 'Socratic', iconClass: 'i-graduation' },
+            'SPACED_REPETITION': { label: 'Review',   iconClass: 'i-note' },
+            'MEMORY_PALACE':     { label: 'Palace',   iconClass: 'i-palace' },
+            'LOBBY':             { label: 'Ready',    iconClass: 'i-dot' }
         };
 
         // Reuse the global socket from session.js
@@ -2082,7 +2086,18 @@
                 const modeBadge = document.getElementById('mode-indicator-badge');
                 if (modeBadge && fsmState) {
                     const meta = _modeLabels[fsmState] || _modeLabels['LOBBY'];
-                    modeBadge.textContent = `${meta.icon} ${meta.label}`;
+                    // meta.icon is an HTML STRING, and textContent escapes it — so the badge
+                // on the signature screen literally read
+                // `<span class="i i-graduation" aria-hidden="true"></span> Socratic`.
+                // Build the two nodes instead of stringifying them.
+                modeBadge.textContent = '';
+                if (meta.iconClass) {
+                    var _ic = document.createElement('span');
+                    _ic.className = 'i ' + meta.iconClass;
+                    _ic.setAttribute('aria-hidden', 'true');
+                    modeBadge.appendChild(_ic);
+                }
+                modeBadge.appendChild(document.createTextNode(' ' + meta.label));
                 }
             });
         }

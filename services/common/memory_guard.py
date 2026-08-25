@@ -171,14 +171,50 @@ def _read_vm_stat():
     )
 
 
+def _in_container():
+    """Are we inside Docker? Then psutil is reading the VM, not the Mac."""
+    try:
+        if os.path.exists("/.dockerenv"):
+            return True
+        with open("/proc/1/cgroup", "rt") as f:
+            return any(k in f.read() for k in ("docker", "kubepods", "containerd"))
+    except Exception:
+        return False
+
+
 def snapshot(force=False):
     """Current memory state. Cached briefly; never raises."""
     now = time.time()
     with _lock:
         if not force and _cached["snap"] and now - _cached["t"] < _CACHE_TTL_S:
             return _cached["snap"]
+    # WHOSE MEMORY ARE WE READING?
+    #
+    # _read_psutil succeeds inside a container and reports the DOCKER VM, not
+    # the Mac. Measured 2026-08-25: the host was 12.8 GB into a 14.3 GB swap
+    # file and Ollama was evicting a 14 GB model under pressure, while this
+    # module reported swap_used_gb 0.0, under_pressure False and
+    # allow_background True — so the guard kept green-lighting the background
+    # build that was causing it.
+    #
+    # A container cannot see the host's memory, and there is no honest way to
+    # fake it. So it says UNKNOWN and the callers treat unknown as "do not
+    # start new background work", rather than being handed a confident reading
+    # of the wrong machine. A wrong number is worse than no number, because
+    # only one of them makes you look.
     snap = None
-    for reader in (_read_psutil, _read_vm_stat):
+    if _in_container():
+        snap = MemorySnapshot(
+            total_gb=0.0, available_gb=float("inf"), used_pct=0.0,
+            swap_total_gb=0.0, swap_used_gb=0.0, source="unavailable",
+            note="running in a container — the host's memory is not visible")
+        logger.debug("memory: running in a container; the host's memory is "
+                     "not visible from here")
+        with _lock:
+            _cached["snap"], _cached["t"] = snap, now
+        return snap
+
+    for reader in (_read_vm_stat, _read_psutil):
         try:
             snap = reader()
             break

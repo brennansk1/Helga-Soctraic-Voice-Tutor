@@ -90,7 +90,10 @@ class TestTextbookSourcesAreTreatedAsGrounding(unittest.TestCase):
         not merely old."""
         src = open(os.path.join(
             _ROOT, 'services/research/research_server.py')).read()
-        block = src[src.index('def textbook_lookup'):][:800]
+        # The window has to clear the docstring. It was 800 chars and broke
+        # when the function gained an explanation of what `context` is for —
+        # the same brittleness the note below is about, one level out.
+        block = src[src.index('def textbook_lookup'):][:2500]
         # Assert the key is VERSIONED, not that it is any particular version.
         # Pinning "v2|" made this test fail the moment the version was bumped
         # for a real reason — the density fix that stopped a constructed-

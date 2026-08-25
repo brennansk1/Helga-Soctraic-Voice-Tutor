@@ -2757,6 +2757,8 @@ select:focus {
     border: none;
     transition: all 0.15s ease;
     text-decoration: none;
+    /* A button label is not a paragraph. */
+    white-space: nowrap;
 }
 
 .btn-alpine-primary {

@@ -242,7 +242,10 @@ async function loadCourses() {
                 actionButton.textContent = 'Building...';
             } else if (isReady) {
                 actionButton = mkEl('button', 'btn-alpine btn-alpine-primary');
-                actionButton.style.flex = '1';
+                // NOT flex:1. That split the row evenly with three 40px icon buttons,
+        // leaving a 104px box, so every two-word label — "Resume build",
+        // "Start Learning" — wrapped to two lines. Let the label size the
+        // button and let the icons keep their intrinsic width.
                 actionButton.dataset.action = 'start';
                 actionButton.dataset.uid = course.uid;
                 actionButton.dataset.title = course.title || '';
@@ -392,7 +395,6 @@ async function loadCourses() {
             const actions = mkEl('div', 'course-card-actions');
             if (isEmpty) {
                 const inc = mkEl('button', 'btn-alpine btn-alpine-secondary');
-                inc.style.flex = '1';
                 inc.disabled = true;
                 inc.textContent = 'Incomplete';
                 actions.appendChild(inc);

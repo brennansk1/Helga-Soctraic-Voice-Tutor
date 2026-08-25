@@ -1215,6 +1215,13 @@ a:not([class]) {
     text-decoration: underline;
     text-underline-offset: 0.15em;
 }
+
+/* THE LOGO IS AN UNCLASSED ANCHOR, AND THE RULE ABOVE CAUGHT IT.
+   `<div class="logo"><a href="/">Helga</a></div>` matches `a:not([class])`,
+   which loads after `.logo a` in style.css and has equal specificity — so the
+   wordmark rendered underlined in accent blue on every page in the product.
+   The first element a visitor sees looked like unstyled HTML. */
+.logo a { text-decoration: none; }
 a:not([class]):hover {
     color: var(--accent-primary-dark);
 }
@@ -1333,4 +1340,20 @@ a:not([class]):hover {
 @media (max-width: 560px) {
     .health-item { grid-template-columns: auto 1fr; }
     .health-state { grid-column: 2; }
+}
+
+
+/* ON A PHONE THERE WAS NO NAVIGATION AT ALL.
+   At a 375px viewport the header measured 465px: .app-nav collapses to a
+   hamburger at 900px and the gamification chips hide at 1100px, but nothing
+   ever collapsed the search field, the build pill, Ask and Notify — so the
+   hamburger they collapse TO was pushed past the right edge, along with the
+   theme toggle, and every page inherited ~90px of sideways scroll with card
+   borders clipped.
+
+   Verify with: document.documentElement.scrollWidth === clientWidth at 375. */
+@media (max-width: 560px) {
+  .helga-search-wrapper .helga-search-input { display: none; }
+  .build-pill span { display: none; }   /* the pulse dot still shows state */
+  .app-header { gap: var(--space-2); padding: 0 var(--space-3); }
 }

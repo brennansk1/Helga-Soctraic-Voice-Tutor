@@ -415,7 +415,15 @@ def primary_source_lookup(query, limit=2):
         _rl.wait(_u)
         # mailto only when HELGA_CONTACT is a real address: the polite pool is
         # checking for a reachable contact, and noreply@localhost is not one.
-        _p = {"query": query, "rows": limit, "select": "DOI,title,type,issued"}
+        # `select` RESTRICTS the returned fields, and `abstract` was not among
+        # them — so `item.get("abstract")` was always None, every item failed
+        # the PRIMARY_MIN_ABSTRACT check below, and Crossref contributed
+        # nothing at all. The provider that exists specifically to cover the
+        # disciplines arXiv does not has been silently returning zero results.
+        # `has-abstract:true` also stops us paying for rows we will discard.
+        _p = {"query": query, "rows": max(limit * 3, limit),
+              "filter": "has-abstract:true",
+              "select": "DOI,title,type,issued,abstract"}
         _p.update(_rl.contact_param())
         r = requests.get(_u, params=_p, headers=_rl.headers(), timeout=15)
         _rl.note_response(_u, r.status_code, r.headers)
@@ -477,7 +485,16 @@ def primary_source_lookup(query, limit=2):
                     })
         except Exception as e:
             logger.debug(f"arxiv lookup failed for {query!r}: {e}")
-        had_error = True
+            # INSIDE the except. At 8 spaces this ran unconditionally whenever
+            # the arXiv branch was entered — which is whenever Crossref did not
+            # fill the quota — so `had_error` was always True, the guard below
+            # always fired, and NO empty primary lookup was ever cached. Every
+            # rung of the ladder re-issued an arXiv call carrying its mandatory
+            # 3-second wait, on every concept, on every build: about 475 round
+            # trips and ~24 minutes of pure rate-limit sleep per 95-concept
+            # course. The caching contract described below was written
+            # correctly and never once executed.
+            had_error = True
 
     # Same contract as textbook_lookup: an errored lookup must not record
     # "no primary literature exists for this subject" for the next 24 hours.

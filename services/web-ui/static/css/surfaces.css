@@ -455,7 +455,7 @@
 }
 
 @media (max-width: 640px) {
-    .learn-mode-link span:last-child { display: none; }
+    .learn-mode-link > span:last-child { display: none; }
 }
 
 /* --- Ask (A5.2) -----------------------------------------------------------

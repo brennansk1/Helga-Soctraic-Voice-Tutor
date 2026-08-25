@@ -26,6 +26,10 @@ from services.core.depth_contract import (
 
 logger = logging.getLogger(__name__)
 
+# Checked at the same point as the depth contract — see the module
+# docstring there for what it exists to stop reaching a learner.
+from services.core import content_guards
+
 
 class CourseCreationError(Exception):
     """Raised when course creation fails irrecoverably (e.g., LLM retry exhaustion, hydration threshold exceeded)."""
@@ -5541,6 +5545,28 @@ class ContentHydrator:
         ok, problems, detail = validate_concept(
             structured_md, self.mastery_level, course_title, self.topic_domain,
             sources=research_sources)
+
+        # WHAT MUST NEVER REACH A LEARNER, checked alongside how deep it is.
+        #
+        # The depth contract asks whether a concept is deep ENOUGH. It has
+        # nothing to say about the model's own deliberation left in the text,
+        # a section filled with boilerplate, or a build-time apology printed
+        # mid-lesson — all of which an audit found in concepts that met their
+        # contract. These problems join the same list, so the regeneration loop
+        # below fixes them with no new machinery.
+        try:
+            guard_problems = content_guards.inspect(
+                structured_md, title=title, course_title=course_title)
+        except Exception as e:
+            logger.error("content guards could not run for %r (%s) — refusing "
+                         "rather than passing it unchecked", title, e)
+            guard_problems = ["the content guards could not be evaluated"]
+        if guard_problems:
+            for gp in guard_problems:
+                logger.warning("  [GUARD] %s: %s", title, gp)
+            problems = list(problems) + guard_problems
+            ok = False
+
         if ok:
             return structured_md, {"ok": True, "problems": [], **detail}
 
@@ -5577,6 +5603,14 @@ class ContentHydrator:
             c_ok, c_problems, c_detail = validate_concept(
                 candidate, self.mastery_level, course_title, self.topic_domain,
                 sources=research_sources)
+            try:
+                c_guard = content_guards.inspect(candidate, title=title,
+                                                 course_title=course_title)
+            except Exception:
+                c_guard = ["the content guards could not be evaluated"]
+            if c_guard:
+                c_problems = list(c_problems) + c_guard
+                c_ok = False
             if c_ok:
                 logger.info(f"  [DEPTH] '{title}' met contract on retry {attempt + 1}")
                 return candidate, {"ok": True, "problems": [], **c_detail}
@@ -6315,8 +6349,17 @@ Now write the sections for "{title}".
         """Validate that LLM output contains all required Markdown sections. Inject stubs for missing ones."""
         required_sections = {
             "## Mastery Criteria": f"## Mastery Criteria\nStudent should demonstrate understanding of {title}.\n",
-            "## Core Explanation": f"## Core Explanation\n{title} is a key concept in {course_title}.\n",
-            "## Misconceptions": "## Misconceptions\n- **Belief**: None identified.\n- **Correction**: N/A\n",
+            # NO STUB FOR THE SECTION THAT IS THE LESSON.
+            #
+            # This injected "{title} is a key concept in {course_title}." when
+            # the model omitted the heading, and the concept then passed every
+            # structural check while teaching nothing — six of nine concepts in
+            # one course, all of them scoring as complete. A missing Core
+            # Explanation is a failed generation, and content_guards reports it
+            # so the existing retry loop regenerates instead.
+            # Likewise: "Belief: None identified / Correction: N/A" is a
+            # misconception section with no misconception in it, and the tutor
+            # reads this section before every turn.
             "## Socratic Hooks": f"## Socratic Hooks\n- Bloom 1-2: What do you think {title} means?\n- Bloom 3-4: How would you apply {title}?\n- Bloom 5-6: When does {title} break down?\n",
         }
         if depth >= 2:

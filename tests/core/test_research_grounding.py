@@ -303,9 +303,20 @@ def _run_pipeline(title, module='Right Triangles', course='Geometry',
 class TestPipelineIsConceptSpecific(unittest.TestCase):
 
     def test_the_concept_is_the_first_thing_looked_up(self):
+        """The CONCEPT leads the ladder — now qualified by its subject.
+
+        The rung is "&lt;subject&gt; &lt;concept&gt;" rather than the bare concept since
+        2026-08-25. The contract this test defends — the concept before the
+        module, never the module first — is unchanged; what changed is that a
+        generic concept title no longer goes to the web without saying what
+        field it belongs to. "Clause Ordering Rules" alone returned the Federal
+        Rules of Evidence.
+        """
         _r, seen, _ds = _run_pipeline('Identify the Right Angle')
-        self.assertEqual(seen["textbook"][0], 'Identify the Right Angle')
-        self.assertEqual(seen["primary"][0], 'Identify the Right Angle')
+        self.assertIn('Identify the Right Angle', seen["textbook"][0])
+        self.assertIn('Identify the Right Angle', seen["primary"][0])
+        # And the subject is carried with it.
+        self.assertIn('Geometry', seen["textbook"][0])
 
     def test_a_concept_hit_is_kept_instead_of_the_module_one(self):
         r, _seen, _ds = _run_pipeline(
@@ -363,7 +374,7 @@ class TestBroadenActuallyBroadens(unittest.TestCase):
         _w, seen_w, _ = _run_pipeline('Concept A', broaden=True)
         for q in seen_n["search"]:
             self.assertIn(q, seen_w["search"])
-        self.assertEqual(seen_w["textbook"][0], 'Concept A')
+        self.assertIn('Concept A', seen_w["textbook"][0])
 
     def test_broadening_raises_the_ceiling_per_kind(self):
         import inspect

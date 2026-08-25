@@ -86,7 +86,25 @@ STAGE_QUIET_BUDGET = {
 
 # Absolute backstop. If a pipeline owner dies without calling finish()/fail()
 # and something keeps the record chatty, the banner must still go away.
-MAX_BUILD_SECONDS = 4 * 60 * 60
+#
+# FOUR HOURS WAS SHORTER THAN A REAL BUILD.
+#
+# course_cleaner.py records a 101-concept course that sat in one phase for
+# FIVE AND A HALF HOURS while it hydrated. This constant was four, so a
+# healthy, actively-writing build stopped counting as active at hour four —
+# and background_ops' stale-build reaper uses exactly this to decide whether
+# it may mark a course `failed`. Losing the guard is what wrote "failed" onto
+# a course that was mid-hydration, twice, on 2026-08-25.
+#
+# The backstop still exists — a dead owner must not pin the banner forever —
+# but it is now longer than the longest build actually observed, with room,
+# and it is not the only signal: see LAST_HEARTBEAT_SECONDS. A build that is
+# still reporting is alive whatever its age.
+MAX_BUILD_SECONDS = int(os.getenv("HELGA_MAX_BUILD_SECONDS", 12 * 60 * 60))
+
+# A build that reported progress recently is alive, regardless of when it
+# started. Age alone cannot distinguish "long" from "dead"; silence can.
+LAST_HEARTBEAT_SECONDS = int(os.getenv("HELGA_BUILD_HEARTBEAT_SECONDS", 45 * 60))
 
 # Status vocabulary the builders already emit. Counting here rather than at the
 # call site means every stage that tees its callback contributes — previously
@@ -203,11 +221,31 @@ def _quiet_budget(state):
 
 
 def _is_stale(state, now=None):
+    """Dead, not merely long.
+
+    AGE ALONE CANNOT TELL THE DIFFERENCE. This returned True the moment a build
+    passed MAX_BUILD_SECONDS even if it had reported progress one second
+    earlier, and background_ops' reaper reads exactly this to decide whether it
+    may write `failed` on a course. A build that is still talking is alive; the
+    absolute cap is there for an owner that died without saying so, and it must
+    not fire on one that is plainly still working.
+    """
     now = now or time.time()
-    if now - (state.get("updated_at") or 0) > _quiet_budget(state):
+    updated = state.get("updated_at") or 0
+    if now - updated > _quiet_budget(state):
         return True
+
     started = state.get("started_at") or 0
-    return bool(started and now - started > MAX_BUILD_SECONDS)
+    if started and now - started > MAX_BUILD_SECONDS:
+        # Past the backstop — but only stale if it has ALSO gone quiet.
+        if updated and now - updated <= LAST_HEARTBEAT_SECONDS:
+            logger.info(
+                "build %s is past the %ds backstop but reported %ds ago — "
+                "treating it as alive, not stale",
+                state.get("build_id"), MAX_BUILD_SECONDS, int(now - updated))
+            return False
+        return True
+    return False
 
 
 def _owns(state, build_id):
