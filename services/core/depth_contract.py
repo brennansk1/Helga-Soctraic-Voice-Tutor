@@ -117,6 +117,32 @@ _DETECTORS = {
 
 # Primary literature vs general reference. A graduate course citing only
 # Wikipedia is not a graduate course.
+# APPLIED DOMAINS PROVE THINGS DIFFERENTLY.
+#
+# Mathematics rests on named theorems; an engineering subject rests on a
+# NORMATIVE SPECIFICATION — the standard, or the implementation's own reference
+# documentation. Measured on 2026-08-25 across 16 concepts known to be good (4
+# hand-written for a query-plan course, 12 from the local SQL build): every one
+# had a formal definition and a worked example, and ZERO named a theorem, lemma
+# or law. That is not thin content failing a bar; it is a bar describing a
+# different subject.
+DOMAIN_APPLIED = frozenset({
+    "computer_science", "engineering", "technology", "software",
+    "medicine_practice", "business",
+})
+
+# For those domains the primary source is the thing that DEFINES the behaviour:
+# the language standard, the RFC, the vendor's reference manual. A PostgreSQL
+# doc page is more primary for PostgreSQL semantics than any journal article,
+# and treating it as a secondary reference pushed courses toward citing papers
+# about the subject instead of the specification of it.
+_NORMATIVE_SOURCE = re.compile(
+    r"postgresql\.org/docs|dev\.mysql\.com/doc|docs\.oracle\.com|"
+    r"sqlite\.org|learn\.microsoft\.com|docs\.snowflake\.com|"
+    r"iso\.org|ietf\.org|rfc-editor\.org|w3\.org/TR|"
+    r"docs\.python\.org|developer\.mozilla\.org|kernel\.org/doc",
+    re.IGNORECASE)
+
 _PRIMARY_SOURCE = re.compile(
     r"arxiv\.org|doi\.org|\bdoi:|pubmed|pmc\.ncbi|jstor|"
     r"sciencedirect|springer|wiley|nature\.com|sciencemag|acm\.org|ieee",
@@ -128,11 +154,15 @@ def _has_formal_notation(body):
     return bool(_MATH_INLINE.search(body) or _MATH_UNICODE.search(body))
 
 
-def _has(element, body):
+def _has(element, body, domain=None):
     if element == "formal_notation":
         return _has_formal_notation(body)
     if element == "primary_source":
-        return bool(_PRIMARY_SOURCE.search(body))
+        if bool(_PRIMARY_SOURCE.search(body)):
+            return True
+        # In an applied domain the specification IS the primary source.
+        return bool(domain in DOMAIN_APPLIED
+                    and _NORMATIVE_SOURCE.search(body))
     if element == "any_source":
         return bool(_ANY_SOURCE.search(body))
     det = _DETECTORS.get(element)
@@ -277,6 +307,15 @@ def contract_for(mastery, topic="", domain=None):
     c["required"] = list(c["required"])
 
     resolved = domain or infer_domain(topic)
+
+    if resolved in DOMAIN_APPLIED and "named_result" in c["required"]:
+        # See DOMAIN_APPLIED above: 0 of 16 known-good concepts named a
+        # theorem. Everything else stays — at mastery 4 this contract still
+        # demands 500+ words, a formal definition, a worked example, a
+        # derivation, and a primary source. Nothing hollow gets through by
+        # dropping "must cite a theorem" from an engineering subject.
+        c["required"] = [e for e in c["required"] if e != "named_result"]
+
     if resolved != DOMAIN_FORMAL:
         # Only demand symbolic notation where we positively believe it belongs.
         # Swap it for a narrative-appropriate rigor requirement rather than
@@ -356,8 +395,8 @@ def validate_concept(body, mastery, topic="", domain=None, sources=None):
 
     def _satisfied(e):
         if e in ("any_source", "primary_source") and src_blob:
-            return _has(e, src_blob) or (e == "any_source")
-        return _has(e, body)
+            return _has(e, src_blob, c.get("domain")) or (e == "any_source")
+        return _has(e, body, c.get("domain"))
 
     missing = [e for e in c["required"] if not _satisfied(e)]
     for e in missing:

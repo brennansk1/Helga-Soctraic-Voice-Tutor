@@ -6114,12 +6114,31 @@ answerable. Do NOT include the solution.]"""
         try:
             from services.core.depth_contract import contract_for as _contract_for
             _c = _contract_for(self.mastery_level, course_title, self.topic_domain)
-            if "formal_definition" in (_c.get("required") or []):
+            _req = _c.get("required") or []
+            if "formal_definition" in _req:
                 definition_line = (
                     "\nOpen with a one-sentence formal definition on its own "
                     "line, in exactly this form:\n"
                     "**Definition.** <the term> is <the precise definition>.\n"
                     "It must be a definition, not a restatement of the title.\n")
+            # Same reasoning as the definition hint, for the elements the
+            # higher levels add. Measured before adding these: across 12
+            # concepts of a mastery-3 build, derivation_or_proof appeared in 3
+            # — not because the subject cannot support one, but because
+            # nothing asked. A proficiency-level concept that explains WHY a
+            # behaviour follows is better teaching as well as a passing one.
+            if "derivation_or_proof" in _req:
+                definition_line += (
+                    "\nInclude a short derivation: take the behaviour you have "
+                    "just defined and show, step by step, why it follows — "
+                    "'Step 1 ... Step 2 ... therefore ...'. Reason from stated "
+                    "premises to the result; do not assert the result twice.\n")
+            if "primary_source" in _req:
+                definition_line += (
+                    "\nCite the NORMATIVE source for this behaviour — the "
+                    "language standard or the implementation's own reference "
+                    "documentation (for example the PostgreSQL manual), not a "
+                    "blog post or a general encyclopaedia entry.\n")
         except Exception as e:
             logger.debug("contract lookup for the definition hint failed: %s", e)
 

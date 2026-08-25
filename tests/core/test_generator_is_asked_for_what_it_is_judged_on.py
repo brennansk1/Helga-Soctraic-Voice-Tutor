@@ -55,3 +55,24 @@ def test_a_level_that_does_not_require_it_is_not_asked_for_it():
     from services.core.depth_contract import contract_for
     assert "formal_definition" not in contract_for(2, "sql", "computer_science")["required"]
     assert "formal_definition" in contract_for(3, "sql", "computer_science")["required"]
+
+
+# ------------------------------------------------ the higher levels' elements
+
+def test_the_prompt_asks_for_a_derivation_where_one_is_required():
+    """Measured across 12 concepts of a mastery-3 build: derivation_or_proof
+    appeared in 3, not because SQL cannot support one but because nothing
+    asked for it."""
+    src = _read("services", "core", "course_builder.py")
+    i = src.find("definition_line = \"\"")
+    block = src[i:i + 3000]
+    assert "derivation_or_proof" in block
+    assert "step by step" in block.lower()
+
+
+def test_the_prompt_asks_for_the_normative_source():
+    src = _read("services", "core", "course_builder.py")
+    i = src.find("definition_line = \"\"")
+    block = src[i:i + 3000]
+    assert "primary_source" in block
+    assert "normative" in block.lower()
