@@ -267,6 +267,26 @@ def _last_tutor_line(state):
     return ""
 
 
+
+def _wait_for_tutor_line(before="", timeout_s=None):
+    """Poll until the tutor says something NEW, or give up honestly.
+
+    `before` is the line already on screen; a turn is new when it differs.
+    Returns "" on timeout so the caller reports a real failure rather than a
+    stale line read twice.
+    """
+    import time as _t
+    limit = timeout_s or TUTOR_TIMEOUT
+    deadline = _t.time() + limit
+    while _t.time() < deadline:
+        st, state = call("GET", f"{CORE}/state?student_id=default")
+        line = _last_tutor_line(state)
+        if line and line != before:
+            return line
+        _t.sleep(3)
+    return ""
+
+
 def _tutor_turn(uid, concept_uid, learner_text):
     call("POST", f"{CORE}/event",
          {"type": "SET_CONTEXT", "student_id": "default",
@@ -274,14 +294,18 @@ def _tutor_turn(uid, concept_uid, learner_text):
     call("POST", f"{CORE}/event",
          {"type": "NAVIGATE_TO_TOPIC", "student_id": "default",
           "payload": {"topic_id": concept_uid}}, timeout=TUTOR_TIMEOUT)
-    st, state = call("GET", f"{CORE}/state?student_id=default")
-    opening = ""
-    opening = _last_tutor_line(state)
+    # THE TURN IS WRITTEN AFTER THE POST RETURNS.
+    #
+    # Reading state once, immediately, reported "no opening turn" for the FIRST
+    # concept of every run and passed the rest — because by then the model was
+    # warm and the turn happened to land inside the request. That is a race in
+    # this harness, and it was reporting a product failure for it.
+    opening = _wait_for_tutor_line(before="")
     call("POST", f"{CORE}/event",
          {"type": "TEXT_INPUT", "student_id": "default",
           "payload": {"text": learner_text}}, timeout=TUTOR_TIMEOUT)
+    reply = _wait_for_tutor_line(before=opening)
     st, state = call("GET", f"{CORE}/state?student_id=default")
-    reply = _last_tutor_line(state)
     return opening, reply, state
 
 
