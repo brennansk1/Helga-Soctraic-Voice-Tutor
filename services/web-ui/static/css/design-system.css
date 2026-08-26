@@ -497,7 +497,15 @@
        already knows which page they clicked. */
     --font-size-3xl: 1.6rem;
     --font-size-2xl: 1.3rem;
-    --font-size-xl: 1.1rem;
+    /* xl was 1.1rem, and --font-size-lg is 1.125rem — so XL RENDERED SMALLER
+       THAN LG. This block lowered 3xl/2xl/xl deliberately for a calmer scale
+       and lg, defined elsewhere, was not lowered with them, which left the
+       ramp going backwards in the middle. Thirteen rules across eight files
+       ask for xl expecting a step UP from lg and were quietly getting a step
+       down.
+       The scale now climbs the whole way: sm .875 < base 1 < lg 1.125
+       < xl 1.2 < 2xl 1.3 < 3xl 1.6. */
+    --font-size-xl: 1.2rem;
     --line-height: 1.5;
 }
 

@@ -108,7 +108,12 @@
         for (var i = 0; i < cards.length; i++) {
             var card = cards[i];
             if (card.querySelector('[data-share-export]')) continue;
-            var actions = card.querySelector('.course-card-actions');
+            // The icon row, not the action row. The primary button moved to a
+            // full-width row of its own because a long "Continue: <concept>"
+            // was pushing THIS button off the card; appending here would put
+            // it straight back beside the thing that displaced it.
+            var actions = card.querySelector('.course-card-tools') ||
+                          card.querySelector('.course-card-actions');
             // The uid is not on the card element itself; the view/delete
             // buttons carry it as data-uid, the same way courses.js reads it.
             var carrier = card.querySelector('[data-action][data-uid]');

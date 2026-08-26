@@ -555,3 +555,50 @@
 }
 
 
+
+/* ---- Course card: two action rows -----------------------------------------
+   The primary button names the concept you would resume, so its width is set
+   by content ("Continue: SELECT Clause Syntax" measured 272px) while the icon
+   buttons are a fixed 64. Sharing one flex row, the icons lost — measured on
+   the live grid, the export control sat past the card's right edge on three of
+   four cards, so whether a control existed depended on the length of a
+   concept's name.
+   Icons keep their own row; the primary action takes the full width below. */
+.course-card-tools {
+    display: flex;
+    gap: var(--space-2);
+    justify-content: flex-end;
+    margin-top: var(--space-3);
+}
+.course-card-actions {
+    display: flex;
+    margin-top: var(--space-2);
+}
+.course-card-actions > .btn-alpine {
+    flex: 1 1 auto;
+    width: 100%;
+    /* A long concept title should wrap or ellipsise inside the button rather
+       than stretch the card. */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ---- Course card: a title that reads as the heading it is ----------------- */
+.course-card-title {
+    /* 2xl: below the page h1 (3xl) and the section h2, above everything else
+       on the card — which is the order a reader should scan them in. */
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold, 700);
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+    margin-bottom: var(--space-1);
+}
+
+/* The line under the bar. A percentage alone says neither how much is left nor
+   when you were last here; both facts were already on hand and unshown. */
+.course-card-progress-sub {
+    margin: var(--space-1) 0 0;
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+}

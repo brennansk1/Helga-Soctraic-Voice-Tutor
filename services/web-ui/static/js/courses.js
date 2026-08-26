@@ -466,8 +466,41 @@ async function loadCourses() {
                 prog.appendChild(bar);
                 prog.appendChild(pct);
                 body.appendChild(prog);
+
+                /* WHAT THE PERCENTAGE DOES NOT SAY.
+                   "4%" answers almost nothing on its own: not how much is
+                   left, and not whether you were here this morning or three
+                   weeks ago. Both facts are already on hand — the concept
+                   count is in stats, the timestamp comes back with the resume
+                   point — and neither was being shown. */
+                const st = course.stats || {};
+                const done = Math.round((progress / 100) * (st.concepts || 0));
+                const rp2 = (window.RESUME_POINTS || {})[course.uid];
+                const bits = [];
+                if (st.concepts) {
+                    bits.push(done + ' of ' + st.concepts + ' concepts');
+                }
+                if (rp2 && rp2.saved_at) {
+                    bits.push('last studied ' + relativeDay(rp2.saved_at));
+                }
+                if (bits.length) {
+                    const sub = mkEl('p', 'course-card-progress-sub');
+                    sub.textContent = bits.join(' · ');
+                    body.appendChild(sub);
+                }
             }
 
+            /* TWO ROWS, NOT ONE.
+               The primary button carries the concept you would resume — and
+               "Continue: SELECT Clause Syntax" is 272px, against 64px icon
+               buttons in a shared flex row. Measured on the live grid: the
+               export icon was pushed past the card's right edge on three of
+               four cards, so the width of a concept's NAME decided whether a
+               control existed.
+               The icons keep a fixed row of their own; the primary action gets
+               the full width beneath them, where it can be as long as the
+               concept title needs. */
+            const iconRow = mkEl('div', 'course-card-tools');
             const actions = mkEl('div', 'course-card-actions');
             if (isEmpty) {
                 const inc = mkEl('button', 'btn-alpine btn-alpine-secondary');
@@ -484,7 +517,7 @@ async function loadCourses() {
             viewBtn.title = 'View structure';
             viewBtn.setAttribute('aria-label', 'View structure for ' + (course.title || ''));
             viewBtn.appendChild(mkIcon('i-clipboard'));
-            actions.appendChild(viewBtn);
+            iconRow.appendChild(viewBtn);
 
             const delBtn = mkEl('button', 'btn-alpine btn-alpine-ghost course-card-icon-btn is-danger');
             delBtn.dataset.action = 'delete';
@@ -493,8 +526,9 @@ async function loadCourses() {
             delBtn.title = 'Delete course';
             delBtn.setAttribute('aria-label', 'Delete ' + (course.title || ''));
             delBtn.appendChild(mkIcon('i-trash'));
-            actions.appendChild(delBtn);
+            iconRow.appendChild(delBtn);
 
+            body.appendChild(iconRow);
             body.appendChild(actions);
             card.appendChild(body);
             grid.appendChild(card);

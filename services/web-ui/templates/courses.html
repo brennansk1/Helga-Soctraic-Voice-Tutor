@@ -380,14 +380,14 @@ function submitImport() {
     "Identifier 'ALPINE_COLORS' has already been declared" and every listener
     it registered after that line never attached. #}
 {% block page_scripts %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/courses.css') }}?v=6">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/courses.css') }}?v=8">
 <!-- The course cards now carry the build's own quality verdicts, and the
      styles for them live with the rest of the trust language rather than being
      duplicated here. -->
 <link rel="stylesheet" href="{{ url_for('static', filename='css/trust.css') }}?v=2">
 <script src="{{ url_for('static', filename='js/socket.io.min.js') }}"></script>
 <script src="{{ url_for('static', filename='js/progress-tree.js') }}?v=1"></script>
-<script src="{{ url_for('static', filename='js/courses.js') }}?v=9"></script>
+<script src="{{ url_for('static', filename='js/courses.js') }}?v=10"></script>
 <script src="{{ url_for('static', filename='js/course-share.js') }}?v=1"></script>
 <script>
 (function () {
