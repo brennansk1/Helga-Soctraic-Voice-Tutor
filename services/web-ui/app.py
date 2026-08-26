@@ -1275,6 +1275,15 @@ def api_resume_points():
 # this hardware: 114s.
 EVENT_PROXY_TIMEOUT_S = int(os.getenv("HELGA_EVENT_PROXY_TIMEOUT", "300"))
 
+# ANYTHING THAT GENERATES NEEDS A GENERATION-SIZED TIMEOUT.
+#
+# Quiz questions and flashcards are written by the model, on local hardware
+# where a cold load alone is 135 seconds. These proxies waited 30, so both
+# endpoints returned "Read timed out" every time and the learner saw a failure
+# for work that was proceeding normally behind it — the same defect the event
+# proxy had, in two more places.
+GENERATE_PROXY_TIMEOUT_S = int(os.getenv("HELGA_GENERATE_TIMEOUT", "300"))
+
 
 @app.route('/api/event', methods=['POST'])
 @csrf_protect
@@ -1744,10 +1753,22 @@ def _fresh_depth(course):
     if not isinstance(audit, dict) or not audit.get('ran'):
         return None
     d = (audit.get('ledger') or {}).get('depth')
-    if not isinstance(d, dict) or not d.get('checked'):
-        return None
-    concepts = _num(d.get('concepts'), 0) or 0
-    missed = _num(d.get('missed'), 0) or 0
+    if isinstance(d, dict) and d.get('checked'):
+        concepts = _num(d.get('concepts'), 0) or 0
+        missed = _num(d.get('missed'), 0) or 0
+    else:
+        # An audit run from the CLI records findings but no ledger. The depth
+        # answer is in the findings either way — the audit re-ran
+        # validate_concept over every stored concept to produce them — so it
+        # is derived rather than treated as unmeasured, which would send the
+        # card back to the stale build stamp this exists to replace.
+        concepts = _num(audit.get('concepts_audited'), 0) or 0
+        missed = len({f.get('concept_uid')
+                      for f in (audit.get('findings') or [])
+                      if f.get('check') == 'depth_contract'})
+        for sysf in audit.get('systemic') or []:
+            if sysf.get('check') == 'depth_contract':
+                missed = max(missed, _num(sysf.get('concepts'), 0) or 0)
     if not concepts:
         return None
     return {
@@ -2624,7 +2645,8 @@ def get_quiz():
         course_uid = request.args.get('course_uid')
         if course_uid:
             params['course_uid'] = course_uid
-        resp = requests.get(f'{SERVICES["rag"]}/api/quiz', params=params, timeout=30)
+        resp = requests.get(f'{SERVICES["rag"]}/api/quiz', params=params,
+                            timeout=GENERATE_PROXY_TIMEOUT_S)
         return jsonify(resp.json()), resp.status_code
     except Exception as e:
         return jsonify({'error': str(e)}), 502
@@ -2633,7 +2655,8 @@ def get_quiz():
 def grade_quiz():
     """Grade a quiz answer."""
     try:
-        resp = requests.post(f'{SERVICES["rag"]}/api/quiz/grade', json=request.json, timeout=30)
+        resp = requests.post(f'{SERVICES["rag"]}/api/quiz/grade', json=request.json,
+                             timeout=GENERATE_PROXY_TIMEOUT_S)
         return jsonify(resp.json()), resp.status_code
     except Exception as e:
         return jsonify({'error': str(e)}), 502
@@ -2663,7 +2686,8 @@ def get_due_cards():
 def generate_flashcards():
     """Generate new flashcards for a concept."""
     try:
-        resp = requests.post(f'{SERVICES["rag"]}/api/generate_flashcards', json=request.json, timeout=30)
+        resp = requests.post(f'{SERVICES["rag"]}/api/generate_flashcards', json=request.json,
+                             timeout=GENERATE_PROXY_TIMEOUT_S)
         return jsonify(resp.json()), resp.status_code
     except Exception as e:
         return jsonify({'error': str(e)}), 502
