@@ -569,7 +569,7 @@ pre.math-raw { display: block; margin: var(--space-2) 0; }
     padding: var(--space-3) var(--space-4);
     border-radius: var(--radius-lg, 12px);
     background: var(--surface-raised, var(--bg-secondary));
-    border: 1px solid var(--border-subtle, var(--border-default));
+    border: 1px solid var(--border-color);
     min-width: 15rem;
     max-width: 26rem;
 }

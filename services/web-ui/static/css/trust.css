@@ -495,7 +495,7 @@
     max-height: 60vh;
     overflow-y: auto;
     background: var(--surface-raised, var(--bg-primary));
-    border: 1px solid var(--border-default);
+    border: 1px solid var(--border-color);
     border-radius: var(--radius-md, 10px);
     box-shadow: 0 8px 24px rgba(0,0,0,.14);
     padding: var(--space-3);

@@ -3,7 +3,7 @@
 {% block title %}Helga - Learn{% endblock %}
 
 {% block head_scripts %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/learn-chat.css') }}?v=12">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/learn-chat.css') }}?v=13">
 <!-- KaTeX (offline, vendored) — math rendering in chat. Falls back to raw TeX if absent. See static/vendor/katex/README.md -->
 <link rel="stylesheet" href="{{ url_for('static', filename='vendor/katex/katex.min.css') }}">
 <script defer src="{{ url_for('static', filename='vendor/katex/katex.min.js') }}"></script>
@@ -1342,7 +1342,10 @@
                                 const badgeEl = document.createElement('span');
                                 badgeEl.className = 'mastery-badge';
                                 badgeEl.title = badge.label;
-                                badgeEl.textContent = badge.emoji;
+                                const badgeIcon = document.createElement('span');
+                                badgeIcon.className = 'i ' + badge.icon;
+                                badgeIcon.setAttribute('aria-hidden', 'true');
+                                badgeEl.appendChild(badgeIcon);
                                 nodeEl.appendChild(badgeEl);
                             }
 
@@ -1597,7 +1600,15 @@
             const isCompleted = clickedNode ? clickedNode.dataset.completed === 'true' : false;
             if (conceptTitleEl) {
                 const sessionBadge = getMasteryBadge(bloomLvl, isCompleted);
-                const badgeHtml = sessionBadge ? ` <span class="mastery-badge" title="${escapeHtml(sessionBadge.label)}">${sessionBadge.emoji}</span>` : '';
+                // .icon, NOT .emoji. getMasteryBadge returns {icon, label} —
+                // it was moved from emoji to icon classes and these two call
+                // sites were not. `undefined` is a real string once assigned,
+                // so the session header read "What a Query Plan Is undefined"
+                // and the path nodes carried an invisible one.
+                const badgeHtml = sessionBadge
+                    ? ` <span class="mastery-badge" title="${escapeHtml(sessionBadge.label)}">` +
+                      `<span class="i ${escapeHtml(sessionBadge.icon)}" aria-hidden="true"></span></span>`
+                    : '';
                 conceptTitleEl.innerHTML = escapeHtml(title) + badgeHtml;
             }
             const courseTitleText = courseTitleEl ? courseTitleEl.textContent : '';
@@ -2078,7 +2089,11 @@
                             const bloomLv = newPath && newPath.bloom ? newPath.bloom : 0;
                             const isDone = newPath && newPath.completed;
                             const sessionBadge = getMasteryBadge(bloomLv, isDone);
-                            const badgeHtml = sessionBadge ? ' <span class="mastery-badge" title="' + escapeHtml(sessionBadge.label) + '">' + sessionBadge.emoji + '</span>' : '';
+                            // Third call site of the same .emoji/.icon slip.
+                            const badgeHtml = sessionBadge
+                                ? ' <span class="mastery-badge" title="' + escapeHtml(sessionBadge.label) +
+                                  '"><span class="i ' + escapeHtml(sessionBadge.icon) + '" aria-hidden="true"></span></span>'
+                                : '';
                             titleEl.innerHTML = escapeHtml(conceptTitle) + badgeHtml;
                         }
                         const progressPill = document.getElementById('session-progress-pill');

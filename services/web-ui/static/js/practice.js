@@ -119,6 +119,140 @@
             .catch(function (e) { showLoadError('due', e.message); });
     }
 
+
+    /* ---------------------------------------------------------- review session
+       One card at a time, the way spaced repetition is meant to work: read the
+       question, try to recall it, reveal, then say honestly how it went. The
+       due list is a manifest; this is the work.
+
+       Only cards with a real question AND answer can be reviewed this way. A
+       due CONCEPT with no card behind it is not a flashcard and keeps its
+       "open the lesson" action in the list below — conflating the two would
+       ask the learner to grade their recall of something they were never
+       shown a question for. */
+    var lastDueItems = [];
+    var session = { queue: [], i: 0, revealed: false, graded: {again:0,hard:0,good:0,easy:0} };
+
+    function reviewable(items) {
+        return (items || []).filter(function (c) {
+            return c && String(c.front || '').trim() && String(c.back || '').trim();
+        });
+    }
+
+    function startReview(items) {
+        session.queue = reviewable(items);
+        session.i = 0;
+        session.revealed = false;
+        session.graded = { again: 0, hard: 0, good: 0, easy: 0 };
+        if (!session.queue.length) { return; }
+        setShown('review-session', true);
+        setShown('due-list', false);
+        setShown('review-start-wrap', false);
+        setShown('review-done', false);
+        renderCard();
+        document.addEventListener('keydown', onReviewKey);
+    }
+
+    function endReview(finished) {
+        document.removeEventListener('keydown', onReviewKey);
+        setShown('review-session', false);
+        setShown('due-list', true);
+        setShown('review-start-wrap', true);
+        if (finished) {
+            $('review-done-detail').textContent = summarise(session.graded);
+            setShown('review-done', true);
+        }
+        loadDue();   // grades moved cards out of the queue; re-read it
+    }
+
+    /* Only the grades that actually happened. "0 easy, 0 hard" is noise
+       dressed as information. */
+    function summarise(g) {
+        var total = g.again + g.hard + g.good + g.easy;
+        var parts = [];
+        if (g.easy)  { parts.push(g.easy + ' easy'); }
+        if (g.good)  { parts.push(g.good + ' good'); }
+        if (g.hard)  { parts.push(g.hard + ' hard'); }
+        if (g.again) { parts.push(g.again + ' to see again soon'); }
+        return total + (total === 1 ? ' card' : ' cards') + ' reviewed' +
+               (parts.length ? ' — ' + parts.join(', ') + '.' : '.');
+    }
+
+    function renderCard() {
+        var c = session.queue[session.i];
+        if (!c) { endReview(true); return; }
+        session.revealed = false;
+        $('review-progress').textContent = (session.i + 1) + ' / ' + session.queue.length;
+        $('review-bar-fill').style.width =
+            Math.round((session.i / session.queue.length) * 100) + '%';
+        $('review-front').textContent = c.front || '';
+        $('review-back-body').textContent = c.back || '';
+        setShown('review-back', false);
+        setShown('review-grades', false);
+        setShown('review-reveal-wrap', true);
+        $('review-feedback').textContent = '';
+    }
+
+    function reveal() {
+        if (session.revealed) { return; }
+        session.revealed = true;
+        setShown('review-back', true);
+        setShown('review-reveal-wrap', false);
+        setShown('review-grades', true);
+    }
+
+    var GRADE_NAME = { 1: 'again', 2: 'hard', 3: 'good', 4: 'easy' };
+
+    function grade(n) {
+        if (!session.revealed) { return; }   // grading before looking is not a review
+        var c = session.queue[session.i];
+        session.graded[GRADE_NAME[n]] += 1;
+        var fb = $('review-feedback');
+        fb.textContent = 'Saving…';
+
+        fetch('/api/grade_card_fsrs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            /* The scheduler's contract is {uid, rating} — see
+               librarian.grade_card_fsrs_endpoint. Sending anything else earns a
+               silent 400, which is how this path stayed dead for 40 cards. */
+            body: JSON.stringify({ uid: c.uid, rating: n })
+        })
+        .then(function (r) {
+            if (!r.ok) { throw new Error('scheduler returned ' + r.status); }
+            return r.json();
+        })
+        .then(function (d) {
+            /* THE REAL INTERVAL, from the scheduler that owns it. The buttons
+               deliberately promise no number; this is where one appears, and
+               it is the one actually written down. */
+            var days = d && (d.interval_days != null ? d.interval_days : d.interval);
+            if (days != null) {
+                fb.textContent = days < 1 ? 'Again shortly.'
+                    : 'Next in ' + Math.round(days) + ' day' + (Math.round(days) === 1 ? '' : 's') + '.';
+            } else { fb.textContent = ''; }
+        })
+        .catch(function (e) {
+            fb.textContent = 'Not recorded — this card stays due. (' + e.message + ')';
+        })
+        .then(function () {
+            session.i += 1;
+            setTimeout(renderCard, 350);
+        });
+    }
+
+    function onReviewKey(e) {
+        if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) { return; }
+        if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); reveal(); return; }
+        if (/^[1-4]$/.test(e.key)) { e.preventDefault(); grade(parseInt(e.key, 10)); return; }
+        if (e.key === 'Escape') { endReview(false); }
+    }
+
+    function setShown(id, on) {
+        var el = $(id);
+        if (el) { el.hidden = !on; }
+    }
+
     function renderDue(items) {
         var loading = $('due-loading');
         var list = $('due-list');
@@ -126,6 +260,48 @@
         if (loading) loading.hidden = true;
 
         setCount('stat-due', items.length);
+
+        /* HOW MANY OF THESE CAN ACTUALLY BE REVIEWED.
+           The queue mixes flashcards (a question and an answer) with concepts
+           that are merely due. Only the first kind can be graded on recall, so
+           the button says how many there are rather than implying the whole
+           queue works that way. */
+        var cards = reviewable(items);
+        var startWrap = $('review-start-wrap');
+        var startHint = $('review-start-hint');
+        if (startWrap) { startWrap.hidden = cards.length === 0; }
+        if (startHint) {
+            var rest = items.length - cards.length;
+            startHint.textContent = cards.length + ' card' +
+                (cards.length === 1 ? '' : 's') + ' ready' +
+                (rest ? ' · ' + rest + ' concept' + (rest === 1 ? '' : 's') +
+                        ' to revisit below' : '');
+        }
+        var startBtn = $('review-start');
+        if (startBtn && startBtn.dataset.bound !== '1') {
+            startBtn.dataset.bound = '1';
+            startBtn.addEventListener('click', function () { startReview(lastDueItems); });
+        }
+        var quit = $('review-quit');
+        if (quit && quit.dataset.bound !== '1') {
+            quit.dataset.bound = '1';
+            quit.addEventListener('click', function () { endReview(false); });
+        }
+        var rev = $('review-reveal');
+        if (rev && rev.dataset.bound !== '1') {
+            rev.dataset.bound = '1';
+            rev.addEventListener('click', reveal);
+        }
+        var grades = $('review-grades');
+        if (grades && grades.dataset.bound !== '1') {
+            grades.dataset.bound = '1';
+            grades.addEventListener('click', function (e) {
+                var b = e.target.closest('[data-grade]');
+                if (b) { grade(parseInt(b.dataset.grade, 10)); }
+            });
+        }
+        lastDueItems = items;
+
         var badge = $('tab-due-count');
         if (badge) {
             badge.textContent = items.length;

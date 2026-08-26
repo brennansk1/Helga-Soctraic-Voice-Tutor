@@ -733,3 +733,6 @@
     text-decoration: line-through;
     opacity: 0.6;
 }
+
+/* The mastery badge is an icon now, not a character, so it needs a box. */
+.mastery-badge .i { width: 1em; height: 1em; display: inline-block; }

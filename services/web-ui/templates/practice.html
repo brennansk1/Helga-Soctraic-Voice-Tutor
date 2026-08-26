@@ -56,6 +56,75 @@
             <div class="u-skeleton practice-skeleton-row"></div>
             <div class="u-skeleton practice-skeleton-row"></div>
         </div>
+        {# THE REVIEW ITSELF, not a list of links to it.
+
+           Anki's shape is one card at a time: question, a beat to recall, then
+           the answer with four honest grades. A list of "Review" buttons is a
+           task list — it makes you choose which card to do next, which is the
+           one decision spaced repetition exists to take away from you.
+
+           The list stays underneath as a manifest of what is queued; the
+           session is what you actually work in. #}
+        <div id="review-start-wrap" class="review-start" hidden>
+          <button class="btn-alpine btn-alpine-primary" id="review-start"
+                  type="button">Start review</button>
+          <span class="review-start-hint" id="review-start-hint"></span>
+        </div>
+
+        <section id="review-session" class="review-session" hidden
+                 aria-label="Review session">
+          <header class="review-head">
+            <span class="review-progress" id="review-progress">1 / 1</span>
+            <div class="review-bar" aria-hidden="true">
+              <div class="review-bar-fill" id="review-bar-fill"></div>
+            </div>
+            <button class="review-quit" id="review-quit" type="button">End</button>
+          </header>
+
+          <article class="review-card" id="review-card">
+            <p class="review-side-label">Question</p>
+            <div class="review-front" id="review-front"></div>
+            <div class="review-back" id="review-back" hidden>
+              <p class="review-side-label">Answer</p>
+              <div id="review-back-body"></div>
+            </div>
+          </article>
+
+          <div class="review-actions" id="review-reveal-wrap">
+            <button class="btn-alpine btn-alpine-primary review-reveal"
+                    id="review-reveal" type="button">Show answer</button>
+            <span class="review-key-hint">or press Space</span>
+          </div>
+
+          {# Four grades, Anki's own vocabulary. The hint under each says what
+             it MEANS rather than a predicted interval: the schedule is FSRS's
+             to compute, and a number invented here that the server then
+             contradicts is worse than no number. The real interval is shown
+             after grading, from the server's answer. #}
+          <div class="grade-btns" id="review-grades" hidden role="group"
+               aria-label="How well did you recall it?">
+            <button class="grade-btn is-again" data-grade="1" type="button">
+              Again<span class="interval-hint">didn't recall it</span>
+              <span class="grade-key">1</span></button>
+            <button class="grade-btn is-hard" data-grade="2" type="button">
+              Hard<span class="interval-hint">recalled with effort</span>
+              <span class="grade-key">2</span></button>
+            <button class="grade-btn is-good" data-grade="3" type="button">
+              Good<span class="interval-hint">recalled correctly</span>
+              <span class="grade-key">3</span></button>
+            <button class="grade-btn is-easy" data-grade="4" type="button">
+              Easy<span class="interval-hint">instant, no effort</span>
+              <span class="grade-key">4</span></button>
+          </div>
+
+          <p class="review-feedback" id="review-feedback" aria-live="polite"></p>
+        </section>
+
+        <div id="review-done" class="review-done" hidden>
+          <h2 id="review-done-title">Review complete</h2>
+          <p id="review-done-detail"></p>
+        </div>
+
         <div id="due-list" class="practice-list u-stagger" hidden></div>
                 <!-- Distinct from the empty state on purpose. "Nothing due" is a
              claim about the learner's schedule; if the request failed we do
@@ -123,5 +192,5 @@
        than falling back to the 'due' default practice.js already applies. */
     window.PRACTICE_ACTIVE_TAB = {{ active_tab | default(none) | tojson }};
 </script>
-<script src="{{ url_for('static', filename='js/practice.js') }}?v=2"></script>
+<script src="{{ url_for('static', filename='js/practice.js') }}?v=6"></script>
 {% endblock %}
