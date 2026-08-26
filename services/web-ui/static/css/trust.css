@@ -464,3 +464,45 @@
     .path-quality-banner { padding: var(--space-2) var(--space-3); }
     .trust-check { flex-wrap: wrap; gap: var(--space-1) var(--space-2); }
 }
+
+/* ---- The grounding strip, now inline in the topbar ------------------------
+   It used to be its own 33px row directly beneath the header, carrying one
+   label and a chevron, while the header separately showed the same source
+   count. Measured on the session view: three stacked bars, 131px, 18% of the
+   viewport, before a word of teaching.
+   Collapsed it is a chip on the header row. Expanded it drops as a panel, so
+   the detail still has room without a row being reserved for it permanently. */
+.learn-chat-meta .trust-surface {
+    position: relative;
+    margin: 0;
+    border: 0;
+    background: none;
+    padding: 0;
+}
+.learn-chat-meta .trust-toggle {
+    padding: 2px var(--space-2);
+    border-radius: 999px;
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+}
+.learn-chat-meta .trust-detail {
+    position: absolute;
+    right: 0;
+    top: calc(100% + var(--space-2));
+    z-index: 40;
+    min-width: 22rem;
+    max-width: min(30rem, 90vw);
+    max-height: 60vh;
+    overflow-y: auto;
+    background: var(--surface-raised, var(--bg-primary));
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md, 10px);
+    box-shadow: 0 8px 24px rgba(0,0,0,.14);
+    padding: var(--space-3);
+}
+@media (max-width: 700px) {
+    /* On a phone the header is already tight; the chip drops its wording and
+       keeps the dot and count, which is the part that carries information. */
+    .learn-chat-meta .trust-label { display: none; }
+    .learn-chat-meta .trust-detail { right: auto; left: 0; }
+}

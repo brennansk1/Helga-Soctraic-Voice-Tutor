@@ -119,8 +119,42 @@
                 <!-- The trust surface. Helga's claim is that it builds from real
                      material; this is where a learner checks that claim for the
                      concept actually on screen. -->
+                <!-- THE SOURCE COUNT LIVES IN ONE PLACE.
+                     This rendered "3 sources" while the grounding strip below
+                     rendered "Partly grounded · 3 sources" forty pixels away —
+                     the same fact twice, two formats, two bars. The strip says
+                     strictly more (grounding state, and it opens the source
+                     list), so the strip stays and now sits on THIS row instead
+                     of owning one of its own. Kept in the DOM because trust.js
+                     writes to it; removing it would be a silent null. -->
                 <button type="button" id="trust-pill" class="trust-pill hidden"
+                        hidden aria-hidden="true" tabindex="-1"
                         aria-expanded="false" aria-controls="trust-panel">Sources…</button>
+            <!-- A5 trust surface: where this concept's content came from.
+                 Populated by updateTrustSurface() in session.js from the concept
+                 markdown that already ships in state.graph_node.text. Collapsed and
+                 quiet when the concept is well grounded; opens itself, tinted, when
+                 the content leans on the model's own knowledge. -->
+            <div id="trust-surface" class="trust-surface hidden" data-state="grounded">
+                <button type="button" id="trust-toggle" class="trust-toggle"
+                        aria-expanded="false" aria-controls="trust-detail">
+                    <span class="trust-dot" aria-hidden="true"></span>
+                    <span class="i i-warning trust-warn-icon" aria-hidden="true"></span>
+                    <span class="trust-label" id="trust-label"></span>
+                    <span class="trust-count" id="trust-count"></span>
+                    <span class="i i-arrow-right trust-chevron" aria-hidden="true"></span>
+                </button>
+                <div id="trust-detail" class="trust-detail hidden">
+                    <p class="trust-caveat" id="trust-caveat"></p>
+                    <!-- The build's other verdicts for this concept (fact check,
+                         depth contract). Filled by _renderTrustChecks() from
+                         /api/course_quality; stays empty on a course that predates
+                         those checks, which is reported as "not assessed" rather
+                         than left to read as a pass. -->
+                    <ul class="trust-checks hidden" id="trust-checks"></ul>
+                    <ul class="trust-sources" id="trust-sources"></ul>
+                </div>
+            </div>
             </div>
         </div>
         <div id="trust-panel" class="trust-panel hidden" role="dialog"
@@ -136,31 +170,6 @@
             <div id="mastery-progress-fill" class="mastery-progress-fill"></div>
         </div>
 
-        <!-- A5 trust surface: where this concept's content came from.
-             Populated by updateTrustSurface() in session.js from the concept
-             markdown that already ships in state.graph_node.text. Collapsed and
-             quiet when the concept is well grounded; opens itself, tinted, when
-             the content leans on the model's own knowledge. -->
-        <div id="trust-surface" class="trust-surface hidden" data-state="grounded">
-            <button type="button" id="trust-toggle" class="trust-toggle"
-                    aria-expanded="false" aria-controls="trust-detail">
-                <span class="trust-dot" aria-hidden="true"></span>
-                <span class="i i-warning trust-warn-icon" aria-hidden="true"></span>
-                <span class="trust-label" id="trust-label"></span>
-                <span class="trust-count" id="trust-count"></span>
-                <span class="i i-arrow-right trust-chevron" aria-hidden="true"></span>
-            </button>
-            <div id="trust-detail" class="trust-detail hidden">
-                <p class="trust-caveat" id="trust-caveat"></p>
-                <!-- The build's other verdicts for this concept (fact check,
-                     depth contract). Filled by _renderTrustChecks() from
-                     /api/course_quality; stays empty on a course that predates
-                     those checks, which is reported as "not assessed" rather
-                     than left to read as a pass. -->
-                <ul class="trust-checks hidden" id="trust-checks"></ul>
-                <ul class="trust-sources" id="trust-sources"></ul>
-            </div>
-        </div>
 
         <!-- Hero (hidden after first message) -->
         <div id="chat-hero" class="learn-chat-hero hidden">
@@ -1604,7 +1613,12 @@
                     if (path.unit && path.unit !== path.module) parts.push(path.unit);
                     if (path.lesson && path.lesson !== path.unit && path.lesson !== path.module) parts.push(path.lesson);
                 }
-                breadcrumb.textContent = parts.join(' › ') + ' ›';
+                // NO TRAILING SEPARATOR. The concept's own title is the
+                // <h1> directly beneath this, so the breadcrumb was ending in
+                // a separator that pointed at nothing — "… › SELECT Clause and
+                // Projection ›" — which reads as a path that failed to finish
+                // loading.
+                breadcrumb.textContent = parts.join(' › ');
             }
 
             // Update bloom badge
@@ -2319,19 +2333,28 @@
         <div class="chat-msg-content">
             <img class="chat-msg-avatar" src="/static/img/helga-avatar.svg" alt="Helga">
             <div class="chat-msg-body">
-                <div class="thinking-indicator" aria-label="Helga is thinking" role="status">
-                    <span class="thinking-dot"></span>
-                    <span class="thinking-dot"></span>
-                    <span class="thinking-dot"></span>
-                </div>
-                <!-- The elapsed counter is the informative half of this
-                     indicator. Dots say "busy"; the count says "busy for
-                     eleven seconds", which is the only thing that tells a
-                     learner whether a locally-hosted model is slow or stuck.
-                     session.js fills it and clears it. -->
-                <div class="thinking-label">
-                    <span class="thinking-label-text">Thinking</span>
-                    <span class="thinking-elapsed" aria-hidden="true"></span>
+                <!-- A BUBBLE THAT LOOKS LIKE THE ANSWER IT IS WAITING FOR.
+                     Bouncing dots above a grey caption read as two unrelated
+                     widgets stacked; shimmer lines in a real message surface
+                     say "text is arriving here", which is the thing the
+                     learner is actually waiting to see. -->
+                <div class="thinking-bubble" role="status"
+                     aria-label="Helga is preparing your lesson">
+                    <div class="thinking-skeleton" aria-hidden="true">
+                        <span class="skeleton-line"></span>
+                        <span class="skeleton-line"></span>
+                        <span class="skeleton-line"></span>
+                    </div>
+                    <!-- The elapsed counter is the informative half. Dots say
+                         "busy"; the count says "busy for eleven seconds",
+                         which is the only thing that distinguishes a slow
+                         local model from a hung one. On ONE line with the
+                         label, so it reads as a single status rather than a
+                         caption under a widget. -->
+                    <div class="thinking-label">
+                        <span class="thinking-label-text">Thinking</span>
+                        <span class="thinking-elapsed" aria-hidden="true"></span>
+                    </div>
                 </div>
             </div>
         </div>

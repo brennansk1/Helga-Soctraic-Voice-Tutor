@@ -1345,7 +1345,11 @@ function _syncChatHero() {
     const titleTarget = document.getElementById('chat-hero-title');
     const subTarget = document.getElementById('chat-hero-subtitle');
     if (titleTarget) titleTarget.textContent = title;
-    if (subTarget) subTarget.textContent = 'Helga is preparing your first question on this concept.';
+    // ONE STATUS, NOT THREE. The hero said "Helga is preparing your first
+    // question on this concept.", the bubble below it said "Preparing your
+    // lesson", and the input placeholder said "Loading concept…" — three
+    // sentences for one fact, stacked down the screen. The bubble is the one
+    // that carries the elapsed count, so it is the one that stays.
     hero.classList.remove('hidden');
 }
 window.HelgaChat = window.HelgaChat || {};

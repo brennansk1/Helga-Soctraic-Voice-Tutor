@@ -81,8 +81,11 @@
         } else {
             p.classList.remove("is-empty");
             p.appendChild(el("span", "trust-pill-count", String(n)));
+            // A SPACE. Two adjacent spans with no gap render as "3sources",
+            // which is what the pill has always said. Put in the text rather
+            // than left to CSS so it survives however the pill is styled.
             p.appendChild(el("span", "trust-pill-label",
-                n === 1 ? "source" : "sources"));
+                n === 1 ? " source" : " sources"));
             // The supplementary share is the number the build policy caps, so
             // it is the number worth surfacing rather than a generic score.
             if (d.supplementary_share >= 0.2) {

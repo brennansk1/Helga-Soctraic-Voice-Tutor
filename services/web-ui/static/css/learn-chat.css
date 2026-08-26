@@ -562,38 +562,64 @@ pre.math-raw { display: block; margin: var(--space-2) 0; }
    it has been happening, and past twenty seconds the bubble says so plainly
    rather than leaving the learner to guess.
    -------------------------------------------------------------------------- */
-.thinking-indicator { display: flex; align-items: center; gap: 5px; height: 18px; }
-.thinking-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--accent-primary);
-    animation: thinking-bounce 1.4s infinite ease-in-out both;
+.thinking-bubble {
+    display: inline-flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-lg, 12px);
+    background: var(--surface-raised, var(--bg-secondary));
+    border: 1px solid var(--border-subtle, var(--border-default));
+    min-width: 15rem;
+    max-width: 26rem;
 }
-.thinking-dot:nth-child(1) { animation-delay: -0.32s; }
-.thinking-dot:nth-child(2) { animation-delay: -0.16s; }
-@keyframes thinking-bounce {
-    0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
-    40% { transform: scale(1); opacity: 1; }
+
+/* Shimmer lines, uneven on purpose — three equal bars read as a progress
+   widget, uneven ones read as prose about to appear. */
+.thinking-skeleton { display: flex; flex-direction: column; gap: 7px; }
+.skeleton-line {
+    height: 9px;
+    border-radius: 999px;
+    background: linear-gradient(
+        90deg,
+        var(--border-subtle, rgba(0,0,0,.07)) 25%,
+        var(--bg-secondary, rgba(0,0,0,.12)) 37%,
+        var(--border-subtle, rgba(0,0,0,.07)) 63%);
+    background-size: 400% 100%;
+    animation: thinking-shimmer 1.6s ease-in-out infinite;
 }
-/* Reduced motion still gets the counter — which was always the informative
-   half — and a steady row of dots instead of a bouncing one. */
+.skeleton-line:nth-child(1) { width: 100%; }
+.skeleton-line:nth-child(2) { width: 92%;  animation-delay: .12s; }
+.skeleton-line:nth-child(3) { width: 58%;  animation-delay: .24s; }
+
+@keyframes thinking-shimmer {
+    0%   { background-position: 100% 50%; }
+    100% { background-position: 0 50%; }
+}
+
+/* Reduced motion keeps the counter — always the informative half — and a
+   still, evenly-toned set of lines rather than a moving one. */
 @media (prefers-reduced-motion: reduce) {
-    .thinking-dot { animation: none; opacity: 0.65; }
+    .skeleton-line { animation: none; opacity: 0.55; }
 }
+
+/* ONE LINE. The label and the count are a single status, not a caption
+   beneath a widget. */
 .thinking-label {
     display: flex;
     align-items: baseline;
     gap: var(--space-2);
-    margin-top: var(--space-2);
 }
-.thinking-label-text { font-size: var(--font-size-sm); color: var(--text-secondary); }
+.thinking-label-text {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
 .thinking-elapsed {
     font-variant-numeric: tabular-nums;   /* so the number does not jitter */
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
-    opacity: 0.75;
+    opacity: 0.7;
 }
 .thinking-message.is-slow .thinking-elapsed { opacity: 1; color: var(--status-warning); }
 .thinking-message.is-slow .thinking-label-text::after {
