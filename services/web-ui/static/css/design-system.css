@@ -1381,3 +1381,13 @@ a:not([class]):hover {
 
    Once, here, for every page. */
 [hidden] { display: none !important; }
+
+/* The pending note under an Ask skeleton. Same rule as the session view: dots
+   say busy, a count says busy for how long, and on local inference that is the
+   only thing separating slow from hung. */
+.ask-pending-note {
+    margin: var(--space-2) 0 0;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
+.ask-elapsed { font-variant-numeric: tabular-nums; }

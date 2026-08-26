@@ -64,9 +64,15 @@
               '</div>' +
               '<form class="ask-form" id="ask-form">' +
                 '<label class="sr-only" for="ask-input">Your question</label>' +
+                // A PLACEHOLDER SHOULD BE ASKABLE BY THE PERSON READING IT.
+                // This suggested "Why does controlling for a mediator bias the
+                // estimate?" — causal inference — to a learner whose courses
+                // are SQL. It teaches the shape of a good question by naming a
+                // subject they cannot ask about, which is worse than naming
+                // none. Subject-neutral, and still shows the shape.
                 '<input id="ask-input" class="form-input ask-input" ' +
-                       'autocomplete="off" placeholder="Why does controlling ' +
-                       'for a mediator bias the estimate?">' +
+                       'autocomplete="off" placeholder="Why does it work that ' +
+                       'way, or how do these two differ?">' +
                 '<button class="btn btn-primary" type="submit">Ask</button>' +
               '</form>' +
             '</section>';
@@ -131,10 +137,26 @@
         append('<article class="ask-turn ask-turn-you"><p>' + esc(q) + '</p></article>');
         input.value = '';
 
+        // A COUNTER, NEVER A BARE SPINNER — the house rule, stated in
+        // learn-chat.css and applied in the session view. It belongs here too:
+        // this answer is written by the model against the learner's own
+        // courses, measured at 62 seconds on this hardware, and a featureless
+        // shimmer for a minute is indistinguishable from a hang.
         var pending = append(
             '<article class="ask-turn ask-turn-helga is-pending">' +
               '<div class="u-skeleton ask-skeleton"></div>' +
+              '<p class="ask-pending-note">Reading your courses' +
+                '<span class="ask-elapsed"></span></p>' +
             '</article>');
+        var _secs = 0;
+        var _tick = setInterval(function () {
+            _secs += 1;
+            var el = pending.querySelector('.ask-elapsed');
+            if (!el) { clearInterval(_tick); return; }
+            el.textContent = ' — ' + _secs + 's' +
+                (_secs > 25 ? ', the model is warming up' : '');
+        }, 1000);
+        var _stopTick = function () { clearInterval(_tick); };
 
         fetch('/api/ask', {
             method: 'POST',
@@ -153,6 +175,7 @@
                        esc(s.title) + '</a>';
             }).join('');
 
+            _stopTick();
             pending.classList.remove('is-pending');
             pending.innerHTML =
                 '<p class="ask-answer">' + fmt(d.answer) + '</p>' +
@@ -163,6 +186,7 @@
                     'answered from general knowledge.</p>');
         })
         .catch(function (err) {
+            _stopTick();
             pending.classList.remove('is-pending');
             pending.classList.add('is-error');
             pending.innerHTML = '<p>' + esc(
