@@ -186,14 +186,40 @@
             var uid = sel && sel.value;
             if (!uid) return;
             var area = $('quiz-area');
+            // A BARE SKELETON FOR FOUR MINUTES READS AS BROKEN.
+            //
+            // The question is written by the model on local hardware. Measured
+            // on this machine: 13 seconds when it is warm, 253 when it is not.
+            // The old loading state was one featureless grey bar for the whole
+            // of that, with nothing to say whether it was working or hung —
+            // and looking at it is the only way that shows up, because the
+            // endpoint returns 200 either way.
+            //
+            // The house rule everywhere else in this app is a counter, never a
+            // bare spinner. Same rule here.
+            var _elapsed = 0, _tick = null;
             if (area) {
                 area.hidden = false;
-                area.innerHTML = '<div class="u-skeleton practice-skeleton-row"></div>';
+                area.innerHTML =
+                    '<div class="u-skeleton practice-skeleton-row"></div>' +
+                    '<p class="practice-loading-note">' +
+                    'Writing a question<span id="quiz-elapsed"></span></p>';
+                _tick = setInterval(function () {
+                    _elapsed += 1;
+                    var el = $('quiz-elapsed');
+                    if (!el) return;
+                    // Past twenty seconds, say WHY it is slow rather than
+                    // leaving the learner to guess.
+                    el.textContent = ' — ' + _elapsed + 's' +
+                        (_elapsed > 20 ? ', the model is warming up' : '');
+                }, 1000);
             }
+            var _done = function () { if (_tick) { clearInterval(_tick); _tick = null; } };
             fetch('/api/quiz?course_uid=' + encodeURIComponent(uid))
                 .then(function (r) { return r.json(); })
-                .then(function (q) { renderQuiz(q); })
+                .then(function (q) { _done(); renderQuiz(q); })
                 .catch(function () {
+                    _done();
                     if (area) {
                         area.innerHTML = '<p class="practice-error">Could not start a ' +
                             'quiz. Is the course still building?</p>';

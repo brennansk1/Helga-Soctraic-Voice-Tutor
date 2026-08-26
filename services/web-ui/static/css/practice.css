@@ -1,0 +1,9 @@
+
+/* The elapsed note under the quiz skeleton. Quiet, but present: a grey bar
+   alone cannot distinguish "writing your question" from "hung". */
+.practice-loading-note {
+    margin-top: var(--space-2);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
+#quiz-elapsed { font-variant-numeric: tabular-nums; }

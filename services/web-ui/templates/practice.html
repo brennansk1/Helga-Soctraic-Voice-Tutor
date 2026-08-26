@@ -123,5 +123,5 @@
        than falling back to the 'due' default practice.js already applies. */
     window.PRACTICE_ACTIVE_TAB = {{ active_tab | default(none) | tojson }};
 </script>
-<script src="{{ url_for('static', filename='js/practice.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='js/practice.js') }}?v=2"></script>
 {% endblock %}
