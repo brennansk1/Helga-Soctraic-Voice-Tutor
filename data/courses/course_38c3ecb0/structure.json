@@ -366,9 +366,7 @@
                   "depth_level": 2,
                   "bloom_level": 2,
                   "ordinal": 2,
-                  "concept_kind": "SYNTAX",
-                  "withheld": true,
-                  "withheld_reason": "says NULLs sort FIRST under ASC; the engine puts them LAST"
+                  "concept_kind": "SYNTAX"
                 },
                 {
                   "uid": "con_c9cfa93b",
@@ -2055,12 +2053,12 @@
     ],
     "findings": [
       {
-        "concept_uid": "con_cf3e73a1",
-        "title": "Ordering by Aggregates",
-        "check": "executable_claims",
-        "severity": "blocking",
-        "detail": "says NULLs sort FIRST under ASC; the engine puts them LAST",
-        "quote": "`ORDER BY` treats `NULL` as the lowest value in ascending order (in PostgreSQL) or highest (in some other dialects/configurations), which can cause unexpected g"
+        "concept_uid": "con_607d1ce0",
+        "title": "SELECT Clause Syntax",
+        "check": "depth_contract",
+        "severity": "minor",
+        "detail": "too long for Application: 1759 words (max 1500)",
+        "quote": ""
       },
       {
         "concept_uid": "con_e3a9f69f",
@@ -2240,12 +2238,11 @@
       }
     ],
     "by_severity": {
-      "blocking": 1,
-      "serious": 108,
-      "minor": 9
+      "minor": 10,
+      "serious": 108
     },
     "by_check": {
-      "executable_claims": 1,
+      "depth_contract": 1,
       "content_guards": 11,
       "thin_content": 1,
       "tutor_sections": 1,
@@ -2261,8 +2258,8 @@
       "citations": 95,
       "coherence": 1
     },
-    "seconds": 0.43,
+    "seconds": 0.4,
     "ran": true,
-    "verdict": "blocking_findings"
+    "verdict": "needs_review"
   }
 }

@@ -75,7 +75,7 @@
                   "concept_kind": "MECHANISM",
                   "source_confidence": 0.8,
                   "withheld": true,
-                  "withheld_reason": "the text contains your own deliberation \u2014 remove it and state the conclusion only (found: \"0) *Correction:* Wait, let\u2019s verify PostgreSQL\u2019s default for `DESC`. PostgreSQL\u2019s default for `NULLS` in `ORDER\")"
+                  "withheld_reason": "its Core Explanation is placeholder text and the lesson still contains the model's own deliberation; two repair attempts did not fix it"
                 }
               ]
             },
@@ -516,9 +516,7 @@
                   "depth_level": 2,
                   "bloom_level": 3,
                   "ordinal": 2,
-                  "concept_kind": "MECHANISM",
-                  "withheld": true,
-                  "withheld_reason": "NULL = NULL is UNKNOWN, not TRUE \u2014 repair could not correct it"
+                  "concept_kind": "MECHANISM"
                 },
                 {
                   "uid": "con_b9a4b3e0",
