@@ -1588,7 +1588,7 @@ def _quality_fact(fc, course_concepts=None):
 
 
 
-def _quality_audit(au):
+def _quality_audit(au, course=None):
     """Verdict for Stage 4 — the pass that reads the FINISHED course.
 
     Every other verdict here is recorded per concept as it is generated, which
@@ -1606,9 +1606,55 @@ def _quality_audit(au):
 
     sev = au.get("by_severity") or {}
     blocking = sev.get("blocking", 0)
+
+    # A CLAIM IN A WITHHELD CONCEPT CANNOT REACH ANYBODY.
+    #
+    # The card said "1 claim in this course is contradicted by a real
+    # database" about a concept the tutor refuses to teach and the path shows
+    # struck through. True, and misleading: it reads as something the learner
+    # is about to be told. What they should know is that a concept is being
+    # held back, which is a gap in the course, not a falsehood in it.
+    withheld_titles = []
+    if isinstance(course, dict):
+        try:
+            from services.core.course_audit import walk_concepts
+            withheld_uids = {c.get("uid") for c, _ in walk_concepts(course)
+                             if c.get("withheld")}
+            withheld_titles = [c.get("title") for c, _ in walk_concepts(course)
+                               if c.get("withheld")]
+            if withheld_uids:
+                served = [f for f in (au.get("findings") or [])
+                          if f.get("severity") == "blocking"
+                          and f.get("concept_uid") not in withheld_uids]
+                blocking = len(served)
+        except Exception:
+            pass
     serious = sev.get("serious", 0)
     total = au.get("concepts_total") or 0
     flagged = au.get("concepts_with_findings") or 0
+
+    # WHAT THE LEARNER IS AFFECTED BY, versus what the build recorded about
+    # itself.
+    #
+    # `citations` fires when a source has no stored passage — which is about
+    # whether a claim can be VERIFIED later, not about whether the lesson is
+    # any good. On SQL that single systemic item was 95 of 108 serious
+    # findings, so the card read "95 of 95 concepts have something worth
+    # reviewing" about a course whose actual learner-facing findings were
+    # eleven hygiene notes and one thin concept. A headline that alarming
+    # about a course that is fine trains the reader to ignore the card.
+    _PROVENANCE_ONLY = {"citations"}
+    _learner = [f for f in (au.get("findings") or [])
+                if f.get("check") not in _PROVENANCE_ONLY
+                and f.get("severity") == "serious"]
+    for sysf in au.get("systemic") or []:
+        if (sysf.get("check") not in _PROVENANCE_ONLY
+                and sysf.get("severity") == "serious"):
+            _learner.extend([{"concept_uid": u}
+                             for u in (sysf.get("affected") or [])])
+    serious_for_learner = len(_learner)
+    flagged_for_learner = len({f.get("concept_uid") for f in _learner})
+    out_provenance = serious - serious_for_learner
 
     out = {
         "state": "pass",
@@ -1618,6 +1664,7 @@ def _quality_audit(au):
         "concepts_total": total,
         "concepts_with_findings": flagged,
         "not_audited": au.get("concepts_not_audited") or 0,
+        "provenance_notes": out_provenance,
     }
 
     if blocking:
@@ -1625,15 +1672,22 @@ def _quality_audit(au):
         out["text"] = ("%d claim%s in this course %s contradicted by a real "
                        "database" % (blocking, "" if blocking == 1 else "s",
                                      "is" if blocking == 1 else "are"))
-    elif serious:
+    elif serious_for_learner:
         out["state"] = "caution"
         out["text"] = ("%d of %d concepts have something worth reviewing"
-                       % (flagged, total))
+                       % (flagged_for_learner, total))
     elif out["not_audited"]:
         out["state"] = "caution"
         out["text"] = ("%d concept%s could not be audited"
                        % (out["not_audited"],
                           "" if out["not_audited"] == 1 else "s"))
+    elif withheld_titles:
+        out["state"] = "caution"
+        out["withheld"] = withheld_titles
+        out["text"] = ("%d concept%s held back — a check found something wrong "
+                       "that could not be fixed, so it is not taught"
+                       % (len(withheld_titles),
+                          "" if len(withheld_titles) == 1 else "s"))
     else:
         out["text"] = "Audited as a whole course — nothing found"
 
@@ -1670,6 +1724,42 @@ def _quality_repair(rp, out=None):
 
 
 
+
+
+
+def _fresh_depth(course):
+    """The depth verdict the AUDIT measured, in preference to the build stamp.
+
+    `depth_contract` is written during hydration and never updated. A resumed
+    build stamps it with only the segment it hydrated — measured on Advanced
+    SQL: partial_run over 33 of 83 concepts, met_pct 39.4, while the course
+    itself measured 97.6% against the files on disk. The card told the learner
+    two thirds of their course was below the level they asked for, for hours,
+    about a course that was fine.
+
+    The audit re-runs validate_concept over every stored concept, so when it
+    has run its number is both current and complete.
+    """
+    audit = course.get('audit')
+    if not isinstance(audit, dict) or not audit.get('ran'):
+        return None
+    d = (audit.get('ledger') or {}).get('depth')
+    if not isinstance(d, dict) or not d.get('checked'):
+        return None
+    concepts = _num(d.get('concepts'), 0) or 0
+    missed = _num(d.get('missed'), 0) or 0
+    if not concepts:
+        return None
+    return {
+        'met_pct': round(100.0 * (concepts - missed) / concepts, 1),
+        'concepts_missing_contract': missed,
+        'concepts_total': concepts,
+        'concepts_verified': concepts,
+        'partial_run': False,
+        'level_verified': (concepts - missed) / concepts >= 0.8,
+        'mastery': (course.get('depth_contract') or {}).get('mastery'),
+        'measured': 'audit',
+    }
 
 
 def _quality_depth(dc, course_concepts=None):
@@ -1933,11 +2023,13 @@ def _course_quality(course):
 
     checks = {
         'fact': _quality_fact(course.get('fact_check'), course_concepts),
-        'depth': _quality_depth(course.get('depth_contract'), course_concepts),
+        'depth': _quality_depth(
+            _fresh_depth(course) or course.get('depth_contract'),
+            course_concepts),
         'level': _quality_level(course.get('level_calibration')),
         'grounding': _quality_grounding(course.get('grounding')),
         'sections': _quality_sections(course.get('missing_sections')),
-        'audit': _quality_audit(course.get('audit')),
+        'audit': _quality_audit(course.get('audit'), course),
         'repair': _quality_repair(course.get('repair')),
     }
     assessed = [k for k, v in checks.items() if v['state'] != 'absent']

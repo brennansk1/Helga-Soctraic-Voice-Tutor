@@ -1,0 +1,2268 @@
+{
+  "uid": "course_38c3ecb0",
+  "title": "SQL",
+  "teaching_style": "",
+  "learner_context": "I am new to SQL and want to query a real database confidently: SELECT and filtering, joins across several tables, GROUP BY and aggregates, subqueries and CTEs, NULL handling, and how to tell a correct query from one that merely runs. Practical work against PostgreSQL, with real examples I can type. Not database administration, not schema design theory, not the history of the standard.",
+  "status": "ready",
+  "created_at": "2026-08-25T06:01:34",
+  "scope": 3,
+  "mastery": 3,
+  "starting_from": 1,
+  "bloom_floor": 1,
+  "bloom_ceiling": 4,
+  "modules": [
+    {
+      "uid": "mod_02eb0961",
+      "title": "Filtering and Selecting Columns",
+      "ordinal": 1,
+      "progression_role": "foundational definitions and core theory",
+      "scope": [
+        "SELECT clause",
+        "WHERE clause",
+        "Comparison operators"
+      ],
+      "bloom_target": 1,
+      "bloom_label": "Remember",
+      "units": [
+        {
+          "uid": "unit_23b8df98",
+          "title": "Basic SELECT and WHERE Syntax",
+          "ordinal": 1,
+          "lessons": [
+            {
+              "uid": "less_68cffd56",
+              "title": "SELECT Clause and Projection",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "uid": "con_607d1ce0",
+                  "title": "SELECT Clause Syntax",
+                  "learning_objectives": [
+                    "Recall the syntactic position of the SELECT clause within a SQL statement.",
+                    "Identify the purpose of the SELECT clause in specifying result columns."
+                  ],
+                  "complexity_role": "foundational definitions and core theory",
+                  "depth_level": 2,
+                  "bloom_level": 1,
+                  "ordinal": 1,
+                  "concept_kind": "SYNTAX",
+                  "source_confidence": 0.65
+                },
+                {
+                  "uid": "con_df5a371b",
+                  "title": "WHERE Clause Syntax",
+                  "learning_objectives": [
+                    "Recall the syntactic position of the WHERE clause within a SQL statement.",
+                    "Identify the purpose of the WHERE clause in filtering rows."
+                  ],
+                  "complexity_role": "foundational definitions and core theory",
+                  "depth_level": 2,
+                  "bloom_level": 1,
+                  "ordinal": 2,
+                  "concept_kind": "SYNTAX",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_98579e83",
+                  "title": "Comparison Operators List",
+                  "learning_objectives": [
+                    "Recall the set of standard comparison operators in SQL.",
+                    "Identify the function of equality and inequality operators."
+                  ],
+                  "complexity_role": "foundational definitions and core theory",
+                  "depth_level": 2,
+                  "bloom_level": 1,
+                  "ordinal": 3,
+                  "concept_kind": "SYNTAX",
+                  "source_confidence": 1.0
+                }
+              ]
+            }
+          ],
+          "llm_fallback": true
+        },
+        {
+          "uid": "unit_fe0ea3b9",
+          "title": "Comparison Operators",
+          "ordinal": 2,
+          "lessons": [
+            {
+              "uid": "less_14ae2ca0",
+              "title": "Operator Mechanics and Precedence",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "uid": "con_e49ffed7",
+                  "title": "Equality Operator Mechanics",
+                  "learning_objectives": [
+                    "Recall the syntax for the equality operator.",
+                    "Identify the result of comparing a value to NULL using equality."
+                  ],
+                  "complexity_role": "foundational definitions and core theory",
+                  "depth_level": 2,
+                  "bloom_level": 1,
+                  "ordinal": 1,
+                  "concept_kind": "SYNTAX"
+                },
+                {
+                  "uid": "con_0e8b1f78",
+                  "title": "Greater Than Operator Mechanics",
+                  "learning_objectives": [
+                    "Recall the syntax for the greater than operator.",
+                    "Identify the result of comparing a value to NULL using greater than."
+                  ],
+                  "complexity_role": "foundational definitions and core theory",
+                  "depth_level": 2,
+                  "bloom_level": 1,
+                  "ordinal": 3,
+                  "concept_kind": "SYNTAX"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "uid": "mod_ebb56bac",
+      "title": "Aggregation and Grouping",
+      "ordinal": 2,
+      "progression_role": "intermediate mechanisms and relationships",
+      "scope": [
+        "Aggregate functions",
+        "GROUP BY clause",
+        "HAVING clause"
+      ],
+      "bloom_target": 2,
+      "bloom_label": "Understand",
+      "units": [
+        {
+          "uid": "unit_aa6a9de3",
+          "title": "Aggregate Functions and GROUP BY",
+          "ordinal": 1,
+          "lessons": [
+            {
+              "uid": "less_2b4c2e8f",
+              "title": "Scalar Aggregate Functions",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "uid": "con_f3fad10e",
+                  "title": "Aggregate Function Categories",
+                  "learning_objectives": [
+                    "Explain how aggregate functions process multiple rows into a single scalar value.",
+                    "Distinguish between row-level and set-level processing in SQL execution."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM",
+                  "concept_domain": "science"
+                },
+                {
+                  "uid": "con_e63885aa",
+                  "title": "Standard Aggregate Functions",
+                  "learning_objectives": [
+                    "Identify the specific behavior of COUNT, SUM, AVG, MIN, and MAX.",
+                    "Predict output differences when aggregating numeric versus character data types."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 2,
+                  "concept_kind": "REFERENCE"
+                },
+                {
+                  "uid": "con_95fb0431",
+                  "title": "NULL Handling in Aggregates",
+                  "learning_objectives": [
+                    "Describe how NULL values are handled by standard aggregate functions.",
+                    "Explain why COUNT(*) differs from COUNT(column_name) regarding NULLs."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                }
+              ]
+            },
+            {
+              "uid": "less_8a817c74",
+              "title": "Grouping Data Sets",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "uid": "con_17105b23",
+                  "title": "GROUP BY Clause Logic",
+                  "learning_objectives": [
+                    "Define the logical role of the GROUP BY clause in transforming result sets.",
+                    "Map input rows to output groups based on unique column combinations."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_83a93fb4",
+                  "title": "Multi-Column Grouping",
+                  "learning_objectives": [
+                    "Construct queries grouping by single and multiple columns.",
+                    "Predict the structure of output rows when grouping by multiple attributes."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 2,
+                  "concept_kind": "PROCEDURE"
+                },
+                {
+                  "uid": "con_43308cb4",
+                  "title": "SELECT List Grouping Constraints",
+                  "learning_objectives": [
+                    "Explain the restriction on non-aggregated columns in SELECT lists.",
+                    "Identify why SELECT must align with GROUP BY keys or aggregates."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                }
+              ]
+            },
+            {
+              "uid": "less_84ef6498",
+              "title": "HAVING Clause and Query Execution Order",
+              "ordinal": 3,
+              "concepts": [
+                {
+                  "uid": "con_c25d8b22",
+                  "title": "HAVING vs WHERE Timing",
+                  "learning_objectives": [
+                    "Differentiate between WHERE and HAVING in terms of execution timing.",
+                    "Explain why WHERE cannot filter on aggregate results."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_43cedd5d",
+                  "title": "Filtering Aggregated Groups",
+                  "learning_objectives": [
+                    "Construct HAVING clauses using aggregate expressions.",
+                    "Predict results when filtering groups based on calculated thresholds."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 2,
+                  "concept_kind": "SYNTAX"
+                },
+                {
+                  "uid": "con_25e261b9",
+                  "title": "SQL Execution Pipeline Order",
+                  "learning_objectives": [
+                    "Analyze the logical order of operations involving GROUP BY and HAVING.",
+                    "Trace query execution flow from filtering rows to filtering groups."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "uid": "unit_42877361",
+          "title": "Advanced Grouping and Sorting",
+          "ordinal": 2,
+          "lessons": [
+            {
+              "uid": "less_ff85a92b",
+              "title": "NULL Handling in Grouping",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "uid": "con_38028046",
+                  "title": "NULLs in Group Keys",
+                  "learning_objectives": [
+                    "Explain the behavior of GROUP BY with NULL values in grouping columns.",
+                    "Predict how NULLs are treated as a single group identity."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_a125949a",
+                  "title": "NULLs in Group Values",
+                  "learning_objectives": [
+                    "Describe the impact of NULLs on aggregate calculations within groups.",
+                    "Distinguish between empty groups and groups with only NULLs."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_5dc1e84b",
+                  "title": "Mixed NULL Group Behavior",
+                  "learning_objectives": [
+                    "Analyze query results when grouping columns contain mixed NULLs and values.",
+                    "Explain why COUNT(*) includes NULL rows while COUNT(col) excludes them."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                }
+              ]
+            },
+            {
+              "uid": "less_c9fbfba4",
+              "title": "Sorting Aggregated Data",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "uid": "con_c263de25",
+                  "title": "Post-Aggregation Sorting",
+                  "learning_objectives": [
+                    "Explain the role of the ORDER BY clause in post-aggregation sorting.",
+                    "Distinguish between sorting groups and sorting within groups."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 1,
+                  "concept_kind": "SYNTAX"
+                },
+                {
+                  "uid": "con_cf3e73a1",
+                  "title": "Ordering by Aggregates",
+                  "learning_objectives": [
+                    "Construct queries ordering by aggregate results.",
+                    "Predict output order when sorting by non-grouped aggregates."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 2,
+                  "concept_kind": "SYNTAX",
+                  "withheld": true,
+                  "withheld_reason": "says NULLs sort FIRST under ASC; the engine puts them LAST"
+                },
+                {
+                  "uid": "con_c9cfa93b",
+                  "title": "HAVING and ORDER BY Interaction",
+                  "learning_objectives": [
+                    "Analyze the interaction between HAVING filters and ORDER BY results.",
+                    "Explain why ORDER BY applies after HAVING filtering."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM"
+                }
+              ]
+            },
+            {
+              "uid": "less_9e8a8394",
+              "title": "Performance Considerations",
+              "ordinal": 3,
+              "concepts": [
+                {
+                  "uid": "con_175afe26",
+                  "title": "Aggregation Performance Characteristics",
+                  "learning_objectives": [
+                    "Explain the performance implications of unnecessary GROUP BY usage.",
+                    "Identify when aggregation forces a full table scan versus index usage."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_fb45608a",
+                  "title": "Execution Plan Differences",
+                  "learning_objectives": [
+                    "Analyze query plans for simple aggregations versus grouped aggregations.",
+                    "Predict execution differences between COUNT(*) and COUNT(DISTINCT col)."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_ba9443ed",
+                  "title": "Optimizer Aggregation Pushdown",
+                  "learning_objectives": [
+                    "Explain how database optimizers handle aggregate pushdowns.",
+                    "Identify scenarios where HAVING cannot be pushed below GROUP BY."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "uid": "mod_1b515586",
+      "title": "Relational Joins",
+      "ordinal": 3,
+      "progression_role": "intermediate mechanisms and relationships",
+      "scope": [
+        "INNER JOIN",
+        "LEFT OUTER JOIN",
+        "JOIN conditions"
+      ],
+      "bloom_target": 2,
+      "bloom_label": "Understand",
+      "units": [
+        {
+          "uid": "unit_2d3e6264",
+          "title": "Join Fundamentals",
+          "ordinal": 1,
+          "lessons": [
+            {
+              "uid": "less_fd755a15",
+              "title": "INNER JOIN Mechanics",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "uid": "con_4398db5f",
+                  "title": "Join Condition Mechanics",
+                  "learning_objectives": [
+                    "Explain how the database engine matches rows between two tables based on a specified condition.",
+                    "Distinguish between the result set of an equi-join and a non-equi-join."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM",
+                  "concept_domain": "science"
+                },
+                {
+                  "uid": "con_8ed1fbd1",
+                  "title": "Inner Join Syntax",
+                  "learning_objectives": [
+                    "Describe the process of combining rows from two tables where the join condition evaluates to true.",
+                    "Predict the output when no matching rows exist in either table."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 2,
+                  "concept_kind": "SYNTAX"
+                },
+                {
+                  "uid": "con_bd284494",
+                  "title": "Explicit JOIN Syntax",
+                  "learning_objectives": [
+                    "Identify the role of the ON clause in defining relationship criteria versus the WHERE clause in filtering.",
+                    "Construct a query joining two tables using explicit INNER JOIN syntax."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 3,
+                  "concept_kind": "SYNTAX"
+                }
+              ]
+            },
+            {
+              "uid": "less_74f54bc2",
+              "title": "Outer Join Variations",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "uid": "con_5b3a0d9f",
+                  "title": "Left Outer Join Logic",
+                  "learning_objectives": [
+                    "Define the behavior of a left outer join when a match is found in the right table.",
+                    "Define the behavior of a left outer join when no match is found in the right table."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_9a19de7d",
+                  "title": "Preserved Row Logic in OUTER JOINs",
+                  "learning_objectives": [
+                    "Explain how NULL values are generated for non-matching columns in the preserved table.",
+                    "Differentiate between the preserved table and the filtered table in a left join."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_9c40f7f6",
+                  "title": "Outer Join Comparison",
+                  "learning_objectives": [
+                    "Analyze how a left join differs from an inner join regarding row count and NULLs.",
+                    "Select the appropriate join type to retrieve all records from one table regardless of matches."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM"
+                }
+              ]
+            },
+            {
+              "uid": "less_77f0c78f",
+              "title": "Join Chaining and Aliasing",
+              "ordinal": 3,
+              "concepts": [
+                {
+                  "uid": "con_619d6194",
+                  "title": "Multi-Table Join Chaining",
+                  "learning_objectives": [
+                    "Describe the logical order of operations when multiple tables are joined in a single query.",
+                    "Identify how join conditions interact with WHERE filters in the query execution plan."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_9d4ec91f",
+                  "title": "Table Aliasing in JOINs",
+                  "learning_objectives": [
+                    "Explain the concept of table aliases in simplifying column references across joined tables.",
+                    "Construct a query joining three tables using alias prefixes for disambiguation."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 2,
+                  "concept_kind": "REFERENCE"
+                },
+                {
+                  "uid": "con_4f08ad88",
+                  "title": "Complex Join Structures",
+                  "learning_objectives": [
+                    "Predict the result of a join chain where one intermediate join yields no matches.",
+                    "Debug common errors related to ambiguous column names in multi-table joins."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 3,
+                  "concept_kind": "DEBUGGING"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "uid": "unit_1d48763d",
+          "title": "Advanced Join Mechanics and Optimization",
+          "ordinal": 2,
+          "lessons": [
+            {
+              "uid": "less_4fa62087",
+              "title": "Join Condition Design",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "uid": "con_b43a79d2",
+                  "title": "Cartesian Product (CROSS JOIN)",
+                  "learning_objectives": [
+                    "Explain how a join condition restricts the Cartesian product of two tables.",
+                    "Calculate the potential size of a result set before applying join filters."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_2e718dd0",
+                  "title": "Key-Based Join Conditions",
+                  "learning_objectives": [
+                    "Describe the role of primary and foreign keys in defining valid join conditions.",
+                    "Identify the difference between natural joins and equi-joins on key columns."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_ece580d9",
+                  "title": "Join",
+                  "learning_objectives": [
+                    "Analyze the impact of duplicate keys in join columns on result set cardinality.",
+                    "Predict row multiplication effects when joining on non-unique columns."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                }
+              ]
+            },
+            {
+              "uid": "less_4b719442",
+              "title": "Performance and Optimization",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "uid": "con_abed4492",
+                  "title": "Join Optimization",
+                  "learning_objectives": [
+                    "Explain how the database engine optimizes join order for performance.",
+                    "Identify factors that influence the choice of join algorithm (e.g., hash, merge)."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_d86310df",
+                  "title": "Index Impact on Joins",
+                  "learning_objectives": [
+                    "Describe the impact of missing indexes on join columns on query execution time.",
+                    "Analyze how join type (inner vs outer) affects optimization strategies."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_6d294562",
+                  "title": "Join Algorithm Selection",
+                  "learning_objectives": [
+                    "Compare the performance characteristics of nested loop joins versus hash joins.",
+                    "Predict when a join might result in a full table scan."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 0.65
+                }
+              ]
+            },
+            {
+              "uid": "less_82744866",
+              "title": "Practical Join Implementation",
+              "ordinal": 3,
+              "concepts": [
+                {
+                  "uid": "con_cdea6908",
+                  "title": "Debugging Join Errors",
+                  "learning_objectives": [
+                    "Explain how to debug unexpected NULLs in a join result set.",
+                    "Identify common mistakes in join condition syntax that lead to incorrect results."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 1,
+                  "concept_kind": "DEBUGGING",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_b237e232",
+                  "title": "Syntax Best Practices",
+                  "learning_objectives": [
+                    "Describe the difference between implicit and explicit join syntax in terms of readability.",
+                    "Convert an implicit join (comma-separated tables) to an explicit JOIN clause."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 2,
+                  "concept_kind": "SYNTAX",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_ae1aa3f6",
+                  "title": "Data Type Compatibility",
+                  "learning_objectives": [
+                    "Analyze how to handle data type mismatches in join columns.",
+                    "Predict errors arising from comparing incompatible data types in join conditions."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 3,
+                  "concept_kind": "DEBUGGING",
+                  "source_confidence": 1.0
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "uid": "mod_ddeac3e6",
+      "title": "Query Construction with Subqueries",
+      "ordinal": 4,
+      "progression_role": "intermediate mechanisms and relationships",
+      "scope": [
+        "Subqueries in WHERE clause",
+        "Subqueries in FROM clause",
+        "Scalar subqueries"
+      ],
+      "bloom_target": 3,
+      "bloom_label": "Apply",
+      "units": [
+        {
+          "uid": "unit_5f5a4153",
+          "title": "WHERE Clause Subqueries",
+          "ordinal": 1,
+          "lessons": [
+            {
+              "uid": "less_26423245",
+              "title": "Subqueries in WHERE Clause",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "uid": "con_ac805302",
+                  "title": "Scalar Subqueries in Filters",
+                  "learning_objectives": [
+                    "Construct a nested query to filter rows based on a single aggregated value from a related table.",
+                    "Apply scalar subqueries in the WHERE clause to replace complex join logic for one-to-many lookups."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 1,
+                  "concept_kind": "SYNTAX",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_6f888bc6",
+                  "title": "Correlated Subquery Mechanics",
+                  "learning_objectives": [
+                    "Evaluate the execution order of correlated subqueries against uncorrelated subqueries in filtering contexts.",
+                    "Debug common syntax errors involving column ambiguity in nested WHERE clauses."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 2,
+                  "concept_kind": "DEBUGGING",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_ef1fd94d",
+                  "title": "Existence Testing with EXISTS",
+                  "learning_objectives": [
+                    "Implement EXISTS and NOT EXISTS predicates to test for row existence without retrieving data.",
+                    "Optimize filter performance by choosing between EXISTS and standard equality joins."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 3,
+                  "concept_kind": "PROCEDURE",
+                  "source_confidence": 1.0
+                }
+              ]
+            },
+            {
+              "uid": "less_7119016b",
+              "title": "WHERE Clause Subqueries Lesson 2",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "uid": "con_077f778c",
+                  "title": "Derived Table Construction",
+                  "learning_objectives": [
+                    "Write a subquery in the FROM clause to generate a derived table for aggregation.",
+                    "Apply column aliases to derived tables to ensure valid reference in outer query scopes."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 1,
+                  "concept_kind": "REFERENCE",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_b3c6e50a",
+                  "title": "Nested Derived Tables",
+                  "learning_objectives": [
+                    "Design nested derived tables to perform multi-stage aggregation without intermediate views.",
+                    "Analyze the logical query processing order to predict column availability in outer SELECT lists."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_71b69a2e",
+                  "title": "Derived Table Performance",
+                  "learning_objectives": [
+                    "Compare performance characteristics of derived tables versus temporary tables for intermediate results.",
+                    "Refactor a complex join query into a derived table structure for improved readability."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                }
+              ],
+              "llm_fallback": true
+            },
+            {
+              "uid": "less_5177bb0f",
+              "title": "Scalar Subqueries",
+              "ordinal": 3,
+              "concepts": [
+                {
+                  "uid": "con_c0921e36",
+                  "title": "Scalar Subqueries in SELECT",
+                  "learning_objectives": [
+                    "Use scalar subqueries in the SELECT list to return a single value per row.",
+                    "Handle NULL results from scalar subqueries when no matching row exists in the inner query."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 1,
+                  "concept_kind": "SYNTAX",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_660a46f7",
+                  "title": "Correlated Scalar Calculations",
+                  "learning_objectives": [
+                    "Construct correlated scalar subqueries to compute row-level metrics against aggregate baselines.",
+                    "Apply scalar subqueries to calculate running totals or comparisons against group averages."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_aa68b29d",
+                  "title": "Scalar Subquery Optimization",
+                  "learning_objectives": [
+                    "Identify scenarios where scalar subqueries cause performance degradation due to repeated execution.",
+                    "Rewrite scalar subqueries as JOINs or window functions for optimized execution plans."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "uid": "unit_47be6e0d",
+          "title": "Query Construction with Subqueries Part 2",
+          "ordinal": 2,
+          "lessons": [
+            {
+              "uid": "less_7ef0630d",
+              "title": "Complex FROM Subqueries",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "uid": "con_5ab6de79",
+                  "title": "Pre-Aggregation Derived Tables",
+                  "learning_objectives": [
+                    "Construct a subquery in the FROM clause to pre-aggregate data before joining.",
+                    "Apply derived tables to simplify complex join conditions by isolating aggregation logic."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_e3a9f69f",
+                  "title": "Nested Aggregation Patterns",
+                  "learning_objectives": [
+                    "Design nested derived tables to perform sequential filtering and aggregation steps.",
+                    "Validate column references in outer queries against the scope of inner derived tables."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 2,
+                  "concept_kind": "REFERENCE",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_89bacb6b",
+                  "title": "Derived Table Join Optimization",
+                  "learning_objectives": [
+                    "Compare execution plans of derived table joins versus direct multi-table joins.",
+                    "Optimize query performance by pushing predicates into derived tables where possible."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                }
+              ]
+            },
+            {
+              "uid": "less_bc802825",
+              "title": "Advanced Scalar Applications",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "uid": "con_18bf3e61",
+                  "title": "Per-Row Aggregate Comparisons",
+                  "learning_objectives": [
+                    "Use scalar subqueries in the SELECT list to compute per-row values against global aggregates.",
+                    "Apply scalar subqueries to calculate percentage of total or deviation from mean."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_63767538",
+                  "title": "Correlated Scalar Logic",
+                  "learning_objectives": [
+                    "Construct correlated scalar subqueries to reference outer query columns in inner calculations.",
+                    "Debug scope resolution errors when referencing outer columns in nested scalar subqueries."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 2,
+                  "concept_kind": "DEBUGGING",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_7b4801bf",
+                  "title": "Scalar vs Window Functions",
+                  "learning_objectives": [
+                    "Evaluate the performance impact of scalar subqueries in the SELECT list versus window functions.",
+                    "Refactor scalar subqueries to window functions for improved efficiency in large datasets."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                }
+              ]
+            },
+            {
+              "uid": "less_43dc6fcd",
+              "title": "Subquery Integration",
+              "ordinal": 3,
+              "concepts": [
+                {
+                  "uid": "con_5110a58b",
+                  "title": "Mixed Subquery Composition",
+                  "learning_objectives": [
+                    "Combine WHERE, FROM, and SELECT subqueries in a single complex query.",
+                    "Apply logical query processing order to debug mixed subquery structures."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 1,
+                  "concept_kind": "DEBUGGING",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_5af00d68",
+                  "title": "Subquery Optimization Strategies",
+                  "learning_objectives": [
+                    "Optimize a complex query by identifying redundant subqueries and replacing them with joins.",
+                    "Analyze execution plans to detect inefficient subquery execution patterns."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_72b39e28",
+                  "title": "Subquery Best Practices",
+                  "learning_objectives": [
+                    "Write maintainable subquery structures using consistent aliasing and indentation.",
+                    "Apply best practices for documenting complex subquery logic for team collaboration."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 3,
+                  "concept_kind": "PROCEDURE",
+                  "source_confidence": 1.0
+                }
+              ]
+            }
+          ],
+          "llm_fallback": true
+        }
+      ]
+    },
+    {
+      "uid": "mod_ecbad101",
+      "title": "Named Temporary Results with CTEs",
+      "ordinal": 5,
+      "progression_role": "intermediate mechanisms and relationships",
+      "scope": [
+        "WITH clause",
+        "Recursive CTEs",
+        "CTE chaining"
+      ],
+      "bloom_target": 3,
+      "bloom_label": "Apply",
+      "units": [
+        {
+          "uid": "unit_31485e71",
+          "title": "CTE Mechanics and Syntax",
+          "ordinal": 1,
+          "lessons": [
+            {
+              "uid": "less_3ab0509e",
+              "title": "Common Table Expression",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "uid": "con_12a18f7c",
+                  "title": "Basic CTE Syntax",
+                  "learning_objectives": [
+                    "Construct a basic Common Table Expression (CTE) using the WITH clause to replace a derived table in a FROM clause.",
+                    "Refactor a nested subquery into a named CTE to improve readability and maintainability of a SELECT statement."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 1,
+                  "concept_kind": "SYNTAX",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_94ae782e",
+                  "title": "CTE Scoping Rules",
+                  "learning_objectives": [
+                    "Identify the scoping limitations of a CTE relative to the main query block.",
+                    "Apply a CTE within a JOIN condition to pre-filter a dataset before joining."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_cda112f1",
+                  "title": "CTE Execution Behavior",
+                  "learning_objectives": [
+                    "Differentiate between the execution behavior of a standard CTE and a derived table.",
+                    "Evaluate when a CTE might prevent query optimization compared to a subquery."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 0.65
+                }
+              ]
+            },
+            {
+              "uid": "less_1f71df04",
+              "title": "Recursive CTEs",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "uid": "con_9f442afe",
+                  "title": "Recursive CTE Structure",
+                  "learning_objectives": [
+                    "Define a recursive CTE structure by specifying the anchor member and the recursive member.",
+                    "Construct a recursive CTE to generate a sequence of integers from 1 to 100."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 1,
+                  "concept_kind": "SYNTAX",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_2bde0d66",
+                  "title": "Hierarchical Data Traversal",
+                  "learning_objectives": [
+                    "Design a recursive CTE to traverse a hierarchical employee reporting structure.",
+                    "Calculate the depth level of each node in a tree structure using a recursive CTE."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 2,
+                  "concept_kind": "PROCEDURE",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_e2e261da",
+                  "title": "Recursive CTE Safety",
+                  "learning_objectives": [
+                    "Detect infinite loops in recursive CTEs caused by missing termination conditions.",
+                    "Apply MAXRECURSION hint to limit recursion depth and prevent resource exhaustion."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 0.65
+                }
+              ]
+            },
+            {
+              "uid": "less_89c47fa6",
+              "title": "CTE Chaining and Composition",
+              "ordinal": 3,
+              "concepts": [
+                {
+                  "uid": "con_22bcc884",
+                  "title": "CTE Chaining Mechanics",
+                  "learning_objectives": [
+                    "Chain multiple CTEs in a single WITH clause where each CTE references a previous one.",
+                    "Construct a multi-step data transformation pipeline using chained CTEs."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 1,
+                  "concept_kind": "PROCEDURE",
+                  "source_confidence": 0.65
+                },
+                {
+                  "uid": "con_69642c56",
+                  "title": "CTE Chaining Performance",
+                  "learning_objectives": [
+                    "Compare the performance of a CTE chain versus a nested derived table approach.",
+                    "Optimize a complex query by breaking it into logical CTE steps for better readability."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 2,
+                  "concept_kind": "PROCEDURE",
+                  "source_confidence": 0.65
+                },
+                {
+                  "uid": "con_344ed979",
+                  "title": "Mixed CTE Patterns",
+                  "learning_objectives": [
+                    "Combine recursive and non-recursive CTEs in a single query block.",
+                    "Apply a non-recursive CTE to filter data before feeding it into a recursive CTE."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 3,
+                  "concept_kind": "PROCEDURE",
+                  "source_confidence": 0.65
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "uid": "unit_e1d0f6ab",
+          "title": "CTE Applications and Optimization",
+          "ordinal": 2,
+          "lessons": [
+            {
+              "uid": "less_2c5850f8",
+              "title": "CTEs in Complex Queries",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "uid": "con_1e99f143",
+                  "title": "Multiple Aggregations",
+                  "learning_objectives": [
+                    "Apply a CTE to solve a problem requiring multiple aggregations on the same dataset.",
+                    "Construct a query using two CTEs that each perform a different aggregate function on the same base table."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_7c0835fc",
+                  "title": "Window Function Integration",
+                  "learning_objectives": [
+                    "Use a CTE to calculate a running total that requires window functions.",
+                    "Compare the readability of a CTE-based running total versus a correlated subquery."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_2b617463",
+                  "title": "Conditional Aggregation",
+                  "learning_objectives": [
+                    "Implement a CTE to handle conditional aggregation logic.",
+                    "Apply a CTE to pivot data from rows to columns using conditional sums."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 3,
+                  "concept_kind": "PROCEDURE",
+                  "source_confidence": 1.0
+                }
+              ]
+            },
+            {
+              "uid": "less_931575b8",
+              "title": "Recursive CTE Applications",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "uid": "con_d22735da",
+                  "title": "Graph Traversal",
+                  "learning_objectives": [
+                    "Design a recursive CTE to solve a graph traversal problem with weighted edges.",
+                    "Apply a recursive CTE to find the shortest path between two nodes in a graph."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 1,
+                  "concept_kind": "PROCEDURE",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_55493944",
+                  "title": "Date Generation",
+                  "learning_objectives": [
+                    "Use a recursive CTE to generate a calendar table for date-based analysis.",
+                    "Apply a recursive CTE to fill in missing dates in a time series dataset."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 2,
+                  "concept_kind": "PROCEDURE",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_5d4196e8",
+                  "title": "Data Parsing",
+                  "learning_objectives": [
+                    "Construct a recursive CTE to parse hierarchical configuration data.",
+                    "Apply a recursive CTE to flatten a nested JSON structure into relational rows."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 3,
+                  "concept_kind": "TOOLING",
+                  "source_confidence": 1.0
+                }
+              ]
+            },
+            {
+              "uid": "less_06677a0e",
+              "title": "CTE Performance and Debugging",
+              "ordinal": 3,
+              "concepts": [
+                {
+                  "uid": "con_b53cff42",
+                  "title": "CTE vs Temp Table",
+                  "learning_objectives": [
+                    "Identify scenarios where a CTE is more efficient than a temporary table.",
+                    "Apply a CTE to optimize a query that requires multiple passes over the same data."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_89fd4eea",
+                  "title": "CTE Performance Tuning",
+                  "learning_objectives": [
+                    "Analyze the execution plan of a CTE to identify potential performance bottlenecks.",
+                    "Apply indexing strategies to support CTE-based queries."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 0.65
+                },
+                {
+                  "uid": "con_8bbd1118",
+                  "title": "CTE Debugging",
+                  "learning_objectives": [
+                    "Debug a CTE that returns unexpected results due to scoping issues.",
+                    "Apply best practices for naming and documenting CTEs in complex queries."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 3,
+                  "concept_kind": "DEBUGGING",
+                  "source_confidence": 0.65
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "uid": "mod_0bafd35e",
+      "title": "Logical Validation and Null Semantics",
+      "ordinal": 6,
+      "progression_role": "advanced synthesis and applications",
+      "scope": [
+        "NULL handling",
+        "IS NULL vs = NULL",
+        "Query debugging and validation"
+      ],
+      "bloom_target": 4,
+      "bloom_label": "Analyze",
+      "units": [
+        {
+          "uid": "unit_25071f15",
+          "title": "NULL Semantics and Logic",
+          "ordinal": 1,
+          "lessons": [
+            {
+              "uid": "less_9b121215",
+              "title": "NULL Semantics and Logic",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "uid": "con_1d730541",
+                  "title": "Three-Valued Logic Mechanics",
+                  "learning_objectives": [
+                    "Distinguish between the three-valued logic states (True, False, Unknown) in SQL predicate evaluation.",
+                    "Analyze why the equality operator (=) fails to identify NULL values compared to explicit null checks."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 1,
+                  "concept_kind": "SYNTAX",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_2c0fb3d2",
+                  "title": "Explicit Null Detection Operators",
+                  "learning_objectives": [
+                    "Trace the evaluation path of IS NULL and IS NOT NULL operators within WHERE clauses.",
+                    "Compare the logical outcomes of comparing NULL with numeric literals versus string literals."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 2,
+                  "concept_kind": "SYNTAX",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_f01cd024",
+                  "title": "NULL Propagation in Expressions",
+                  "learning_objectives": [
+                    "Identify how NULL propagates through arithmetic expressions (addition, multiplication) and aggregate functions.",
+                    "Analyze the impact of NULLs on the result set size when filtering with standard comparison operators."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 3,
+                  "concept_kind": "SYNTAX",
+                  "source_confidence": 1.0
+                }
+              ]
+            },
+            {
+              "uid": "less_860bfaa5",
+              "title": "NULL Behavior in Aggregation and Sorting",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "uid": "con_20b3b73c",
+                  "title": "NULLs in Grouping and Distinct",
+                  "learning_objectives": [
+                    "Examine how NULLs behave as distinct values in GROUP BY operations versus unique sets.",
+                    "Analyze the interaction between NULLs and the DISTINCT keyword in result sets."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 1,
+                  "concept_kind": "SYNTAX",
+                  "source_confidence": 0.65
+                },
+                {
+                  "uid": "con_a77be12a",
+                  "title": "NULLs in Sorting and Joining",
+                  "learning_objectives": [
+                    "Evaluate how NULLs affect the ordering of results in ORDER BY clauses (NULLS FIRST/LAST).",
+                    "Analyze the logical implications of NULLs in JOIN ON conditions versus WHERE filters."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_f5233a37",
+                  "title": "COALESCE and Default Substitution",
+                  "learning_objectives": [
+                    "Construct queries using COALESCE to substitute NULLs with default values for display.",
+                    "Analyze the performance and logical differences between COALESCE and CASE WHEN NULL handling."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                }
+              ]
+            },
+            {
+              "uid": "less_e113be7c",
+              "title": "Debugging and Validation Techniques",
+              "ordinal": 3,
+              "concepts": [
+                {
+                  "uid": "con_5db693f2",
+                  "title": "Debugging NULL-Related Filter Errors",
+                  "learning_objectives": [
+                    "Debug queries by isolating predicates that silently filter out rows due to NULL comparisons.",
+                    "Analyze execution plans to identify hidden NULL-related logical errors in complex WHERE clauses."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_ea612635",
+                  "title": "Query Validation with Edge Cases",
+                  "learning_objectives": [
+                    "Validate query logic by testing edge cases involving empty sets and NULL inputs.",
+                    "Analyze the correctness of scalar subqueries that may return NULL instead of a row."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 2,
+                  "concept_kind": "PROCEDURE",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_bcaf60c5",
+                  "title": "Testing NULL Propagation Paths",
+                  "learning_objectives": [
+                    "Design test cases that specifically target NULL propagation paths in calculated columns.",
+                    "Analyze the difference between logical NULL and empty string ('') in validation contexts."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "uid": "unit_9b02cd49",
+          "title": "NULL in Complex Constructs",
+          "ordinal": 2,
+          "lessons": [
+            {
+              "uid": "less_824e227f",
+              "title": "Advanced NULL Interactions",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "uid": "con_5ca70ac2",
+                  "title": "Logical Equivalence of Null Checks",
+                  "learning_objectives": [
+                    "Analyze the logical difference between IS UNKNOWN and IS NULL in boolean contexts.",
+                    "Evaluate how NULLs in join keys affect the cardinality of outer join results."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_c33c081b",
+                  "title": "Subqueries and Null Outer References",
+                  "learning_objectives": [
+                    "Trace the execution of correlated subqueries where the outer reference is NULL.",
+                    "Analyze the behavior of EXISTS vs NOT EXISTS when dealing with NULL-producing subqueries."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 2,
+                  "concept_kind": "REFERENCE",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_3f6665c8",
+                  "title": "NULLs in Indexing and Optimization",
+                  "learning_objectives": [
+                    "Identify scenarios where NULLs in index columns prevent index usage.",
+                    "Analyze the optimizer's handling of NULLs in filter predicates for performance."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                }
+              ]
+            },
+            {
+              "uid": "less_e217889e",
+              "title": "NULLs in Complex Constructs",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "uid": "con_01dbc469",
+                  "title": "NULLIF for Logical Equivalence",
+                  "learning_objectives": [
+                    "Construct queries using NULLIF to prevent division by zero and handle logical equivalence.",
+                    "Analyze the logical outcome of NULLIF when comparing identical non-NULL values."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 1,
+                  "concept_kind": "PROCEDURE",
+                  "source_confidence": 0.85
+                },
+                {
+                  "uid": "con_fd98df7c",
+                  "title": "NULLs in Recursive CTEs",
+                  "learning_objectives": [
+                    "Design CTEs that explicitly handle NULL states in recursive steps.",
+                    "Analyze the termination conditions of recursive CTEs when NULLs are introduced."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 2,
+                  "concept_kind": "PROCEDURE",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_4fdff419",
+                  "title": "NULLs in Window Functions",
+                  "learning_objectives": [
+                    "Evaluate the use of NULLS FIRST/LAST in window function partitions.",
+                    "Analyze how NULLs affect the ranking and framing in window calculations."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                }
+              ]
+            },
+            {
+              "uid": "less_c4d50fea",
+              "title": "Validation and Integrity",
+              "ordinal": 3,
+              "concepts": [
+                {
+                  "uid": "con_8c211ee6",
+                  "title": "Data Integrity and Null Constraints",
+                  "learning_objectives": [
+                    "Validate data integrity by checking for unexpected NULLs in primary key columns.",
+                    "Analyze the logical implications of NULLs in foreign key constraints."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 1,
+                  "concept_kind": "CONVENTION",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_6ef54485",
+                  "title": "Debugging Aggregate NULL Sources",
+                  "learning_objectives": [
+                    "Debug queries that produce unexpected NULLs in calculated aggregates.",
+                    "Analyze the source of NULLs in multi-table joins using set operations."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 2,
+                  "concept_kind": "DEBUGGING",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_95030479",
+                  "title": "Cross-Dialect NULL Validation",
+                  "learning_objectives": [
+                    "Create test suites that verify NULL handling across different SQL dialects.",
+                    "Analyze the portability of NULL handling logic in cross-database applications."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 3,
+                  "concept_kind": "CONVENTION",
+                  "source_confidence": 1.0
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "fallback_count": 3,
+  "research_loop": {
+    "ran": true,
+    "rounds": 4,
+    "items": 12,
+    "covered": 11,
+    "outstanding": [
+      "Joining Multiple Tables"
+    ],
+    "coverage_pct": 92,
+    "sources": 57,
+    "stopped_because": "budget",
+    "exit_rule": "measured coverage of the checklist (no model judgement)",
+    "checklist_source": "model-proposed",
+    "authoritative": false,
+    "note": "no published syllabus for this subject \u2014 coverage is against an invented checklist and does not demonstrate parity with any published course"
+  },
+  "syllabus_check": {
+    "error": "judge could not derive core topics",
+    "keyword_coverage": {
+      "status": "no external syllabus \u2014 not measured"
+    },
+    "sequencing": {
+      "checked": true,
+      "alphabetical": false,
+      "in_order_ratio": 0.4,
+      "verdict": "ok",
+      "note": ""
+    }
+  },
+  "supplementary_sources": [
+    {
+      "source": "Wikibooks",
+      "book": "Structured Query Language",
+      "url": "https://en.wikibooks.org/wiki/Structured_Query_Language",
+      "relevance": 3.25,
+      "chapters": [
+        "About the Book",
+        "Alter Table",
+        "COMMIT and ROLLBACK",
+        "Classic Track Print",
+        "Create Table",
+        "Create a simple Table",
+        "DELETE 1",
+        "DELETE 2",
+        "Data Control Language",
+        "Data Definition Language",
+        "Data Manipulation Language",
+        "Data Query Language",
+        "Data Types",
+        "Database Management Systems (DBMS)",
+        "Drop Table",
+        "Eliminate Duplicates",
+        "Example Database Data",
+        "Example Database Structure",
+        "Foreign Key",
+        "Handle Data",
+        "INSERT 1",
+        "INSERT 2",
+        "Introduction to SQL",
+        "Language Elements",
+        "Learning by Doing",
+        "Like Predicate",
+        "MERGE",
+        "Managing Indexes",
+        "Managing Rights",
+        "NULLs and the Three Valued Logic",
+        "Performance",
+        "Quantified Comparision",
+        "Quantified Comparison",
+        "Recursions",
+        "Relational DBMS (rDBMS)",
+        "Relational Databases",
+        "Retrieve Top N Rows per Group",
+        "Return Codes",
+        "Rollup Cube",
+        "SELECT: Case Expression",
+        "SELECT: Fundamentals",
+        "SELECT: Grouping",
+        "SELECT: IS NULL Predicate",
+        "SELECT: Join Operation",
+        "SELECT: Predefined Functions",
+        "SELECT: Set Operations",
+        "SELECT: Subquery",
+        "SQL: A Language for Working with rDBMS",
+        "SQL: The Standard ISO IEC 9075 and various Implementations",
+        "SQLSTATE",
+        "Snippets",
+        "TRUNCATE",
+        "Temporary Table",
+        "Transactions",
+        "UPDATE 1",
+        "UPDATE 2",
+        "Views",
+        "WHERE",
+        "Window functions",
+        "with clause"
+      ]
+    },
+    {
+      "source": "Wikiversity",
+      "book": "AP Computer Science Principles",
+      "url": "https://en.wikiversity.org/wiki/AP_Computer_Science_Principles",
+      "relevance": 1.5,
+      "chapters": [
+        "Algorithms and Programming",
+        "Apply a creative development process when creating computational artifacts",
+        "Computer Systems and Networks",
+        "Creative Development",
+        "Data",
+        "Impact of Computing",
+        "Sidebar"
+      ]
+    },
+    {
+      "source": "OpenStax",
+      "book": "Introduction to Political Science",
+      "url": "https://openstax.org/details/books/89060098-2918-4037-8ebe-d90622d7a6bf",
+      "relevance": 1.0,
+      "chapters": [
+        "Overview",
+        "Stata Software Tour",
+        "Getting Started in Stata",
+        "Datasets - Cross-section Time Series and Panel",
+        "Data Management",
+        "Descriptive Statistics",
+        "Model Selection",
+        "Linear Models",
+        "Binary Outcome Models",
+        "Ordinal Outcome Models",
+        "Categorical Outcome Models",
+        "Count Outcome Models",
+        "Panel Data Linear Models",
+        "Panel Data Binary Outcome Models",
+        "Panel Data Ordinal Outcome Models",
+        "Panel Data Categorical Outcome Models",
+        "Panel Data Count Outcome Models",
+        "Survival Models",
+        "Share",
+        "Reflection"
+      ]
+    }
+  ],
+  "supplementary_policy": {
+    "grounding_bar": 6.0,
+    "max_share": 0.2,
+    "share_unit": "claims grounded only in supplementary sources",
+    "usable_for": "content hydration only",
+    "excluded_from": [
+      "structure",
+      "scope assessment",
+      "coverage checklist",
+      "coverage measurement"
+    ],
+    "why": "below the grounding bar these sources do not speak for the subject, but may still serve an individual concept \u2014 a judgement that can only be made per concept"
+  },
+  "teaching_domain": "computer_science",
+  "concept_kinds": {
+    "by_pattern": 54,
+    "unknown": 0,
+    "borrowed": 2,
+    "by_reading": 43
+  },
+  "updated_at": "2026-08-25T14:25:25.105632",
+  "hydrated_count": 1,
+  "error": "Course creation timed out (>1 hour)",
+  "depth_contract": {
+    "mastery": 3,
+    "domain": null,
+    "concepts_total": 14,
+    "concepts_previously_hydrated": 81,
+    "partial_run": true,
+    "concepts_missing_contract": 0,
+    "met_pct": 100.0,
+    "level_verified": false,
+    "failures": []
+  },
+  "fact_check": {
+    "concepts_total": 14,
+    "concepts_checked": 5,
+    "sample_fraction": 0.34,
+    "concepts_with_false_claims": 0,
+    "clean_pct": 100.0,
+    "failures": []
+  },
+  "level_calibration": {
+    "claimed": 3,
+    "judged": 3.33,
+    "sd": 0.47,
+    "n": 6,
+    "gap": 0.33,
+    "calibrated": true,
+    "levels": [
+      3,
+      3,
+      3,
+      3,
+      4,
+      4
+    ]
+  },
+  "grounding": {
+    "confidence_floor": 0.5,
+    "concepts_total": 14,
+    "concepts_below_floor": 0,
+    "well_grounded_pct": 100.0,
+    "low_confidence": []
+  },
+  "assets": {
+    "collected": true,
+    "diagrams": 26,
+    "reused": 102,
+    "images": 0,
+    "concepts_with_assets": 64,
+    "concepts_total": 14,
+    "seconds": 399.7
+  },
+  "audit": {
+    "course_title": "SQL",
+    "concepts_total": 95,
+    "concepts_audited": 95,
+    "concepts_not_audited": 0,
+    "concepts_clean": 0,
+    "concepts_with_findings": 95,
+    "systemic": [
+      {
+        "check": "citations",
+        "severity": "serious",
+        "concepts": 95,
+        "share": 1.0,
+        "detail": "1 of 3 sources have no stored passage \u2014 nothing downstream can verify a claim against them",
+        "affected": [
+          "con_607d1ce0",
+          "con_df5a371b",
+          "con_98579e83",
+          "con_e49ffed7",
+          "con_0e8b1f78",
+          "con_f3fad10e",
+          "con_e63885aa",
+          "con_95fb0431",
+          "con_17105b23",
+          "con_83a93fb4",
+          "con_43308cb4",
+          "con_c25d8b22",
+          "con_43cedd5d",
+          "con_25e261b9",
+          "con_38028046",
+          "con_a125949a",
+          "con_5dc1e84b",
+          "con_c263de25",
+          "con_cf3e73a1",
+          "con_c9cfa93b",
+          "con_175afe26",
+          "con_fb45608a",
+          "con_ba9443ed",
+          "con_4398db5f",
+          "con_8ed1fbd1",
+          "con_bd284494",
+          "con_5b3a0d9f",
+          "con_9a19de7d",
+          "con_9c40f7f6",
+          "con_619d6194",
+          "con_9d4ec91f",
+          "con_4f08ad88",
+          "con_b43a79d2",
+          "con_2e718dd0",
+          "con_ece580d9",
+          "con_abed4492",
+          "con_d86310df",
+          "con_6d294562",
+          "con_cdea6908",
+          "con_b237e232",
+          "con_ae1aa3f6",
+          "con_ac805302",
+          "con_6f888bc6",
+          "con_ef1fd94d",
+          "con_077f778c",
+          "con_b3c6e50a",
+          "con_71b69a2e",
+          "con_c0921e36",
+          "con_660a46f7",
+          "con_aa68b29d",
+          "con_5ab6de79",
+          "con_e3a9f69f",
+          "con_89bacb6b",
+          "con_18bf3e61",
+          "con_63767538",
+          "con_7b4801bf",
+          "con_5110a58b",
+          "con_5af00d68",
+          "con_72b39e28",
+          "con_12a18f7c",
+          "con_94ae782e",
+          "con_cda112f1",
+          "con_9f442afe",
+          "con_2bde0d66",
+          "con_e2e261da",
+          "con_22bcc884",
+          "con_69642c56",
+          "con_344ed979",
+          "con_1e99f143",
+          "con_7c0835fc",
+          "con_2b617463",
+          "con_d22735da",
+          "con_55493944",
+          "con_5d4196e8",
+          "con_b53cff42",
+          "con_89fd4eea",
+          "con_8bbd1118",
+          "con_1d730541",
+          "con_2c0fb3d2",
+          "con_f01cd024",
+          "con_20b3b73c",
+          "con_a77be12a",
+          "con_f5233a37",
+          "con_5db693f2",
+          "con_ea612635",
+          "con_bcaf60c5",
+          "con_5ca70ac2",
+          "con_c33c081b",
+          "con_3f6665c8",
+          "con_01dbc469",
+          "con_fd98df7c",
+          "con_4fdff419",
+          "con_8c211ee6",
+          "con_6ef54485",
+          "con_95030479"
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "concept_uid": "con_cf3e73a1",
+        "title": "Ordering by Aggregates",
+        "check": "executable_claims",
+        "severity": "blocking",
+        "detail": "says NULLs sort FIRST under ASC; the engine puts them LAST",
+        "quote": "`ORDER BY` treats `NULL` as the lowest value in ascending order (in PostgreSQL) or highest (in some other dialects/configurations), which can cause unexpected g"
+      },
+      {
+        "concept_uid": "con_e3a9f69f",
+        "title": "Nested Aggregation Patterns",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "the curriculum path contains a splitter artefact like \"Part 2\" \u2014 name the section by what it teaches",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_89bacb6b",
+        "title": "Derived Table Join Optimization",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "the curriculum path contains a splitter artefact like \"Part 2\" \u2014 name the section by what it teaches",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_18bf3e61",
+        "title": "Per-Row Aggregate Comparisons",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "the curriculum path contains a splitter artefact like \"Part 2\" \u2014 name the section by what it teaches",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_63767538",
+        "title": "Correlated Scalar Logic",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "the curriculum path contains a splitter artefact like \"Part 2\" \u2014 name the section by what it teaches",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_7b4801bf",
+        "title": "Scalar vs Window Functions",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "the curriculum path contains a splitter artefact like \"Part 2\" \u2014 name the section by what it teaches",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_5110a58b",
+        "title": "Mixed Subquery Composition",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "the curriculum path contains a splitter artefact like \"Part 2\" \u2014 name the section by what it teaches",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_5af00d68",
+        "title": "Subquery Optimization Strategies",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "the curriculum path contains a splitter artefact like \"Part 2\" \u2014 name the section by what it teaches",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_72b39e28",
+        "title": "Subquery Best Practices",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "the curriculum path contains a splitter artefact like \"Part 2\" \u2014 name the section by what it teaches",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_1e99f143",
+        "title": "Multiple Aggregations",
+        "check": "thin_content",
+        "severity": "serious",
+        "detail": "meets its structure but teaches little: paragraphs are near-identical to each other (overlap 93%) \u2014 the same text repeated",
+        "quote": "{'concrete_density': 0.2158, 'empty_sentence_share': 0.17, 'self_repetition': 0.929, 'words': 1075}"
+      },
+      {
+        "concept_uid": "con_01dbc469",
+        "title": "NULLIF for Logical Equivalence",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "the text contains your own deliberation \u2014 remove it and state the conclusion only (found: \"('user@example.com'). Wait, in Row B both are NULL. `CASE WHEN NULL = NULL THEN NULL ELSE NULL` -> `ELSE NULL`. So `m\")",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_fd98df7c",
+        "title": "NULLs in Recursive CTEs",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "a section is filled with placeholder wording rather than content (found: \"## Mastery Criteria Student should demonstrate understanding of NULLs in Recursive CTEs. ## Core Explanation In a recursive Common Table Exp\")",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_4fdff419",
+        "title": "NULLs in Window Functions",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "the text contains your own deliberation \u2014 remove it and state the conclusion only (found: \"ULL` returns `NULL`). Wait, `SUM()` over a set of rows where the only value is `NULL` returns `NULL`. - For Bob\u2019s sec\")",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_95030479",
+        "title": "Cross-Dialect NULL Validation",
+        "check": "tutor_sections",
+        "severity": "serious",
+        "detail": "## Analogies is missing \u2014 the tutor reads it when teaching",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_5ab6de79",
+        "title": "Pre-Aggregation Derived Tables",
+        "check": "coherence",
+        "severity": "minor",
+        "detail": "curriculum path contains a splitter artefact: 'Query Construction with Subqueries Part 2'",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_e3a9f69f",
+        "title": "Nested Aggregation Patterns",
+        "check": "coherence",
+        "severity": "minor",
+        "detail": "curriculum path contains a splitter artefact: 'Query Construction with Subqueries Part 2'",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_89bacb6b",
+        "title": "Derived Table Join Optimization",
+        "check": "coherence",
+        "severity": "minor",
+        "detail": "curriculum path contains a splitter artefact: 'Query Construction with Subqueries Part 2'",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_18bf3e61",
+        "title": "Per-Row Aggregate Comparisons",
+        "check": "coherence",
+        "severity": "minor",
+        "detail": "curriculum path contains a splitter artefact: 'Query Construction with Subqueries Part 2'",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_63767538",
+        "title": "Correlated Scalar Logic",
+        "check": "coherence",
+        "severity": "minor",
+        "detail": "curriculum path contains a splitter artefact: 'Query Construction with Subqueries Part 2'",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_7b4801bf",
+        "title": "Scalar vs Window Functions",
+        "check": "coherence",
+        "severity": "minor",
+        "detail": "curriculum path contains a splitter artefact: 'Query Construction with Subqueries Part 2'",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_5110a58b",
+        "title": "Mixed Subquery Composition",
+        "check": "coherence",
+        "severity": "minor",
+        "detail": "curriculum path contains a splitter artefact: 'Query Construction with Subqueries Part 2'",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_5af00d68",
+        "title": "Subquery Optimization Strategies",
+        "check": "coherence",
+        "severity": "minor",
+        "detail": "curriculum path contains a splitter artefact: 'Query Construction with Subqueries Part 2'",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_72b39e28",
+        "title": "Subquery Best Practices",
+        "check": "coherence",
+        "severity": "minor",
+        "detail": "curriculum path contains a splitter artefact: 'Query Construction with Subqueries Part 2'",
+        "quote": ""
+      }
+    ],
+    "by_severity": {
+      "blocking": 1,
+      "serious": 108,
+      "minor": 9
+    },
+    "by_check": {
+      "executable_claims": 1,
+      "content_guards": 11,
+      "thin_content": 1,
+      "tutor_sections": 1,
+      "coherence": 9,
+      "citations": 95
+    },
+    "checks_run": {
+      "content_guards": 95,
+      "depth_contract": 95,
+      "tutor_sections": 95,
+      "thin_content": 95,
+      "executable_claims": 95,
+      "citations": 95,
+      "coherence": 1
+    },
+    "seconds": 0.43,
+    "ran": true,
+    "verdict": "blocking_findings"
+  }
+}

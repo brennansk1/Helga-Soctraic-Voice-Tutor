@@ -1,0 +1,182 @@
+{
+  "uid": "course_7d868408",
+  "title": "Reading a Query Plan",
+  "description": "How PostgreSQL decides to execute a statement, and how to read what it decided.",
+  "teaching_style": "",
+  "teaching_domain": "computer_science",
+  "scope": 2,
+  "mastery": 3,
+  "starting_from": 3,
+  "authored_by": "claude-opus-5",
+  "status": "needs_review",
+  "modules": [
+    {
+      "uid": "mod_60181689",
+      "title": "What the Planner Produces",
+      "units": [
+        {
+          "uid": "unit_840332e3",
+          "title": "What the Planner Produces",
+          "lessons": [
+            {
+              "uid": "less_1efdcd75",
+              "title": "What the Planner Produces",
+              "concepts": [
+                {
+                  "uid": "con_6d585325",
+                  "title": "What a Query Plan Is",
+                  "concept_kind": "MECHANISM",
+                  "bloom_level": 2,
+                  "learning_objectives": [],
+                  "complexity_role": null,
+                  "depth_level": null
+                },
+                {
+                  "uid": "con_53597886",
+                  "title": "Sequential Scan versus Index Scan",
+                  "concept_kind": "MECHANISM",
+                  "bloom_level": 3,
+                  "learning_objectives": [],
+                  "complexity_role": null,
+                  "depth_level": null
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "uid": "mod_b355e16d",
+      "title": "Reading a Plan Critically",
+      "units": [
+        {
+          "uid": "unit_70ee34cd",
+          "title": "Reading a Plan Critically",
+          "lessons": [
+            {
+              "uid": "less_150ed8ed",
+              "title": "Reading a Plan Critically",
+              "concepts": [
+                {
+                  "uid": "con_65fda893",
+                  "title": "Estimated Rows versus Actual Rows",
+                  "concept_kind": "MECHANISM",
+                  "bloom_level": 4,
+                  "learning_objectives": [],
+                  "complexity_role": null,
+                  "depth_level": null
+                },
+                {
+                  "uid": "con_5b159dfd",
+                  "title": "Join Strategies: Nested Loop, Hash, and Merge",
+                  "concept_kind": "MECHANISM",
+                  "bloom_level": 3,
+                  "learning_objectives": [],
+                  "complexity_role": null,
+                  "depth_level": null
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "created_at": "2026-08-24T17:55:25.345815",
+  "updated_at": "2026-08-25T16:33:53.925146",
+  "depth_contract": {
+    "mastery": 3,
+    "domain": "computer_science",
+    "concepts_total": 4,
+    "concepts_verified": 4,
+    "concepts_missing_contract": 0,
+    "met_pct": 100.0,
+    "level_verified": true,
+    "failures": [],
+    "judged_by": "pipeline_api.finalize"
+  },
+  "audit": {
+    "course_title": "Reading a Query Plan",
+    "concepts_total": 4,
+    "concepts_audited": 4,
+    "concepts_not_audited": 0,
+    "concepts_clean": 0,
+    "concepts_with_findings": 4,
+    "systemic": [
+      {
+        "check": "tutor_sections",
+        "severity": "serious",
+        "concepts": 4,
+        "share": 1.0,
+        "detail": "## Core Explanation is missing \u2014 the tutor reads it when teaching",
+        "affected": [
+          "con_6d585325",
+          "con_53597886",
+          "con_65fda893",
+          "con_5b159dfd"
+        ]
+      },
+      {
+        "check": "tutor_sections",
+        "severity": "serious",
+        "concepts": 4,
+        "share": 1.0,
+        "detail": "## Misconceptions is missing \u2014 the tutor reads it when teaching",
+        "affected": [
+          "con_6d585325",
+          "con_53597886",
+          "con_65fda893",
+          "con_5b159dfd"
+        ]
+      },
+      {
+        "check": "tutor_sections",
+        "severity": "serious",
+        "concepts": 4,
+        "share": 1.0,
+        "detail": "## Analogies is missing \u2014 the tutor reads it when teaching",
+        "affected": [
+          "con_6d585325",
+          "con_53597886",
+          "con_65fda893",
+          "con_5b159dfd"
+        ]
+      },
+      {
+        "check": "citations",
+        "severity": "serious",
+        "concepts": 4,
+        "share": 1.0,
+        "detail": "no sources recorded for this concept",
+        "affected": [
+          "con_6d585325",
+          "con_53597886",
+          "con_65fda893",
+          "con_5b159dfd"
+        ]
+      }
+    ],
+    "findings": [],
+    "by_severity": {
+      "serious": 16
+    },
+    "by_check": {
+      "tutor_sections": 12,
+      "citations": 4
+    },
+    "checks_run": {
+      "content_guards": 4,
+      "depth_contract": 4,
+      "tutor_sections": 4,
+      "thin_content": 4,
+      "executable_claims": 4,
+      "citations": 4,
+      "coherence": 1
+    },
+    "seconds": 0.01,
+    "ran": true,
+    "verdict": "needs_review"
+  },
+  "gate_reason": "4 of 4 concepts are missing sections the tutor reads \u2014 there is no lesson to teach"
+}

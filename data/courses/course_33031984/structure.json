@@ -1,0 +1,2472 @@
+{
+  "uid": "course_33031984",
+  "title": "Advanced SQL",
+  "teaching_style": "",
+  "learner_context": "I already write joins, GROUP BY and subqueries daily. I want the analytics-engineering tier: window functions and frame semantics, CTEs including recursive ones, set operations and their NULL behaviour, reading and acting on an EXPLAIN plan, index strategy, and query optimisation against real data volumes. PostgreSQL specifics welcome. Not database administration, not basic SELECT syntax.",
+  "status": "ready",
+  "created_at": "2026-08-25T11:21:01",
+  "scope": 3,
+  "mastery": 4,
+  "starting_from": 3,
+  "bloom_floor": 2,
+  "bloom_ceiling": 5,
+  "modules": [
+    {
+      "uid": "mod_5d372d3a",
+      "title": "Window Function Frame Semantics and Partitioning",
+      "ordinal": 1,
+      "progression_role": "foundational definitions and core theory",
+      "scope": [
+        "ROW_NUMBER() vs RANK() vs DENSE_RANK()",
+        "PARTITION BY clause mechanics",
+        "ROWS BETWEEN vs RANGE BETWEEN framing"
+      ],
+      "bloom_target": 2,
+      "bloom_label": "Understand",
+      "units": [
+        {
+          "uid": "unit_5bb47af1",
+          "title": "Ranking and Partitioning",
+          "ordinal": 1,
+          "lessons": [
+            {
+              "uid": "less_8be97d0a",
+              "title": "Ranking Functions Comparison",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "uid": "con_12ecda52",
+                  "title": "Ranking Function Mechanics",
+                  "learning_objectives": [
+                    "Distinguish how ROW_NUMBER assigns sequential integers without gaps versus how RANK assigns integers with gaps for ties.",
+                    "Explain the mechanism by which DENSE_RANK assigns sequential integers without gaps for ties."
+                  ],
+                  "complexity_role": "foundational definitions and core theory",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_c3e1094e",
+                  "title": "Tie Handling Strategies",
+                  "learning_objectives": [
+                    "Identify the specific tie-handling behavior that differentiates RANK from DENSE_RANK in ordered result sets.",
+                    "Predict the output sequence for a dataset containing duplicate values when applying each ranking function."
+                  ],
+                  "complexity_role": "foundational definitions and core theory",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 0.0
+                },
+                {
+                  "uid": "con_b3ddaaa8",
+                  "title": "NULL Value Impact",
+                  "learning_objectives": [
+                    "Describe the impact of NULL values on the ordering and ranking produced by ROW_NUMBER, RANK, and DENSE_RANK.",
+                    "Explain why NULLs are treated as the lowest or highest value depending on the sort direction."
+                  ],
+                  "complexity_role": "foundational definitions and core theory",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 0.8,
+                  "withheld": true,
+                  "withheld_reason": "the text contains your own deliberation \u2014 remove it and state the conclusion only (found: \"0) *Correction:* Wait, let\u2019s verify PostgreSQL\u2019s default for `DESC`. PostgreSQL\u2019s default for `NULLS` in `ORDER\")"
+                }
+              ]
+            },
+            {
+              "uid": "less_679a604c",
+              "title": "Partitioning Mechanics",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "uid": "con_2ae33562",
+                  "title": "Partitioning Scope",
+                  "learning_objectives": [
+                    "Define the role of the PARTITION BY clause in resetting the window frame for each distinct group.",
+                    "Contrast the global scope of an ORDER BY without PARTITION BY against the scoped scope of PARTITION BY."
+                  ],
+                  "complexity_role": "foundational definitions and core theory",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_c4c9cbcf",
+                  "title": "Partitioning",
+                  "learning_objectives": [
+                    "Analyze how window functions behave when applied to aggregated data versus raw row data.",
+                    "Explain the restriction preventing nested window functions in standard SQL."
+                  ],
+                  "complexity_role": "foundational definitions and core theory",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_1b7b9521",
+                  "title": "Clause Ordering Rules",
+                  "learning_objectives": [
+                    "Determine the correct placement of PARTITION BY relative to ORDER BY within the window specification.",
+                    "Predict the result set structure when multiple columns are specified in the PARTITION BY clause."
+                  ],
+                  "complexity_role": "foundational definitions and core theory",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM"
+                }
+              ]
+            },
+            {
+              "uid": "less_359f7874",
+              "title": "Frame Units ROWS vs RANGE",
+              "ordinal": 3,
+              "concepts": [
+                {
+                  "uid": "con_8ed5ada8",
+                  "title": "ROWS Frame Definition",
+                  "learning_objectives": [
+                    "Define the ROWS frame unit as a physical count of rows preceding or following the current row.",
+                    "Explain how ROWS BETWEEN handles ties by treating each row as a distinct entity regardless of value."
+                  ],
+                  "complexity_role": "foundational definitions and core theory",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_5085fe86",
+                  "title": "RANGE Frame Definition",
+                  "learning_objectives": [
+                    "Define the RANGE frame unit as a logical range of values based on the ORDER BY expression.",
+                    "Describe how RANGE BETWEEN includes all rows with values equal to the current row's value within the specified bounds."
+                  ],
+                  "complexity_role": "foundational definitions and core theory",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 2,
+                  "concept_kind": "SYNTAX"
+                },
+                {
+                  "uid": "con_27c4c9a6",
+                  "title": "Frame Unit Differences",
+                  "learning_objectives": [
+                    "Compare the performance implications of ROWS versus RANGE for large datasets with many ties.",
+                    "Explain why RANGE is often slower due to the need to scan for equal values."
+                  ],
+                  "complexity_role": "foundational definitions and core theory",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "uid": "unit_7512eaf3",
+          "title": "Advanced Frame Applications",
+          "ordinal": 2,
+          "lessons": [
+            {
+              "uid": "less_1020e8af",
+              "title": "Frame Behavior with Ties",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "uid": "con_99d245bf",
+                  "title": "ROWS and Ties",
+                  "learning_objectives": [
+                    "Explain how ROWS BETWEEN interacts with duplicate values in the ORDER BY column.",
+                    "Predict the rows included in a ROWS frame when ties exist in the data."
+                  ],
+                  "complexity_role": "foundational definitions and core theory",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_a63c93b1",
+                  "title": "RANGE and Ties",
+                  "learning_objectives": [
+                    "Explain how RANGE BETWEEN interacts with duplicate values in the ORDER BY column.",
+                    "Predict the rows included in a RANGE frame when ties exist in the data."
+                  ],
+                  "complexity_role": "foundational definitions and core theory",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 0.55
+                },
+                {
+                  "uid": "con_265d2cfa",
+                  "title": "Tie Interaction",
+                  "learning_objectives": [
+                    "Compare the output of SUM() over ROWS vs RANGE for a dataset with ties.",
+                    "Identify scenarios where ROWS and RANGE produce identical results."
+                  ],
+                  "complexity_role": "foundational definitions and core theory",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM"
+                }
+              ]
+            },
+            {
+              "uid": "less_66d60f40",
+              "title": "Cumulative and Moving Aggregates",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "uid": "con_ae25f9db",
+                  "title": "Cumulative Aggregates",
+                  "learning_objectives": [
+                    "Define the concept of a cumulative sum using SUM() with an appropriate frame clause.",
+                    "Explain how to implement a running total using ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW."
+                  ],
+                  "complexity_role": "foundational definitions and core theory",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 1,
+                  "concept_kind": "PROCEDURE",
+                  "source_confidence": 0.25
+                },
+                {
+                  "uid": "con_64e12c1a",
+                  "title": "Moving Averages",
+                  "learning_objectives": [
+                    "Construct a moving average using AVG() with a symmetric frame (e.g., 1 PRECEDING TO 1 FOLLOWING).",
+                    "Explain the difference between a cumulative average and a moving average."
+                  ],
+                  "complexity_role": "foundational definitions and core theory",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 2,
+                  "concept_kind": "PROCEDURE"
+                },
+                {
+                  "uid": "con_fd3caab7",
+                  "title": "Moving Average Edge Cases",
+                  "learning_objectives": [
+                    "Identify edge cases where moving averages might produce misleading results due to sparse data.",
+                    "Explain how to handle NULLs in moving average calculations."
+                  ],
+                  "complexity_role": "foundational definitions and core theory",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 3,
+                  "concept_kind": "PROCEDURE"
+                }
+              ]
+            },
+            {
+              "uid": "less_a0dba724",
+              "title": "Accessing Adjacent Rows",
+              "ordinal": 3,
+              "concepts": [
+                {
+                  "uid": "con_18c1c1fd",
+                  "title": "Lag and Lead Functions",
+                  "learning_objectives": [
+                    "Explain the purpose of LAG() and LEAD() in accessing previous and next row values.",
+                    "Construct queries using LAG() and LEAD() with custom offset values."
+                  ],
+                  "complexity_role": "foundational definitions and core theory",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 1,
+                  "concept_kind": "SYNTAX"
+                },
+                {
+                  "uid": "con_d6c1cefa",
+                  "title": "Offset Handling",
+                  "learning_objectives": [
+                    "Analyze the behavior of LAG() and LEAD() when the offset exceeds the number of available rows.",
+                    "Explain the default value returned when no row exists for the specified offset."
+                  ],
+                  "complexity_role": "foundational definitions and core theory",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 2,
+                  "concept_kind": "PROCEDURE"
+                },
+                {
+                  "uid": "con_0f7fb614",
+                  "title": "Period-over-Period",
+                  "learning_objectives": [
+                    "Apply LAG() and LEAD() to calculate period-over-period growth rates.",
+                    "Explain the importance of ordering in the context of lag/lead calculations."
+                  ],
+                  "complexity_role": "foundational definitions and core theory",
+                  "depth_level": 2,
+                  "bloom_level": 2,
+                  "ordinal": 3,
+                  "concept_kind": "PROCEDURE"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "uid": "mod_6558da6a",
+      "title": "Recursive CTEs and Set Operation Logic",
+      "ordinal": 2,
+      "progression_role": "intermediate mechanisms and relationships",
+      "scope": [
+        "Recursive Common Table Expressions (WITH RECURSIVE)",
+        "Intersection of sets: INTERSECT vs INTERSECT ALL",
+        "Difference of sets: EXCEPT vs EXCEPT ALL and NULL exclusion rules"
+      ],
+      "bloom_target": 3,
+      "bloom_label": "Apply",
+      "units": [
+        {
+          "uid": "unit_2bc45afe",
+          "title": "Recursive CTEs",
+          "ordinal": 1,
+          "lessons": [
+            {
+              "uid": "less_367cba84",
+              "title": "Hierarchical Data Traversal",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "uid": "con_1dccadb2",
+                  "title": "Recursive CTE Mechanics",
+                  "learning_objectives": [
+                    "Construct a recursive CTE to traverse a hierarchical employee reporting structure.",
+                    "Identify the anchor member and recursive member within a given hierarchical query."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_1d648f13",
+                  "title": "Termination and Duplication",
+                  "learning_objectives": [
+                    "Diagnose infinite recursion loops caused by missing termination conditions.",
+                    "Apply UNION ALL versus UNION to control duplicate row generation in recursion."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 2,
+                  "concept_kind": "DEBUGGING"
+                },
+                {
+                  "uid": "con_8686d56f",
+                  "title": "Depth and Path Tracking",
+                  "learning_objectives": [
+                    "Calculate depth levels using integer counters within recursive steps.",
+                    "Retrieve path strings using string concatenation in recursive members."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 3,
+                  "concept_kind": "PROCEDURE"
+                }
+              ]
+            },
+            {
+              "uid": "less_ea3aea68",
+              "title": "Recursive Applications",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "uid": "con_1af171f5",
+                  "title": "Sequence and Date Generation",
+                  "learning_objectives": [
+                    "Implement recursive CTEs for generating sequential number series.",
+                    "Generate date ranges for missing days in time-series analysis."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 1,
+                  "concept_kind": "PROCEDURE"
+                },
+                {
+                  "uid": "con_d0a3128f",
+                  "title": "Bill of Materials Logic",
+                  "learning_objectives": [
+                    "Model parent-child relationships in bill-of-materials structures.",
+                    "Calculate cumulative costs propagating through assembly levels."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_62e9da30",
+                  "title": "Graph Connectivity",
+                  "learning_objectives": [
+                    "Write recursive queries to find connected components in graph data.",
+                    "Detect cycles in directed graphs using visited path tracking."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 3,
+                  "concept_kind": "PROCEDURE",
+                  "source_confidence": 0.65
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "uid": "unit_a6ac31e7",
+          "title": "Set Operations",
+          "ordinal": 2,
+          "lessons": [
+            {
+              "uid": "less_2aa5b5ee",
+              "title": "Set Intersection Operations",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "uid": "con_af22b655",
+                  "title": "INTERSET Semantics",
+                  "learning_objectives": [
+                    "Execute INTERSECT to find exact row matches between two result sets.",
+                    "Distinguish INTERSECT behavior from INNER JOIN on join keys."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_95e1da56",
+                  "title": "INTERSECT ALL Logic",
+                  "learning_objectives": [
+                    "Apply INTERSECT ALL to preserve duplicate row counts from input sets.",
+                    "Calculate intersection cardinality using MIN(count) per group."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_100e54bf",
+                  "title": "NULLs in Intersections",
+                  "learning_objectives": [
+                    "Analyze NULL handling in INTERSECT comparisons.",
+                    "Predict output when NULLs appear in intersecting columns."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM"
+                }
+              ]
+            },
+            {
+              "uid": "less_7e3893b7",
+              "title": "Set Difference Operations",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "uid": "con_bd60afd8",
+                  "title": "EXCEPT Semantics",
+                  "learning_objectives": [
+                    "Execute EXCEPT to identify rows present in the left set but not the right.",
+                    "Verify EXCEPT behavior against LEFT ANTI JOIN patterns."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_97d1e4ed",
+                  "title": "EXCEPT ALL Logic",
+                  "learning_objectives": [
+                    "Apply EXCEPT ALL to preserve duplicate counts in difference calculations.",
+                    "Compute net difference counts using MAX(0, count_left - count_right)."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM",
+                  "withheld": true,
+                  "withheld_reason": "NULL = NULL is UNKNOWN, not TRUE \u2014 repair could not correct it"
+                },
+                {
+                  "uid": "con_b9a4b3e0",
+                  "title": "NULLs in Differences",
+                  "learning_objectives": [
+                    "Evaluate NULL exclusion rules in EXCEPT operations.",
+                    "Determine result set contents when NULLs exist in the right operand."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 3,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "uid": "mod_eca20abb",
+      "title": "Execution Plan Analysis and Index Selection",
+      "ordinal": 3,
+      "progression_role": "intermediate mechanisms and relationships",
+      "scope": [
+        "Sequential Scan vs Index Scan vs Index Only Scan",
+        "Nested Loop vs Hash Join vs Merge Join selection criteria",
+        "Sort operations and work_mem implications"
+      ],
+      "bloom_target": 4,
+      "bloom_label": "Analyze",
+      "units": [
+        {
+          "uid": "unit_5b5846c9",
+          "title": "Scan and Join Execution Strategies",
+          "ordinal": 1,
+          "lessons": [
+            {
+              "uid": "less_6c9b33b4",
+              "title": "Scan Type Selection Criteria",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "uid": "con_58ead6cc",
+                  "title": "Sequential Scan Cost",
+                  "learning_objectives": [
+                    "Analyze the cost metrics that trigger a sequential scan over an index scan.",
+                    "Evaluate how table statistics and selectivity influence the planner's scan type selection."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_90bf3908",
+                  "title": "Index Scan Efficiency",
+                  "learning_objectives": [
+                    "Determine conditions under which an index scan becomes more efficient than a sequential scan.",
+                    "Analyze the impact of index-only scans on I/O reduction and heap access avoidance."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_27987902",
+                  "title": "Index Only Scan Mechanics",
+                  "learning_objectives": [
+                    "Assess the conditions required for an index-only scan to satisfy a query without heap access.",
+                    "Evaluate the role of visibility maps and vacuum operations in enabling index-only scans."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM"
+                }
+              ]
+            },
+            {
+              "uid": "less_a1e6fc79",
+              "title": "Join Algorithm Selection",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "uid": "con_7df08639",
+                  "title": "Nested Loop Join Mechanics",
+                  "learning_objectives": [
+                    "Analyze the performance characteristics of nested loop joins for small result sets.",
+                    "Evaluate the impact of index availability on nested loop join efficiency."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_a130358b",
+                  "title": "Hash Join Selection",
+                  "learning_objectives": [
+                    "Determine when hash joins are preferred over nested loop joins based on memory availability.",
+                    "Analyze the behavior of hash joins when work_mem is exceeded and disk spilling occurs."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 0.5
+                },
+                {
+                  "uid": "con_ad41170f",
+                  "title": "Merge Join Selection",
+                  "learning_objectives": [
+                    "Evaluate the suitability of merge joins for sorted inputs and large datasets.",
+                    "Analyze the cost implications of explicit sort operations preceding a merge join."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM"
+                }
+              ]
+            },
+            {
+              "uid": "less_6b8cf091",
+              "title": "Sort Operations and Memory",
+              "ordinal": 3,
+              "concepts": [
+                {
+                  "uid": "con_0b0294ee",
+                  "title": "Sort Memory Requirements",
+                  "learning_objectives": [
+                    "Analyze the memory requirements for sort operations and their impact on query performance.",
+                    "Evaluate the trade-offs between increasing work_mem and reducing sort time."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_3e4866a8",
+                  "title": "External Sort Implications",
+                  "learning_objectives": [
+                    "Determine the conditions under which external sorts are triggered due to memory limits.",
+                    "Analyze the performance degradation associated with disk-based sorting operations."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_f8f45728",
+                  "title": "Work Mem Impact",
+                  "learning_objectives": [
+                    "Assess how work_mem configuration affects the planner's choice of join algorithms.",
+                    "Evaluate the impact of work_mem on hash join size and nested loop join feasibility."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 3,
+                  "concept_kind": "TOOLING"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "uid": "unit_613c4295",
+          "title": "Execution Plan Node and Cost",
+          "ordinal": 2,
+          "lessons": [
+            {
+              "uid": "less_1bb5e2a4",
+              "title": "Join Plan Node",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "uid": "con_22fb9929",
+                  "title": "Nested Loop Plan Structure",
+                  "learning_objectives": [
+                    "Analyze the structure of a nested loop join plan and its node hierarchy.",
+                    "Evaluate the cost estimates associated with outer and inner loops in the plan."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_a106cc11",
+                  "title": "Hash Join Plan Structure",
+                  "learning_objectives": [
+                    "Determine the conditions under which a hash join plan is generated.",
+                    "Analyze the build and probe phases in a hash join execution plan."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_ac4a6543",
+                  "title": "Merge Join Plan Structure",
+                  "learning_objectives": [
+                    "Evaluate the requirements for a merge join plan, including sorted inputs.",
+                    "Analyze the cost implications of sorting operations in merge join plans."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM"
+                }
+              ]
+            },
+            {
+              "uid": "less_e936e47e",
+              "title": "Scan Cost Evaluation",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "uid": "con_a7b97a4c",
+                  "title": "Index Scan Cost Factors",
+                  "learning_objectives": [
+                    "Determine the cost factors for index scans, including index lookup and heap access.",
+                    "Analyze the impact of index selectivity on the overall cost of an index scan."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_592fefcc",
+                  "title": "Index Only Scan Costs",
+                  "learning_objectives": [
+                    "Evaluate the conditions under which an index-only scan is cost-effective.",
+                    "Analyze the cost savings from avoiding heap access in index-only scans."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM"
+                }
+              ]
+            },
+            {
+              "uid": "less_57780f4f",
+              "title": "Sort and Work Mem",
+              "ordinal": 3,
+              "concepts": [
+                {
+                  "uid": "con_4f05731f",
+                  "title": "Sort Memory Usage",
+                  "learning_objectives": [
+                    "Analyze the memory usage of sort operations and their impact on query performance.",
+                    "Evaluate the threshold for triggering external sorts based on work_mem settings."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_a8f31195",
+                  "title": "External Sort Performance",
+                  "learning_objectives": [
+                    "Determine the impact of disk spilling on sort operation performance.",
+                    "Analyze the cost implications of external sorts in query execution plans."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM"
+                },
+                {
+                  "uid": "con_f5433bf5",
+                  "title": "Work Mem and Join Choice",
+                  "learning_objectives": [
+                    "Assess how work_mem settings influence the planner's choice of join algorithms.",
+                    "Evaluate the trade-offs between memory usage and join algorithm efficiency."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "uid": "mod_b1342d28",
+      "title": "Query Optimization and Constraint Design",
+      "ordinal": 4,
+      "progression_role": "intermediate mechanisms and relationships",
+      "scope": [
+        "PostgreSQL planner cost parameters (random_page_cost, effective_cache_size)",
+        "Partial Indexes and Expression Indexes",
+        "Statistical Histograms and ANALYZE timing strategies"
+      ],
+      "bloom_target": 4,
+      "bloom_label": "Analyze",
+      "units": [
+        {
+          "uid": "unit_64c99855",
+          "title": "Query Optimization and Constraint Design",
+          "ordinal": 1,
+          "lessons": [
+            {
+              "uid": "less_8a5c177c",
+              "title": "PostgreSQL Planner Cost Parameters",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "uid": "con_5a0426a6",
+                  "title": "Planner Cost Parameters",
+                  "learning_objectives": [
+                    "Analyze how altering random_page_cost shifts the planner's preference between sequential and index scans for sparse predicates.",
+                    "Evaluate the impact of effective_cache_size on the estimated cost of index-only scans versus heap fetches."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 1,
+                  "concept_kind": "REFERENCE"
+                },
+                {
+                  "uid": "con_d7b4b8f8",
+                  "title": "Cache and Page Cost Tuning",
+                  "learning_objectives": [
+                    "Analyze the trade-offs between planner accuracy and runtime performance when tuning shared_buffers versus effective_cache_size.",
+                    "Evaluate scenarios where default cost parameters cause suboptimal plan selection for large table scans."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 2,
+                  "concept_kind": "REFERENCE"
+                },
+                {
+                  "uid": "con_da3d7251",
+                  "title": "ANALYZE Timing Strategies",
+                  "learning_objectives": [
+                    "Analyze how ANALYZE timing affects the freshness of histogram data and its impact on join cardinality estimates.",
+                    "Evaluate the performance implications of frequent ANALYZE runs on write-heavy tables versus read-heavy workloads."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 3,
+                  "concept_kind": "PROCEDURE",
+                  "grounding_note": {
+                    "state": "thin",
+                    "confidence": 0.25,
+                    "detail": "The grounding pass found little corroborating material, so this concept leans more on the model's own knowledge."
+                  },
+                  "source_confidence": 0.25
+                }
+              ]
+            },
+            {
+              "uid": "less_38b54363",
+              "title": "Partial and Expression Indexes",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "uid": "con_c2e17555",
+                  "title": "Partial Index Mechanics",
+                  "learning_objectives": [
+                    "Analyze the storage and query performance implications of partial indexes compared to standard indexes on large datasets.",
+                    "Evaluate the correctness of partial index predicates in enforcing business rules without unique constraints."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM",
+                  "grounding_note": {
+                    "state": "thin",
+                    "confidence": 0.25,
+                    "detail": "The grounding pass found little corroborating material, so this concept leans more on the model's own knowledge."
+                  },
+                  "source_confidence": 0.25
+                },
+                {
+                  "uid": "con_27666747",
+                  "title": "Expression Index Design",
+                  "learning_objectives": [
+                    "Analyze how expression indexes enable case-insensitive searches without triggering collation overhead on every query.",
+                    "Evaluate the limitations of expression indexes regarding function determinism and immutability requirements."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 2,
+                  "concept_kind": "SYNTAX",
+                  "source_confidence": 0.75
+                },
+                {
+                  "uid": "con_fca1fca7",
+                  "title": "Expression Index Statistics",
+                  "learning_objectives": [
+                    "Analyze the planner's use of expression index statistics for optimizing queries involving computed columns.",
+                    "Evaluate the maintenance overhead of expression indexes during high-frequency update operations."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 3,
+                  "concept_kind": "SYNTAX",
+                  "source_confidence": 0.65
+                }
+              ]
+            },
+            {
+              "uid": "less_4e3eafe5",
+              "title": "Statistical Histograms and ANALYZE",
+              "ordinal": 3,
+              "concepts": [
+                {
+                  "uid": "con_a17a1dc9",
+                  "title": "Statistical Histograms",
+                  "learning_objectives": [
+                    "Analyze how histogram bucket boundaries affect the accuracy of selectivity estimates for skewed data distributions.",
+                    "Evaluate the impact of histogram count settings on ANALYZE performance and query plan stability."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 0.6
+                },
+                {
+                  "uid": "con_b91d9cef",
+                  "title": "Extended Statistics",
+                  "learning_objectives": [
+                    "Analyze the planner's fallback to generic plans when multi-column statistics exceed correlation thresholds.",
+                    "Evaluate the effectiveness of extended statistics (MCV, functional dependencies) in optimizing complex join conditions."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_9c297bd4",
+                  "title": "Statistics Accuracy Evaluation",
+                  "learning_objectives": [
+                    "Analyze the conditions under which the planner ignores available statistics due to outdated or missing data.",
+                    "Evaluate the diagnostic value of EXPLAIN ANALYZE in identifying statistical inaccuracies causing plan regressions."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 3,
+                  "concept_kind": "DEBUGGING",
+                  "grounding_note": {
+                    "state": "thin",
+                    "confidence": 0.4,
+                    "detail": "The grounding pass found little corroborating material, so this concept leans more on the model's own knowledge."
+                  },
+                  "source_confidence": 0.4
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "uid": "unit_6a5a52d5",
+          "title": "Query Optimization and Constraint Design Part 2",
+          "ordinal": 2,
+          "lessons": [
+            {
+              "uid": "less_3906db15",
+              "title": "Constraint Design Patterns",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "uid": "con_ff696797",
+                  "title": "Partial Unique Indexes",
+                  "learning_objectives": [
+                    "Analyze the structural differences between UNIQUE constraints and partial unique indexes for enforcing conditional uniqueness.",
+                    "Evaluate the performance overhead of maintaining partial unique indexes compared to standard unique constraints."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 0.55
+                },
+                {
+                  "uid": "con_ff85ca3c",
+                  "title": "Constraint and Index Synergy",
+                  "learning_objectives": [
+                    "Analyze how CHECK constraints interact with partial indexes to enforce complex business logic at the row level.",
+                    "Evaluate the planner's ability to utilize partial unique indexes for query optimization when CHECK constraints are present."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM",
+                  "grounding_note": {
+                    "state": "thin",
+                    "confidence": 0.25,
+                    "detail": "The grounding pass found little corroborating material, so this concept leans more on the model's own knowledge."
+                  },
+                  "source_confidence": 0.25
+                },
+                {
+                  "uid": "con_155cb929",
+                  "title": "Constraint Edge Cases",
+                  "learning_objectives": [
+                    "Analyze the edge cases where partial unique indexes fail to prevent duplicate entries due to NULL handling.",
+                    "Evaluate the correctness of partial unique indexes in multi-tenant schemas with soft-delete patterns."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 0.6
+                }
+              ]
+            },
+            {
+              "uid": "less_63158ecb",
+              "title": "Constraint Optimization",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "uid": "con_4269966e",
+                  "title": "Constraint Deferral",
+                  "learning_objectives": [
+                    "Analyze the impact of constraint deferral on transaction isolation levels and lock contention during bulk inserts.",
+                    "Evaluate the performance trade-offs between immediate and deferred constraint checking in high-volume ETL processes."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 0.85
+                },
+                {
+                  "uid": "con_9957eca0",
+                  "title": "Constraint Exclusion Mechanics",
+                  "learning_objectives": [
+                    "Analyze how the planner uses constraint exclusion to eliminate tables from query plans based on CHECK constraints.",
+                    "Evaluate the effectiveness of constraint exclusion in partitioned tables versus standard tables with CHECK constraints."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM",
+                  "grounding_note": {
+                    "state": "thin",
+                    "confidence": 0.25,
+                    "detail": "The grounding pass found little corroborating material, so this concept leans more on the model's own knowledge."
+                  },
+                  "source_confidence": 0.25
+                },
+                {
+                  "uid": "con_9d0953e5",
+                  "title": "Constraint Diagnostics",
+                  "learning_objectives": [
+                    "Analyze the diagnostic challenges in identifying constraint violations when multiple constraints overlap on the same columns.",
+                    "Evaluate the best practices for naming and documenting constraints to facilitate debugging and maintenance."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 3,
+                  "concept_kind": "DEBUGGING",
+                  "source_confidence": 0.55
+                }
+              ]
+            },
+            {
+              "uid": "less_4900a438",
+              "title": "Constraint Performance",
+              "ordinal": 3,
+              "concepts": [
+                {
+                  "uid": "con_a5033af7",
+                  "title": "Complex Constraint Costs",
+                  "learning_objectives": [
+                    "Analyze the planner's cost estimation for queries involving complex CHECK constraints with subqueries.",
+                    "Evaluate the impact of constraint complexity on query plan stability and execution time."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 0.7
+                },
+                {
+                  "uid": "con_1916be86",
+                  "title": "FK and Index Interaction",
+                  "learning_objectives": [
+                    "Analyze the interaction between foreign key constraints and index selection in join operations.",
+                    "Evaluate the performance implications of deferred foreign key checks on join cardinality estimates."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 0.85
+                },
+                {
+                  "uid": "con_fe05c14f",
+                  "title": "Constraint Maintenance Overhead",
+                  "learning_objectives": [
+                    "Analyze the edge cases where constraint exclusion fails to optimize queries due to function volatility.",
+                    "Evaluate the maintenance overhead of maintaining constraints in tables with frequent schema changes."
+                  ],
+                  "complexity_role": "intermediate mechanisms and relationships",
+                  "depth_level": 2,
+                  "bloom_level": 4,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM",
+                  "grounding_note": {
+                    "state": "thin",
+                    "confidence": 0.45,
+                    "detail": "The grounding pass found little corroborating material, so this concept leans more on the model's own knowledge."
+                  },
+                  "source_confidence": 0.45
+                }
+              ]
+            }
+          ],
+          "llm_fallback": true
+        }
+      ]
+    },
+    {
+      "uid": "mod_a0e45f37",
+      "title": "Performance Evaluation and Architectural Trade-offs",
+      "ordinal": 5,
+      "progression_role": "advanced synthesis and applications",
+      "scope": [
+        "Evaluating query plans for concurrency bottlenecks",
+        "Trade-offs: Materialized Views vs Real-time Window Functions",
+        "Critiquing schema design for analytical query patterns (e.g., star schema vs wide tables)"
+      ],
+      "bloom_target": 5,
+      "bloom_label": "Evaluate",
+      "units": [
+        {
+          "uid": "unit_3e2cb2d1",
+          "title": "Concurrency and Schema Trade-offs",
+          "ordinal": 1,
+          "lessons": [
+            {
+              "uid": "less_dc316763",
+              "title": "Concurrency Bottleneck Diagnosis",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "uid": "con_325b9c4b",
+                  "title": "Isolation Level Contention",
+                  "learning_objectives": [
+                    "Evaluate the impact of isolation level selection on read/write contention in high-concurrency OLTP workloads.",
+                    "Critique the trade-off between data consistency guarantees and system throughput under snapshot isolation versus serializable isolation."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 5,
+                  "ordinal": 1,
+                  "concept_kind": "PROCEDURE",
+                  "grounding_note": {
+                    "state": "thin",
+                    "confidence": 0.4,
+                    "detail": "The grounding pass found little corroborating material, so this concept leans more on the model's own knowledge."
+                  },
+                  "source_confidence": 0.4
+                },
+                {
+                  "uid": "con_9fa7d629",
+                  "title": "Lock Granularity Evaluation",
+                  "learning_objectives": [
+                    "Evaluate the effectiveness of row-level versus table-level locking strategies for concurrent update patterns.",
+                    "Assess the risk of lock escalation and its impact on parallel query execution."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 5,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 0.6
+                },
+                {
+                  "uid": "con_bc717311",
+                  "title": "MVCC Visibility Overhead",
+                  "learning_objectives": [
+                    "Evaluate the performance implications of MVCC visibility checks on sequential scan durations.",
+                    "Critique the overhead of vacuum processes on concurrent read performance during heavy write periods."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 5,
+                  "ordinal": 3,
+                  "concept_kind": "PROCEDURE",
+                  "grounding_note": {
+                    "state": "thin",
+                    "confidence": 0.4,
+                    "detail": "The grounding pass found little corroborating material, so this concept leans more on the model's own knowledge."
+                  },
+                  "source_confidence": 0.4
+                }
+              ]
+            },
+            {
+              "uid": "less_dec727c8",
+              "title": "Real-time vs Pre-computed Trade-offs",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "uid": "con_8887dde2",
+                  "title": "Materialized Views vs Real-time Aggregation",
+                  "learning_objectives": [
+                    "Evaluate the latency impact of real-time window function aggregation versus pre-computed materialized views for dashboards.",
+                    "Assess the staleness tolerance required to justify the storage and refresh costs of materialized views."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 5,
+                  "ordinal": 1,
+                  "concept_kind": "TOOL_OPERATION",
+                  "source_confidence": 0.5
+                },
+                {
+                  "uid": "con_5d99edd6",
+                  "title": "Materialized View Refresh Dynamics",
+                  "learning_objectives": [
+                    "Evaluate the refresh strategy (concurrent vs non-concurrent) impact on availability during data updates.",
+                    "Critique the index maintenance overhead of materialized views compared to live table scans."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 5,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 1.0
+                },
+                {
+                  "uid": "con_86e2b2c1",
+                  "title": "Incremental Materialization Strategies",
+                  "learning_objectives": [
+                    "Evaluate the suitability of incremental materialized views for large-scale analytical datasets.",
+                    "Assess the complexity of maintaining materialized view indexes against the query performance gains."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 5,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 0.6
+                }
+              ]
+            },
+            {
+              "uid": "less_7f1dab8e",
+              "title": "Schema Design for Analytical Patterns",
+              "ordinal": 3,
+              "concepts": [
+                {
+                  "uid": "con_9f7c60a0",
+                  "title": "Star Schema vs Wide Table Performance",
+                  "learning_objectives": [
+                    "Evaluate the query performance implications of star schema normalization versus wide denormalization for analytical queries.",
+                    "Critique the join overhead in star schemas against the storage redundancy in wide tables."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 5,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM",
+                  "grounding_note": {
+                    "state": "thin",
+                    "confidence": 0.4,
+                    "detail": "The grounding pass found little corroborating material, so this concept leans more on the model's own knowledge."
+                  },
+                  "source_confidence": 0.4
+                },
+                {
+                  "uid": "con_c025b260",
+                  "title": "Constraint Overhead in Analytical Loads",
+                  "learning_objectives": [
+                    "Evaluate the impact of foreign key constraints on insert/update performance in analytical data warehouses.",
+                    "Assess the trade-off between referential integrity enforcement and bulk load efficiency."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 5,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM",
+                  "grounding_note": {
+                    "state": "thin",
+                    "confidence": 0.4,
+                    "detail": "The grounding pass found little corroborating material, so this concept leans more on the model's own knowledge."
+                  },
+                  "source_confidence": 0.4
+                },
+                {
+                  "uid": "con_5bebc996",
+                  "title": "Partition Pruning vs Join Elimination",
+                  "learning_objectives": [
+                    "Evaluate the effectiveness of partition pruning in wide tables versus join elimination in star schemas.",
+                    "Critique the maintenance complexity of partitioned wide tables against the flexibility of normalized star schemas."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 5,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 0.5
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "uid": "unit_71c96fe5",
+          "title": "Advanced Plan Optimization",
+          "ordinal": 2,
+          "lessons": [
+            {
+              "uid": "less_48ae52b4",
+              "title": "Complex Query Plan Evaluation",
+              "ordinal": 1,
+              "concepts": [
+                {
+                  "uid": "con_564ff8fc",
+                  "title": "Lateral Join Execution Efficiency",
+                  "learning_objectives": [
+                    "Evaluate the query plan efficiency of correlated subqueries versus lateral joins for row-by-row lookups.",
+                    "Critique the cost implications of lateral join execution order on large outer tables."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 5,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM",
+                  "grounding_note": {
+                    "state": "thin",
+                    "confidence": 0.4,
+                    "detail": "The grounding pass found little corroborating material, so this concept leans more on the model's own knowledge."
+                  },
+                  "source_confidence": 0.4
+                },
+                {
+                  "uid": "con_4577cfd9",
+                  "title": "Recursive CTE Performance Limits",
+                  "learning_objectives": [
+                    "Evaluate the performance impact of recursive CTEs versus iterative application-side processing for hierarchical data.",
+                    "Assess the memory usage of recursive CTEs for deep hierarchy traversals."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 5,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 0.85
+                },
+                {
+                  "uid": "con_3b9f7322",
+                  "title": "Recursive CTE Optimization Barriers",
+                  "learning_objectives": [
+                    "Evaluate the optimizer's ability to push predicates into recursive CTEs.",
+                    "Critique the plan stability of recursive queries under varying data distributions."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 5,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM",
+                  "grounding_note": {
+                    "state": "thin",
+                    "confidence": 0.45,
+                    "detail": "The grounding pass found little corroborating material, so this concept leans more on the model's own knowledge."
+                  },
+                  "source_confidence": 0.45
+                }
+              ]
+            },
+            {
+              "uid": "less_8e4b30c3",
+              "title": "Index Strategy Evaluation",
+              "ordinal": 2,
+              "concepts": [
+                {
+                  "uid": "con_c858ffa1",
+                  "title": "Partial Index Selectivity",
+                  "learning_objectives": [
+                    "Evaluate the effectiveness of partial indexes for filtering frequently accessed subsets in analytical queries.",
+                    "Critique the storage and maintenance costs of partial indexes versus full table scans."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 5,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM",
+                  "grounding_note": {
+                    "state": "thin",
+                    "confidence": 0.4,
+                    "detail": "The grounding pass found little corroborating material, so this concept leans more on the model's own knowledge."
+                  },
+                  "source_confidence": 0.4
+                },
+                {
+                  "uid": "con_4de24b1f",
+                  "title": "Expression Index Maintenance Costs",
+                  "learning_objectives": [
+                    "Evaluate the impact of expression indexes on query plans involving computed columns.",
+                    "Assess the overhead of maintaining expression indexes during high-frequency updates."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 5,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM",
+                  "source_confidence": 0.8
+                },
+                {
+                  "uid": "con_d1412cc8",
+                  "title": "Covering Index vs Index-Only Scan",
+                  "learning_objectives": [
+                    "Evaluate the query performance gains from covering indexes versus index-only scans.",
+                    "Critique the trade-off between index size and scan efficiency for wide tables."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 5,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM",
+                  "grounding_note": {
+                    "state": "thin",
+                    "confidence": 0.25,
+                    "detail": "The grounding pass found little corroborating material, so this concept leans more on the model's own knowledge."
+                  },
+                  "source_confidence": 0.25
+                }
+              ]
+            },
+            {
+              "uid": "less_15f4d924",
+              "title": "Resource and Plan Cost",
+              "ordinal": 3,
+              "concepts": [
+                {
+                  "uid": "con_5b5dc10b",
+                  "title": "Work Mem Impact on SortJoin",
+                  "learning_objectives": [
+                    "Evaluate the impact of work_mem settings on sort and hash join performance for large datasets.",
+                    "Critique the risk of disk-based sorting versus memory-based sorting under constrained resources."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 5,
+                  "ordinal": 1,
+                  "concept_kind": "MECHANISM",
+                  "grounding_note": {
+                    "state": "thin",
+                    "confidence": 0.4,
+                    "detail": "The grounding pass found little corroborating material, so this concept leans more on the model's own knowledge."
+                  },
+                  "source_confidence": 0.4
+                },
+                {
+                  "uid": "con_38c6111b",
+                  "title": "Parallel Query Overhead Assessment",
+                  "learning_objectives": [
+                    "Evaluate the effectiveness of parallel query execution for complex analytical aggregations.",
+                    "Assess the overhead of parallel worker coordination versus sequential execution benefits."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 5,
+                  "ordinal": 2,
+                  "concept_kind": "MECHANISM",
+                  "grounding_note": {
+                    "state": "thin",
+                    "confidence": 0.4,
+                    "detail": "The grounding pass found little corroborating material, so this concept leans more on the model's own knowledge."
+                  },
+                  "source_confidence": 0.4
+                },
+                {
+                  "uid": "con_1948cbde",
+                  "title": "Cardinality Estimate Accuracy",
+                  "learning_objectives": [
+                    "Evaluate the planner's cost estimates for nested loop joins versus hash joins on skewed data.",
+                    "Critique the accuracy of cardinality estimates in plan selection for skewed distributions."
+                  ],
+                  "complexity_role": "advanced synthesis and applications",
+                  "depth_level": 2,
+                  "bloom_level": 5,
+                  "ordinal": 3,
+                  "concept_kind": "MECHANISM",
+                  "grounding_note": {
+                    "state": "thin",
+                    "confidence": 0.4,
+                    "detail": "The grounding pass found little corroborating material, so this concept leans more on the model's own knowledge."
+                  },
+                  "source_confidence": 0.4
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "fallback_count": 1,
+  "research_loop": {
+    "ran": true,
+    "rounds": 1,
+    "items": 12,
+    "covered": 12,
+    "outstanding": [],
+    "coverage_pct": 100,
+    "sources": 63,
+    "stopped_because": "covered",
+    "exit_rule": "measured coverage of the checklist (no model judgement)",
+    "checklist_source": "model-proposed",
+    "authoritative": false,
+    "note": "no published syllabus for this subject \u2014 coverage is against an invented checklist and does not demonstrate parity with any published course"
+  },
+  "syllabus_check": {
+    "error": "judge could not derive core topics",
+    "keyword_coverage": {
+      "status": "no external syllabus \u2014 not measured"
+    },
+    "sequencing": {
+      "checked": true,
+      "alphabetical": false,
+      "in_order_ratio": 0.25,
+      "verdict": "ok",
+      "note": ""
+    }
+  },
+  "supplementary_sources": [
+    {
+      "source": "Wikibooks",
+      "book": "Structured Query Language",
+      "url": "https://en.wikibooks.org/wiki/Structured_Query_Language",
+      "relevance": 2.0,
+      "chapters": [
+        "About the Book",
+        "Alter Table",
+        "COMMIT and ROLLBACK",
+        "Classic Track Print",
+        "Create Table",
+        "Create a simple Table",
+        "DELETE 1",
+        "DELETE 2",
+        "Data Control Language",
+        "Data Definition Language",
+        "Data Manipulation Language",
+        "Data Query Language",
+        "Data Types",
+        "Database Management Systems (DBMS)",
+        "Drop Table",
+        "Eliminate Duplicates",
+        "Example Database Data",
+        "Example Database Structure",
+        "Foreign Key",
+        "Handle Data",
+        "INSERT 1",
+        "INSERT 2",
+        "Introduction to SQL",
+        "Language Elements",
+        "Learning by Doing",
+        "Like Predicate",
+        "MERGE",
+        "Managing Indexes",
+        "Managing Rights",
+        "NULLs and the Three Valued Logic",
+        "Performance",
+        "Quantified Comparision",
+        "Quantified Comparison",
+        "Recursions",
+        "Relational DBMS (rDBMS)",
+        "Relational Databases",
+        "Retrieve Top N Rows per Group",
+        "Return Codes",
+        "Rollup Cube",
+        "SELECT: Case Expression",
+        "SELECT: Fundamentals",
+        "SELECT: Grouping",
+        "SELECT: IS NULL Predicate",
+        "SELECT: Join Operation",
+        "SELECT: Predefined Functions",
+        "SELECT: Set Operations",
+        "SELECT: Subquery",
+        "SQL: A Language for Working with rDBMS",
+        "SQL: The Standard ISO IEC 9075 and various Implementations",
+        "SQLSTATE",
+        "Snippets",
+        "TRUNCATE",
+        "Temporary Table",
+        "Transactions",
+        "UPDATE 1",
+        "UPDATE 2",
+        "Views",
+        "WHERE",
+        "Window functions",
+        "with clause"
+      ]
+    },
+    {
+      "source": "OpenStax",
+      "book": "Principles of Management",
+      "url": "https://openstax.org/details/books/c3acb2ab-7d5c-45ad-b3cd-e59673fedd4e",
+      "relevance": 0.5,
+      "chapters": [
+        "Managing and Performing",
+        "Managerial Decision-Making",
+        "The History of Management",
+        "External and Internal Organizational Environments and Corporate Culture",
+        "Ethics Corporate Responsibility and Sustainability",
+        "International Management",
+        "Entrepreneurship",
+        "Strategic Analysis - Understanding a Firms Competitive Environment",
+        "The Strategic Management Process - Achieving and Sustaining Competitive Advantage",
+        "Organizational Structure and Change",
+        "Human Resource Management",
+        "Diversity in Organizations",
+        "Leadership",
+        "Work Motivation for Performance",
+        "Managing Teams",
+        "Managerial Communication",
+        "Organizational Planning and Controlling",
+        "Management of Technology and Innovation"
+      ]
+    }
+  ],
+  "supplementary_policy": {
+    "grounding_bar": 6.0,
+    "max_share": 0.2,
+    "share_unit": "claims grounded only in supplementary sources",
+    "usable_for": "content hydration only",
+    "excluded_from": [
+      "structure",
+      "scope assessment",
+      "coverage checklist",
+      "coverage measurement"
+    ],
+    "why": "below the grounding bar these sources do not speak for the subject, but may still serve an individual concept \u2014 a judgement that can only be made per concept"
+  },
+  "teaching_domain": "computer_science",
+  "concept_kinds": {
+    "by_pattern": 64,
+    "unknown": 0,
+    "by_reading": 20
+  },
+  "updated_at": "2026-08-25T22:19:12.089781",
+  "hydrated_count": 1,
+  "error": "Course creation timed out (>1 hour)",
+  "depth_contract": {
+    "mastery": 4,
+    "domain": "computer_science",
+    "concepts_total": 33,
+    "concepts_previously_hydrated": 50,
+    "partial_run": true,
+    "concepts_missing_contract": 20,
+    "met_pct": 39.4,
+    "level_verified": false,
+    "failures": [
+      {
+        "uid": "con_ff696797",
+        "title": "Partial Unique Indexes",
+        "problems": [
+          "the curriculum path contains a splitter artefact like \"Part 2\" \u2014 name the section by what it teaches"
+        ]
+      },
+      {
+        "uid": "con_9c297bd4",
+        "title": "Statistics Accuracy Evaluation",
+        "problems": [
+          "missing required element: primary_source"
+        ]
+      },
+      {
+        "uid": "con_ff85ca3c",
+        "title": "Constraint and Index Synergy",
+        "problems": [
+          "the curriculum path contains a splitter artefact like \"Part 2\" \u2014 name the section by what it teaches"
+        ]
+      },
+      {
+        "uid": "con_155cb929",
+        "title": "Constraint Edge Cases",
+        "problems": [
+          "the curriculum path contains a splitter artefact like \"Part 2\" \u2014 name the section by what it teaches"
+        ]
+      },
+      {
+        "uid": "con_9957eca0",
+        "title": "Constraint Exclusion Mechanics",
+        "problems": [
+          "the curriculum path contains a splitter artefact like \"Part 2\" \u2014 name the section by what it teaches"
+        ]
+      },
+      {
+        "uid": "con_4269966e",
+        "title": "Constraint Deferral",
+        "problems": [
+          "the curriculum path contains a splitter artefact like \"Part 2\" \u2014 name the section by what it teaches"
+        ]
+      },
+      {
+        "uid": "con_a5033af7",
+        "title": "Complex Constraint Costs",
+        "problems": [
+          "the curriculum path contains a splitter artefact like \"Part 2\" \u2014 name the section by what it teaches"
+        ]
+      },
+      {
+        "uid": "con_9d0953e5",
+        "title": "Constraint Diagnostics",
+        "problems": [
+          "the curriculum path contains a splitter artefact like \"Part 2\" \u2014 name the section by what it teaches"
+        ]
+      },
+      {
+        "uid": "con_1916be86",
+        "title": "FK and Index Interaction",
+        "problems": [
+          "the curriculum path contains a splitter artefact like \"Part 2\" \u2014 name the section by what it teaches"
+        ]
+      },
+      {
+        "uid": "con_fe05c14f",
+        "title": "Constraint Maintenance Overhead",
+        "problems": [
+          "the curriculum path contains a splitter artefact like \"Part 2\" \u2014 name the section by what it teaches"
+        ]
+      },
+      {
+        "uid": "con_325b9c4b",
+        "title": "Isolation Level Contention",
+        "problems": [
+          "missing required element: primary_source"
+        ]
+      },
+      {
+        "uid": "con_bc717311",
+        "title": "MVCC Visibility Overhead",
+        "problems": [
+          "missing required element: primary_source"
+        ]
+      },
+      {
+        "uid": "con_86e2b2c1",
+        "title": "Incremental Materialization Strategies",
+        "problems": [
+          "missing required element: primary_source"
+        ]
+      },
+      {
+        "uid": "con_9f7c60a0",
+        "title": "Star Schema vs Wide Table Performance",
+        "problems": [
+          "missing required element: primary_source"
+        ]
+      },
+      {
+        "uid": "con_c025b260",
+        "title": "Constraint Overhead in Analytical Loads",
+        "problems": [
+          "missing required element: primary_source"
+        ]
+      },
+      {
+        "uid": "con_564ff8fc",
+        "title": "Lateral Join Execution Efficiency",
+        "problems": [
+          "missing required element: primary_source"
+        ]
+      },
+      {
+        "uid": "con_c858ffa1",
+        "title": "Partial Index Selectivity",
+        "problems": [
+          "missing required element: primary_source"
+        ]
+      },
+      {
+        "uid": "con_5b5dc10b",
+        "title": "Work Mem Impact on SortJoin",
+        "problems": [
+          "missing required element: primary_source"
+        ]
+      },
+      {
+        "uid": "con_1948cbde",
+        "title": "Cardinality Estimate Accuracy",
+        "problems": [
+          "missing required element: primary_source"
+        ]
+      },
+      {
+        "uid": "con_38c6111b",
+        "title": "Parallel Query Overhead Assessment",
+        "problems": [
+          "missing required element: primary_source"
+        ]
+      }
+    ]
+  },
+  "fact_check": {
+    "concepts_total": 33,
+    "concepts_checked": 11,
+    "sample_fraction": 0.34,
+    "concepts_with_false_claims": 0,
+    "clean_pct": 100.0,
+    "failures": []
+  },
+  "level_calibration": {
+    "claimed": 4,
+    "judged": 4,
+    "sd": 0.0,
+    "n": 6,
+    "gap": 0.0,
+    "calibrated": true,
+    "levels": [
+      4,
+      4,
+      4,
+      4,
+      4,
+      4
+    ]
+  },
+  "grounding": {
+    "confidence_floor": 0.5,
+    "concepts_total": 33,
+    "concepts_below_floor": 16,
+    "well_grounded_pct": 51.5,
+    "low_confidence": [
+      {
+        "uid": "con_c2e17555",
+        "title": "Partial Index Mechanics",
+        "confidence": 0.25
+      },
+      {
+        "uid": "con_9c297bd4",
+        "title": "Statistics Accuracy Evaluation",
+        "confidence": 0.4
+      },
+      {
+        "uid": "con_ff85ca3c",
+        "title": "Constraint and Index Synergy",
+        "confidence": 0.25
+      },
+      {
+        "uid": "con_9957eca0",
+        "title": "Constraint Exclusion Mechanics",
+        "confidence": 0.25
+      },
+      {
+        "uid": "con_fe05c14f",
+        "title": "Constraint Maintenance Overhead",
+        "confidence": 0.45
+      },
+      {
+        "uid": "con_325b9c4b",
+        "title": "Isolation Level Contention",
+        "confidence": 0.4
+      },
+      {
+        "uid": "con_bc717311",
+        "title": "MVCC Visibility Overhead",
+        "confidence": 0.4
+      },
+      {
+        "uid": "con_9f7c60a0",
+        "title": "Star Schema vs Wide Table Performance",
+        "confidence": 0.4
+      },
+      {
+        "uid": "con_c025b260",
+        "title": "Constraint Overhead in Analytical Loads",
+        "confidence": 0.4
+      },
+      {
+        "uid": "con_564ff8fc",
+        "title": "Lateral Join Execution Efficiency",
+        "confidence": 0.4
+      },
+      {
+        "uid": "con_3b9f7322",
+        "title": "Recursive CTE Optimization Barriers",
+        "confidence": 0.45
+      },
+      {
+        "uid": "con_c858ffa1",
+        "title": "Partial Index Selectivity",
+        "confidence": 0.4
+      },
+      {
+        "uid": "con_5b5dc10b",
+        "title": "Work Mem Impact on SortJoin",
+        "confidence": 0.4
+      },
+      {
+        "uid": "con_d1412cc8",
+        "title": "Covering Index vs Index-Only Scan",
+        "confidence": 0.25
+      },
+      {
+        "uid": "con_38c6111b",
+        "title": "Parallel Query Overhead Assessment",
+        "confidence": 0.4
+      },
+      {
+        "uid": "con_1948cbde",
+        "title": "Cardinality Estimate Accuracy",
+        "confidence": 0.4
+      }
+    ]
+  },
+  "assets": {
+    "collected": true,
+    "diagrams": 61,
+    "reused": 0,
+    "images": 0,
+    "concepts_with_assets": 31,
+    "concepts_total": 33,
+    "seconds": 724.6
+  },
+  "audit": {
+    "course_title": "Advanced SQL",
+    "concepts_total": 83,
+    "concepts_audited": 83,
+    "concepts_not_audited": 0,
+    "concepts_clean": 0,
+    "concepts_with_findings": 74,
+    "systemic": [
+      {
+        "check": "citations",
+        "severity": "serious",
+        "concepts": 69,
+        "share": 0.83,
+        "detail": "1 of 2 sources have no stored passage \u2014 nothing downstream can verify a claim against them",
+        "affected": [
+          "con_12ecda52",
+          "con_c3e1094e",
+          "con_b3ddaaa8",
+          "con_2ae33562",
+          "con_c4c9cbcf",
+          "con_1b7b9521",
+          "con_8ed5ada8",
+          "con_5085fe86",
+          "con_27c4c9a6",
+          "con_99d245bf",
+          "con_a63c93b1",
+          "con_265d2cfa",
+          "con_64e12c1a",
+          "con_fd3caab7",
+          "con_1d648f13",
+          "con_8686d56f",
+          "con_1af171f5",
+          "con_d0a3128f",
+          "con_62e9da30",
+          "con_af22b655",
+          "con_95e1da56",
+          "con_97d1e4ed",
+          "con_58ead6cc",
+          "con_90bf3908",
+          "con_27987902",
+          "con_7df08639",
+          "con_a130358b",
+          "con_ad41170f",
+          "con_0b0294ee",
+          "con_3e4866a8",
+          "con_f8f45728",
+          "con_a106cc11",
+          "con_a7b97a4c",
+          "con_592fefcc",
+          "con_4f05731f",
+          "con_a8f31195",
+          "con_f5433bf5",
+          "con_5a0426a6",
+          "con_da3d7251",
+          "con_c2e17555",
+          "con_27666747",
+          "con_fca1fca7",
+          "con_a17a1dc9",
+          "con_b91d9cef",
+          "con_9c297bd4",
+          "con_ff696797",
+          "con_155cb929",
+          "con_4269966e",
+          "con_9957eca0",
+          "con_9d0953e5",
+          "con_a5033af7",
+          "con_1916be86",
+          "con_fe05c14f",
+          "con_325b9c4b",
+          "con_9fa7d629",
+          "con_bc717311",
+          "con_8887dde2",
+          "con_5d99edd6",
+          "con_86e2b2c1",
+          "con_9f7c60a0",
+          "con_c025b260",
+          "con_5bebc996",
+          "con_564ff8fc",
+          "con_4577cfd9",
+          "con_c858ffa1",
+          "con_4de24b1f",
+          "con_5b5dc10b",
+          "con_38c6111b",
+          "con_1948cbde"
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "concept_uid": "con_c3e1094e",
+        "title": "Tie Handling Strategies",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "the text explains a problem with the BUILD to the learner \u2014 that belongs in the course metadata, not in the lesson",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_b3ddaaa8",
+        "title": "NULL Value Impact",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "the text contains your own deliberation \u2014 remove it and state the conclusion only (found: \"0) *Correction:* Wait, let\u2019s verify PostgreSQL\u2019s default for `DESC`. PostgreSQL\u2019s default for `NULLS` in `ORDER\")",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_b3ddaaa8",
+        "title": "NULL Value Impact",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "the text contains a correction label mid-lesson \u2014 decide first, then write the settled explanation (found: \"Charlie (500) *Correction:* Wait, let\u2019s verify PostgreSQL\u2019s default for `DESC`. PostgreSQL\u2019s default for `NULLS` in `\")",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_b3ddaaa8",
+        "title": "NULL Value Impact",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "a section is filled with placeholder wording rather than content (found: \"## Core Explanation NULL Value Impact is a key concept in advanced sql. > **Grounding unavailable.** The research service could not be reach\")",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_b3ddaaa8",
+        "title": "NULL Value Impact",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "the text explains a problem with the BUILD to the learner \u2014 that belongs in the course metadata, not in the lesson",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_c4c9cbcf",
+        "title": "Partitioning",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "the text explains a problem with the BUILD to the learner \u2014 that belongs in the course metadata, not in the lesson",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_1b7b9521",
+        "title": "Clause Ordering Rules",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "a section is filled with placeholder wording rather than content (found: \"## Mastery Criteria Student should demonstrate understanding of Clause Ordering Rules. ## Core Explanation Clause ordering rules govern the \")",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_5085fe86",
+        "title": "RANGE Frame Definition",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "a section is filled with placeholder wording rather than content (found: \"## Mastery Criteria Student should demonstrate understanding of RANGE Frame Definition. ## Core Explanation The `RANGE` frame unit defines w\")",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_27c4c9a6",
+        "title": "Frame Unit Differences",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "the text contains your own deliberation \u2014 remove it and state the conclusion only (found: \"sition 3 (following). Wait, standard definition: `1 PRECEDING` is the row before the current. If current is pos 2, pr\")",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_99d245bf",
+        "title": "ROWS and Ties",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "a section is filled with placeholder wording rather than content (found: \"## Mastery Criteria Student should demonstrate understanding of ROWS and Ties. ## Core Explanation In SQL window functions, `ROWS` and `RANG\")",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_a63c93b1",
+        "title": "RANGE and Ties",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "a section is filled with placeholder wording rather than content (found: \"## Mastery Criteria Student should demonstrate understanding of RANGE and Ties. ## Core Explanation The `RANGE` frame specifier in SQL windo\")",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_a63c93b1",
+        "title": "RANGE and Ties",
+        "check": "thin_content",
+        "severity": "serious",
+        "detail": "meets its structure but teaches little: paragraphs are near-identical to each other (overlap 92%) \u2014 the same text repeated",
+        "quote": "{'concrete_density': 0.3208, 'empty_sentence_share': 0.082, 'self_repetition': 0.919, 'words': 1571}"
+      },
+      {
+        "concept_uid": "con_18c1c1fd",
+        "title": "Lag and Lead Functions",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "the text contains your own deliberation \u2014 remove it and state the conclusion only (found: \"partition boundaries. Wait, the SQL standard specifies that `LAG`/`LEAD` access rows based on the `ORDER BY` of the w\")",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_1af171f5",
+        "title": "Sequence and Date Generation",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "a section is filled with placeholder wording rather than content (found: \"## Mastery Criteria Student should demonstrate understanding of Sequence and Date Generation. ## Core Explanation Sequence and Date Generati\")",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_100e54bf",
+        "title": "NULLs in Intersections",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "a section is filled with placeholder wording rather than content (found: \"## Mastery Criteria Student should demonstrate understanding of how SQL's three-valued logic dictates that `NULL` does not equal `NULL` in s\")",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_97d1e4ed",
+        "title": "EXCEPT ALL Logic",
+        "check": "depth_contract",
+        "severity": "minor",
+        "detail": "missing required element: primary_source",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_f8f45728",
+        "title": "Work Mem Impact",
+        "check": "depth_contract",
+        "severity": "minor",
+        "detail": "missing required element: primary_source",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_22fb9929",
+        "title": "Nested Loop Plan Structure",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "a section is filled with placeholder wording rather than content (found: \"## Mastery Criteria Student should demonstrate understanding of Nested Loop Plan Structure. ## Sources - [Oracle Database/Print version](htt\")",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_b91d9cef",
+        "title": "Extended Statistics",
+        "check": "tutor_sections",
+        "severity": "serious",
+        "detail": "## Core Explanation is missing \u2014 the tutor reads it when teaching",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_9c297bd4",
+        "title": "Statistics Accuracy Evaluation",
+        "check": "tutor_sections",
+        "severity": "serious",
+        "detail": "## Core Explanation is missing \u2014 the tutor reads it when teaching",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_ff85ca3c",
+        "title": "Constraint and Index Synergy",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "the curriculum path contains a splitter artefact like \"Part 2\" \u2014 name the section by what it teaches",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_155cb929",
+        "title": "Constraint Edge Cases",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "the curriculum path contains a splitter artefact like \"Part 2\" \u2014 name the section by what it teaches",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_4269966e",
+        "title": "Constraint Deferral",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "the curriculum path contains a splitter artefact like \"Part 2\" \u2014 name the section by what it teaches",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_9957eca0",
+        "title": "Constraint Exclusion Mechanics",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "the curriculum path contains a splitter artefact like \"Part 2\" \u2014 name the section by what it teaches",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_9d0953e5",
+        "title": "Constraint Diagnostics",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "the curriculum path contains a splitter artefact like \"Part 2\" \u2014 name the section by what it teaches",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_a5033af7",
+        "title": "Complex Constraint Costs",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "the curriculum path contains a splitter artefact like \"Part 2\" \u2014 name the section by what it teaches",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_a5033af7",
+        "title": "Complex Constraint Costs",
+        "check": "tutor_sections",
+        "severity": "serious",
+        "detail": "## Core Explanation is missing \u2014 the tutor reads it when teaching",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_1916be86",
+        "title": "FK and Index Interaction",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "the curriculum path contains a splitter artefact like \"Part 2\" \u2014 name the section by what it teaches",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_1916be86",
+        "title": "FK and Index Interaction",
+        "check": "tutor_sections",
+        "severity": "serious",
+        "detail": "## Core Explanation is missing \u2014 the tutor reads it when teaching",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_fe05c14f",
+        "title": "Constraint Maintenance Overhead",
+        "check": "content_guards",
+        "severity": "serious",
+        "detail": "the curriculum path contains a splitter artefact like \"Part 2\" \u2014 name the section by what it teaches",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_fe05c14f",
+        "title": "Constraint Maintenance Overhead",
+        "check": "tutor_sections",
+        "severity": "serious",
+        "detail": "## Core Explanation is missing \u2014 the tutor reads it when teaching",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_9fa7d629",
+        "title": "Lock Granularity Evaluation",
+        "check": "tutor_sections",
+        "severity": "serious",
+        "detail": "## Core Explanation is missing \u2014 the tutor reads it when teaching",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_bc717311",
+        "title": "MVCC Visibility Overhead",
+        "check": "tutor_sections",
+        "severity": "serious",
+        "detail": "## Core Explanation is missing \u2014 the tutor reads it when teaching",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_9f7c60a0",
+        "title": "Star Schema vs Wide Table Performance",
+        "check": "tutor_sections",
+        "severity": "serious",
+        "detail": "## Core Explanation is missing \u2014 the tutor reads it when teaching",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_3b9f7322",
+        "title": "Recursive CTE Optimization Barriers",
+        "check": "tutor_sections",
+        "severity": "serious",
+        "detail": "## Core Explanation is missing \u2014 the tutor reads it when teaching",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_ff696797",
+        "title": "Partial Unique Indexes",
+        "check": "coherence",
+        "severity": "minor",
+        "detail": "curriculum path contains a splitter artefact: 'Query Optimization and Constraint Design Part 2'",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_ff85ca3c",
+        "title": "Constraint and Index Synergy",
+        "check": "coherence",
+        "severity": "minor",
+        "detail": "curriculum path contains a splitter artefact: 'Query Optimization and Constraint Design Part 2'",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_155cb929",
+        "title": "Constraint Edge Cases",
+        "check": "coherence",
+        "severity": "minor",
+        "detail": "curriculum path contains a splitter artefact: 'Query Optimization and Constraint Design Part 2'",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_4269966e",
+        "title": "Constraint Deferral",
+        "check": "coherence",
+        "severity": "minor",
+        "detail": "curriculum path contains a splitter artefact: 'Query Optimization and Constraint Design Part 2'",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_9957eca0",
+        "title": "Constraint Exclusion Mechanics",
+        "check": "coherence",
+        "severity": "minor",
+        "detail": "curriculum path contains a splitter artefact: 'Query Optimization and Constraint Design Part 2'",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_9d0953e5",
+        "title": "Constraint Diagnostics",
+        "check": "coherence",
+        "severity": "minor",
+        "detail": "curriculum path contains a splitter artefact: 'Query Optimization and Constraint Design Part 2'",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_a5033af7",
+        "title": "Complex Constraint Costs",
+        "check": "coherence",
+        "severity": "minor",
+        "detail": "curriculum path contains a splitter artefact: 'Query Optimization and Constraint Design Part 2'",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_1916be86",
+        "title": "FK and Index Interaction",
+        "check": "coherence",
+        "severity": "minor",
+        "detail": "curriculum path contains a splitter artefact: 'Query Optimization and Constraint Design Part 2'",
+        "quote": ""
+      },
+      {
+        "concept_uid": "con_fe05c14f",
+        "title": "Constraint Maintenance Overhead",
+        "check": "coherence",
+        "severity": "minor",
+        "detail": "curriculum path contains a splitter artefact: 'Query Optimization and Constraint Design Part 2'",
+        "quote": ""
+      }
+    ],
+    "by_severity": {
+      "serious": 102,
+      "minor": 11
+    },
+    "by_check": {
+      "content_guards": 23,
+      "thin_content": 1,
+      "depth_contract": 2,
+      "tutor_sections": 9,
+      "coherence": 9,
+      "citations": 69
+    },
+    "checks_run": {
+      "content_guards": 83,
+      "depth_contract": 83,
+      "tutor_sections": 83,
+      "thin_content": 83,
+      "executable_claims": 83,
+      "citations": 83,
+      "coherence": 1
+    },
+    "seconds": 0.42,
+    "ran": true,
+    "verdict": "needs_review"
+  },
+  "repair": {
+    "ran": true,
+    "attempted": 12,
+    "outcomes": {
+      "fixed": 9,
+      "escalated": 0,
+      "unchanged": 2,
+      "rejected": 0,
+      "failed": 0,
+      "still_false": 1,
+      "withheld": 1
+    },
+    "withheld": [
+      {
+        "concept_uid": "con_b3ddaaa8",
+        "title": "NULL Value Impact",
+        "why": "the text contains your own deliberation \u2014 remove it and state the conclusion only (found: \"0) *Correction:* Wait, let\u2019s verify PostgreSQL\u2019s default for `DESC`. PostgreSQL\u2019s default for `NULLS` in `ORDER\")"
+      }
+    ],
+    "seconds": 1942.64
+  }
+}
