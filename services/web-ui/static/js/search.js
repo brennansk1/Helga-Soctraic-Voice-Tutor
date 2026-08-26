@@ -26,9 +26,47 @@
             .replace(/'/g, '&#x27;');
     }
 
+    // A SEARCH RESULT SHOULD SHOW THE LESSON, NOT THE FILE.
+    //
+    // This took the first hundred characters of the concept's markdown, and a
+    // concept file begins with a front-matter rule, its title as an H1, then a
+    // `## Metadata` block. So every result read
+    //
+    //     "--- # Clause Ordering Rules ## Metadata - **Bloom Targ…"
+    //
+    // which is the first thing a learner sees when they search, and it is
+    // syntax rather than teaching.
+    //
+    // Skip to the prose: drop the front matter and the scaffolding sections,
+    // then strip the inline markers so what shows is a sentence.
+    var _SKIP_SECTIONS = /^(metadata|learning objectives|prerequisites|mastery criteria|sources|visual aids)$/i;
+
+    function _prose(md) {
+        var lines = String(md).split(/\r?\n/);
+        var out = [], skipping = false;
+        for (var i = 0; i < lines.length; i++) {
+            var ln = lines[i];
+            if (/^\s*---\s*$/.test(ln)) { continue; }          // front matter rule
+            var h = ln.match(/^#{1,6}\s+(.*)$/);
+            if (h) { skipping = _SKIP_SECTIONS.test(h[1].trim()); continue; }
+            if (skipping) { continue; }
+            if (/^\s*```/.test(ln)) { continue; }                // fence markers
+            if (/^\s*[-*+]\s*\*\*[A-Za-z ]+\*\*\s*:/.test(ln)) { continue; }  // "- **Bloom Target**:"
+            if (ln.trim()) { out.push(ln); }
+            if (out.join(' ').length > 400) { break; }
+        }
+        return out.join(' ');
+    }
+
     function snippet(text, maxLen) {
         if (!text) return '';
-        var t = text.replace(/\s+/g, ' ').trim();
+        var t = _prose(text)
+            .replace(/\*\*(.+?)\*\*/g, '$1')     // bold
+            .replace(/(^|\W)\*(?!\s)(.+?)\*/g, '$1$2')  // italics, not SQL asterisks
+            .replace(/`([^`]+)`/g, '$1')         // inline code, keep the text
+            .replace(/\[(.+?)\]\((.*?)\)/g, '$1') // links
+            .replace(/\s+/g, ' ').trim();
+        if (!t) { t = String(text).replace(/\s+/g, ' ').trim(); }
         return t.length > maxLen ? t.slice(0, maxLen) + '…' : t;
     }
 

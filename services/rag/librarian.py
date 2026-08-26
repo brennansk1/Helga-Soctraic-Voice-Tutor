@@ -267,13 +267,62 @@ def _substring_concept_search(query, course_uid):
                     "uid": concept["uid"],
                     "course_uid": c_course,
                     "title": concept["title"],
-                    "text": content[:500] if content else "",
+                    "text": _search_excerpt(content) if content else "",
                     "type": "Concept",
                 }
             )
             if len(results) >= 10:
                 break
     return results
+
+
+
+# --- what a search result should show ----------------------------------------
+#
+# A concept file opens with a front-matter rule, its title as an H1, and a
+# `## Metadata` block. Sending its first 500 characters therefore sent exactly
+# that, and every result in the search dropdown read
+#
+#     "--- # Clause Ordering Rules ## Metadata - **Bloom Targ…"
+#
+# — file syntax, in the first thing a learner sees when they search. There was
+# no prose in the payload for the client to recover, so this is fixed where the
+# text is chosen rather than where it is rendered.
+_SEARCH_SKIP_SECTIONS = {
+    "metadata", "learning objectives", "prerequisites", "mastery criteria",
+    "sources", "visual aids", "socratic hooks",
+}
+
+
+def _search_excerpt(markdown, limit=500):
+    """The first real teaching prose in a concept, for a result preview."""
+    if not markdown:
+        return ""
+    out, skipping = [], False
+    for line in str(markdown).splitlines():
+        stripped = line.strip()
+        if not stripped or stripped == "---":
+            continue
+        if stripped.startswith("#"):
+            heading = stripped.lstrip("#").strip().lower()
+            skipping = heading in _SEARCH_SKIP_SECTIONS
+            continue
+        if skipping or stripped.startswith("```"):
+            continue
+        # "- **Bloom Target**: 3" and friends are metadata wearing a bullet.
+        if re.match(r"^[-*+]\s*\*\*[^*]+\*\*\s*:", stripped):
+            continue
+        out.append(stripped)
+        if sum(len(x) for x in out) >= limit:
+            break
+    text = " ".join(out)
+    # Strip the inline markers; keep the words inside code spans, since in a
+    # SQL course those words are the point.
+    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    text = re.sub(r"\[(.+?)\]\([^)]*\)", r"\1", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:limit] or str(markdown)[:limit]
 
 
 @app.route("/search", methods=["GET"])
@@ -359,7 +408,7 @@ def search():
                     # and only the link to it was wrong.
                     "course_uid": row.get("course_uid"),
                     "title": row.get("title", ""),
-                    "text": content[:500] if content else "",
+                    "text": _search_excerpt(content) if content else "",
                     "type": "Concept",
                 }
             )

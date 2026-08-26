@@ -1357,3 +1357,19 @@ a:not([class]):hover {
   .build-pill span { display: none; }   /* the pulse dot still shows state */
   .app-header { gap: var(--space-2); padding: 0 var(--space-3); }
 }
+
+/* ---- [hidden] means hidden -------------------------------------------------
+   The UA stylesheet implements the attribute as `display: none`, which any
+   author rule setting a display outranks. So an element carrying `hidden` and
+   a class like `.lib-more { display: flex }` stays on screen, and the markup
+   reads as though it is not.
+
+   Measured across this app: EIGHTEEN classes are used with `hidden` and given
+   a display by CSS. The one found by looking was Library offering "Load more
+   books" above zero results on a fresh page. The trap was already known and
+   patched three separate times — a global rule in degree.css, a comment in
+   notebook.css naming it, and a one-off `.lib-detail[hidden]` in library.css —
+   which is what a systemic bug looks like when it is fixed locally.
+
+   Once, here, for every page. */
+[hidden] { display: none !important; }
