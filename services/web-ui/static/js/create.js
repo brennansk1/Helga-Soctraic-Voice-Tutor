@@ -286,7 +286,26 @@
             });
     }
 
-    function renderScope(j) {
+    
+/* A SERVER REASON IS A FRAGMENT, AND THIS PAGE GLUES SENTENCES ONTO IT.
+   Measured on the live scope check:
+
+     "research was degraded (failed or throttled lookups) — thin evidence here
+      means we could not look, not that the subject is thin You can continue —
+      the course will be honest about stretching…"
+
+   A lowercase opening and two sentences run together, because the reason is
+   concatenated with a following sentence and nothing checks how it ends. The
+   text is assembled here, so it is punctuated here. */
+function asSentence(text) {
+    var t = String(text == null ? "" : text).trim();
+    if (!t) { return ""; }
+    t = t.charAt(0).toUpperCase() + t.slice(1);
+    if (!/[.!?…]$/.test(t)) { t += "."; }
+    return t;
+}
+
+function renderScope(j) {
         if (scopeTimer) { clearInterval(scopeTimer); scopeTimer = null; }
         scopeRunning.classList.add("hidden");
         scopeResult.classList.remove("hidden");
@@ -312,7 +331,7 @@
                subject was covered. Saying it here is the honest version. */
             verdict.textContent = "Enough material, but none of it is close enough";
             verdict.classList.add("warn");
-            detail.textContent = (j.grounding_note || "") +
+            detail.textContent = asSentence(j.grounding_note) +
                 (j.best_relevance != null && j.grounding_bar != null
                     ? " (closest match scored " + j.best_relevance +
                       "; the build needs " + j.grounding_bar + ".)"
@@ -320,11 +339,11 @@
         } else if (j.verdict === "ok") {
             verdict.textContent = "The subject can carry it";
             verdict.classList.add("ok");
-            detail.textContent = j.reason || "";
+            detail.textContent = asSentence(j.reason);
         } else {
             verdict.textContent = "This subject looks thin for that size";
             verdict.classList.add("warn");
-            detail.textContent = (j.reason || "") +
+            detail.textContent = asSentence(j.reason) +
                 " You can continue — the course will be honest about " +
                 "stretching rather than padded with filler.";
         }

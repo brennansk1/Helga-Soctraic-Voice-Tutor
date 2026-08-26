@@ -254,15 +254,30 @@
 /* --- page 3: subject ---------------------------------------------------------*/
 .subject-form { max-width: 620px; display: grid; gap: var(--space-4); }
 .field-label { display: block; font-weight: 600; margin-bottom: .4em; }
-.field input[type="text"] {
+/* THE TEXTAREA WAS NOT IN THIS SELECTOR, so it fell back to its `cols`
+   default. Measured on the create form: the Subject and Teaching style inputs
+   were 654px and the context brief — the field whose own hint says it
+   "outranks the subject word when Helga decides what belongs in the course" —
+   was 212px, with its placeholder wrapping inside a box a third the width of
+   the optional field beneath it. The most consequential input on the page had
+   the smallest target. */
+.field input[type="text"],
+.field textarea {
     width: 100%; padding: .8em 1em;
     border-radius: var(--border-radius);
     border: 1.5px solid var(--border-color);
     background: var(--bg-secondary);
     color: var(--text-primary);
     font-size: 1rem;
+    font-family: inherit;   /* a textarea otherwise renders monospace */
 }
-.field input[type="text"]:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.field textarea {
+    min-height: 5.5em;
+    resize: vertical;
+    display: block;
+}
+.field input[type="text"]:focus-visible,
+.field textarea:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
 .mastery-slider input[type="range"] { width: 100%; accent-color: var(--accent-primary); }
 .mastery-stops {
     display: flex; justify-content: space-between;
