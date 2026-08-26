@@ -27,6 +27,13 @@ def _clamp_int(value: Any, low: int, high: int, fallback: int) -> int:
         return fallback
 
 
+def _clamp_float(value: Any, low: float, high: float, fallback: float) -> float:
+    try:
+        return max(low, min(high, round(float(value), 2)))
+    except (TypeError, ValueError):
+        return fallback
+
+
 def _interests(value: Any) -> list:
     if not isinstance(value, (list, tuple)):
         return []
@@ -45,7 +52,10 @@ SANITISERS = {
     "avatar_url":    lambda v: str(v or "")[:2048].strip(),
     "sound_effects": bool,
     "gamification":  bool,
-    "font_scale":    lambda v: _clamp_int(v, 50, 200, 100),
+    # A MULTIPLIER, not a percentage: the slider is min=0.8 max=1.4 step=0.1 and
+    # the page applies it straight to --font-scale. Clamping it as an integer
+    # percent turned 1.2 into 1 and then into the 50 floor, i.e. half-size text.
+    "font_scale":    lambda v: _clamp_float(v, 0.8, 1.4, 1.0),
     # The Settings page's own names for three fields this endpoint used to
     # drop on the floor. `display_name` is the one that mattered: the page
     # promises "the tutor will address you by this name", the tutor reads

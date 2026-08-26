@@ -1096,15 +1096,45 @@ def get_profile():
         })
 
 
+def _mirror_display_name_to_tutor_profile(display_name):
+    """Keep profile.json['name'] in step with Settings' display_name.
+
+    One-way and best-effort: a failure here must never make saving a setting
+    look broken, but it is logged, because a silent miss is exactly how these
+    two stores drifted apart in the first place.
+    """
+    try:
+        existing = {}
+        if os.path.exists(PROFILE_PATH):
+            with open(PROFILE_PATH, 'r') as f:
+                loaded = json.load(f)
+            if isinstance(loaded, dict):
+                existing = loaded
+        merged = merge_profile(existing, {'display_name': display_name})
+        os.makedirs(os.path.dirname(PROFILE_PATH), exist_ok=True)
+        with open(PROFILE_PATH, 'w') as f:
+            json.dump(merged, f, indent=2)
+    except (OSError, ValueError) as e:
+        logger.warning(f"Could not mirror display_name to the tutor profile: {e}")
+
+
 @app.route('/api/profile', methods=['PATCH'])
 def update_profile():
     """Update user profile settings."""
     try:
+        payload = request.get_json(force=True)
         resp = requests.patch(
             f'{SERVICES["rag"]}/api/profile',
-            json=request.get_json(force=True),
+            json=payload,
             timeout=5
         )
+        # The learner's name lives in two places that never spoke. Settings
+        # writes display_name here (RAG); the tutor personalises its prompt
+        # from data/user_space/profile.json['name'] (fsm_logic._load_user_profile
+        # -> prompts.py). So the field that says "the tutor will address you by
+        # this name" never reached the tutor. Mirror it on the way past.
+        if isinstance(payload, dict) and 'display_name' in payload:
+            _mirror_display_name_to_tutor_profile(payload['display_name'])
         return jsonify(resp.json()), resp.status_code
     except Exception as e:
         logger.error(f"Profile update error: {e}")

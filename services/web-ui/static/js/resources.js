@@ -619,6 +619,7 @@
         var list = document.getElementById("health-list");
         list.textContent = "";
         var downRequired = 0, downOptional = 0, total = 0, required = 0;
+        var downOptionalNames = [];
 
         Object.keys(SERVICE_NAMES).forEach(function (key) {
             var info = d[key];
@@ -626,7 +627,12 @@
             total++;
             if (!OPTIONAL[key]) required++;
             var ok = info.status === "healthy";
-            if (!ok) { if (OPTIONAL[key]) downOptional++; else downRequired++; }
+            if (!ok) {
+                if (OPTIONAL[key]) {
+                    downOptional++;
+                    downOptionalNames.push(SERVICE_NAMES[key][0].toLowerCase());
+                } else { downRequired++; }
+            }
 
             var li = document.createElement("li");
             li.className = "health-item " + (ok ? "is-ok" : "is-down");
@@ -661,8 +667,15 @@
                 (downRequired === 1 ? "that one is" : "they are") + " back.";
             sum.className = "health-summary is-down";
         } else if (downOptional) {
-            sum.textContent = "Everything needed to teach is running. Voice is "
-                + "not — Helga will teach in text.";
+            /* Name what is actually missing. "Voice is not running" was
+               printed whenever ANY optional service was down, including when
+               only the microphone was — while Helga could still read every
+               lesson aloud, which is the opposite of what the sentence said. */
+            sum.textContent = "Everything needed to teach is running. " +
+                (downOptionalNames.length === 1
+                    ? "The " + downOptionalNames[0] + " is not"
+                    : downOptionalNames.join(" and ") + " are not") +
+                ", so that part is unavailable.";
             sum.className = "health-summary is-degraded";
         } else {
             sum.textContent = "All " + total + " services are running.";

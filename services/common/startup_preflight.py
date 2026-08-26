@@ -252,9 +252,17 @@ def _read_memory_locally(readings):
 
 def _read_memory_from_payload(readings, mem):
     if not isinstance(mem, dict) or mem.get("error"):
+        # These notes are rendered verbatim in Settings. The error field is
+        # whatever the core service raised — often a bare identifier like
+        # "swap_used_frac", which told the reader nothing and looked like a
+        # crash. Keep the sentence readable; the raw value goes to the log,
+        # where someone debugging will actually look for it.
+        detail = str((mem or {}).get("error", "no reading"))
+        logger.warning("preflight could not read memory from core: %s", detail)
         readings["notes"].append(
-            "the core service could not measure memory: "
-            + str((mem or {}).get("error", "no reading")))
+            "Helga could not read this machine's memory from the core "
+            "service, so the memory checks below are unmeasured rather "
+            "than failing.")
         return
     for src, dst in (("total_gb", "total_gb"), ("available_gb", "available_gb")):
         v = mem.get(src)

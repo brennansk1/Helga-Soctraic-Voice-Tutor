@@ -1,5 +1,9 @@
 // Session.js - Handles the unified session interface using WebSockets (text-only)
-// Audio/WebRTC/microphone code has been removed. TTS is on-demand via addTTSButton().
+// Audio/WebRTC/microphone code has been removed. TTS is on-demand via
+// playMessageTTS(), which sends the voice chosen in Settings. A second,
+// never-called addTTSButton() used to sit below and omitted the voice, so the
+// only copy of this code that honoured the setting was the one in use — and
+// the comment here named the other one.
 // Course creation and rail UI code are in separate module files:
 //   session-course-creation.js, session-rails.js
 
@@ -837,19 +841,28 @@ async function playMessageTTS(text, btn) {
     }
 }
 
-// Load user avatar from profile settings
-async function loadUserAvatar() {
+// Load the per-learner bits of the profile that the session needs.
+async function loadUserPreferences() {
     try {
         const r = await fetch('/api/profile');
-        if (r.ok) {
-            const profile = await r.json();
-            if (profile.avatar_url && profile.avatar_url.trim()) {
-                window._userAvatarSrc = profile.avatar_url;
-            }
+        if (!r.ok) { return; }
+        const profile = await r.json();
+        if (profile.avatar_url && profile.avatar_url.trim()) {
+            window._userAvatarSrc = profile.avatar_url;
         }
-    } catch(e) { /* use default */ }
+        /* The chosen voice is saved to the profile, but playback reads
+           localStorage['helga-voice'] — which is only written by the Settings
+           page itself. On any browser that had not visited Settings (a second
+           machine, a cleared cache) the saved voice was ignored and everything
+           spoke in the default. Seed it from the profile, without overriding a
+           newer local choice. */
+        if (profile.default_voice && !localStorage.getItem('helga-voice')) {
+            try { localStorage.setItem('helga-voice', profile.default_voice); }
+            catch (e) { /* private mode: playback still works, just unsaved */ }
+        }
+    } catch (e) { /* defaults are fine */ }
 }
-loadUserAvatar();
+loadUserPreferences();
 
 // Track whether the user has scrolled up to read history — used so new
 // messages don't yank them back to the bottom mid-read. Re-enabled when
@@ -2114,7 +2127,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         chatStream.addEventListener('click', (e) => {
             if (e.target.classList.contains('tts-play-btn')) {
-                // Handled by addTTSButton onclick
+                // Handled by playMessageTTS onclick
             }
         });
     }
@@ -2225,26 +2238,6 @@ function hideTypingIndicator() {
 }
 
 // --- TTS Play Button Helper ---
-function addTTSButton(messageEl, text) {
-    const btn = document.createElement('button');
-    btn.className = 'tts-play-btn';
-    btn.innerHTML = '&#9654;';
-    btn.title = 'Play audio';
-    btn.onclick = async function() {
-        btn.disabled = true;
-        btn.textContent = '...';
-        try {
-            const resp = await fetch('/api/tts', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text: text})});
-            const blob = await resp.blob();
-            const url = URL.createObjectURL(blob);
-            const audio = new Audio(url);
-            audio.onended = () => { btn.innerHTML = '&#9654;'; btn.disabled = false; };
-            audio.play();
-        } catch(e) { btn.innerHTML = '&#9654;'; btn.disabled = false; }
-    };
-    messageEl.appendChild(btn);
-}
-
 // --- Confetti Animation Trigger ---
 // Call showConfetti() to display a page-wide confetti burst.
 // Uses inline styles for random per-piece physics (horizontal drift,

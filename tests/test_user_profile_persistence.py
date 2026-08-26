@@ -21,11 +21,11 @@ def test_single_field_save_preserves_the_rest():
 
 def test_preference_fields_are_stored_not_dropped():
     p = merge_profile({}, {"theme": "dark", "default_voice": "af_sky",
-                           "sound_effects": False, "font_scale": 120})
+                           "sound_effects": False, "font_scale": 1.2})
     assert p["theme"] == "dark"
     assert p["default_voice"] == "af_sky"
     assert p["sound_effects"] is False
-    assert p["font_scale"] == 120
+    assert p["font_scale"] == 1.2
 
 
 def test_absent_keys_are_untouched_even_when_falsy():
@@ -38,8 +38,12 @@ def test_absent_keys_are_untouched_even_when_falsy():
 def test_invalid_values_fall_back_without_corrupting_the_file():
     assert merge_profile({}, {"level": "sudo"})["level"] == "intermediate"
     assert merge_profile({}, {"theme": "neon"})["theme"] == "light"
-    assert merge_profile({}, {"font_scale": "huge"})["font_scale"] == 100
-    assert merge_profile({}, {"font_scale": 9999})["font_scale"] == 200
+    # font_scale is the slider's own multiplier (0.8-1.4), not a percentage:
+    # treating it as an integer percent turned 1.2 into 1 and then into the
+    # floor, i.e. half-size text across the whole app.
+    assert merge_profile({}, {"font_scale": "huge"})["font_scale"] == 1.0
+    assert merge_profile({}, {"font_scale": 9999})["font_scale"] == 1.4
+    assert merge_profile({}, {"font_scale": 1.2})["font_scale"] == 1.2
     assert merge_profile({}, {"interests": "not-a-list"})["interests"] == []
 
 
