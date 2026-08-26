@@ -46,10 +46,23 @@
     }
 
     function loadDue() {
-        return fetch("/api/review_stats")
-            .then(function (r) { return r.ok ? r.json() : {}; })
+        // COUNT THE SAME THING THE PRACTICE PAGE COUNTS.
+        //
+        // This read /api/review_stats, which counts FLASHCARDS and treats a
+        // card with no review date as due — so a night of generating cards put
+        // "40 Due today" on the front page while Practice, one click away, said
+        // 6. Two surfaces, two units, one label. `due_today` was also exactly
+        // equal to `total_cards`, which is what that OR NULL does.
+        //
+        // Practice is the page a learner acts on, so the home figure now comes
+        // from the same endpoint and the two agree by construction rather than
+        // by coincidence.
+        return fetch("/api/due_concepts")
+            .then(function (r) { return r.ok ? r.json() : []; })
             .then(function (d) {
-                var due = d.due_today != null ? d.due_today : (d.due != null ? d.due : 0);
+                var items = Array.isArray(d) ? d
+                    : (d.concepts || d.due || d.items || []);
+                var due = items.length;
                 $("stat-due").textContent = due;
                 return due;
             })
