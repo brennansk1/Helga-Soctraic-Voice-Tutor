@@ -3736,10 +3736,13 @@ class ActivityStore:
     def _get_db(self) -> sqlite3.Connection:
         return self._db.get()
 
-    def log_activity(self, course_uid: str, activity_type: str,
+    def log_activity(self, course_uid: str, activity_type: str, *,
                      concept_uid: str = None, unit_uid: str = None,
                      duration_seconds: int = 0, grade: int = None,
                      details: dict = None, student_id: str = None):
+        """Keyword-only past activity_type on purpose: a caller that passed
+        these positionally in the wrong order silently disabled activity
+        logging for every completed concept."""
         conn = self._get_db()
         conn.execute(
             "INSERT INTO activity_log (course_uid, concept_uid, unit_uid, activity_type, duration_seconds, grade, details, student_id) "

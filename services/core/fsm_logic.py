@@ -3053,11 +3053,18 @@ class MnemosyneFSM:
                 logging.warning(f"Failed to mark concept completed in progress store: {e}")
             # Log completion to activity store
             try:
+                # Keywords, not positions. The signature is
+                # (course_uid, activity_type, concept_uid, unit_uid, ...) and
+                # this call passed (course, concept, type, details): the dict
+                # landed on unit_uid, which SQLite cannot bind, so every
+                # completion raised and was swallowed by the except below.
+                # activity_log stayed empty, and with it the day streak on Home
+                # and the whole parent dashboard.
                 self.storage.activity.log_activity(
-                    self.active_course_uid or "unknown",
-                    self.current_lesson_node["uid"],
-                    "concept_completed",
-                    {"title": self.current_lesson_node.get("title", "")},
+                    course_uid=self.active_course_uid or "unknown",
+                    activity_type="concept_completed",
+                    concept_uid=self.current_lesson_node["uid"],
+                    details={"title": self.current_lesson_node.get("title", "")},
                 )
             except Exception as e:
                 logging.warning(f"Failed to log completion activity: {e}")

@@ -18,6 +18,7 @@ import gevent
 import subprocess
 from werkzeug.utils import secure_filename
 import json
+from services.common.user_profile import merge_profile, with_defaults
 import hashlib
 import secrets
 from functools import wraps
@@ -2969,8 +2970,8 @@ def get_user_profile():
         if os.path.exists(PROFILE_PATH):
             with open(PROFILE_PATH, 'r') as f:
                 profile = json.load(f)
-            return jsonify(profile)
-        return jsonify({'name': '', 'level': 'intermediate', 'interests': [], 'goals': ''})
+            return jsonify(with_defaults(profile))
+        return jsonify(with_defaults({}))
     except Exception as e:
         # No file at all is a fresh install and defaults are honest (handled
         # above). A file that EXISTS but cannot be read is corruption, and
@@ -2986,15 +2987,23 @@ def save_user_profile():
         data = request.json
         if not data:
             return jsonify({'error': 'No data provided'}), 400
-        
-        # Sanitize and validate
-        profile = {
-            'name': str(data.get('name', ''))[:50].strip(),
-            'level': data.get('level', 'intermediate') if data.get('level') in ['beginner', 'intermediate', 'advanced', 'expert'] else 'intermediate',
-            'interests': [str(i)[:40].strip() for i in data.get('interests', []) if isinstance(i, str)][:20],
-            'goals': str(data.get('goals', ''))[:500].strip()
-        }
-        
+
+        # MERGE, never rebuild — see services/common/user_profile.py for why.
+        existing = {}
+        if os.path.exists(PROFILE_PATH):
+            try:
+                with open(PROFILE_PATH, 'r') as f:
+                    loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    existing = loaded
+            except (OSError, ValueError) as e:
+                # Refuse to overwrite a profile we could not read: a partial
+                # save on top of unreadable data destroys what is still there.
+                logger.error(f"Profile unreadable, refusing to overwrite: {e}")
+                return jsonify({'error': 'profile unreadable'}), 503
+
+        profile = merge_profile(existing, data)
+
         os.makedirs(os.path.dirname(PROFILE_PATH), exist_ok=True)
         with open(PROFILE_PATH, 'w') as f:
             json.dump(profile, f, indent=2)

@@ -599,11 +599,15 @@ input:checked + .slider:before { transform: translateX(22px); }
                 document.getElementById('avatar-preview').src = profile.avatar_url;
             }
 
-            // Theme
-            const currentTheme = profile.theme || localStorage.getItem('helga-theme') || 'light';
-            document.querySelectorAll('.theme-btn').forEach(b => {
-                b.classList.toggle('active', b.dataset.theme === currentTheme);
-            });
+            // Theme. The document is the source of truth: base.html has
+            // already applied the theme the learner is LOOKING AT before this
+            // fetch resolves. Trusting profile.theme first meant the control
+            // said "Light" on a visibly dark page — the saved profile was
+            // stale because this endpoint used to drop `theme` on save.
+            const currentTheme =
+                document.documentElement.getAttribute('data-theme') ||
+                profile.theme || localStorage.getItem('helga-theme') || 'light';
+            setThemeButtons(currentTheme);
 
             // Hide loading overlay on success
             if (loadingOverlay) loadingOverlay.classList.add('hidden');
@@ -644,12 +648,21 @@ input:checked + .slider:before { transform: translateX(22px); }
         autoSave('avatar_url', '');
     });
 
+    /* Selected-ness has to reach assistive tech too: these are buttons, and a
+       class alone tells a screen reader nothing about which theme is on. */
+    function setThemeButtons(theme) {
+        document.querySelectorAll('.theme-btn').forEach(function (b) {
+            var on = b.dataset.theme === theme;
+            b.classList.toggle('active', on);
+            b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
+    }
+
     // Theme
     document.querySelectorAll('.theme-btn').forEach(btn => {
         btn.addEventListener('click', function() {
             const theme = this.dataset.theme;
-            document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
-            this.classList.add('active');
+            setThemeButtons(theme);
             document.documentElement.setAttribute('data-theme', theme);
             localStorage.setItem('helga-theme', theme);
             autoSave('theme', theme);
