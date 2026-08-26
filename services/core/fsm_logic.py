@@ -124,6 +124,31 @@ def clean_llm_response(text):
 
     # --- Phase 1b: Strip markdown formatting (speech should be plain text) ---
 
+    # CODE IS NOT MARKDOWN. Take it out of harm's way first.
+    #
+    # `\*(.+?)\*` strips italics. In a SQL lesson it also strips SQL. Measured
+    # on a live turn: the model wrote
+    #
+    #     `SELECT name, price * 1.1 FROM products` ... It sees `price * 1.1`
+    #
+    # and the learner was shown "price 1.1", twice — the regex matched from the
+    # first asterisk to the second and deleted both along with nothing in
+    # between that was emphasis. The turn was explaining what `*` MEANS.
+    #
+    # `SELECT *` is the most common statement in the language this course
+    # teaches, so a rule that eats asterisks cannot be allowed near code. The
+    # bullet rule below has the same problem with a line starting `* `.
+    _code_slots = []
+
+    def _park_code(m):
+        _code_slots.append(m.group(0))
+        return f"\x00CODE{len(_code_slots) - 1}\x00"
+
+    # Fenced blocks first, then inline spans, so a fence containing backticks
+    # is taken whole.
+    text = re.sub(r"```.*?```", _park_code, text, flags=re.DOTALL)
+    text = re.sub(r"`[^`\n]+`", _park_code, text)
+
     # Remove bold/italic markers: **text** → text, *text* → text, __text__ → text
     text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
     text = re.sub(r"__(.+?)__", r"\1", text)
@@ -137,6 +162,13 @@ def clean_llm_response(text):
     text = re.sub(r"^\s*\d+\.\s+", "", text, flags=re.MULTILINE)
     # Remove role-label prefixes like "Lecturer:" or "Tutor:"
     text = re.sub(r"^\s*(Lecturer|Tutor|Teacher|Professor|Instructor)\s*:\s*", "", text, flags=re.IGNORECASE)
+
+    # Put the code back, exactly as the model wrote it.
+    def _unpark_code(m):
+        i = int(m.group(1))
+        return _code_slots[i] if i < len(_code_slots) else ""
+
+    text = re.sub(r"\x00CODE(\d+)\x00", _unpark_code, text)
 
     # --- Phase 2: Remove training/role-play artifacts ---
 
