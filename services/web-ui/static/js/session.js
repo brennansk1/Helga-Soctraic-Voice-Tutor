@@ -859,8 +859,31 @@ let _userPinnedToBottom = true;
 function _attachChatScrollTracker(chatStream) {
     if (!chatStream || chatStream.dataset.scrollTrackerBound === '1') return;
     chatStream.dataset.scrollTrackerBound = '1';
+    let _lastScrollTop = chatStream.scrollTop;
+    let _lastScrollHeight = chatStream.scrollHeight;
     chatStream.addEventListener('scroll', function () {
-        const distanceFromBottom = chatStream.scrollHeight - (chatStream.scrollTop + chatStream.clientHeight);
+        const top = chatStream.scrollTop;
+        const height = chatStream.scrollHeight;
+
+        // ONLY A USER SCROLL UNPINS.
+        //
+        // A tall message arriving fires this listener too: scrollHeight jumps,
+        // the distance to the bottom is suddenly large, and the learner was
+        // unpinned for doing nothing. The ResizeObserver that follows late
+        // content then refused to act, because it correctly respects pinning —
+        // so a turn with two comparison tables left the reply off-screen with
+        // a "Latest" pill sitting over the learner's own words.
+        //
+        // A user scroll moves scrollTop. Content growth moves scrollHeight and
+        // leaves scrollTop where it was. Distinguishing them is what makes the
+        // pin mean "the learner chose to read history".
+        const userMoved = top !== _lastScrollTop;
+        const grew = height !== _lastScrollHeight;
+        _lastScrollTop = top;
+        _lastScrollHeight = height;
+        if (!userMoved && grew) return;
+
+        const distanceFromBottom = height - (top + chatStream.clientHeight);
         // Within 80px of the bottom counts as "pinned" — feels natural.
         _userPinnedToBottom = distanceFromBottom < 80;
         const btn = document.getElementById('chat-scroll-bottom-btn');
@@ -880,10 +903,64 @@ function _attachChatScrollTracker(chatStream) {
     }
 }
 
+// SNAP, DO NOT ANIMATE, WHEN FOLLOWING NEW CONTENT.
+//
+// .learn-chat-list carries `scroll-behavior: smooth`, so `scrollTop = …` is a
+// request to ANIMATE there. A turn's visual aids render while that animation
+// is still running: the target it was given is already stale, the observer
+// that notices the growth issues another one, and each interrupts the last.
+// Measured result — the stream sat at scrollTop 1 with 384px of unread reply
+// below it and a "Latest" pill over the learner's own words.
+//
+// Smooth is right for the jump-to-latest button, which a person clicked.
+// Following content the learner did not ask to move is a snap.
+function _snapToBottom(el) {
+    if (!el) return;
+    try {
+        el.scrollTo({ top: el.scrollHeight, behavior: 'instant' });
+    } catch (e) {
+        // Older engines reject 'instant'; disable the animation for one write.
+        const prev = el.style.scrollBehavior;
+        el.style.scrollBehavior = 'auto';
+        el.scrollTop = el.scrollHeight;
+        el.style.scrollBehavior = prev;
+    }
+}
+
+// CONTENT THAT GROWS AFTER THE SCROLL.
+//
+// Scrolling to the bottom when a message is appended is not enough here. A
+// turn's visual aids — tables, diagrams — render asynchronously after the
+// text, and each one makes the stream taller. The scroll had already happened
+// against the old height, so the learner was left stranded mid-message with a
+// "Latest" pill over their own words, having done nothing but answer a
+// question. Measured on a turn with two comparison tables.
+//
+// A ResizeObserver re-scrolls while the learner is still pinned, so late
+// content follows; it deliberately does nothing once they have scrolled up to
+// read history, which is the case the pinning exists to protect.
+function _followLateGrowth(chatStream) {
+    if (!chatStream || chatStream.dataset.growthObserverBound === '1') return;
+    if (typeof ResizeObserver === 'undefined') return;
+    chatStream.dataset.growthObserverBound = '1';
+    let raf = 0;
+    const ro = new ResizeObserver(function () {
+        if (!_userPinnedToBottom) return;
+        if (raf) return;
+        raf = requestAnimationFrame(function () {
+            raf = 0;
+            _snapToBottom(chatStream);
+        });
+    });
+    // Observing the stream itself catches every child that grows inside it.
+    ro.observe(chatStream);
+}
+
 function _scrollChatToBottom(chatStream, force) {
     if (!chatStream) return;
+    _followLateGrowth(chatStream);
     if (force || _userPinnedToBottom) {
-        chatStream.scrollTop = chatStream.scrollHeight;
+        _snapToBottom(chatStream);
     }
     // A message that lands below the fold while the learner is reading history
     // is the exact case the jump button exists for, so the button's visibility
@@ -1743,8 +1820,9 @@ function sendTextMessage() {
         chatStream.appendChild(msgDiv);
         // User just sent something — that's a "new turn" moment; snap to
         // bottom unconditionally and re-pin the auto-follow behavior.
-        chatStream.scrollTop = chatStream.scrollHeight;
+        _snapToBottom(chatStream);
         _userPinnedToBottom = true;
+        _followLateGrowth(chatStream);
         // Do NOT increment displayedMessagesCount here — the real transcript
         // update will include this message and updateChatStream() will match
         // it against the optimistic bubble.
@@ -2362,8 +2440,9 @@ function handleStreamToken(data) {
         // New stream — scroll to reveal the first token. This counts as a
         // "new turn" moment so we force the scroll regardless of user
         // pinning state.
-        chatStream.scrollTop = chatStream.scrollHeight;
+        _snapToBottom(chatStream);
         _userPinnedToBottom = true;
+        _followLateGrowth(chatStream);
     }
 
     // Batch DOM updates with requestAnimationFrame to avoid layout thrashing
