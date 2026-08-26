@@ -38,11 +38,36 @@
             .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
             .then(function (d) {
                 $("stat-courses").textContent = d.total_courses != null ? d.total_courses : "0";
+                // `concepts_mastered` from /api/stats is the same number as
+                // `concepts_studied` — that endpoint cannot tell them apart, so
+                // the front page called seven started concepts "learned" while
+                // Progress, which computes both, said 0 known and 7 started.
+                // loadTotals() below overwrites this from the source that is
+                // right; this is only the value shown until it lands.
                 $("stat-concepts").textContent = d.concepts_mastered != null ? d.concepts_mastered : "0";
                 $("stat-streak").textContent = d.streak != null ? d.streak : "0";
                 $("home-error").classList.add("hidden");
                 return d;
             });
+    }
+
+    function loadTotals() {
+        // ONE SOURCE FOR THE NUMBERS ON THE FRONT PAGE.
+        //
+        // Home, Practice and Progress each computed "due today" their own way
+        // and showed 40, 6 and 3 at the same moment. Progress's totals are the
+        // ones that distinguish a concept you have STARTED from one you KNOW,
+        // and they are internally consistent with the list rendered beneath
+        // them, so they are the source the dashboard reads too.
+        return fetch("/api/progress/overview")
+            .then(function (r) { return r.ok ? r.json() : {}; })
+            .then(function (d) {
+                var t = (d && d.totals) || {};
+                if (t.started != null) $("stat-concepts").textContent = t.started;
+                if (t.courses != null) $("stat-courses").textContent = t.courses;
+                return t;
+            })
+            .catch(function () { return {}; });
     }
 
     function loadDue() {
@@ -153,7 +178,10 @@
     function boot() {
         var last = lastCourse();
 
-        Promise.all([loadStats(), loadDue(), loadCourses(), loadDegree()])
+        // loadTotals AFTER loadStats, deliberately: it corrects the two
+        // figures /api/stats cannot compute.
+        Promise.all([loadStats().then(loadTotals), loadDue(),
+                     loadCourses(), loadDegree()])
             .then(function (res) {
                 var stats = res[0] || {}, courses = res[2] || [];
                 if (last && last.uid) {

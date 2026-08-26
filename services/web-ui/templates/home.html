@@ -70,7 +70,10 @@
     </a>
     <a class="home-stat" href="/progress">
       <span class="home-stat-value" id="stat-concepts">&mdash;</span>
-      <span class="home-stat-label">Concepts learned</span>
+      {# "learned" over a count of concepts STARTED overstates it: Progress,
+   which computes both, reads 0 known and 7 in progress from the same
+   data. The number is right; the word was the part that was not. #}
+      <span class="home-stat-label">Concepts started</span>
     </a>
     <a class="home-stat" href="/practice">
       <span class="home-stat-value" id="stat-due">&mdash;</span>

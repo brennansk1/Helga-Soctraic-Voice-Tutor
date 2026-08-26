@@ -46,9 +46,18 @@
             { value: pct(t.accuracy),
               label: 'accuracy',
               sub: t.accuracy == null ? 'no answers yet' : 'across all answers' },
-            { value: t.due_today == null ? '—' : t.due_today,
+            // The number here counted CONCEPTS past their review date while
+            // Practice — the page you actually review on — showed its queue,
+            // which also holds flashcards. Three surfaces said 40, 6 and 3 at
+            // the same moment. The queue is what a learner acts on, so the
+            // label now names what it counts and `queueDue` fills it from the
+            // same endpoint Practice uses.
+            { value: window.__queueDue == null
+                        ? (t.due_today == null ? '—' : t.due_today)
+                        : window.__queueDue,
               label: 'due today',
-              sub: t.due_today ? 'ready to review' : 'nothing waiting' },
+              sub: (window.__queueDue || t.due_today) ? 'in your review queue'
+                                                      : 'nothing waiting' },
             { value: t.started == null ? '—' : t.started,
               label: 'in progress',
               sub: 'started, not yet mastered' }
@@ -166,10 +175,25 @@
     function load() {
         var err = $('progress-error');
         if (err) err.hidden = true;
-        fetch('/api/progress/overview')
-            .then(function (r) { return r.json().then(function (b) {
-                return { ok: r.ok, body: b }; }); })
-            .then(function (res) {
+        // BOTH, THEN RENDER. Firing these side by side left renderTotals
+        // reading window.__queueDue before it existed, so the card kept the
+        // old number under the new label — worse than either alone, because it
+        // now claimed to be the queue and was not.
+        Promise.all([
+            fetch('/api/due_concepts')
+                .then(function (r) { return r.ok ? r.json() : []; })
+                .then(function (d) {
+                    var items = Array.isArray(d) ? d : (d.concepts || d.due || []);
+                    return items.length;
+                })
+                .catch(function () { return null; }),
+            fetch('/api/progress/overview')
+                .then(function (r) { return r.json().then(function (b) {
+                    return { ok: r.ok, body: b }; }); })
+        ])
+            .then(function (both) {
+                window.__queueDue = both[0];
+                var res = both[1];
                 if (!res.ok) throw new Error((res.body && res.body.error) ||
                                              'HTTP ' + res.status);
                 render(res.body);
