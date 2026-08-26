@@ -155,6 +155,28 @@ def clean_output(text):
     return (m.group(1) if m else text).strip()
 
 
+_H2 = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
+
+
+def headings_preserved(original, candidate):
+    """Did the repair keep the sections the tutor actually reads?
+
+    MEASURED HARM, NOT A PRECAUTION. A repair came back complete and correct —
+    1,683 words, the false claim fixed — with every `##` heading demoted to
+    `###`. The length check passed it. The depth contract then reported the
+    concept as "28 words", because `## Core Explanation` no longer existed, and
+    the tutor would have found none of the sections it reads when teaching.
+
+    A repair that silently changes the document's structure has broken the
+    concept more thoroughly than the sentence it was sent to fix, and length
+    cannot see it.
+    """
+    before = set(_H2.findall(original or ""))
+    after = set(_H2.findall(candidate or ""))
+    lost = before - after
+    return (not lost), sorted(lost)
+
+
 def is_plausible_repair(original, candidate):
     """Would storing this be an improvement, or damage?
 
@@ -174,4 +196,8 @@ def is_plausible_repair(original, candidate):
                        f"text — a fix, not a rewrite, was asked for")
     if o and c > o * 2.5:
         return False, "the repair more than doubled the text"
+    kept, lost = headings_preserved(original, candidate)
+    if not kept:
+        return False, ("the repair dropped or demoted section heading(s) the "
+                       "tutor reads: " + ", ".join(lost[:4]))
     return True, ""

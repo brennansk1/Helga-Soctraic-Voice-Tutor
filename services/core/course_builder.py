@@ -6139,8 +6139,34 @@ class ContentHydrator:
                     ledger[name] = fn(conn, course_uid)
                 except Exception as e:
                     ledger[name] = {"checked": False, "reason": str(e)[:120]}
+        # DEPTH MEASURED NOW, NOT READ FROM THE BUILD RECORD.
+        #
+        # check_depth reads course["depth_contract"], which is stamped during
+        # hydration and never updated afterwards. So a course could have nine
+        # concepts repaired and still report the depth it had before any of
+        # them — measured on the first live repair run: 12 concepts attempted,
+        # 9 fixed, depth still 0.394 to four decimal places.
+        #
+        # This pass already re-ran validate_concept over every stored concept,
+        # so the current answer is in `report` and was being thrown away.
         try:
-            ledger["depth"] = course_qa.check_depth(course)
+            audited = report.get("concepts_audited") or 0
+            missed = len({f.get("concept_uid")
+                          for f in (report.get("findings") or [])
+                          if f.get("check") == "depth_contract"})
+            for sysf in report.get("systemic") or []:
+                if sysf.get("check") == "depth_contract":
+                    missed = max(missed, sysf.get("concepts", 0))
+            if audited:
+                share = round((audited - missed) / audited, 3)
+                ledger["depth"] = {
+                    "checked": True, "concepts": audited, "missed": missed,
+                    "share": share, "ok": share >= 0.8,
+                    "measured": "now",
+                }
+            else:
+                ledger["depth"] = {"checked": False,
+                                   "reason": "no concept content was read"}
         except Exception as e:
             ledger["depth"] = {"checked": False, "reason": str(e)[:120]}
 
@@ -6559,9 +6585,18 @@ class ContentHydrator:
             # WITHHELD. A concept that still states something a database
             # contradicts is not served. A gap in a course is a worse course;
             # a false claim is a lie told to someone who trusted it.
-            if any(f.get("severity") == "blocking" for f in (remaining or [])):
+            blocking_left = [f for f in (remaining or [])
+                             if f.get("severity") == "blocking"]
+            if blocking_left:
+                # NAME THE FINDING THAT CAUSED THIS, not whichever came first.
+                #
+                # It took remaining[0], so a concept withheld for a false claim
+                # was reported as withheld because "the text contains your own
+                # deliberation" — the reason a reader would act on, and the
+                # wrong one. Observed on the first live run.
                 withheld.append({"concept_uid": uid, "title": title,
-                                 "why": (remaining or [{}])[0].get("detail")})
+                                 "why": blocking_left[0].get("detail"),
+                                 "check": blocking_left[0].get("check")})
                 outcomes["withheld"] += 1
 
         if withheld:

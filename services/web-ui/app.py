@@ -369,8 +369,99 @@ def home():
 def mode_select_page():
     return render_template('mode_select.html')
 
+
+# --- keeping the model warm --------------------------------------------------
+#
+# MEASURED, 2026-08-25, on an idle machine:
+#
+#     cold  (model not resident)   142.2s   <- 135s of it is the LOAD
+#     warm, prefix cached            2.3s
+#     warm, prefix not cached        4.5s
+#
+# A turn is two to five seconds once the weights are resident. Every bit of the
+# "first lesson of the day takes two minutes" complaint is that 135-second
+# load, paid by whoever opens the app first, while they sit looking at a
+# spinner.
+#
+# OLLAMA_KEEP_ALIVE is 30 minutes, so it drops out after half an hour of not
+# learning — which is most mornings.
+#
+# Nothing has to wait for it. Opening the course list, choosing a course and
+# clicking a concept takes tens of seconds, and the load can happen during
+# that. This fires a one-token generation the moment a page is opened, in the
+# background, and the learner never sees it.
+#
+# Why not simply pin the model with keep_alive=-1: it holds ~13 GB resident
+# forever, on a machine where the verifier and the embedder want to be
+# co-resident too, and where past 16 GB throughput collapses. Loading on demand
+# and keeping it for the session costs nothing while nobody is learning.
+_PREWARM_MIN_GAP_S = 300.0
+_prewarm_state = {"at": 0.0, "running": False}
+
+
+def _prewarm_model():
+    """Load the weights so the first real turn does not pay for it.
+
+    Best-effort and silent: a failure here must never affect the page that
+    triggered it. The learner's turn will simply pay the load, exactly as it
+    does today.
+    """
+    import time as _t
+    if _prewarm_state["running"]:
+        return
+    now = _t.time()
+    if now - _prewarm_state["at"] < _PREWARM_MIN_GAP_S:
+        return
+    _prewarm_state["at"] = now
+    _prewarm_state["running"] = True
+
+    def _run():
+        try:
+            base = os.getenv("OLLAMA_URL",
+                             "http://host.docker.internal:11434").rstrip("/")
+            # THE MODEL THE TUTOR WILL ACTUALLY USE, or none at all.
+            #
+            # This fell back to the first entry of /api/tags, and on this
+            # machine that is qwen2.5-coder:14b-instruct — a model nothing in
+            # the pipeline uses. Warming the wrong one is worse than warming
+            # nothing: it takes 9 GB, the real turn still pays its own cold
+            # load, and it pays it with less memory free than before.
+            try:
+                from services.common import model_roles
+                # resolve() returns (base_url, model) — using the base as the
+                # model name would warm nothing and log a 404.
+                role_base, model = model_roles.resolve(model_roles.TUTOR)
+                base = (role_base or base).rstrip("/")
+            except Exception:
+                model = os.getenv("OLLAMA_MODEL", "")
+            if not model:
+                # Guessing is what caused the defect above.
+                app.logger.debug("pre-warm skipped: no model configured")
+                return
+            t0 = _t.time()
+            requests.post(f"{base}/api/generate", json={
+                "model": model, "prompt": "hi", "stream": False,
+                # The point is to make it RESIDENT, so ask for nothing.
+                "keep_alive": os.getenv("OLLAMA_KEEP_ALIVE", "30m"),
+                "options": {"num_predict": 1},
+            }, timeout=600)
+            app.logger.info("pre-warmed %s in %.0fs", model, _t.time() - t0)
+        except Exception as e:
+            app.logger.debug("pre-warm skipped: %s", e)
+        finally:
+            _prewarm_state["running"] = False
+
+    try:
+        _monitored_spawn(_run, "prewarm")
+    except Exception:
+        pass
+
+
 @app.route('/courses')
 def courses_page():
+    # Earliest point a learner touches the app before a session — the
+    # weights can load while they choose a course.
+    _prewarm_model()
     return render_template('courses.html')
 
 @app.route('/courses/new')
@@ -460,6 +551,8 @@ def create_course_custom():
 
 @app.route('/learn')
 def learn_page():
+    # The model loads while the learner reads their path and picks a concept.
+    _prewarm_model()
     # The template needs the band so the client can decide whether a voice
     # transcript may be auto-sent. A young learner cannot read a correction, so
     # a mis-transcription must never reach the grader unconfirmed — see
