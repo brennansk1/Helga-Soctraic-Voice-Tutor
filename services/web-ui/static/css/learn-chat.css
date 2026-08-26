@@ -580,13 +580,38 @@ pre.math-raw { display: block; margin: var(--space-2) 0; }
 .skeleton-line {
     height: 9px;
     border-radius: 999px;
+    /* A LOADING INDICATOR NOBODY CAN SEE IS NOT ONE.
+       These were built from --border-subtle, which is a DARK token in dark
+       mode, so the lines rendered dark-on-dark and all but vanished. Stated as
+       explicit translucent white/black instead: each is legible against the
+       surface it actually sits on, in either theme, without depending on a
+       token whose value flips. */
     background: linear-gradient(
         90deg,
-        var(--border-subtle, rgba(0,0,0,.07)) 25%,
-        var(--bg-secondary, rgba(0,0,0,.12)) 37%,
-        var(--border-subtle, rgba(0,0,0,.07)) 63%);
+        rgba(0,0,0,.08) 25%,
+        rgba(0,0,0,.16) 37%,
+        rgba(0,0,0,.08) 63%);
     background-size: 400% 100%;
     animation: thinking-shimmer 1.6s ease-in-out infinite;
+}
+:root[data-theme="dark"] .skeleton-line,
+:root:not([data-theme="light"]) .skeleton-line {
+    background: linear-gradient(
+        90deg,
+        rgba(255,255,255,.10) 25%,
+        rgba(255,255,255,.22) 37%,
+        rgba(255,255,255,.10) 63%);
+    background-size: 400% 100%;
+}
+@media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) .skeleton-line {
+        background: linear-gradient(
+            90deg,
+            rgba(0,0,0,.08) 25%,
+            rgba(0,0,0,.16) 37%,
+            rgba(0,0,0,.08) 63%);
+        background-size: 400% 100%;
+    }
 }
 .skeleton-line:nth-child(1) { width: 100%; }
 .skeleton-line:nth-child(2) { width: 92%;  animation-delay: .12s; }
