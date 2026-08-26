@@ -250,6 +250,53 @@
                                    + 'something wrong that could not be fixed');
             return parts.length ? 'Repair: ' + parts.join('; ')
                                 : 'Repair: nothing needed fixing'; }],
+        // EVERY MESSAGE THE BUILDER EMITS NEEDS A SENTENCE HERE.
+        //
+        // Unmatched messages fall through to `return msg`, so a learner
+        // watching a build sees the raw developer string — "CHECK:GROUNDING:
+        // NONE", "AUDIT:SHORT_TITLE:3 node(s) renamed". Found by testing all
+        // 79 strings course_builder.py emits against the patterns this table
+        // matches; ten had no translation.
+        [/^AUDIT:PASS2:FIXING:(\d+)_ISSUES/, function (m) {
+            return 'Correcting ' + m[1] + ' problem(s) in the outline'; }],
+        [/^AUDIT:RENAME:(\d+)/,          function (m) {
+            return 'Renamed ' + m[1] + ' item(s) that repeated their parent'; }],
+        [/^AUDIT:SHORT_TITLE:(\d+)/,     function (m) {
+            return 'Gave ' + m[1] + ' item(s) a fuller title'; }],
+        [/^CHECK:COHERENCE:INCOHERENT/,  function () {
+            return 'The outline did not hang together — rebuilding it'; }],
+        [/^CHECK:EVIDENCE_SUPPLEMENTARY:(\d+)/, function (m) {
+            return m[1] + '% of the evidence is supplementary rather than '
+                 + 'course-grade — the build caps how far it leans on it'; }],
+        [/^CHECK:GROUNDING:NONE/,        function () {
+            return 'No usable source found for this subject — the course will '
+                 + 'say so rather than pretend otherwise'; }],
+        [/^CHECK:RESEARCH_LOOP:(\d+)/,   function (m) {
+            return 'Searching again with better terms (round ' + m[1] + ')'; }],
+        [/^CHECK:SCOPE:(\d+):(\d+)/,     function (m) {
+            return 'Scope check: material supports ' + m[1] + ' of the '
+                 + m[2] + ' asked for'; }],
+        [/^CHECK:TITLES:GENERIC:(\d+)/,  function (m) {
+            return m[1] + ' title(s) were too generic to teach from — '
+                 + 'rewriting them'; }],
+        [/^SCOPE:DEEPENED:(\d+)/,        function (m) {
+            return 'Thin subject — going deeper instead of wider ('
+                 + m[1] + ' added)'; }],
+        [/^AUDIT:GATE:(\w+):(.*)/,       function (m) {
+            // THE VERDICT THAT DECIDES WHETHER THE COURSE OPENS.
+            //
+            // Emitted by the gate and matched by nothing, so the most
+            // consequential line of the whole build would have reached the
+            // learner as "AUDIT:GATE:needs_review:4 of 4 concepts are missing
+            // sections the tutor reads". Found by testing the strings the
+            // builder emits against the patterns this table matches, rather
+            // than by watching a build.
+            var gated = m[1], why = (m[2] || '').trim();
+            if (gated === 'ready') {
+                return 'Cleared to teach' + (why ? ' — ' + why : '');
+            }
+            return 'Held for review' + (why ? ': ' + why : '') +
+                   '. You can open it from Courses and finish it.'; }],
         [/^AUDIT:DONE:(\w+):(\d+):(\d+)/, function (m) {
             // Said plainly. "blocking_findings" means something is FALSE, and
             // a learner reading this deserves the word rather than the enum.
