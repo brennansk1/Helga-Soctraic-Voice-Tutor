@@ -1091,7 +1091,6 @@ def get_profile():
             "font_scale": 1.0,
             "default_voice": "af_heart",
             "gamification_enabled": True,
-            "sound_effects": True,
             "daily_goal": 5,
         })
 

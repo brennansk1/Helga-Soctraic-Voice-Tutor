@@ -2477,9 +2477,16 @@ def _get_profile_db():
     for key, val in [
         ('display_name', ''), ('theme', 'light'), ('font_scale', '1.0'),
         ('default_voice', 'af_heart'), ('gamification_enabled', 'true'),
-        ('sound_effects', 'true'), ('daily_goal', '5'), ('avatar_url', ''),
+        ('daily_goal', '5'), ('avatar_url', ''),
     ]:
         conn.execute("INSERT OR IGNORE INTO user_profile (key, value) VALUES (?, ?)", (key, val))
+    # Settings that were removed from the product. The rows were seeded on every
+    # install, and GET /api/profile returns whatever the table holds — so an
+    # orphan row keeps the API advertising a setting the UI no longer offers and
+    # nothing reads. Dropping them here means existing installs converge on the
+    # next start instead of needing a hand-run migration.
+    for key in ('sound_effects',):
+        conn.execute("DELETE FROM user_profile WHERE key = ?", (key,))
     for key, val in [
         ('total_xp', '0'), ('level', '1'), ('streak_days', '0'),
         ('streak_last_date', ''), ('daily_xp', '0'), ('daily_date', ''),
@@ -2557,7 +2564,7 @@ def update_profile():
     conn = _get_profile_db()
     try:
         valid_keys = {'display_name', 'theme', 'font_scale', 'default_voice',
-                      'gamification_enabled', 'sound_effects', 'daily_goal', 'avatar_url'}
+                      'gamification_enabled', 'daily_goal', 'avatar_url'}
         for key, value in data.items():
             if key not in valid_keys:
                 continue

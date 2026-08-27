@@ -117,7 +117,6 @@ INSERT OR IGNORE INTO user_profile (key, value) VALUES
     ('font_scale', '1.0'),
     ('default_voice', 'af_heart'),
     ('gamification_enabled', 'true'),
-    ('sound_effects', 'true'),
     ('daily_goal', '5');
 
 -- Gamification state

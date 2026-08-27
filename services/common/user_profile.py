@@ -50,7 +50,6 @@ SANITISERS = {
     "theme":         lambda v: v if v in THEMES else "light",
     "default_voice": lambda v: str(v or "")[:40].strip(),
     "avatar_url":    lambda v: str(v or "")[:2048].strip(),
-    "sound_effects": bool,
     "gamification":  bool,
     # A MULTIPLIER, not a percentage: the slider is min=0.8 max=1.4 step=0.1 and
     # the page applies it straight to --font-scale. Clamping it as an integer

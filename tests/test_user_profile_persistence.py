@@ -21,10 +21,9 @@ def test_single_field_save_preserves_the_rest():
 
 def test_preference_fields_are_stored_not_dropped():
     p = merge_profile({}, {"theme": "dark", "default_voice": "af_sky",
-                           "sound_effects": False, "font_scale": 1.2})
+                           "font_scale": 1.2})
     assert p["theme"] == "dark"
     assert p["default_voice"] == "af_sky"
-    assert p["sound_effects"] is False
     assert p["font_scale"] == 1.2
 
 
@@ -69,8 +68,15 @@ def test_the_pages_own_keys_are_all_accepted():
     """Every key the Settings page autosaves must survive a round trip; three
     of them (display_name, daily_goal, gamification_enabled) were dropped."""
     sent = {"display_name": "B", "daily_goal": 20, "gamification_enabled": False,
-            "theme": "dark", "default_voice": "af_sky", "sound_effects": True,
-            "font_scale": 110, "avatar_url": "/x.png"}
+            "theme": "dark", "default_voice": "af_sky",
+            "font_scale": 1.1, "avatar_url": "/x.png"}
     p = merge_profile({}, sent)
     for key in sent:
         assert key in p, f"Settings saves {key!r} and the server drops it"
+
+
+def test_sound_effects_is_not_resurrected():
+    """The toggle was removed because nothing in the codebase ever read it: it
+    saved, defaulted and round-tripped while doing precisely nothing. If it
+    comes back it needs a consumer first, not just a field."""
+    assert "sound_effects" not in merge_profile({}, {"sound_effects": True})
