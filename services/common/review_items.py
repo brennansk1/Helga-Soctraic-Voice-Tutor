@@ -78,6 +78,67 @@ def _uid(concept_uid: str, kind: str, seed: str) -> str:
     return f"itm_{h[:12]}"
 
 
+# Inline TeX reaches these items from the hydrator — 77 of 2,460 carry a
+# `$...$` span, almost all of it complexity notation. Rendered raw it reads as
+# "$O(N \times M)$", which is worse than useless on a card whose whole job is
+# to be recalled at a glance.
+#
+# Only symbol-for-symbol substitutions are made. Nothing here rearranges
+# structure: flattening `\frac{a}{b}` to "a b" invents a false statement, and a
+# review item that is confidently wrong is the most expensive kind of bug this
+# system can ship. A span containing anything unconvertible keeps its dollars
+# and stays visibly maths rather than becoming quiet nonsense.
+_TEX_SYMBOLS = {
+    r"\times": "\u00d7", r"\cdot": "\u00b7", r"\div": "\u00f7",
+    r"\leq": "\u2264", r"\geq": "\u2265", r"\neq": "\u2260",
+    r"\approx": "\u2248", r"\equiv": "\u2261", r"\pm": "\u00b1",
+    r"\ll": "\u226a", r"\gg": "\u226b",
+    r"\dots": "\u2026", r"\ldots": "\u2026", r"\cdots": "\u2026",
+    r"\infty": "\u221e", r"\setminus": "\u2216",
+    r"\cup": "\u222a", r"\cap": "\u2229",
+    r"\rightarrow": "\u2192", r"\to": "\u2192", r"\leftarrow": "\u2190",
+    r"\alpha": "\u03b1", r"\beta": "\u03b2", r"\theta": "\u03b8",
+    r"\lambda": "\u03bb", r"\sigma": "\u03c3", r"\mu": "\u03bc",
+    r"\log": "log", r"\ln": "ln", r"\max": "max", r"\min": "min",
+    r"\bmod": "mod", r"\%": "%", r"\,": " ", r"\;": " ", r"\ ": " ",
+}
+_SUPERSCRIPT = {"0": "\u2070", "1": "\u00b9", "2": "\u00b2", "3": "\u00b3",
+                "4": "\u2074", "5": "\u2075", "6": "\u2076", "7": "\u2077",
+                "8": "\u2078", "9": "\u2079", "n": "\u207f"}
+_MATH_SPAN = re.compile(r"\$([^$\n]{1,120})\$")
+
+
+def _demath_span(body: str) -> Optional[str]:
+    """A span as plain text, or None when it cannot be converted faithfully."""
+    out = body
+    out = re.sub(r"\\text\{([^{}]*)\}", lambda m: m.group(1).replace("\\_", "_"), out)
+    for tex, char in _TEX_SYMBOLS.items():
+        # re.escape: these are literal TeX, not patterns. "\cdot" begins with
+        # \c, which is not a valid regex escape and raises rather than matching.
+        out = re.sub(re.escape(tex) + r"(?![a-zA-Z])", char, out)
+    # x^2 and x^{2}: single digits only, where a superscript is exact.
+    out = re.sub(r"\^\{?([0-9n])\}?", lambda m: _SUPERSCRIPT[m.group(1)], out)
+    # C_{idx} -> C_idx: a subscript written inline, which is how it would be
+    # typed in code anyway and reads unambiguously here.
+    out = re.sub(r"_\{([A-Za-z0-9]{1,12})\}", r"_\1", out)
+    out = out.replace("\\_", "_")
+    if "\\" in out or "{" in out or "}" in out:
+        return None          # structure this cannot honestly flatten
+    return re.sub(r"\s+", " ", out).strip()
+
+
+def demath(text: str) -> str:
+    """Replace inline TeX with plain text, leaving anything risky alone."""
+    if not text or "$" not in text:
+        return text or ""
+
+    def swap(m):
+        converted = _demath_span(m.group(1))
+        return converted if converted is not None else m.group(0)
+
+    return _MATH_SPAN.sub(swap, text)
+
+
 def _clean(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "")).strip()
 
@@ -366,6 +427,8 @@ def extract(md: str, concept_uid: str, course_uid: str) -> List[ReviewItem]:
         if it.uid in seen:
             continue
         seen.add(it.uid)
+        it.front = demath(it.front)
+        it.back = demath(it.back)
         unique.append(it)
     return unique
 

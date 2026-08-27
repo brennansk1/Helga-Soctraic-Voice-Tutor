@@ -168,16 +168,23 @@
     /* Connected components over the prerequisite edges. A component with more
        than one member is a SEQUENCE — the only genuine structure in the plan —
        and is drawn as one. Everything else is a track of one. */
-    function tracks(plan) {
+    /* Sequences among a GIVEN set of courses, joined by prerequisites that stay
+       inside that set. Called per requirement area, not over the whole plan —
+       see areaGroups for why. */
+    function tracks(plan, courses) {
+        courses = courses || plan._courses;
+        var inSet = {};
+        courses.forEach(function (c) { inSet[c.title] = true; });
+
         var parent = {};
         function find(x) {
             while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; }
             return x;
         }
-        plan._courses.forEach(function (c) { parent[c.title] = c.title; });
-        plan._courses.forEach(function (c) {
+        courses.forEach(function (c) { parent[c.title] = c.title; });
+        courses.forEach(function (c) {
             (c.requires || []).forEach(function (r) {
-                if (!(r in parent)) return;
+                if (!(r in parent) || !inSet[r]) return;
                 var a = find(r), b = find(c.title);
                 if (a !== b) parent[a] = b;
             });
@@ -189,7 +196,9 @@
             if (title in depths) return depths[title];
             var c = plan._byTitle[title];
             if (!c || seen.indexOf(title) !== -1) return 0;
-            var reqs = (c.requires || []).filter(function (r) { return r in plan._byTitle; });
+            var reqs = (c.requires || []).filter(function (r) {
+                return (r in plan._byTitle) && inSet[r];
+            });
             var d = 0;
             reqs.forEach(function (r) { d = Math.max(d, 1 + depth(r, seen.concat([title]))); });
             depths[title] = d;
@@ -197,7 +206,7 @@
         }
 
         var groups = {};
-        plan._courses.forEach(function (c) {
+        courses.forEach(function (c) {
             var k = find(c.title);
             (groups[k] = groups[k] || []).push(c);
         });
@@ -208,6 +217,15 @@
                        a.title.localeCompare(b.title);
             });
         });
+    }
+
+    /* "A and B and C" reads as a stutter, and the capstone here gates on three
+       courses. Serial comma omitted to match the rest of the interface. */
+    function andList(names) {
+        var n = (names || []).filter(Boolean);
+        if (n.length <= 1) { return n[0] || ""; }
+        if (n.length === 2) { return n[0] + " and " + n[1]; }
+        return n.slice(0, -1).join(", ") + " and " + n[n.length - 1];
     }
 
     function areaRank(slot) {
@@ -226,13 +244,35 @@
        render and shared by the summary band and the blocks themselves, so the
        two can never disagree about what is in an area. */
     function areaGroups(plan) {
+        /* AREA FIRST, THEN SEQUENCES WITHIN IT.
+         *
+         * This used to file a whole prerequisite chain under the slot of its
+         * FIRST course, on the assumption that a chain never crossed a
+         * requirement area. Real plans cross constantly: in the Data Analytics
+         * associate, College Algebra (general education) gates Introduction to
+         * Statistics, which gates Inferential Statistics, which gates both
+         * electives and the capstone. Union-find put all ten in one component,
+         * so ten of the twelve courses — the electives and the capstone
+         * included — rendered under "General education", and the degree looked
+         * like it had no major requirements at all.
+         *
+         * Courses are now filed by their own slot, and sequences are found
+         * among the courses of that area only. A prerequisite that lives in
+         * another area is not lost: every course already prints its own
+         * "Unlocks after ..." line, which names it wherever it sits.
+         */
+        var courses = plan._courses.slice();
+        var bySlot = {};
+        courses.forEach(function (c) {
+            var slot = c.slot || "";
+            (bySlot[slot] = bySlot[slot] || []).push(c);
+        });
+
         var byslot = {};
-        tracks(plan).forEach(function (t) {
-            // A sequence never crossed a requirement area in either real plan;
-            // if one ever does, its first course decides where it is filed
-            // rather than the sequence being torn in half.
-            var slot = t[0].slot || "";
-            (byslot[slot] = byslot[slot] || []).push(t);
+        Object.keys(bySlot).forEach(function (slot) {
+            tracks(plan, bySlot[slot]).forEach(function (t) {
+                (byslot[slot] = byslot[slot] || []).push(t);
+            });
         });
         return Object.keys(byslot).sort(function (a, b) {
             return areaRank(a) - areaRank(b) || a.localeCompare(b);
@@ -447,7 +487,7 @@
             // A course being built ahead of the learner may still be gated.
             // Saying only "building" would imply it is theirs to start.
             return c._gates && c._gates.length
-                ? "Building now — unlocks after " + c._gates.join(" and ")
+                ? "Building now — unlocks after " + andList(c._gates)
                 : "Building now";
         }
         if (c._state === "available") {
@@ -455,7 +495,7 @@
             return c.built ? "Ready to start now" : "Built when you choose it";
         }
         if (c._gates && c._gates.length) {
-            return "Unlocks after " + c._gates.join(" and ");
+            return "Unlocks after " + andList(c._gates);
         }
         return "Locked";
     }

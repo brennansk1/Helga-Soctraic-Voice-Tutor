@@ -2516,11 +2516,102 @@ def review_grade_endpoint():
     # An item that keeps being forgotten is a teaching problem, not a
     # scheduling one: say so, so the caller can offer the Socratic repair
     # instead of showing the same card again next week.
+    # EVERY REVIEW IS LOGGED. Nothing else records that a review happened: the
+    # card row keeps only its LAST review date, so history is overwritten on the
+    # next grade and any question about "which days did I study" has no answer.
+    # activity_log is the table the day streak already reads (and which has been
+    # empty for exactly this reason), so one write serves both.
+    try:
+        storage.activity.log_activity(
+            course_uid=data.get("course_uid") or "",
+            activity_type="item_reviewed",
+            concept_uid=data.get("concept_uid") or "",
+            grade=rating,
+            details={"uid": uid, "kind": data.get("kind") or ""},
+            student_id=student_id,
+        )
+    except Exception as e:
+        # A failed log must never lose the learner their grade — the schedule is
+        # already written by this point.
+        logger.warning("could not log the review for %s: %s", uid, e)
+
     from services.common.review_scheduler import LEECH_LAPSES
     lapses = int(result.get("lapses") or 0)
     result["leech"] = lapses >= LEECH_LAPSES
     result["status"] = "ok"
     return jsonify(result)
+
+
+@app.route("/api/review/activity", methods=["GET"])
+def review_activity_endpoint():
+    """Days the learner actually did something, for the activity heatmap.
+
+    Counts every logged review and every completed concept. Days before review
+    logging existed cannot be reconstructed — the card row only ever kept its
+    most recent review date — so the response says how far back the record
+    genuinely goes rather than drawing empty squares that look like idle days.
+    """
+    from datetime import date as _date, timedelta as _td
+
+    student_id = request.args.get("student_id") or DEFAULT_STUDENT_ID
+    try:
+        days = max(30, min(400, int(request.args.get("days") or 365)))
+    except (TypeError, ValueError):
+        days = 365
+    today = _date.today()
+    start = today - _td(days=days - 1)
+
+    counts = {}
+    try:
+        for row in storage.activity.get_activities(
+                start_date=start.isoformat(), student_id=student_id) or []:
+            day = (row.get("created_at") or "")[:10]
+            if day:
+                counts[day] = counts.get(day, 0) + 1
+    except Exception as e:
+        logger.error("activity heatmap: log read failed: %s", e, exc_info=True)
+        return jsonify({"error": "could not read your activity"}), 503
+
+    # Before review logging existed the only trace of a study day is the last
+    # review date still sitting on each card. Fold those in so the map is not
+    # blank on the day the feature ships, and mark where the record starts.
+    recorded_from = None
+    try:
+        from_cards = {}
+        for r in storage.flashcards.get_items(student_id=student_id):
+            day = (r.get("last_review_date") or "")[:10]
+            if day and day >= start.isoformat():
+                from_cards[day] = from_cards.get(day, 0) + 1
+        # The LARGER of the two, never the sum and never a replacement.
+        #
+        # They describe overlapping reviews, so adding them double counts. But
+        # preferring the log wherever it has any row at all is worse: the day
+        # this feature shipped had one logged review and eighteen cards last
+        # reviewed that day, and deferring to the log turned an eighteen-review
+        # day into a single faint square. A card contributes at most one to its
+        # last-review day while the log records every repetition, so the log
+        # overtakes the estimate as history accumulates and this converges on
+        # the true count without ever overstating it.
+        for day, n in from_cards.items():
+            counts[day] = max(counts.get(day, 0), n)
+    except Exception as e:
+        logger.warning("activity heatmap: card dates unavailable: %s", e)
+    if counts:
+        recorded_from = min(counts)
+
+    series = []
+    for n in range(days):
+        d = (start + _td(days=n)).isoformat()
+        series.append({"date": d, "count": counts.get(d, 0)})
+
+    active = [d for d, n in counts.items() if n]
+    return jsonify({
+        "days": series,
+        "total": sum(counts.values()),
+        "active_days": len(active),
+        "recorded_from": recorded_from,
+        "today": today.isoformat(),
+    })
 
 
 @app.route("/api/review/forecast", methods=["GET"])

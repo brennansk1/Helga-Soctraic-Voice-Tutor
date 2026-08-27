@@ -474,6 +474,7 @@
 
         session.revealed = false;
         session.answered = null;
+        session.graded_uid = null;
         var info = kindInfo(item.kind);
 
         $('review-progress').textContent = (session.i + 1) + ' / ' + session.queue.length;
@@ -500,6 +501,17 @@
         setShown('review-grades', false);
         setShown('review-leech', false);
         $('review-feedback').textContent = '';
+
+        /* Retrigger the entry animation. Removing the class and forcing a
+           reflow before re-adding it is the only reliable way to replay a CSS
+           animation on an element that was never detached — without the
+           reflow the browser coalesces both changes and nothing moves. */
+        var card = $('review-card');
+        if (card) {
+            card.classList.remove('is-fresh');
+            void card.offsetWidth;
+            card.classList.add('is-fresh');
+        }
 
         // True/false is answered before the reveal; everything else reveals first.
         var isChoice = item.kind === 'discriminate';
@@ -544,7 +556,12 @@
         setShown('review-back', true);
         setShown('review-reveal-wrap', false);
         setShown('review-choices', false);
-        setShown('review-grades', true);
+        /* A true/false item has already been graded by the time it reveals —
+           the learner committed and the content says which answer was right.
+           Offering the four self-rating buttons underneath invites a second
+           grade on the same item, and self-rating is the thing this tier exists
+           to avoid. */
+        setShown('review-grades', item.kind !== 'discriminate');
     }
 
     /* A discrimination item is graded objectively: the learner committed to an
@@ -573,6 +590,10 @@
         if (!session.revealed) { return; }
         var item = currentItem();
         if (!item) { return; }
+        // One grade per item. A keyboard 1-4 after an objective true/false
+        // would otherwise send a second, contradictory rating.
+        if (session.graded_uid === item.uid) { return; }
+        session.graded_uid = item.uid;
         session.graded[GRADE_NAME[n]] += 1;
 
         var fb = $('review-feedback');

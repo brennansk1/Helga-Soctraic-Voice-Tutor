@@ -135,3 +135,59 @@ def test_bullets_join_hanging_continuation_lines():
     body = "- **Belief**: a thing\n  **Correction**: the fix\n- second bullet"
     got = bullets(body)
     assert len(got) == 2 and "Correction" in got[0]
+
+
+# ---- inline maths --------------------------------------------------------
+
+from services.common.review_items import demath  # noqa: E402
+
+
+def test_symbol_tex_becomes_readable_text():
+    """77 of 2,460 items carried a `$...$` span, almost all complexity
+    notation. "$O(N \\times M)$" on a card meant to be read at a glance is
+    worse than useless."""
+    assert demath(r"$O(N \times M)$ cost") == "O(N × M) cost"
+    assert demath(r"always $\leq$ the position") == "always ≤ the position"
+    assert demath(r"($1, 2, 3, \dots$)") == "(1, 2, 3, …)"
+    assert demath(r"$O(N \log N)$") == "O(N log N)"
+
+
+def test_superscripts_and_subscripts_are_exact():
+    assert demath("$O(N^2)$") == "O(N²)"
+    assert demath("$2^n$") == "2ⁿ"
+    assert demath("$C_{idx}$") == "C_idx"
+
+
+def test_text_macro_unwraps_with_its_underscores():
+    assert demath(r"$N \times \text{work\_mem}$") == "N × work_mem"
+
+
+def test_structure_it_cannot_flatten_is_left_as_maths():
+    """Flattening \\frac{a}{b} to "a b" invents a false statement, and a review
+    item that is confidently wrong is the most expensive bug this ships."""
+    for risky in (r"$\frac{a}{b}$", r"$\sqrt{n}$", r"$\sum_{i=0}^{n} x_i$"):
+        assert demath(risky) == risky, f"{risky} was flattened"
+
+
+def test_text_without_maths_is_untouched():
+    plain = "SELECT costs $5 and the WHERE clause filters rows"
+    assert demath(plain) == plain
+    assert demath("") == ""
+    assert demath(None) == ""
+
+
+def test_extracted_items_carry_no_raw_tex():
+    md = """# Cost Model
+
+## Metadata
+- **Bloom Target**: 3 (Apply)
+
+## Key Facts
+- A nested loop join costs $O(N \\times M)$ in the worst case here.
+- **Bound**: the rank is always $\\leq$ the row position in the partition.
+"""
+    items = extract(md, "con_m", "course_m")
+    assert items
+    for it in items:
+        assert "\\times" not in it.front + it.back
+        assert "\\leq" not in it.front + it.back

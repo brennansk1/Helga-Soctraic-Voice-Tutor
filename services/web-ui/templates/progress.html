@@ -29,6 +29,41 @@
         <div class="u-skeleton progress-stat-skeleton"></div>
     </section>
 
+    {# The habit, before the gaps. Consistency is the thing that actually
+       decides whether any of this works over a year, and it is the one part of
+       progress a learner can see at a glance without reading a number. #}
+    <section class="progress-section" id="progress-activity-section" hidden>
+        <h2 class="progress-section-title">
+            Your activity
+            <span class="progress-section-hint" id="activity-hint"></span>
+        </h2>
+        <div class="heatmap-wrap">
+            <div class="heatmap-months" id="heatmap-months" aria-hidden="true"></div>
+            <div class="heatmap-body">
+                <div class="heatmap-days" aria-hidden="true">
+                    <span>Mon</span><span>Wed</span><span>Fri</span>
+                </div>
+                {# One cell per day. role=img with a written summary: a grid of
+                   365 divs is noise to a screen reader, and the sentence is
+                   what a sighted reader takes from it anyway. #}
+                <div class="heatmap" id="heatmap" role="img"
+                     aria-labelledby="heatmap-summary"></div>
+            </div>
+        </div>
+        <div class="heatmap-foot">
+            <p class="heatmap-summary" id="heatmap-summary"></p>
+            <div class="heatmap-key" aria-hidden="true">
+                <span>Less</span>
+                <span class="heat is-l0"></span>
+                <span class="heat is-l1"></span>
+                <span class="heat is-l2"></span>
+                <span class="heat is-l3"></span>
+                <span class="heat is-l4"></span>
+                <span>More</span>
+            </div>
+        </div>
+    </section>
+
     <section class="progress-section" id="progress-gaps-section" hidden>
         <h2 class="progress-section-title">
             Worth your attention
@@ -62,5 +97,5 @@
 {% endblock %}
 
 {% block page_scripts %}
-<script src="{{ url_for('static', filename='js/progress.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='js/progress.js') }}?v=4"></script>
 {% endblock %}

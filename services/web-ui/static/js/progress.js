@@ -217,3 +217,165 @@
         load();
     });
 })();
+
+/* ---------------------------------------------------------------- activity map
+   Days you did something, a year at a time. The point is the pattern rather
+   than any single number: consistency is what decides whether spaced repetition
+   works over a year, and it is the one part of progress you can read at a
+   glance without parsing a figure.
+
+   Weeks are columns and weekdays are rows, which is the arrangement people
+   already know how to read from version-control profiles. Colour comes from the
+   accent ramp so it inherits the theme; the written summary underneath carries
+   the same information for anyone who cannot use the colour at all.
+*/
+(function () {
+    var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    function el(id) { return document.getElementById(id); }
+
+    function level(count, peak) {
+        if (!count) { return 0; }
+        if (peak <= 1) { return 4; }
+        /* Four steps over the observed range rather than absolute thresholds:
+           a learner doing five reviews a day and one doing fifty should both
+           see their own light and heavy days, not a uniform block. */
+        var r = count / peak;
+        if (r <= 0.25) { return 1; }
+        if (r <= 0.5) { return 2; }
+        if (r <= 0.75) { return 3; }
+        return 4;
+    }
+
+    function plural(n, one, many) {
+        return n + ' ' + (n === 1 ? one : (many || one + 's'));
+    }
+
+    function longest(days) {
+        var best = 0, run = 0;
+        days.forEach(function (d) {
+            run = d.count ? run + 1 : 0;
+            if (run > best) { best = run; }
+        });
+        return best;
+    }
+
+    function currentStreak(days) {
+        var run = 0;
+        for (var i = days.length - 1; i >= 0; i--) {
+            /* Today not yet done does not break a streak — the day is not over.
+               Any earlier gap does. */
+            if (!days[i].count) {
+                if (i === days.length - 1) { continue; }
+                break;
+            }
+            run += 1;
+        }
+        return run;
+    }
+
+    function renderHeatmap(data) {
+        var section = el('progress-activity-section');
+        var grid = el('heatmap');
+        var days = (data && data.days) || [];
+        if (!section || !grid || !days.length) { return; }
+
+        var peak = days.reduce(function (m, d) { return Math.max(m, d.count || 0); }, 0);
+
+        /* Start the grid on the Monday on or before the first day, so every
+           column is a whole week and the weekday rows line up. */
+        var first = new Date(days[0].date + 'T00:00:00');
+        var lead = (first.getDay() + 6) % 7;          // 0 = Monday
+        var cells = [];
+        for (var p = 0; p < lead; p++) { cells.push(null); }
+        days.forEach(function (d) { cells.push(d); });
+
+        grid.innerHTML = cells.map(function (d) {
+            if (!d) { return '<span class="heat is-pad" aria-hidden="true"></span>'; }
+            var n = d.count || 0;
+            var when = new Date(d.date + 'T00:00:00')
+                .toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+            return '<span class="heat is-l' + level(n, peak) + '" title="' +
+                   (n ? plural(n, 'review') : 'Nothing') + ' on ' + when + '"></span>';
+        }).join('');
+
+        renderMonths(cells);
+
+        var active = data.active_days || 0;
+        var streak = currentStreak(days);
+        var best = longest(days);
+        var summary = active
+            ? plural(active, 'active day') + ' in the last year · ' +
+              plural(data.total || 0, 'review') + ' · ' +
+              (streak ? 'currently ' + plural(streak, 'day') + ' in a row'
+                      : 'no run going right now') +
+              (best > streak ? ', best run ' + plural(best, 'day') : '')
+            : 'No activity recorded yet — review something and this fills in.';
+
+        if (data.recorded_from) {
+            var from = new Date(data.recorded_from + 'T00:00:00')
+                .toLocaleDateString(undefined, { day: 'numeric', month: 'long' });
+            /* Say where the record starts. Squares before Helga began logging
+               reviews are empty because nothing was written down, not because
+               the learner was idle, and an unqualified year of grey is a
+               reproach it has not earned. */
+            summary += '. Records begin ' + from + '.';
+        }
+        el('heatmap-summary').textContent = summary;
+        var hint = el('activity-hint');
+        if (hint) { hint.textContent = 'the last year'; }
+        section.hidden = false;
+    }
+
+    /* Each label SPANS its month's columns rather than sitting in the first
+       one. A 13px column is narrower than the word in it, so one-label-per-cell
+       ran the names into each other — the axis opened with "AugSep". Spanning
+       also lets a stub month at either end be dropped, since a label with two
+       columns under it has nowhere to sit. */
+    var MIN_LABEL_COLUMNS = 3;
+
+    function renderMonths(cells) {
+        var host = el('heatmap-months');
+        if (!host) { return; }
+
+        var runs = [], columns = Math.ceil(cells.length / 7);
+        for (var col = 0; col < columns; col++) {
+            var cell = cells[col * 7] || cells[col * 7 + 6];
+            if (!cell) { continue; }
+            var m = new Date(cell.date + 'T00:00:00').getMonth();
+            var last = runs[runs.length - 1];
+            if (last && last.month === m) { last.span += 1; }
+            else { runs.push({ month: m, start: col + 1, span: 1 }); }
+        }
+
+        host.style.gridTemplateColumns = 'repeat(' + columns + ', 13px)';
+        host.innerHTML = runs.map(function (r) {
+            var text = r.span >= MIN_LABEL_COLUMNS ? MONTHS[r.month] : '';
+            return '<span style="grid-column:' + r.start + ' / span ' + r.span +
+                   '">' + text + '</span>';
+        }).join('');
+    }
+
+    function loadHeatmap() {
+        fetch('/api/review/activity?days=365')
+            .then(function (r) {
+                if (!r.ok) { throw new Error('HTTP ' + r.status); }
+                return r.json();
+            })
+            .then(renderHeatmap)
+            .catch(function () {
+                /* The map is context, not a claim the rest of the page depends
+                   on: a failure hides it rather than pushing an error card
+                   above the gaps the learner came here to read. */
+                var s = el('progress-activity-section');
+                if (s) { s.hidden = true; }
+            });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', loadHeatmap);
+    } else {
+        loadHeatmap();
+    }
+})();
