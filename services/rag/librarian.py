@@ -2301,6 +2301,75 @@ def _daily_cap(student_id):
     return max(10, min(200, goal * 12))
 
 
+def _course_titles():
+    """uid -> title, so the browser never has to render a course_uid at a
+    learner. Cheap enough to do per request and always current."""
+    out = {}
+    try:
+        for c in storage.courses.list_courses() or []:
+            if c.get("uid"):
+                out[c["uid"]] = c.get("title") or c["uid"]
+    except Exception as e:
+        logger.warning("course titles unavailable: %s", e)
+    return out
+
+
+def _maturity(row):
+    """Delegates to the scheduler, where the bands and their thresholds live
+    alongside the retirement rule that shares them."""
+    from services.common.review_scheduler import maturity
+    return maturity(row.get("repetitions"), row.get("interval_days"))
+
+
+@app.route("/api/review/stats", methods=["GET"])
+def review_bank_stats_endpoint():
+    """The long-horizon picture: what is known, per course.
+
+    The daily queue answers "what now". This answers "where am I", which is the
+    question that keeps someone going through a twelve-course programme when no
+    single day feels like progress.
+    """
+    student_id = request.args.get("student_id") or DEFAULT_STUDENT_ID
+    try:
+        rows = storage.flashcards.get_items(student_id=student_id)
+    except Exception as e:
+        logger.error("review stats failed: %s", e, exc_info=True)
+        return jsonify({"error": "could not read the item bank"}), 503
+
+    titles = _course_titles()
+    from services.common.review_scheduler import MATURITY_BANDS
+    bands = MATURITY_BANDS
+    overall = {b: 0 for b in bands}
+    per_course = {}
+    kinds = {}
+
+    for r in rows:
+        band = _maturity(r)
+        overall[band] += 1
+        kinds[r.get("kind") or "recall"] = kinds.get(r.get("kind") or "recall", 0) + 1
+        cu = r.get("course_uid") or ""
+        entry = per_course.setdefault(cu, {
+            "course_uid": cu, "title": titles.get(cu, cu or "Unfiled"),
+            "total": 0, **{b: 0 for b in bands}})
+        entry["total"] += 1
+        entry[band] += 1
+
+    total = sum(overall.values())
+    for entry in per_course.values():
+        settled = entry["mature"] + entry["retired"]
+        entry["known_pct"] = round(100 * settled / entry["total"]) if entry["total"] else 0
+
+    settled_all = overall["mature"] + overall["retired"]
+    return jsonify({
+        "total": total,
+        "bands": overall,
+        "known_pct": round(100 * settled_all / total) if total else 0,
+        "kinds": kinds,
+        "courses": sorted(per_course.values(),
+                          key=lambda c: (-c["total"], c["title"])),
+    })
+
+
 def _as_due(row, today_iso):
     from services.common.review_scheduler import Due
     return Due(
@@ -2326,7 +2395,7 @@ def review_queue_endpoint():
     the one thing this response must never imply.
     """
     from datetime import date as _date
-    from services.common.review_scheduler import build_queue
+    from services.common.review_scheduler import build_queue, NEW_ITEMS_PER_DAY
 
     student_id = request.args.get("student_id") or DEFAULT_STUDENT_ID
     course_uid = request.args.get("course_uid") or None
@@ -2342,6 +2411,17 @@ def review_queue_endpoint():
     by_uid = {r["uid"]: r for r in rows}
     try:
         cap = _daily_cap(student_id)
+        # The new-item allowance is a budget for the DAY, not for the request.
+        # Without spending it down, finishing a session immediately produced
+        # another twelve new items and the day could never be completed — a
+        # treadmill, and the surest way to stop someone reviewing at all.
+        # An item introduced today is one seen exactly once, today.
+        today_str = today_iso
+        introduced = sum(
+            1 for r in rows
+            if int(r.get("repetitions") or 0) == 1
+            and (r.get("last_review_date") or "")[:10] == today_str)
+        remaining_new = max(0, NEW_ITEMS_PER_DAY - introduced)
         # The mix of a new session follows the Bloom level of the concepts
         # actually on offer, so a course of analysis concepts does not hand out
         # a session of pure recall.
@@ -2351,15 +2431,21 @@ def review_queue_endpoint():
             if cu:
                 bloom_of[cu] = max(bloom_of.get(cu, 0), int(r.get("bloom") or 2))
         plan = build_queue([_as_due(r, today_iso) for r in rows],
-                           daily_cap=cap, bloom_of=bloom_of)
+                           daily_cap=cap, bloom_of=bloom_of,
+                           new_per_day=remaining_new)
+        plan["counts"]["new_today"] = introduced
+        plan["counts"]["new_remaining"] = remaining_new
     except Exception as e:
         logger.error("review queue: scheduling failed: %s", e, exc_info=True)
         return jsonify({"error": "could not build the queue"}), 500
+
+    titles = _course_titles()
 
     def present(due):
         row = by_uid.get(due.uid, {})
         payload = row.get("payload") or {}
         return {
+            "course_title": titles.get(due.course_uid, ""),
             "uid": due.uid,
             "kind": due.kind,
             "bloom": row.get("bloom") or 2,
@@ -2379,6 +2465,8 @@ def review_queue_endpoint():
         "capped": plan["capped"],
         "new_paused_for_backlog": plan["new_paused_for_backlog"],
         "daily_cap": cap,
+        "new_today": introduced,
+        "new_per_day": NEW_ITEMS_PER_DAY,
         "leeches": [present(d) for d in plan["leeches"]],
     })
 
@@ -2439,7 +2527,7 @@ def review_grade_endpoint():
 def review_forecast_endpoint():
     """Due counts per day ahead — what load balancing is flattening."""
     from datetime import date as _date
-    from services.common.review_scheduler import forecast
+    from services.common.review_scheduler import forecast, NEW_ITEMS_PER_DAY
 
     student_id = request.args.get("student_id") or DEFAULT_STUDENT_ID
     try:
@@ -2452,8 +2540,15 @@ def review_forecast_endpoint():
     except Exception as e:
         logger.error("forecast failed: %s", e, exc_info=True)
         return jsonify({"error": "could not read the item bank"}), 503
-    return jsonify({"forecast": forecast([_as_due(r, today_iso) for r in rows],
-                                         days=days)})
+    dues = [_as_due(r, today_iso) for r in rows]
+    return jsonify({
+        "forecast": forecast(dues, days=days),
+        # Reported apart from the curve: new material has no due date and is
+        # introduced at a rate the queue controls, so folding it into "due"
+        # would misdescribe both numbers.
+        "not_started": sum(1 for d in dues if d.is_new),
+        "new_per_day": NEW_ITEMS_PER_DAY,
+    })
 
 
 @app.route("/api/due_concepts", methods=["GET"])

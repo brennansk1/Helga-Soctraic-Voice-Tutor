@@ -94,6 +94,12 @@
         if (loading) loading.hidden = true;
         var empty = $(tab + '-empty');
         if (empty) empty.hidden = true;
+        /* Hide whatever the last successful load rendered. Numbers from an
+           earlier request, left on screen beside an error, are read as current
+           — and on this page they are counts of what you owe today. An error
+           the learner can see beats a figure they cannot date. */
+        var stale = $(tab === 'upcoming' ? 'horizon' : 'due-list');
+        if (stale) { stale.hidden = true; }
         var err = $(tab + '-error');
         if (err) err.hidden = false;
         var d = $(tab + '-error-detail');
@@ -110,17 +116,159 @@
         return r.json();
     }
 
+    /* Which courses today's session draws from. Empty means all of them, which
+       is the default AND the better one: interleaving across courses is a
+       desirable difficulty, not a compromise. Remembered per browser so the
+       choice does not have to be made daily. */
+    var scope = (function () {
+        try { return localStorage.getItem('helga-review-scope') || ''; }
+        catch (e) { return ''; }
+    })();
+
+    function setScope(uid) {
+        scope = uid || '';
+        try { localStorage.setItem('helga-review-scope', scope); }
+        catch (e) { /* private mode: the choice just will not persist */ }
+        loadDue();
+    }
+
     function loadDue() {
         var err = $('due-error');
         if (err) err.hidden = true;
-        fetch('/api/review/queue')
+        var url = '/api/review/queue' +
+                  (scope ? '?course_uid=' + encodeURIComponent(scope) : '');
+        fetch(url)
             .then(okJson)
             .then(renderDue)
             .catch(function (e) { showLoadError('due', e.message); });
     }
 
+    /* Ninety-seven of these is a wall, not a list, and a wall gets scrolled
+       past. Show the worst few — the ones forgotten most — and say how many
+       more there are rather than rendering all of them. */
+    var LEECHES_SHOWN = 5;
+
+    function renderLeeches(leeches) {
+        if (!leeches.length) { return ''; }
+        var worst = leeches.slice()
+            .sort(function (a, b) { return (b.lapses || 0) - (a.lapses || 0); });
+        var shown = worst.slice(0, LEECHES_SHOWN);
+        var rest = worst.length - shown.length;
+
+        return '<h3 class="due-subhead">Worth going through again</h3>' +
+               '<p class="due-note is-tight">These have been forgotten enough ' +
+                 'times that another card is unlikely to be what fixes them.</p>' +
+               shown.map(function (l) {
+                   return '<article class="practice-card">' +
+                            '<div class="practice-card-body">' +
+                              '<h3 class="practice-card-title">' + fmtInline(l.front) + '</h3>' +
+                              '<p class="practice-card-meta">' +
+                                 esc(l.course_title || '') +
+                                 (l.course_title ? ' · ' : '') +
+                                 'forgotten ' + esc(String(l.lapses)) + ' times</p>' +
+                            '</div>' +
+                            '<a class="btn btn-primary practice-card-action" href="/learn?course_uid=' +
+                               encodeURIComponent(l.course_uid || '') +
+                               '&concept_uid=' + encodeURIComponent(l.concept_uid || '') +
+                               '">Revisit</a>' +
+                          '</article>';
+               }).join('') +
+               (rest ? '<p class="due-note is-tight">' + rest.toLocaleString() +
+                       ' more like these are waiting. They stay out of the daily ' +
+                       'queue until you go through the concept again.</p>' : '');
+    }
+
+    /* Inline formatting only — for a card title, where a <ul> would be wrong. */
+    function fmtInline(text) {
+        return esc(text || '')
+            .replace(/`([^`]+)`/g, '<code>$1</code>')
+            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    }
+
+    /* An empty day next to thousands of unstarted items reads as a broken
+       queue unless it says when work comes back and why it is not now. */
+    function explainWhenWorkReturns(data) {
+        var el = $('due-empty-next');
+        if (!el) { return; }
+        var counts = (data && data.counts) || {};
+        var bits = [];
+
+        if (data && data.new_today) {
+            bits.push('You have already started ' + data.new_today +
+                      ' new ' + (data.new_today === 1 ? 'item' : 'items') +
+                      " today — that is the day's allowance, and it resets tomorrow");
+        } else if (counts.new_available) {
+            bits.push(counts.new_available.toLocaleString() +
+                      ' items are waiting to be started; Helga introduces them a ' +
+                      'few a day rather than all at once');
+        }
+        if (counts.upcoming) {
+            bits.push(counts.upcoming.toLocaleString() +
+                      ' reviews are already scheduled ahead');
+        }
+        if (counts.leeches) {
+            bits.push(counts.leeches.toLocaleString() +
+                      ' need the concept again rather than another card');
+        }
+        el.textContent = bits.join('. ') + (bits.length ? '.' : '');
+        el.hidden = !bits.length;
+    }
+
     function queueLength(data) {
         return ((data && data.queue) || []).length;
+    }
+
+    /* Populated once from the item bank, not from today's queue: a course with
+       nothing due today is still a course you can choose to drill. */
+    /* "This week" is the same question on whichever tab you are looking at, so
+       the Due tab fills it too rather than leaving a dash until you happen to
+       open the horizon. */
+    var weekLoaded = false;
+    function loadWeekAhead() {
+        if (weekLoaded) { return; }
+        weekLoaded = true;
+        fetch('/api/review/forecast?days=7').then(okJson).then(function (d) {
+            var week = ((d && d.forecast) || [])
+                .reduce(function (a, p) { return a + (p.count || 0); }, 0);
+            setCount('stat-week', week);
+        }).catch(function () { /* the headline stat is not worth an error card */ });
+    }
+
+    var scopeLoaded = false;
+    var knownCourses = [];      // cached so the note can re-render on every change
+    function loadScopeOptions() {
+        if (scopeLoaded) { renderScopeNote(); return; }
+        scopeLoaded = true;
+        fetch('/api/review/stats').then(okJson).then(function (stats) {
+            var courses = (stats && stats.courses) || [];
+            knownCourses = courses;
+            var wrap = $('review-scope-wrap');
+            var sel = $('review-scope');
+            if (!sel || courses.length < 2) { return; }   // one course: no choice to make
+            courses.forEach(function (c) {
+                var o = document.createElement('option');
+                o.value = c.course_uid;
+                o.textContent = c.title + ' (' + c.total.toLocaleString() + ')';
+                sel.appendChild(o);
+            });
+            sel.value = scope;
+            if (wrap) { wrap.hidden = false; }
+            sel.addEventListener('change', function () { setScope(this.value); });
+            renderScopeNote();
+        }).catch(function () { /* the selector is a convenience, not the feature */ });
+    }
+
+    /* Re-rendered on every load, not once: the note said "Drilling SQL only"
+       for the rest of the session after switching back to all courses. */
+    function renderScopeNote() {
+        var note = $('review-scope-note');
+        if (!note) { return; }
+        if (!scope) { note.hidden = true; note.textContent = ''; return; }
+        var found = knownCourses.filter(function (c) { return c.course_uid === scope; })[0];
+        note.textContent = 'Drilling ' + (found ? found.title : 'one course') +
+            ' only. Mixing courses is better for retention — Helga interleaves ' +
+            'them deliberately — so switch back when you are done here.';
+        note.hidden = false;
     }
 
     var KIND_WORD = {
@@ -139,6 +287,8 @@
 
         var queue = (data && data.queue) || [];
         var counts = (data && data.counts) || {};
+        loadScopeOptions();
+        loadWeekAhead();
         /* "Due now" is what there is to DO today, not how big the bank is.
            due_total counts every unseen item too, so it read 2,495 on a day
            whose session was fourteen items — a number that looks like a debt
@@ -155,6 +305,8 @@
             if (list) { list.hidden = true; }
             if (empty) { empty.hidden = false; }
             setShown('review-start-wrap', false);
+            renderScopeNote();          // a scoped empty day must say it is scoped
+            explainWhenWorkReturns(data);
             return;
         }
         if (empty) { empty.hidden = true; }
@@ -200,23 +352,7 @@
                 (notes.length
                     ? '<p class="due-note">' + esc(notes.join(' · ')) + '.</p>'
                     : '') +
-                ((data.leeches || []).length
-                    ? '<h3 class="due-subhead">Worth going through again</h3>' +
-                      (data.leeches || []).map(function (l) {
-                          return '<article class="practice-card">' +
-                                   '<div class="practice-card-body">' +
-                                     '<h3 class="practice-card-title">' +
-                                        esc(l.front) + '</h3>' +
-                                     '<p class="practice-card-meta">forgotten ' +
-                                        esc(String(l.lapses)) + ' times</p>' +
-                                   '</div>' +
-                                   '<a class="btn btn-primary practice-card-action" href="/learn?course_uid=' +
-                                      encodeURIComponent(l.course_uid || '') +
-                                      '&concept_uid=' + encodeURIComponent(l.concept_uid || '') +
-                                      '">Revisit</a>' +
-                                 '</article>';
-                      }).join('')
-                    : '');
+                renderLeeches(data.leeches || []);
             list.hidden = false;
         }
     }
@@ -270,6 +406,11 @@
                 session.i = 0;
                 session.graded = { again: 0, hard: 0, good: 0, easy: 0 };
                 session.counts = d.counts || null;
+                session.multiCourse = (function () {
+                    var seen = {};
+                    (d.queue || []).forEach(function (i) { seen[i.course_uid] = 1; });
+                    return Object.keys(seen).length > 1;
+                })();
                 session.cap = d.daily_cap || 0;
                 session.capped = !!d.capped;
                 if (!session.queue.length) {
@@ -342,7 +483,12 @@
         var kindEl = $('review-kind');
         kindEl.textContent = info.label;
         kindEl.className = 'review-kind is-' + item.kind;
-        $('review-course').textContent = item.is_new ? 'new' : '';
+        /* Only worth saying when more than one course is in play — on a
+           single-course session it is the same word on every card. */
+        var courseEl = $('review-course');
+        courseEl.textContent = session.multiCourse ? (item.course_title || '') : '';
+        courseEl.hidden = !courseEl.textContent;
+        setShown('review-new', !!item.is_new);
 
         $('review-front-label').textContent = info.ask;
         $('review-front').innerHTML = fmt(item.front);
@@ -738,53 +884,156 @@
         result.appendChild(again);
     }
 
-    // --- upcoming -----------------------------------------------------------
+    // --- upcoming: the long horizon ------------------------------------------
+
+    var BANDS = [
+        ['new',      'Not started', 'Never reviewed.'],
+        ['learning', 'Learning',    'Coming back within a week.'],
+        ['young',    'Settling',    'Holding for a week or more.'],
+        ['mature',   'Known',       'Holding for three weeks or more.'],
+        ['retired',  'Long-term',   'Holding for a year; barely shown now.']
+    ];
 
     function loadUpcoming() {
         var err = $('upcoming-error');
         if (err) err.hidden = true;
-        fetch('/api/schedule')
-            .then(okJson)
-            .then(function (data) { renderUpcoming((data && data.reviews) || []); })
+        Promise.all([
+            fetch('/api/review/stats').then(okJson),
+            fetch('/api/review/forecast?days=30').then(okJson)
+        ])
+            .then(function (r) { renderHorizon(r[0], r[1]); })
             .catch(function (e) { showLoadError('upcoming', e.message); });
     }
 
-    function renderUpcoming(reviews) {
-        var host = $('upcoming-list');
+    function renderHorizon(stats, fc) {
+        var host = $('horizon');
         var empty = $('upcoming-empty');
-        var pending = reviews.filter(function (r) {
-            return (r.status || 'pending') !== 'completed';
-        });
+        var total = (stats && stats.total) || 0;
 
-        setCount('stat-week', withinDays(pending, 7).length);
-
-        if (!pending.length) {
-            if (empty) empty.hidden = false;
-            if (host) host.innerHTML = '';
+        if (!total) {
+            if (host) { host.hidden = true; }
+            if (empty) { empty.hidden = false; }
             return;
         }
-        if (!host) return;
+        if (empty) { empty.hidden = true; }
+        if (host) { host.hidden = false; }
 
-        // Group by date — a flat list of 40 rows tells the learner nothing
-        // about shape; "Thursday: 6" does.
-        var byDate = {};
-        pending.forEach(function (r) {
-            var d = r.scheduled_date || 'unscheduled';
-            (byDate[d] = byDate[d] || []).push(r);
-        });
+        renderMaturity(stats);
+        renderForecast(fc || {});
+        renderCourses(stats);
+    }
 
-        host.innerHTML = Object.keys(byDate).sort().map(function (d) {
-            var group = byDate[d];
-            return '<section class="practice-day">' +
-                     '<h3 class="practice-day-title">' + esc(formatDay(d)) +
-                       '<span class="practice-day-count">' + group.length + '</span>' +
-                     '</h3>' +
-                     '<ul class="practice-day-items">' +
-                       group.map(function (r) {
-                           return '<li>' + esc(r.unit_title || r.unit_uid || 'Concept') + '</li>';
-                       }).join('') +
-                     '</ul>' +
-                   '</section>';
+    /* Over a long horizon the honest headline is not a due count but a maturity
+       distribution: how much of what you have met is actually holding. */
+    function renderMaturity(stats) {
+        var bands = stats.bands || {};
+        var total = stats.total || 1;
+        var seen = total - (bands['new'] || 0);
+
+        $('known-sub').textContent = seen
+            ? seen.toLocaleString() + ' of ' + total.toLocaleString() +
+              ' items started · ' + (stats.known_pct || 0) +
+              '% of everything is holding for three weeks or more.'
+            : total.toLocaleString() + ' items ready, none started yet.';
+
+        var bar = $('maturity-bar');
+        bar.innerHTML = BANDS.map(function (b) {
+            var n = bands[b[0]] || 0;
+            if (!n) { return ''; }
+            return '<span class="maturity-seg is-' + b[0] + '" style="flex:' + n +
+                   '" title="' + esc(b[1] + ': ' + n) + '"></span>';
+        }).join('');
+
+        $('maturity-key').innerHTML = BANDS.map(function (b) {
+            var n = bands[b[0]] || 0;
+            return '<li class="maturity-key-item' + (n ? '' : ' is-zero') + '">' +
+                     '<span class="maturity-dot is-' + b[0] + '" aria-hidden="true"></span>' +
+                     '<span class="maturity-name">' + esc(b[1]) + '</span>' +
+                     '<span class="maturity-count">' + n.toLocaleString() + '</span>' +
+                     '<span class="maturity-why">' + esc(b[2]) + '</span>' +
+                   '</li>';
+        }).join('');
+    }
+
+    /* The curve exists to show that it is FLAT. Load balancing is invisible
+       when it works, and a learner with no view of the shape has no reason to
+       believe next Tuesday is survivable. */
+    function renderForecast(fc) {
+        var points = (fc && fc.forecast) || [];
+        var host = $('forecast');
+        var axis = $('forecast-axis');
+        if (!host) { return; }
+        if (!points.length) { host.innerHTML = ''; return; }
+
+        var counts = points.map(function (p) { return p.count || 0; });
+        var peak = Math.max.apply(null, counts.concat([1]));
+        var week = counts.slice(0, 8).reduce(function (a, b) { return a + b; }, 0);
+        setCount('stat-week', week);
+
+        var busiest = points[counts.indexOf(peak)];
+        /* The curve is scheduled reviews. Unstarted material is a separate,
+           deliberately paced stream — folding it in would put the whole bank on
+           the first bar and misdescribe both numbers. */
+        var pipeline = fc.not_started
+            ? ' ' + fc.not_started.toLocaleString() + ' more have not started; ' +
+              'Helga introduces about ' + (fc.new_per_day || 12) +
+              ' a day and pauses when you fall behind.'
+            : '';
+        var anchor = points[0].date;
+        $('forecast-sub').textContent = (peak
+            ? week.toLocaleString() + ' scheduled in the next week · busiest day is ' +
+              forecastDay(anchor, busiest.date) + ' with ' + peak + '.'
+            : 'Nothing scheduled yet in the next 30 days.') + pipeline;
+
+        host.innerHTML = points.map(function (p, i) {
+            var n = p.count || 0;
+            var pct = Math.round((n / peak) * 100);
+            return '<span class="forecast-col' + (i === 0 ? ' is-today' : '') + '"' +
+                     ' title="' + esc(forecastDay(points[0].date, p.date) + ': ' + n) + '">' +
+                     '<span class="forecast-fill" style="height:' +
+                        Math.max(n ? 4 : 0, pct) + '%"></span>' +
+                   '</span>';
+        }).join('');
+
+        if (axis) {
+            axis.innerHTML = '<span>Today</span><span>+15 days</span><span>+30</span>';
+        }
+    }
+
+    /* Multiple courses is the normal case, not an edge case: the queue mixes
+       them on purpose, so this is where a learner sees each one's own shape. */
+    function renderCourses(stats) {
+        var host = $('course-rows');
+        if (!host) { return; }
+        var courses = stats.courses || [];
+        if (!courses.length) { host.innerHTML = ''; return; }
+
+        host.innerHTML = courses.map(function (c) {
+            var started = c.total - (c['new'] || 0);
+            return '<article class="course-row">' +
+                     '<div class="course-row-head">' +
+                       '<h3 class="course-row-title">' + esc(c.title) + '</h3>' +
+                       '<span class="course-row-count">' +
+                          c.total.toLocaleString() + ' items</span>' +
+                     '</div>' +
+                     '<div class="maturity-bar is-slim">' +
+                        BANDS.map(function (b) {
+                            var n = c[b[0]] || 0;
+                            return n ? '<span class="maturity-seg is-' + b[0] +
+                                       '" style="flex:' + n + '"></span>' : '';
+                        }).join('') +
+                     '</div>' +
+                     '<p class="course-row-meta">' +
+                        (started
+                          ? started.toLocaleString() + ' started · ' +
+                            c.known_pct + '% holding'
+                          : 'not started yet') +
+                     '</p>' +
+                     '<button type="button" class="btn btn-secondary course-row-action"' +
+                       ' data-review-course="' + esc(c.course_uid) + '">' +
+                       'Review just this' +
+                     '</button>' +
+                   '</article>';
         }).join('');
     }
 
@@ -795,6 +1044,25 @@
             if (!r.scheduled_date) return false;
             return new Date(r.scheduled_date) <= limit;
         });
+    }
+
+    /* The forecast is a run of consecutive days starting at the SERVER's today,
+       and the server counts days in UTC while the browser counts them locally.
+       For several hours each evening those are different dates, and labelling
+       each bar against the browser's clock printed "Tomorrow" over the bar the
+       axis called "Today". Anchoring to the first point removes the question:
+       whatever day zero is for the server, it is today for this chart. */
+    function forecastDay(anchorIso, iso) {
+        var a = new Date(anchorIso + 'T00:00:00');
+        var d = new Date(iso + 'T00:00:00');
+        if (isNaN(a) || isNaN(d)) { return formatDay(iso); }
+        var diff = Math.round((d - a) / 86400000);
+        if (diff === 0) { return 'Today'; }
+        if (diff === 1) { return 'Tomorrow'; }
+        if (diff < 7) {
+            return d.toLocaleDateString(undefined, { weekday: 'long' });
+        }
+        return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     }
 
     function formatDay(iso) {
@@ -827,7 +1095,14 @@
             var g = e.target.closest('.grade-btn');
             if (g) { grade(parseInt(g.dataset.grade, 10)); return; }
             var c = e.target.closest('.choice-btn');
-            if (c) { answerChoice(c.dataset.choice === 'true'); }
+            if (c) { answerChoice(c.dataset.choice === 'true'); return; }
+            var only = e.target.closest('[data-review-course]');
+            if (only) {
+                setScope(only.getAttribute('data-review-course'));
+                var sel = $('review-scope');
+                if (sel) { sel.value = scope; }
+                show('due', true);
+            }
         });
     }
 

@@ -5,7 +5,8 @@ import pytest
 
 from services.common.review_scheduler import (
     Due, LEECH_LAPSES, balance_due_date, build_queue, forecast, fuzz_window,
-    interleave, is_leech, is_retired, overdue_ratio, priority, select_new, target_mix,
+    interleave, is_leech, is_retired, maturity, overdue_ratio, priority, select_new,
+    target_mix, MATURITY_BANDS, RETIRED_DAYS,
 )
 
 TODAY = date(2026, 8, 26)
@@ -262,3 +263,103 @@ def test_a_rare_kind_still_gets_a_seat():
     fresh = _fresh("recall", 100) + _fresh("socratic", 5)
     picked = select_new(fresh, 12, {"con_x": 4})
     assert any(i.kind == "socratic" for i in picked)
+
+
+def test_forecast_excludes_never_reviewed_items():
+    """An item with no due date is not due — it is unstarted. Counting the
+    whole bank as due today put 2,485 items on the first bar of a chart whose
+    only job is to show that the days ahead are survivable."""
+    fresh = [Due(f"n{n}", "c", "k", "recall", TODAY.isoformat(), 0, None, 0, 0)
+             for n in range(500)]
+    scheduled = [mk("s", days_late=0)]
+    f = forecast(fresh + scheduled, days=10, today=TODAY)
+    assert sum(p["count"] for p in f) == 1, "unstarted items were counted as due"
+
+
+# ---- maturity bands ------------------------------------------------------
+
+def test_maturity_bands_follow_the_interval():
+    assert maturity(0, 0) == 'new'
+    assert maturity(0, 500) == 'new', "never reviewed is never 'known'"
+    assert maturity(1, 1) == 'learning'
+    assert maturity(3, 6.9) == 'learning'
+    assert maturity(3, 7) == 'young'
+    assert maturity(5, 20.9) == 'young'
+    assert maturity(5, 21) == 'mature'
+    assert maturity(9, 364) == 'mature'
+    assert maturity(9, 365) == 'retired'
+
+
+def test_maturity_never_raises_on_junk():
+    for reps, ivl in ((None, None), ('x', 'y'), (-1, -5), (2, None)):
+        assert maturity(reps, ivl) in MATURITY_BANDS
+
+
+def test_retirement_and_maturity_agree():
+    """Both read the same threshold; if they drift, an item can be 'retired' in
+    one view and still shown in the other."""
+    at = Due('u', 'c', 'k', 'recall', TODAY.isoformat(), RETIRED_DAYS, 9.0, 0, 5)
+    assert is_retired(at) and maturity(5, RETIRED_DAYS) == 'retired'
+
+
+# ---- scale ---------------------------------------------------------------
+
+def test_a_full_bank_across_many_courses_still_yields_one_finishable_day():
+    """The shape this has to survive: thousands of items, eight courses, a
+    backlog, leeches and retired material all at once."""
+    import random
+    rng = random.Random(7)
+    items = []
+    for i in range(2500):
+        course = 'course_%d' % (i % 8)
+        roll = rng.random()
+        if roll < 0.5:
+            items.append(Due(f'i{i}', f'con_{i%400}', course, 'recall',
+                             TODAY.isoformat(), 0, None, 0, 0))
+        elif roll < 0.62:
+            items.append(mk(f'i{i}', days_late=rng.randint(1, 9), course=course,
+                            concept=f'con_{i%400}', interval=rng.randint(3, 30)))
+        elif roll < 0.66:
+            items.append(mk(f'i{i}', lapses=6, course=course, concept=f'con_{i%400}'))
+        elif roll < 0.9:
+            items.append(Due(f'i{i}', f'con_{i%400}', course, 'apply',
+                             (TODAY + timedelta(days=rng.randint(1, 60))).isoformat(),
+                             30, 40.0, 0, 4))
+        else:
+            items.append(mk(f'i{i}', interval=400, course=course,
+                            concept=f'con_{i%400}', days_late=1))
+
+    out = build_queue(items, today=TODAY, daily_cap=60)
+    q = out['queue']
+    assert len(q) <= 60, 'the cap did not hold at scale'
+    assert out['counts']['held_back'] > 0 and out['capped']
+    assert not any(is_leech(i) for i in q), 'a leech reached the daily queue'
+    assert not any(is_retired(i) and i.repetitions for i in q), 'retired work resurfaced'
+    assert len({i.course_uid for i in q}) >= 4, 'one course monopolised the day'
+    assert out['counts']['leeches'] > 0, 'leeches were dropped instead of surfaced'
+
+
+def test_forecast_over_a_year_stays_bounded_and_ordered():
+    items = [Due(f'i{n}', 'c', 'k', 'recall',
+                 (TODAY + timedelta(days=n % 120)).isoformat(), 30, 40.0, 0, 3)
+             for n in range(600)]
+    f = forecast(items, days=120, today=TODAY)
+    assert len(f) == 121
+    assert [p['date'] for p in f] == sorted(p['date'] for p in f)
+    assert sum(p['count'] for p in f) == 600
+
+
+def test_a_spent_daily_allowance_introduces_nothing_more():
+    """The new-item budget belongs to the DAY, not the request. Rebuilding the
+    queue after finishing a session handed out another full batch, so the day
+    could never be completed — a treadmill, and the surest way to stop someone
+    reviewing at all. The caller spends the budget down and passes what is left."""
+    fresh = [Due(f'n{n}', f'c{n}', 'course_a', 'recall', TODAY.isoformat(),
+                 0, None, 0, 0) for n in range(50)]
+    spent = build_queue(fresh, today=TODAY, daily_cap=60, new_per_day=0)
+    assert spent['queue'] == [], 'new items kept coming after the day was done'
+    assert spent['counts']['new_available'] == 50, \
+        'the waiting items should still be counted, just not served'
+
+    partial = build_queue(fresh, today=TODAY, daily_cap=60, new_per_day=4)
+    assert len(partial['queue']) == 4

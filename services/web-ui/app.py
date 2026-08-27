@@ -2761,6 +2761,20 @@ def api_review_grade():
         return jsonify({'error': 'Could not record that grade'}), 502
 
 
+@app.route('/api/review/stats', methods=['GET'])
+@student_session_required
+def api_review_stats():
+    """Maturity and per-course totals — the "where am I" view."""
+    try:
+        resp = requests.get(f'{SERVICES["rag"]}/api/review/stats',
+                            params={'student_id': current_student_id()},
+                            timeout=20)
+        return jsonify(resp.json()), resp.status_code
+    except requests.RequestException as e:
+        logger.error(f"Review stats proxy failed: {e}")
+        return jsonify({'error': 'Could not reach the review service'}), 502
+
+
 @app.route('/api/review/forecast', methods=['GET'])
 @student_session_required
 def api_review_forecast():

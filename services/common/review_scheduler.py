@@ -131,6 +131,34 @@ def priority(item: Due, today: date) -> float:
     return score
 
 
+# How settled a memory is, in words a learner can act on. Over a long horizon
+# this is the number that matters more than any due count: "how much do I now
+# know" is a distribution, not a total. The thresholds are the conventional
+# spaced-repetition ones — nothing under three weeks has survived a real gap.
+MATURITY_BANDS = ("new", "learning", "young", "mature", "retired")
+YOUNG_DAYS = 7
+MATURE_DAYS = 21
+
+
+def maturity(repetitions: int, interval_days: float) -> str:
+    """Which band an item sits in. Never raises: it is called per row while
+    rendering a summary, and one malformed row must not lose the whole view."""
+    try:
+        reps = int(repetitions or 0)
+        interval = float(interval_days or 0)
+    except (TypeError, ValueError):
+        return "new"
+    if reps <= 0:
+        return "new"
+    if interval >= RETIRED_DAYS:
+        return "retired"
+    if interval >= MATURE_DAYS:
+        return "mature"
+    if interval >= YOUNG_DAYS:
+        return "young"
+    return "learning"
+
+
 def is_leech(item: Due) -> bool:
     return item.lapses >= LEECH_LAPSES
 
@@ -298,11 +326,20 @@ def build_queue(items: Iterable[Due], *, today: Optional[date] = None,
 
 def forecast(items: Iterable[Due], days: int = 30,
              today: Optional[date] = None) -> List[Dict]:
-    """Due counts per day ahead — what the load balancer is flattening."""
+    """Scheduled reviews per day ahead — what the load balancer is flattening.
+
+    SCHEDULED ones only. An item never reviewed has no due date, and counting
+    it as due today put the entire unstarted bank on the first bar: 2,485 items
+    reported as "due tomorrow" on an account whose real session was fourteen.
+    New material is not a debt with a date on it — it enters at a controlled
+    rate under the queue's own policy — so it belongs in a separate count, not
+    smeared across a curve that is supposed to show whether next week is
+    survivable.
+    """
     today = today or date.today()
     counts: Dict[str, int] = {}
     for it in items:
-        if is_leech(it):
+        if is_leech(it) or it.is_new:
             continue
         d = max(_parse(it.due_date, today), today)
         if (d - today).days <= days:

@@ -69,7 +69,17 @@
           <button class="btn-alpine btn-alpine-primary" id="review-start"
                   type="button">Start review</button>
           <span class="review-start-hint" id="review-start-hint"></span>
+          {# Mixing courses is the default because interleaving is what makes
+             the material stick. Narrowing to one is available, and says what it
+             costs, rather than being silently the better-looking option. #}
+          <label class="review-scope" id="review-scope-wrap" hidden>
+            <span class="review-scope-label">Courses</span>
+            <select id="review-scope" class="review-scope-select">
+              <option value="">All courses (recommended)</option>
+            </select>
+          </label>
         </div>
+        <p class="review-scope-note" id="review-scope-note" hidden></p>
 
         <section id="review-session" class="review-session" hidden
                  aria-label="Review session">
@@ -87,7 +97,11 @@
                answers every prompt the cheapest way. #}
             <div class="review-meta">
               <span class="review-kind" id="review-kind"></span>
+              {# Which course this came from. A queue that interleaves four
+                 courses and never says which one it is asking about makes the
+                 learner spend the first second of every card orienting. #}
               <span class="review-course" id="review-course"></span>
+              <span class="review-new" id="review-new" hidden>new</span>
             </div>
             <p class="review-side-label" id="review-front-label">Question</p>
             <div class="review-front" id="review-front"></div>
@@ -169,6 +183,9 @@
             <h2>Nothing due right now</h2>
             <p>That is the system working, not a gap. Reviews surface on the day
                they are most likely to stick.</p>
+            {# With thousands of items waiting, "nothing due" on its own can read
+               as a broken queue. Say when work comes back. #}
+            <p class="practice-empty-next" id="due-empty-next" hidden></p>
             <a class="btn btn-secondary" href="/practice?tab=quiz">Quiz me anyway</a>
         </div>
     </section>
@@ -190,7 +207,37 @@
 
     <section class="practice-panel" role="tabpanel" id="panel-upcoming"
              aria-labelledby="tab-upcoming" tabindex="0" hidden>
-        <div id="upcoming-list" class="practice-upcoming"></div>
+        {# The long-horizon view. Everything here answers "where am I", which is
+           the question that keeps someone going through a twelve-course
+           programme where no single day feels like progress. #}
+        <div id="horizon" hidden>
+          <section class="horizon-block">
+            <h2 class="horizon-title">What you know</h2>
+            <p class="horizon-sub" id="known-sub"></p>
+            <div class="maturity-bar" id="maturity-bar" role="img"
+                 aria-label="Breakdown of your items by how settled each memory is"></div>
+            <ul class="maturity-key" id="maturity-key"></ul>
+          </section>
+
+          <section class="horizon-block">
+            <h2 class="horizon-title">The next 30 days</h2>
+            <p class="horizon-sub" id="forecast-sub"></p>
+            {# The point of showing the curve is that it is FLAT. Load balancing
+               is invisible when it works, and a learner who cannot see the
+               shape has no reason to trust that tomorrow is survivable. #}
+            <div class="forecast" id="forecast" role="img"
+                 aria-label="Reviews due per day over the next 30 days"></div>
+            <div class="forecast-axis" id="forecast-axis"></div>
+          </section>
+
+          <section class="horizon-block">
+            <h2 class="horizon-title">By course</h2>
+            <p class="horizon-sub">Reviews interleave across every course you
+               are studying — that mixing is part of why they stick.</p>
+            <div class="course-rows" id="course-rows"></div>
+          </section>
+        </div>
+        <div id="upcoming-list" class="practice-upcoming" hidden></div>
                 <!-- Distinct from the empty state on purpose. "Nothing due" is a
              claim about the learner's schedule; if the request failed we do
              not know the schedule, and saying they are caught up when they may
@@ -219,5 +266,5 @@
        than falling back to the 'due' default practice.js already applies. */
     window.PRACTICE_ACTIVE_TAB = {{ active_tab | default(none) | tojson }};
 </script>
-<script src="{{ url_for('static', filename='js/practice.js') }}?v=10"></script>
+<script src="{{ url_for('static', filename='js/practice.js') }}?v=17"></script>
 {% endblock %}

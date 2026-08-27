@@ -949,3 +949,203 @@
 .review-criteria li { margin-bottom: var(--space-2); }
 .review-back p { margin: 0 0 var(--space-2); }
 .review-back p:last-child { margin-bottom: 0; }
+
+/* ---- Practice: the long horizon -------------------------------------------
+   The daily queue answers "what now". These answer "where am I", which is the
+   question that has to be answerable on day 200 of a twelve-course programme,
+   when no single day feels like progress. */
+.horizon-block { margin-bottom: var(--space-5); }
+.horizon-title {
+    margin: 0 0 var(--space-1);
+    font-size: var(--font-size-lg);
+}
+.horizon-sub {
+    margin: 0 0 var(--space-3);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    max-width: 46rem;
+}
+
+/* Maturity: one bar, because the shape is the message. */
+.maturity-bar {
+    display: flex;
+    height: 14px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+}
+.maturity-bar.is-slim { height: 8px; margin: var(--space-2) 0; }
+.maturity-seg { display: block; min-width: 2px; }
+.maturity-seg.is-new      { background: var(--border-color); }
+.maturity-seg.is-learning { background: var(--status-warning); }
+.maturity-seg.is-young    { background: var(--accent-secondary); }
+.maturity-seg.is-mature   { background: var(--accent-primary); }
+.maturity-seg.is-retired  { background: var(--status-success); }
+
+.maturity-key {
+    list-style: none;
+    margin: var(--space-3) 0 0;
+    padding: 0;
+    display: grid;
+    gap: var(--space-2);
+}
+.maturity-key-item {
+    display: grid;
+    grid-template-columns: 12px 8rem 4rem 1fr;
+    align-items: baseline;
+    gap: var(--space-2);
+    font-size: var(--font-size-sm);
+}
+/* A band with nothing in it is still worth listing — it is the shape of what
+   is ahead — but it should not read as active. */
+.maturity-key-item.is-zero { opacity: .55; }
+.maturity-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    align-self: center;
+}
+.maturity-dot.is-new      { background: var(--border-color); }
+.maturity-dot.is-learning { background: var(--status-warning); }
+.maturity-dot.is-young    { background: var(--accent-secondary); }
+.maturity-dot.is-mature   { background: var(--accent-primary); }
+.maturity-dot.is-retired  { background: var(--status-success); }
+.maturity-name  { font-weight: 600; }
+.maturity-count { font-variant-numeric: tabular-nums; text-align: right; }
+.maturity-why   { color: var(--text-secondary); }
+
+/* The forecast is shown because it is FLAT. Load balancing is invisible when
+   it works, and a learner who cannot see the shape has no reason to believe
+   next Tuesday is survivable. */
+.forecast {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 88px;
+    padding: var(--space-2);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    background: var(--bg-secondary);
+}
+.forecast-col {
+    flex: 1;
+    display: flex;
+    align-items: flex-end;
+    height: 100%;
+    min-width: 4px;
+}
+.forecast-fill {
+    width: 100%;
+    border-radius: 2px 2px 0 0;
+    background: var(--accent-primary);
+    opacity: .75;
+}
+.forecast-col.is-today .forecast-fill { background: var(--accent-secondary); opacity: 1; }
+.forecast-col:hover .forecast-fill { opacity: 1; }
+.forecast-axis {
+    display: flex;
+    justify-content: space-between;
+    margin-top: var(--space-1);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+}
+
+/* Per course. Multiple courses is the normal case here, not an edge case. */
+.course-rows { display: grid; gap: var(--space-3); }
+.course-row {
+    padding: var(--space-4);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    background: var(--bg-secondary);
+}
+.course-row-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-3);
+}
+.course-row-title { margin: 0; font-size: var(--font-size-base); }
+.course-row-count {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.course-row-meta {
+    margin: var(--space-2) 0 var(--space-3);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
+.course-row-action { font-size: var(--font-size-sm); }
+
+/* Narrowing to one course. Available, and honest about what it costs. */
+.review-scope {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-left: auto;
+}
+.review-scope-label {
+    font-size: var(--font-size-xs);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+.review-scope-select {
+    padding: 0.35rem 0.6rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+}
+.review-scope-note {
+    margin: 0 0 var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    border-left: 3px solid var(--accent-secondary);
+    border-radius: var(--border-radius-sm);
+    background: var(--bg-secondary);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    max-width: 46rem;
+}
+
+.review-new {
+    font-size: var(--font-size-xs);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--accent-secondary);
+    font-weight: 600;
+}
+.review-course {
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+}
+
+@media (max-width: 620px) {
+    .maturity-key-item {
+        grid-template-columns: 12px 1fr auto;
+    }
+    .maturity-why { grid-column: 2 / -1; }
+    .review-scope { margin-left: 0; width: 100%; }
+    .review-scope-select { flex: 1; }
+    .forecast { height: 64px; }
+}
+
+.due-note.is-tight {
+    margin-bottom: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+}
+.practice-card-title code {
+    padding: 1px 5px;
+    border-radius: var(--border-radius-sm);
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    font-size: .92em;
+}
+
+.practice-empty-next {
+    max-width: 34rem;
+    margin: 0 auto var(--space-4);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
