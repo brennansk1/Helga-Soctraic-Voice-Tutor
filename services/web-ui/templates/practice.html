@@ -82,11 +82,30 @@
           </header>
 
           <article class="review-card" id="review-card">
-            <p class="review-side-label">Question</p>
+            {# What kind of thinking this item wants. A queue that mixes recall
+               with analysis has to say which is being asked for, or the learner
+               answers every prompt the cheapest way. #}
+            <div class="review-meta">
+              <span class="review-kind" id="review-kind"></span>
+              <span class="review-course" id="review-course"></span>
+            </div>
+            <p class="review-side-label" id="review-front-label">Question</p>
             <div class="review-front" id="review-front"></div>
+
+            {# Discrimination items are answered BEFORE the reveal: the whole
+               value is committing to true or false first. #}
+            <div class="review-choices" id="review-choices" hidden role="group"
+                 aria-label="Is this statement accurate?">
+              <button class="choice-btn" data-choice="true" type="button">
+                True<span class="choice-key">T</span></button>
+              <button class="choice-btn" data-choice="false" type="button">
+                False<span class="choice-key">F</span></button>
+            </div>
+
             <div class="review-back" id="review-back" hidden>
-              <p class="review-side-label">Answer</p>
+              <p class="review-side-label" id="review-back-label">Answer</p>
               <div id="review-back-body"></div>
+              <p class="review-verdict" id="review-verdict" hidden></p>
             </div>
           </article>
 
@@ -118,6 +137,14 @@
           </div>
 
           <p class="review-feedback" id="review-feedback" aria-live="polite"></p>
+
+          {# An item forgotten four times over will not be fixed by seeing it
+             again next week. Offer the concept behind it instead. #}
+          <div class="review-leech" id="review-leech" hidden>
+            <p class="review-leech-text" id="review-leech-text"></p>
+            <a class="btn-alpine btn-alpine-secondary" id="review-leech-link"
+               href="#">Go through this concept again</a>
+          </div>
         </section>
 
         <div id="review-done" class="review-done" hidden>
@@ -192,5 +219,5 @@
        than falling back to the 'due' default practice.js already applies. */
     window.PRACTICE_ACTIVE_TAB = {{ active_tab | default(none) | tojson }};
 </script>
-<script src="{{ url_for('static', filename='js/practice.js') }}?v=6"></script>
+<script src="{{ url_for('static', filename='js/practice.js') }}?v=10"></script>
 {% endblock %}

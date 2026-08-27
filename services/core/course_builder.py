@@ -5514,6 +5514,29 @@ class ContentHydrator:
                 # the reader must be able to tell that from a clean one.
                 course["audit"] = {"ran": False, "error": str(e)[:200]}
 
+        # STAGE 5 — the review item bank.
+        #
+        # Extraction, not generation: the hydrator has already written Key
+        # Facts, Belief/Correction pairs, Edge Cases and Bloom-banded Socratic
+        # Hooks, which is an item bank in all but name. Doing it here means the
+        # daily queue needs no model at review time, which on this hardware is
+        # the difference between a usable review habit and a 47-second wait per
+        # card. A failure here must not fail the build: a course with no items
+        # is still a course you can be taught.
+        try:
+            from services.common.item_bank import build_for_course
+            bank = build_for_course(
+                course_uid, self.storage, data_root=DATA_ROOT,
+                status_cb=self.status_callback)
+            course["item_bank"] = bank
+            if self.status_callback and bank.get("items"):
+                self.status_callback(
+                    f"ITEMS:{bank['items']} review items over "
+                    f"{bank['concepts']} concepts")
+        except Exception as e:
+            logger.warning("Item bank build failed (course still usable): %s", e)
+            course["item_bank"] = {"ran": False, "error": str(e)[:200]}
+
         self.storage.courses.update_course(course_uid, course)
 
         # COMPACT THE INDEX WHERE THE TOMBSTONES ARE MADE.

@@ -1326,6 +1326,43 @@ class StorageManager:
                             "(due reviews, taught claims, catalog, concept math) "
                             "+ dropped the unread concepts_fts index")
 
+            if current_version < 20:
+                # Review items. The flashcards table already carries every FSRS
+                # field and every existing card's history, so the item bank
+                # extends it rather than opening a second store that would need
+                # its own scheduler, its own due query and its own bugs.
+                #
+                # `kind` is what the item asks for (recall / discriminate /
+                # apply / socratic); `bloom` and `depth` feed queue priority.
+                for col, decl in (
+                    ("kind", "TEXT DEFAULT 'recall'"),
+                    ("bloom", "INTEGER DEFAULT 2"),
+                    ("source_section", "TEXT"),
+                    ("payload", "TEXT"),
+                    ("depth", "INTEGER DEFAULT 0"),
+                ):
+                    try:
+                        cursor.execute(
+                            f"ALTER TABLE flashcards ADD COLUMN {col} {decl}")
+                    except sqlite3.OperationalError:
+                        pass          # already present
+                # _try_ddl belongs to the v19 block's scope; an index that
+                # cannot be created must not abort the migration either way.
+                for ddl in (
+                    "CREATE INDEX IF NOT EXISTS idx_items_kind "
+                    "ON flashcards(student_id, kind, next_review_date)",
+                    "CREATE INDEX IF NOT EXISTS idx_items_concept "
+                    "ON flashcards(concept_uid)",
+                ):
+                    try:
+                        cursor.execute(ddl)
+                    except sqlite3.OperationalError as e:
+                        logger.warning("v20: %s -- skipped (%s)",
+                                       ddl.split("(")[0].strip(), e)
+                cursor.execute("UPDATE schema_version SET version = 20")
+                logger.info("Schema migrated to v20: review items "
+                            "(kind/bloom/source_section/payload/depth) on flashcards")
+
             conn.commit()
         finally:
             conn.close()
@@ -3386,7 +3423,9 @@ class FlashcardStore:
         'status', 'next_review_date', 'easiness_factor', 'interval_days',
         'repetitions', 'updated_at', 'front', 'back',
         'stability', 'difficulty', 'last_review_date', 'lapses', 'source',
-        'student_id'
+        'student_id',
+        # review items (schema v20)
+        'kind', 'bloom', 'source_section', 'payload', 'depth',
     }
 
     def _get_db(self) -> sqlite3.Connection:
@@ -3430,6 +3469,105 @@ class FlashcardStore:
         vals = list(kwargs.values()) + [uid, _sid(student_id)]
         conn.execute(f"UPDATE flashcards SET {sets} WHERE uid = ? AND student_id = ?", vals)
         conn.commit()
+
+    # -- review items (schema v20) -----------------------------------------
+
+    def sync_items(self, items, student_id: str = None) -> dict:
+        """Write an extracted item bank without disturbing recall history.
+
+        Item ids are derived from their source text, so re-extracting an
+        unedited concept produces the ids already on disk and this is a no-op
+        for them. Only the prompt text and metadata are refreshed; stability,
+        difficulty, lapses and the due date are never touched by extraction —
+        those belong to the learner, not to the content.
+
+        Items whose source text CHANGED arrive under a new id. The old rows are
+        retired rather than deleted: their history is real, and a learner who
+        looks at their own numbers should not find them silently rewritten.
+        """
+        conn = self._get_db()
+        sid = _sid(student_id)
+        written = updated = retired = 0
+        by_concept = {}
+
+        for it in items:
+            d = it.as_dict() if hasattr(it, "as_dict") else dict(it)
+            by_concept.setdefault(d["concept_uid"], set()).add(d["uid"])
+            payload = json.dumps(d.get("payload") or {})
+            row = conn.execute(
+                "SELECT uid FROM flashcards WHERE uid = ? AND student_id = ?",
+                (d["uid"], sid)).fetchone()
+            if row:
+                conn.execute(
+                    "UPDATE flashcards SET front = ?, back = ?, kind = ?, "
+                    "bloom = ?, source_section = ?, payload = ?, "
+                    "updated_at = ? WHERE uid = ? AND student_id = ?",
+                    (d["front"], d["back"], d["kind"], d.get("bloom", 2),
+                     d.get("source_section", ""), payload,
+                     datetime.utcnow().isoformat(), d["uid"], sid))
+                updated += 1
+            else:
+                conn.execute(
+                    "INSERT INTO flashcards (uid, course_uid, concept_uid, "
+                    "front, back, kind, bloom, source_section, payload, "
+                    "source, status, student_id) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,'extracted','active',?)",
+                    (d["uid"], d["course_uid"], d["concept_uid"], d["front"],
+                     d["back"], d["kind"], d.get("bloom", 2),
+                     d.get("source_section", ""), payload, sid))
+                written += 1
+
+        # Retire extracted rows for these concepts that the new bank no longer
+        # contains — the fact behind them was edited or removed.
+        for concept_uid, live in by_concept.items():
+            rows = conn.execute(
+                "SELECT uid FROM flashcards WHERE concept_uid = ? AND "
+                "student_id = ? AND source = 'extracted' AND status = 'active'",
+                (concept_uid, sid)).fetchall()
+            for r in rows:
+                if r["uid"] not in live:
+                    conn.execute(
+                        "UPDATE flashcards SET status = 'retired', updated_at = ? "
+                        "WHERE uid = ? AND student_id = ?",
+                        (datetime.utcnow().isoformat(), r["uid"], sid))
+                    retired += 1
+        conn.commit()
+        return {"written": written, "updated": updated, "retired": retired}
+
+    def get_items(self, course_uid: str = None, student_id: str = None,
+                  include_retired: bool = False) -> List[dict]:
+        """Every schedulable item with its FSRS state."""
+        conn = self._get_db()
+        query = "SELECT * FROM flashcards WHERE student_id = ?"
+        params = [_sid(student_id)]
+        if not include_retired:
+            query += " AND status NOT IN ('retired', 'suspended')"
+        if course_uid:
+            query += " AND course_uid = ?"
+            params.append(course_uid)
+        out = []
+        for r in conn.execute(query, params).fetchall():
+            d = dict(r)
+            try:
+                d["payload"] = json.loads(d.get("payload") or "{}")
+            except (TypeError, ValueError):
+                d["payload"] = {}
+            out.append(d)
+        return out
+
+    def day_load(self, student_id: str = None) -> dict:
+        """How many items already fall on each future day.
+
+        This is what the load balancer reads: without it FSRS's exact dates
+        clump and a single day in month three becomes big enough to abandon.
+        """
+        conn = self._get_db()
+        rows = conn.execute(
+            "SELECT next_review_date AS d, COUNT(*) AS n FROM flashcards "
+            "WHERE student_id = ? AND next_review_date IS NOT NULL "
+            "AND status NOT IN ('retired', 'suspended') GROUP BY d",
+            (_sid(student_id),)).fetchall()
+        return {r["d"]: r["n"] for r in rows if r["d"]}
 
     def grade_card_fsrs(self, uid: str, rating: int, fsrs_engine, student_id: str = None) -> dict:
         """Grade a card using FSRS algorithm and update all scheduling fields.
@@ -3476,7 +3614,21 @@ class FlashcardStore:
             lapses += 1
             new_interval = 1  # Re-learn: show again tomorrow
 
-        next_review = (date.today() + timedelta(days=new_interval)).isoformat()
+        # FSRS gives an exact date. Left exactly there across many courses those
+        # dates clump, and one day in month three grows big enough that the
+        # learner skips it — and a skipped day is how the whole schedule dies.
+        # The date is nudged onto the quietest day inside a window the algorithm
+        # is indifferent to (a few percent of the interval), never into the past.
+        ideal = date.today() + timedelta(days=new_interval)
+        try:
+            from services.common.review_scheduler import balance_due_date
+            balanced = balance_due_date(ideal, new_interval,
+                                        self.day_load(student_id), uid)
+        except Exception as e:                      # policy must never block a grade
+            logger.warning(f"load balancing skipped for {uid}: {e}")
+            balanced = ideal
+        next_review = balanced.isoformat()
+        new_interval = max(1, (balanced - date.today()).days)
         now = datetime.utcnow().isoformat()
 
         conn.execute("""

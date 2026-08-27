@@ -2286,6 +2286,176 @@ def ask_endpoint():
     })
 
 
+# ---------------------------------------------------------------- review queue
+
+def _daily_cap(student_id):
+    """The learner's own daily goal, in items rather than concepts.
+
+    daily_goal is set in Settings as concepts per day; an item bank runs about
+    a dozen items to a concept, so the cap is derived rather than invented.
+    """
+    try:
+        goal = int(storage.settings.get("daily_goal") or 5)
+    except Exception:
+        goal = 5
+    return max(10, min(200, goal * 12))
+
+
+def _as_due(row, today_iso):
+    from services.common.review_scheduler import Due
+    return Due(
+        uid=row["uid"],
+        concept_uid=row.get("concept_uid") or "",
+        course_uid=row.get("course_uid") or "",
+        kind=row.get("kind") or "recall",
+        due_date=row.get("next_review_date") or today_iso,
+        interval_days=float(row.get("interval_days") or 0),
+        stability=row.get("stability"),
+        lapses=int(row.get("lapses") or 0),
+        repetitions=int(row.get("repetitions") or 0),
+        depth=int(row.get("depth") or 0),
+    )
+
+
+@app.route("/api/review/queue", methods=["GET"])
+def review_queue_endpoint():
+    """Today's review queue: one interleaved, capped, prioritised list.
+
+    Everything the learner is NOT being shown is reported alongside it. A capped
+    day that does not say it was capped reads as "you are finished", which is
+    the one thing this response must never imply.
+    """
+    from datetime import date as _date
+    from services.common.review_scheduler import build_queue
+
+    student_id = request.args.get("student_id") or DEFAULT_STUDENT_ID
+    course_uid = request.args.get("course_uid") or None
+    today_iso = _date.today().isoformat()
+
+    try:
+        rows = storage.flashcards.get_items(course_uid=course_uid,
+                                            student_id=student_id)
+    except Exception as e:
+        logger.error("review queue: item fetch failed: %s", e, exc_info=True)
+        return jsonify({"error": "could not read the item bank"}), 503
+
+    by_uid = {r["uid"]: r for r in rows}
+    try:
+        cap = _daily_cap(student_id)
+        # The mix of a new session follows the Bloom level of the concepts
+        # actually on offer, so a course of analysis concepts does not hand out
+        # a session of pure recall.
+        bloom_of = {}
+        for r in rows:
+            cu = r.get("concept_uid")
+            if cu:
+                bloom_of[cu] = max(bloom_of.get(cu, 0), int(r.get("bloom") or 2))
+        plan = build_queue([_as_due(r, today_iso) for r in rows],
+                           daily_cap=cap, bloom_of=bloom_of)
+    except Exception as e:
+        logger.error("review queue: scheduling failed: %s", e, exc_info=True)
+        return jsonify({"error": "could not build the queue"}), 500
+
+    def present(due):
+        row = by_uid.get(due.uid, {})
+        payload = row.get("payload") or {}
+        return {
+            "uid": due.uid,
+            "kind": due.kind,
+            "bloom": row.get("bloom") or 2,
+            "front": row.get("front") or "",
+            "back": row.get("back") or "",
+            "course_uid": due.course_uid,
+            "concept_uid": due.concept_uid,
+            "source_section": row.get("source_section") or "",
+            "payload": payload,
+            "lapses": due.lapses,
+            "is_new": due.is_new,
+        }
+
+    return jsonify({
+        "queue": [present(d) for d in plan["queue"]],
+        "counts": plan["counts"],
+        "capped": plan["capped"],
+        "new_paused_for_backlog": plan["new_paused_for_backlog"],
+        "daily_cap": cap,
+        "leeches": [present(d) for d in plan["leeches"]],
+    })
+
+
+@app.route("/api/review/grade", methods=["POST"])
+def review_grade_endpoint():
+    """Grade one item. Every tier writes into the same FSRS state.
+
+    The modality is only how the item was tested; an objective true/false and a
+    self-rated recall both end as a 1-4 rating, which is what lets one schedule
+    span the whole mix.
+    """
+    from services.core.fsrs_engine import FSRSEngine
+
+    data = request.get_json(force=True, silent=True) or {}
+    uid = data.get("uid")
+    rating = data.get("rating")
+    student_id = data.get("student_id") or DEFAULT_STUDENT_ID
+    if not uid or rating is None:
+        return jsonify({"error": "uid and rating are required"}), 400
+    try:
+        rating = int(rating)
+    except (TypeError, ValueError):
+        return jsonify({"error": "rating must be an integer 1-4"}), 400
+    if not 1 <= rating <= 4:
+        return jsonify({"error": "rating must be 1-4 (Again/Hard/Good/Easy)"}), 400
+
+    try:
+        # A policy knob, not a constant: 0.9 suits material you will be tested
+        # on; 0.85 cuts the daily workload by roughly a third for slightly more
+        # forgetting, which is the right trade over a multi-year programme.
+        retention = float(storage.settings.get("desired_retention") or 0.9)
+        retention = min(0.97, max(0.70, retention))
+    except Exception:
+        retention = 0.9
+
+    try:
+        result = storage.flashcards.grade_card_fsrs(
+            uid, rating, FSRSEngine(desired_retention=retention),
+            student_id=student_id)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        logger.error("review grade failed for %s: %s", uid, e, exc_info=True)
+        return jsonify({"error": "could not record that grade"}), 500
+
+    # An item that keeps being forgotten is a teaching problem, not a
+    # scheduling one: say so, so the caller can offer the Socratic repair
+    # instead of showing the same card again next week.
+    from services.common.review_scheduler import LEECH_LAPSES
+    lapses = int(result.get("lapses") or 0)
+    result["leech"] = lapses >= LEECH_LAPSES
+    result["status"] = "ok"
+    return jsonify(result)
+
+
+@app.route("/api/review/forecast", methods=["GET"])
+def review_forecast_endpoint():
+    """Due counts per day ahead — what load balancing is flattening."""
+    from datetime import date as _date
+    from services.common.review_scheduler import forecast
+
+    student_id = request.args.get("student_id") or DEFAULT_STUDENT_ID
+    try:
+        days = max(7, min(120, int(request.args.get("days") or 30)))
+    except (TypeError, ValueError):
+        days = 30
+    today_iso = _date.today().isoformat()
+    try:
+        rows = storage.flashcards.get_items(student_id=student_id)
+    except Exception as e:
+        logger.error("forecast failed: %s", e, exc_info=True)
+        return jsonify({"error": "could not read the item bank"}), 503
+    return jsonify({"forecast": forecast([_as_due(r, today_iso) for r in rows],
+                                         days=days)})
+
+
 @app.route("/api/due_concepts", methods=["GET"])
 def due_concepts_endpoint():
     """Return concepts due for spaced repetition review.

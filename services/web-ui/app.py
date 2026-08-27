@@ -2731,6 +2731,50 @@ def update_card():
     except Exception as e:
         return jsonify({'error': str(e)}), 502
 
+@app.route('/api/review/queue', methods=['GET'])
+@student_session_required
+def api_review_queue():
+    """Today's review queue. Proxied whole: the scheduling policy lives in one
+    place and the browser must not be able to talk it into a different one."""
+    try:
+        resp = requests.get(f'{SERVICES["rag"]}/api/review/queue',
+                            params={'student_id': current_student_id(),
+                                    'course_uid': request.args.get('course_uid') or ''},
+                            timeout=20)
+        return jsonify(resp.json()), resp.status_code
+    except requests.RequestException as e:
+        logger.error(f"Review queue proxy failed: {e}")
+        return jsonify({'error': 'Could not reach the review service'}), 502
+
+
+@app.route('/api/review/grade', methods=['POST'])
+@student_session_required
+def api_review_grade():
+    try:
+        body = {**(request.get_json(force=True, silent=True) or {}),
+                'student_id': current_student_id()}
+        resp = requests.post(f'{SERVICES["rag"]}/api/review/grade',
+                             json=body, timeout=20)
+        return jsonify(resp.json()), resp.status_code
+    except requests.RequestException as e:
+        logger.error(f"Review grade proxy failed: {e}")
+        return jsonify({'error': 'Could not record that grade'}), 502
+
+
+@app.route('/api/review/forecast', methods=['GET'])
+@student_session_required
+def api_review_forecast():
+    try:
+        resp = requests.get(f'{SERVICES["rag"]}/api/review/forecast',
+                            params={'student_id': current_student_id(),
+                                    'days': request.args.get('days') or 30},
+                            timeout=20)
+        return jsonify(resp.json()), resp.status_code
+    except requests.RequestException as e:
+        logger.error(f"Review forecast proxy failed: {e}")
+        return jsonify({'error': 'Could not reach the review service'}), 502
+
+
 @app.route('/api/grade_card_fsrs', methods=['POST'])
 def grade_card_fsrs():
     """Grade a flashcard using FSRS algorithm (server-side)."""

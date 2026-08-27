@@ -113,44 +113,180 @@
     function loadDue() {
         var err = $('due-error');
         if (err) err.hidden = true;
-        fetch('/api/due_concepts')
+        fetch('/api/review/queue')
             .then(okJson)
-            .then(function (data) { renderDue((data && data.concepts) || []); })
+            .then(renderDue)
             .catch(function (e) { showLoadError('due', e.message); });
+    }
+
+    function queueLength(data) {
+        return ((data && data.queue) || []).length;
+    }
+
+    var KIND_WORD = {
+        recall: 'recall', discriminate: 'true/false',
+        apply: 'applied', socratic: 'explain'
+    };
+
+    /* The Due tab is a briefing on today's session, not a list of cards. What
+       is being held back matters as much as what is being shown: a queue that
+       silently truncates reads as "you are finished". */
+    function renderDue(data) {
+        var loading = $('due-loading');
+        var list = $('due-list');
+        var empty = $('due-empty');
+        if (loading) { loading.hidden = true; }
+
+        var queue = (data && data.queue) || [];
+        var counts = (data && data.counts) || {};
+        /* "Due now" is what there is to DO today, not how big the bank is.
+           due_total counts every unseen item too, so it read 2,495 on a day
+           whose session was fourteen items — a number that looks like a debt
+           nobody could ever clear, which is exactly how a review habit dies. */
+        var today = queueLength(data);
+        setCount('stat-due', today);
+        var badge = $('tab-due-count');
+        if (badge) {
+            badge.textContent = today;
+            badge.hidden = !today;
+        }
+
+        if (!queue.length) {
+            if (list) { list.hidden = true; }
+            if (empty) { empty.hidden = false; }
+            setShown('review-start-wrap', false);
+            return;
+        }
+        if (empty) { empty.hidden = true; }
+        setShown('review-start-wrap', true);
+
+        var mix = {};
+        queue.forEach(function (i) { mix[i.kind] = (mix[i.kind] || 0) + 1; });
+        var parts = Object.keys(mix).map(function (k) {
+            return mix[k] + ' ' + (KIND_WORD[k] || k);
+        });
+        var hint = $('review-start-hint');
+        if (hint) {
+            hint.textContent = queue.length + ' in today\'s session — ' +
+                               parts.join(', ') + '.';
+        }
+
+        // Everything the session is NOT showing, said plainly.
+        var notes = [];
+        if (counts.held_back) {
+            notes.push(counts.held_back + ' more ' +
+                       (counts.held_back === 1 ? 'is' : 'are') +
+                       ' due but held back to keep today finishable');
+        }
+        if (data.new_paused_for_backlog) {
+            notes.push('new material is paused until the backlog clears');
+        }
+        if (counts.leeches) {
+            notes.push(counts.leeches + ' ' +
+                       (counts.leeches === 1 ? 'item keeps' : 'items keep') +
+                       ' being forgotten and ' +
+                       (counts.leeches === 1 ? 'needs' : 'need') + ' the concept again');
+        }
+        if (counts.upcoming) {
+            notes.push(counts.upcoming + ' scheduled for later');
+        }
+        if (counts.new_available) {
+            notes.push(counts.new_available.toLocaleString() +
+                       ' not started yet, introduced a few each day');
+        }
+
+        if (list) {
+            list.innerHTML =
+                (notes.length
+                    ? '<p class="due-note">' + esc(notes.join(' · ')) + '.</p>'
+                    : '') +
+                ((data.leeches || []).length
+                    ? '<h3 class="due-subhead">Worth going through again</h3>' +
+                      (data.leeches || []).map(function (l) {
+                          return '<article class="practice-card">' +
+                                   '<div class="practice-card-body">' +
+                                     '<h3 class="practice-card-title">' +
+                                        esc(l.front) + '</h3>' +
+                                     '<p class="practice-card-meta">forgotten ' +
+                                        esc(String(l.lapses)) + ' times</p>' +
+                                   '</div>' +
+                                   '<a class="btn btn-primary practice-card-action" href="/learn?course_uid=' +
+                                      encodeURIComponent(l.course_uid || '') +
+                                      '&concept_uid=' + encodeURIComponent(l.concept_uid || '') +
+                                      '">Revisit</a>' +
+                                 '</article>';
+                      }).join('')
+                    : '');
+            list.hidden = false;
+        }
     }
 
 
     /* ---------------------------------------------------------- review session
-       One card at a time, the way spaced repetition is meant to work: read the
-       question, try to recall it, reveal, then say honestly how it went. The
-       due list is a manifest; this is the work.
+       One item at a time from /api/review/queue, which is already ordered,
+       interleaved across courses and capped for the day — the browser's job is
+       to present it honestly, not to re-decide any of that.
 
-       Only cards with a real question AND answer can be reviewed this way. A
-       due CONCEPT with no card behind it is not a flashcard and keeps its
-       "open the lesson" action in the list below — conflating the two would
-       ask the learner to grade their recall of something they were never
-       shown a question for. */
-    var lastDueItems = [];
-    var session = { queue: [], i: 0, revealed: false, graded: {again:0,hard:0,good:0,easy:0} };
+       The queue is deliberately MIXED: recall, true/false discrimination,
+       applied prediction and open Socratic questions, because practising facts
+       alone transfers no better than not practising at all. Each kind is asked
+       for differently, so the learner cannot answer an analysis prompt with a
+       flashcard reflex.
+    */
+    var GRADE_NAME = { 1: 'again', 2: 'hard', 3: 'good', 4: 'easy' };
 
-    function reviewable(items) {
-        return (items || []).filter(function (c) {
-            return c && String(c.front || '').trim() && String(c.back || '').trim();
-        });
-    }
+    var KIND = {
+        recall:       { label: 'Recall',        ask: 'Question',
+                        reveal: 'Answer',
+                        hint: 'Bring it to mind before you look.' },
+        discriminate: { label: 'True or false', ask: 'Is this accurate?',
+                        reveal: 'Verdict',
+                        hint: 'Commit to an answer first.' },
+        apply:        { label: 'Apply',         ask: 'Work it through',
+                        reveal: 'What actually happens',
+                        hint: 'Predict the outcome before revealing it.' },
+        socratic:     { label: 'Explain',       ask: 'Explain in your own words',
+                        reveal: 'What a good answer covers',
+                        hint: 'Answer aloud or in your head, then mark yourself against the criteria.' }
+    };
 
-    function startReview(items) {
-        session.queue = reviewable(items);
-        session.i = 0;
-        session.revealed = false;
-        session.graded = { again: 0, hard: 0, good: 0, easy: 0 };
-        if (!session.queue.length) { return; }
-        setShown('review-session', true);
-        setShown('due-list', false);
-        setShown('review-start-wrap', false);
+    var session = {
+        queue: [], i: 0, revealed: false, answered: null,
+        graded: { again: 0, hard: 0, good: 0, easy: 0 },
+        counts: null, cap: 0, capped: false
+    };
+
+    function kindInfo(kind) { return KIND[kind] || KIND.recall; }
+
+    function startReview() {
         setShown('review-done', false);
-        renderCard();
-        document.addEventListener('keydown', onReviewKey);
+        var hint = $('review-start-hint');
+        if (hint) { hint.textContent = 'Loading your queue…'; }
+
+        fetch('/api/review/queue')
+            .then(okJson)
+            .then(function (d) {
+                session.queue = d.queue || [];
+                session.i = 0;
+                session.graded = { again: 0, hard: 0, good: 0, easy: 0 };
+                session.counts = d.counts || null;
+                session.cap = d.daily_cap || 0;
+                session.capped = !!d.capped;
+                if (!session.queue.length) {
+                    if (hint) { hint.textContent = 'Nothing is due right now.'; }
+                    return;
+                }
+                setShown('due-list', false);
+                setShown('review-start-wrap', false);
+                setShown('review-session', true);
+                document.addEventListener('keydown', onReviewKey);
+                renderCard();
+            })
+            .catch(function (e) {
+                if (hint) {
+                    hint.textContent = 'Could not load your queue (' + e.message + ').';
+                }
+            });
     }
 
     function endReview(finished) {
@@ -162,11 +298,12 @@
             $('review-done-detail').textContent = summarise(session.graded);
             setShown('review-done', true);
         }
-        loadDue();   // grades moved cards out of the queue; re-read it
+        loadDue();
     }
 
-    /* Only the grades that actually happened. "0 easy, 0 hard" is noise
-       dressed as information. */
+    /* Only the grades that actually happened, plus what today's cap held back.
+       A session that ends without mentioning the backlog reads as "you are
+       finished", which is the one thing it must never imply. */
     function summarise(g) {
         var total = g.again + g.hard + g.good + g.easy;
         var parts = [];
@@ -174,75 +311,181 @@
         if (g.good)  { parts.push(g.good + ' good'); }
         if (g.hard)  { parts.push(g.hard + ' hard'); }
         if (g.again) { parts.push(g.again + ' to see again soon'); }
-        return total + (total === 1 ? ' card' : ' cards') + ' reviewed' +
-               (parts.length ? ' — ' + parts.join(', ') + '.' : '.');
+        var line = total + (total === 1 ? ' item' : ' items') + ' reviewed' +
+                   (parts.length ? ' — ' + parts.join(', ') + '.' : '.');
+        var held = session.counts && session.counts.held_back;
+        if (held) {
+            line += ' ' + held + ' more ' + (held === 1 ? 'was' : 'were') +
+                    " held back so today's session stays finishable.";
+        }
+        return line;
     }
 
+    /* Named currentItem, not current: the quiz section below declares
+   `var current` in this same scope, and a var assignment overwrites a
+   hoisted function of the same name at runtime — the review session
+   died with "current is not a function" the moment it loaded. */
+    function currentItem() { return session.queue[session.i]; }
+
     function renderCard() {
-        var c = session.queue[session.i];
-        if (!c) { endReview(true); return; }
+        var item = currentItem();
+        if (!item) { endReview(true); return; }
+
         session.revealed = false;
+        session.answered = null;
+        var info = kindInfo(item.kind);
+
         $('review-progress').textContent = (session.i + 1) + ' / ' + session.queue.length;
         $('review-bar-fill').style.width =
             Math.round((session.i / session.queue.length) * 100) + '%';
-        $('review-front').textContent = c.front || '';
-        $('review-back-body').textContent = c.back || '';
+
+        var kindEl = $('review-kind');
+        kindEl.textContent = info.label;
+        kindEl.className = 'review-kind is-' + item.kind;
+        $('review-course').textContent = item.is_new ? 'new' : '';
+
+        $('review-front-label').textContent = info.ask;
+        $('review-front').innerHTML = fmt(item.front);
+        $('review-back-label').textContent = info.reveal;
+        $('review-back-body').innerHTML = fmt(item.back);
+
         setShown('review-back', false);
+        setShown('review-verdict', false);
         setShown('review-grades', false);
-        setShown('review-reveal-wrap', true);
+        setShown('review-leech', false);
         $('review-feedback').textContent = '';
+
+        // True/false is answered before the reveal; everything else reveals first.
+        var isChoice = item.kind === 'discriminate';
+        setShown('review-choices', isChoice);
+        setShown('review-reveal-wrap', !isChoice);
+        var hintEl = document.querySelector('.review-key-hint');
+        if (hintEl) { hintEl.textContent = info.hint; }
+    }
+
+    /* Item text is author-written markdown-ish: inline code and bold carry
+       meaning in every one of these prompts, so they are rendered — and
+       everything else is escaped, because this is still untrusted text. */
+    function fmt(text) {
+        var html = esc(text || '')
+            .replace(/`([^`]+)`/g, '<code>$1</code>')
+            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+        /* Criteria arrive as a bullet list and are the one place the learner
+           reads point by point to mark themselves. Rendered as a paragraph
+           they run together into a wall the eye slides off. */
+        var lines = html.split('\n');
+        var out = [], list = null;
+        lines.forEach(function (line) {
+            var m = line.match(/^\s*[-*]\s+(.*)$/);
+            if (m) {
+                if (!list) { list = []; }
+                list.push('<li>' + m[1] + '</li>');
+            } else {
+                if (list) { out.push('<ul class="review-criteria">' + list.join('') + '</ul>'); list = null; }
+                if (line.trim()) { out.push('<p>' + line + '</p>'); }
+            }
+        });
+        if (list) { out.push('<ul class="review-criteria">' + list.join('') + '</ul>'); }
+        return out.join('') || html;
     }
 
     function reveal() {
         if (session.revealed) { return; }
+        var item = currentItem();
+        if (!item) { return; }
         session.revealed = true;
         setShown('review-back', true);
         setShown('review-reveal-wrap', false);
+        setShown('review-choices', false);
         setShown('review-grades', true);
     }
 
-    var GRADE_NAME = { 1: 'again', 2: 'hard', 3: 'good', 4: 'easy' };
+    /* A discrimination item is graded objectively: the learner committed to an
+       answer and the content says which one was right, so nothing here depends
+       on self-assessment — which is known to over-report. */
+    function answerChoice(said) {
+        var item = currentItem();
+        if (!item || session.answered !== null) { return; }
+        var truth = !!(item.payload && item.payload.truth);
+        session.answered = said;
+        var right = (said === truth);
 
-    function grade(n) {
-        if (!session.revealed) { return; }   // grading before looking is not a review
-        var c = session.queue[session.i];
+        var verdict = $('review-verdict');
+        verdict.textContent = right ? 'Correct.' : 'Not quite.';
+        verdict.className = 'review-verdict ' + (right ? 'is-right' : 'is-wrong');
+        setShown('review-verdict', true);
+        reveal();
+
+        /* Objective result, mapped onto the same 1-4 FSRS takes from every
+           other tier. Right is "Good", not "Easy": there were two options, so a
+           correct answer is weaker evidence than recalling something cold. */
+        grade(right ? 3 : 1, true);
+    }
+
+    function grade(n, auto) {
+        if (!session.revealed) { return; }
+        var item = currentItem();
+        if (!item) { return; }
         session.graded[GRADE_NAME[n]] += 1;
+
         var fb = $('review-feedback');
         fb.textContent = 'Saving…';
 
-        fetch('/api/grade_card_fsrs', {
+        fetch('/api/review/grade', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            /* The scheduler's contract is {uid, rating} — see
-               librarian.grade_card_fsrs_endpoint. Sending anything else earns a
-               silent 400, which is how this path stayed dead for 40 cards. */
-            body: JSON.stringify({ uid: c.uid, rating: n })
+            body: JSON.stringify({ uid: item.uid, rating: n })
         })
         .then(function (r) {
             if (!r.ok) { throw new Error('scheduler returned ' + r.status); }
             return r.json();
         })
         .then(function (d) {
-            /* THE REAL INTERVAL, from the scheduler that owns it. The buttons
-               deliberately promise no number; this is where one appears, and
-               it is the one actually written down. */
+            /* The interval comes from the scheduler that wrote it down. The
+               grade buttons promise no number precisely so this one cannot be
+               contradicted. */
             var days = d && (d.interval_days != null ? d.interval_days : d.interval);
-            if (days != null) {
-                fb.textContent = days < 1 ? 'Again shortly.'
-                    : 'Next in ' + Math.round(days) + ' day' + (Math.round(days) === 1 ? '' : 's') + '.';
-            } else { fb.textContent = ''; }
+            fb.textContent = days == null ? ''
+                : (days < 1 ? 'Again shortly.'
+                   : 'Next in ' + Math.round(days) + ' day' +
+                     (Math.round(days) === 1 ? '' : 's') + '.');
+            if (d && d.leech) { offerRepair(item); return; }
+            advance(auto ? 900 : 350);
         })
         .catch(function (e) {
-            fb.textContent = 'Not recorded — this card stays due. (' + e.message + ')';
-        })
-        .then(function () {
-            session.i += 1;
-            setTimeout(renderCard, 350);
+            fb.textContent = 'Not recorded — this item stays due. (' + e.message + ')';
+            advance(1200);
         });
     }
 
+    /* Repeated forgetting is a teaching problem, not a scheduling one. */
+    function offerRepair(item) {
+        var text = $('review-leech-text');
+        text.textContent = 'You have lost this one several times. Reviewing it ' +
+                           'again next week is unlikely to be what fixes it.';
+        var link = $('review-leech-link');
+        link.href = '/learn?course_uid=' + encodeURIComponent(item.course_uid || '') +
+                    '&concept_uid=' + encodeURIComponent(item.concept_uid || '');
+        setShown('review-leech', true);
+        setShown('review-grades', false);
+        // The learner chooses: repair now, or carry on and decide later.
+        advance(4000);
+    }
+
+    function advance(delay) {
+        session.i += 1;
+        setTimeout(renderCard, delay || 350);
+    }
+
     function onReviewKey(e) {
-        if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) { return; }
+        if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) { return; }
+        if (e.metaKey || e.ctrlKey || e.altKey) { return; }
+        var item = currentItem();
+        if (item && item.kind === 'discriminate' && session.answered === null) {
+            if (e.key === 't' || e.key === 'T') { e.preventDefault(); answerChoice(true); return; }
+            if (e.key === 'f' || e.key === 'F') { e.preventDefault(); answerChoice(false); return; }
+        }
         if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); reveal(); return; }
         if (/^[1-4]$/.test(e.key)) { e.preventDefault(); grade(parseInt(e.key, 10)); return; }
         if (e.key === 'Escape') { endReview(false); }
@@ -251,84 +494,6 @@
     function setShown(id, on) {
         var el = $(id);
         if (el) { el.hidden = !on; }
-    }
-
-    function renderDue(items) {
-        var loading = $('due-loading');
-        var list = $('due-list');
-        var empty = $('due-empty');
-        if (loading) loading.hidden = true;
-
-        setCount('stat-due', items.length);
-
-        /* HOW MANY OF THESE CAN ACTUALLY BE REVIEWED.
-           The queue mixes flashcards (a question and an answer) with concepts
-           that are merely due. Only the first kind can be graded on recall, so
-           the button says how many there are rather than implying the whole
-           queue works that way. */
-        var cards = reviewable(items);
-        var startWrap = $('review-start-wrap');
-        var startHint = $('review-start-hint');
-        if (startWrap) { startWrap.hidden = cards.length === 0; }
-        if (startHint) {
-            var rest = items.length - cards.length;
-            startHint.textContent = cards.length + ' card' +
-                (cards.length === 1 ? '' : 's') + ' ready' +
-                (rest ? ' · ' + rest + ' concept' + (rest === 1 ? '' : 's') +
-                        ' to revisit below' : '');
-        }
-        var startBtn = $('review-start');
-        if (startBtn && startBtn.dataset.bound !== '1') {
-            startBtn.dataset.bound = '1';
-            startBtn.addEventListener('click', function () { startReview(lastDueItems); });
-        }
-        var quit = $('review-quit');
-        if (quit && quit.dataset.bound !== '1') {
-            quit.dataset.bound = '1';
-            quit.addEventListener('click', function () { endReview(false); });
-        }
-        var rev = $('review-reveal');
-        if (rev && rev.dataset.bound !== '1') {
-            rev.dataset.bound = '1';
-            rev.addEventListener('click', reveal);
-        }
-        var grades = $('review-grades');
-        if (grades && grades.dataset.bound !== '1') {
-            grades.dataset.bound = '1';
-            grades.addEventListener('click', function (e) {
-                var b = e.target.closest('[data-grade]');
-                if (b) { grade(parseInt(b.dataset.grade, 10)); }
-            });
-        }
-        lastDueItems = items;
-
-        var badge = $('tab-due-count');
-        if (badge) {
-            badge.textContent = items.length;
-            badge.hidden = items.length === 0;
-        }
-
-        if (!items.length) {
-            if (empty) empty.hidden = false;
-            return;
-        }
-        if (!list) return;
-
-        list.innerHTML = items.map(function (c) {
-            var title = c.front || c.title || c.concept_uid || 'Concept';
-            var when = c.next_review_date || '';
-            return '<article class="practice-card">' +
-                     '<div class="practice-card-body">' +
-                       '<h3 class="practice-card-title">' + esc(title) + '</h3>' +
-                       (when ? '<p class="practice-card-meta">due ' + esc(when) + '</p>' : '') +
-                     '</div>' +
-                     '<a class="btn btn-primary practice-card-action" href="/learn?course_uid=' +
-                        encodeURIComponent(c.course_uid || '') +
-                        '&concept_uid=' + encodeURIComponent(c.concept_uid || '') +
-                        '">Review</a>' +
-                   '</article>';
-        }).join('');
-        list.hidden = false;
     }
 
     // --- quiz ---------------------------------------------------------------
@@ -652,9 +817,24 @@
         if (el) el.textContent = n;
     }
 
+    /* Delegated, so the handlers survive every re-render of the queue and there
+       is exactly one listener per control rather than one per card. */
+    function wireReview() {
+        document.addEventListener('click', function (e) {
+            if (!e.target.closest) { return; }
+            if (e.target.closest('#review-start')) { startReview(); return; }
+            if (e.target.closest('#review-quit')) { endReview(false); return; }
+            var g = e.target.closest('.grade-btn');
+            if (g) { grade(parseInt(g.dataset.grade, 10)); return; }
+            var c = e.target.closest('.choice-btn');
+            if (c) { answerChoice(c.dataset.choice === 'true'); }
+        });
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
         wireTabs();
         wireQuiz();
+        wireReview();
         show(window.PRACTICE_ACTIVE_TAB || 'due', false);
     });
     // Retry buttons on the two error cards.

@@ -67,6 +67,33 @@ def test_no_duplicate_function_declarations(path):
     )
 
 
+@pytest.mark.parametrize("path", _js_files(), ids=lambda p: p.name)
+def test_no_var_shadows_a_function_of_the_same_name(path):
+    """`function f(){}` and `var f = ...` in one scope.
+
+    Both hoist, then the assignment overwrites the function — so every call to
+    f() throws "f is not a function", but only once that line has run, which is
+    usually somewhere far from either declaration. The review session in
+    practice.js declared `function current()` while the quiz section below it
+    declared `var current = null`, and the whole session died on load.
+    """
+    src = _strip_literals(_strip_comments(
+        path.read_text(encoding="utf-8", errors="replace")))
+    # Only declarations at the same nesting level can actually collide. A `var`
+    # inside a function body shadows the outer function only within that body,
+    # which is a readability hazard but not the runtime failure this guards
+    # against — build-view.js has exactly that and is fine.
+    funcs = set(re.findall(r"^(\s{0,4})function\s+([A-Za-z_$][\w$]*)\s*\(", src, re.M))
+    vars_ = set(re.findall(r"^(\s{0,4})var\s+([A-Za-z_$][\w$]*)\s*=", src, re.M))
+    by_name_f = {n for _i, n in funcs}
+    by_name_v = {n for _i, n in vars_}
+    clash = sorted(by_name_f & by_name_v)
+    assert not clash, (
+        f"{path.name}: {clash} declared as both a function and a var. The "
+        f"assignment wins at runtime and every call to it throws."
+    )
+
+
 
 
 # NOTE: an undefined-call check (the `load()` bug) lived here and was removed.
