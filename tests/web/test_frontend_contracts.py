@@ -409,3 +409,23 @@ def test_the_synchronous_build_is_given_time_to_finish():
     assert m, "the create proxy call moved; re-derive this check"
     assert "300" not in m.group(1), (
         "the create proxy is back to a timeout shorter than a build")
+
+
+def test_the_preview_outlasts_the_modules_it_accepts():
+    """/api/custom_course/preview validates a maximum of 10 modules, so its
+    proxy must survive 10 modules' worth of generation.
+
+    Measured while verifying the wizard flow: ONE module took 3m21s and nine
+    model calls. Ten would need roughly half an hour; the old 600s ceiling
+    covered about three and abandoned the rest while the work continued unseen.
+    """
+    import pathlib
+    import re
+    src = (pathlib.Path(__file__).resolve().parents[2]
+           / "services" / "web-ui" / "app.py").read_text()
+    m = re.search(r"custom_course/preview',\s*\n\s*json=request\.json,\s*\n\s*timeout=([^\n]+)",
+                  src)
+    assert m, "the preview proxy call moved; re-derive this check"
+    assert "600" not in m.group(1), (
+        "the preview proxy is back to a ceiling shorter than the outlines it "
+        "accepts")

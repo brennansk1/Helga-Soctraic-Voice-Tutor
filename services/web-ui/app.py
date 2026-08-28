@@ -2954,12 +2954,22 @@ def preview_custom_course():
         module_count = len(request.json.get('modules', []))
         logger.info(f"Proxying preview request for '{title}' with {module_count} modules")
         
-        # Forward to RAG service with extended timeout for LLM generation
-        # Timeout: 10 minutes to handle large courses (per-module timeout in backend)
+        # TEN MINUTES COVERS ABOUT THREE MODULES, AND THIS ROUTE ACCEPTS TEN.
+        #
+        # Measured while verifying the wizard's preview -> create flow: laying
+        # out a SINGLE module took 3m21s and nine model calls. At that rate the
+        # ten modules this endpoint's own validation permits would need roughly
+        # half an hour, so the old 600s ceiling would abandon any outline past
+        # about three — handing the learner an error while the generation
+        # carried on unseen in the rag-engine.
+        #
+        # Same failure as the 60s clarify timeout and the 300s create timeout,
+        # and it matters more now that the wizard routes through here rather
+        # than through the title-only path.
         resp = requests.post(
             f'{SERVICES["rag"]}/api/custom_course/preview',
             json=request.json,
-            timeout=600
+            timeout=int(os.getenv("HELGA_PREVIEW_TIMEOUT", "2400"))
         )
         
         # Log response status
@@ -2971,7 +2981,10 @@ def preview_custom_course():
         return jsonify(resp.json()), resp.status_code
         
     except requests.exceptions.Timeout:
-        logger.error("Preview generation timed out after 120 seconds")
+        # The number here was 120 while the timeout was 600 and is now
+        # neither — log what actually elapsed rather than a constant that
+        # has already been wrong twice.
+        logger.error("Preview generation timed out")
         return jsonify({'error': 'Preview generation timed out. Please try with fewer modules or lower depth.'}), 504
     except requests.exceptions.ConnectionError as e:
         logger.error(f"Failed to connect to RAG service: {e}")
