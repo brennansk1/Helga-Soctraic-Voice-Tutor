@@ -78,3 +78,52 @@ Three creation entry points are advertised on /courses: Create a course, Build
 module by module, and Import a course. Two of them build from a title. The one
 that promises the learner control over the structure currently accepts that
 control and discards it — and tells them nothing.
+
+---
+
+# Resolution — 2026-08-28
+
+The preview → create rewiring described above was done. `wizard.js` now POSTs
+the collected modules to `/api/custom_course/preview`, then POSTs
+`{title, description, teaching_style, modules, structure}` to
+`/api/custom_course/create`.
+
+## Measured, by building again
+
+Same shape of input as the failing walk above — one module I named myself,
+with a note and named concepts, on the topic "Regex Lookahead":
+
+| | before | after |
+|---|---|---|
+| modules built | 6, none of them mine | **1 — "Positive and Negative Lookahead", mine** |
+| concepts | 145 | 36 |
+
+That is the outline being honoured rather than discarded.
+
+## Two drops the rebuild then exposed
+
+Inspecting the course the new path produced found two more, both introduced by
+the reroute itself — fixes that had been made on the FSM path the wizard no
+longer takes:
+
+1. **Field-name mismatch.** preview reads `{title, context, depth}` per module;
+   `wizard.js` was sending `{title, note, concepts}`. The per-module note was
+   dropped on the name and the named concepts had no field at all, so a module
+   the learner spelled out concept by concept arrived as a bare title. Both now
+   fold into `context`.
+2. **`learner_context` not stored.** `ContentHydrator.hydrate()` reads
+   `course["learner_context"]`; `create_custom_course_wizard` kept the
+   description only as `overview`, which nothing reads at build time. Measured:
+   the learner's sentence reached the server and the finished course had the
+   field empty.
+
+Both are fixed and guarded (`tests/rag/test_external_author_is_told_what_the_
+tutor_reads.py`). The guard asserts the route storing the key *and* the
+hydrator still reading it, as a pair — either half moving alone reproduces this
+silently, which is how it happened the first time.
+
+## Still open
+
+`/api/create_course_custom` in fsm_logic still exists and is still named one
+word-order away from `/api/custom_course/create`. Nothing calls it now, but the
+collision that caused this is intact.
