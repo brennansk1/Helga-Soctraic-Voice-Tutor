@@ -102,6 +102,14 @@ Read these before changing anything; each has cost real time more than once.
     `tests/frontend/test_static_asset_integrity.py` guards this.
   * **Undefined CSS tokens.** `var(--x)` where `--x` does not exist drops the
     whole declaration. Same test file guards it.
+  * **Images older than requirements.txt.** `jsonschema` was declared on
+    2026-08-25 and the images were built on the 24th, so for three days EVERY
+    schema-constrained LLM call in the system ran unvalidated and the
+    schema-mismatch retry could not fire. The service said so in its logs once
+    per process and nobody was reading. After changing any requirements.txt,
+    `docker compose build <service>` — restarting a container does not rebuild
+    its image. Check with:
+    `docker exec helga-rag-engine python3 -c "import jsonschema"`
 
 ## Development Conventions
 - **Python 3.10+**, no type stubs needed

@@ -514,6 +514,20 @@
         }
 
         // True/false is answered before the reveal; everything else reveals first.
+        /* Open questions get an answer box. Marking against the author's
+           criteria beats self-marking most on exactly this tier — a learner who
+           has just read the criteria is the worst judge of whether their own
+           answer met them. */
+        var isOpen = item.kind === 'socratic';
+        setShown('review-mark', isOpen);
+        setShown('review-marked', false);
+        var box = $('review-answer');
+        if (box) { box.value = ''; }
+        var markBtn = $('review-mark-btn');
+        if (markBtn) { markBtn.disabled = false; markBtn.textContent = 'Mark my answer'; }
+        var markNote = $('review-mark-note');
+        if (markNote) { markNote.textContent = ''; }
+
         var isChoice = item.kind === 'discriminate';
         setShown('review-choices', isChoice);
         setShown('review-reveal-wrap', !isChoice);
@@ -556,6 +570,9 @@
         setShown('review-back', true);
         setShown('review-reveal-wrap', false);
         setShown('review-choices', false);
+        /* The criteria are on screen now. An answer typed after reading them is
+           not evidence of recall, so the box closes rather than inviting one. */
+        setShown('review-mark', false);
         /* A true/false item has already been graded by the time it reveals —
            the learner committed and the content says which answer was right.
            Offering the four self-rating buttons underneath invites a second
@@ -584,6 +601,64 @@
            other tier. Right is "Good", not "Easy": there were two options, so a
            correct answer is weaker evidence than recalling something cold. */
         grade(right ? 3 : 1, true);
+    }
+
+    /* THE ONLY MODEL CALL IN THE REVIEW LOOP. Measured on this machine: about
+       11 seconds warm, well over two minutes cold. The wait is narrated rather
+       than hidden, and a failure leaves the learner exactly where they were —
+       able to reveal and mark themselves. */
+    function markAnswer() {
+        var item = currentItem();
+        var box = $('review-answer');
+        if (!item || !box) { return; }
+        var answer = (box.value || '').trim();
+        if (!answer) {
+            $('review-mark-note').textContent = 'Write an answer first.';
+            return;
+        }
+        var btn = $('review-mark-btn');
+        btn.disabled = true;
+        btn.textContent = 'Marking…';
+        var note = $('review-mark-note');
+        note.textContent = 'This one asks the model, so it can take a while — '
+                         + 'longer still if it has gone cold.';
+
+        fetch('/api/review/check_answer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uid: item.uid, answer: answer })
+        })
+        .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
+        .then(function (res) {
+            if (!res.ok || !res.body || res.body.gradable === false) {
+                throw new Error((res.body && res.body.error) || 'could not mark it');
+            }
+            showMarked(res.body);
+            reveal();
+            grade(res.body.grade, true);
+        })
+        .catch(function (e) {
+            btn.disabled = false;
+            btn.textContent = 'Mark my answer';
+            /* Say what happened and leave self-marking available, rather than
+               inventing a grade nobody produced. */
+            note.textContent = 'Could not mark it (' + e.message +
+                               '). Reveal the criteria and mark yourself.';
+        });
+    }
+
+    var GRADE_WORD = { 1: 'Not yet', 2: 'Partly there', 3: 'Met the criteria',
+                       4: 'Met them comfortably' };
+
+    function showMarked(v) {
+        $('review-marked-grade').textContent =
+            (GRADE_WORD[v.grade] || 'Marked') + '.';
+        $('review-marked-note').textContent = v.note || '';
+        var missed = (v.missed || []).filter(Boolean);
+        $('review-marked-missed').innerHTML = missed.length
+            ? missed.map(function (m) { return '<li>' + esc(m) + '</li>'; }).join('')
+            : '';
+        setShown('review-marked', true);
     }
 
     function grade(n, auto) {
@@ -1146,6 +1221,7 @@
             if (!e.target.closest) { return; }
             if (e.target.closest('#review-start')) { startReview(); return; }
             if (e.target.closest('#review-quit')) { endReview(false); return; }
+            if (e.target.closest('#review-mark-btn')) { markAnswer(); return; }
             var g = e.target.closest('.grade-btn');
             if (g) { grade(parseInt(g.dataset.grade, 10)); return; }
             var c = e.target.closest('.choice-btn');

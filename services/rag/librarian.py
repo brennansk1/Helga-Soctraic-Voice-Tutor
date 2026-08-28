@@ -2729,6 +2729,97 @@ def review_activity_endpoint():
     })
 
 
+_RUBRIC_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "grade": {"type": "integer", "minimum": 1, "maximum": 4},
+        "met": {"type": "array", "items": {"type": "string"}},
+        "missed": {"type": "array", "items": {"type": "string"}},
+        "note": {"type": "string"},
+    },
+    "required": ["grade", "note"],
+}
+
+
+@app.route("/api/review/check_answer", methods=["POST"])
+def review_check_answer_endpoint():
+    """Grade an open answer against the concept's own Mastery Criteria.
+
+    THE ONLY MODEL CALL IN THE REVIEW LOOP, and it is opt-in per item. Every
+    other tier is graded without one, because a daily queue cannot wait on this
+    hardware. Open questions are the tier where self-marking is weakest — a
+    learner who has just read the criteria is the worst judge of whether their
+    own answer met them — so this is offered where it earns its cost, and the
+    learner can still self-mark instead.
+
+    The criteria are the AUTHOR'S, extracted with the item. The model is asked
+    to check an answer against them, not to invent a standard of its own.
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    uid = (data.get("uid") or "").strip()
+    answer = (data.get("answer") or "").strip()
+    student_id = data.get("student_id") or DEFAULT_STUDENT_ID
+
+    if not uid or not answer:
+        return jsonify({"error": "uid and answer are required"}), 400
+    if len(answer) > 4000:
+        answer = answer[:4000]
+
+    try:
+        rows = storage.flashcards.get_items(student_id=student_id)
+    except Exception as e:
+        logger.error("check_answer: item lookup failed: %s", e, exc_info=True)
+        return jsonify({"error": "could not read that item"}), 503
+    item = next((r for r in rows if r.get("uid") == uid), None)
+    if not item:
+        return jsonify({"error": "no such item"}), 404
+
+    rubric = (item.get("payload") or {}).get("rubric") or item.get("back") or ""
+    if not rubric.strip():
+        # No criteria means nothing to mark against; say so rather than letting
+        # the model improvise a standard the author never set.
+        return jsonify({"error": "this item has no criteria to mark against",
+                        "gradable": False}), 422
+
+    prompt = (
+        "A learner answered a question about \"" + (item.get("front") or "")[:400] + "\".\n\n"
+        "THE AUTHOR'S CRITERIA for a good answer:\n" + rubric[:2000] + "\n\n"
+        "THE LEARNER'S ANSWER:\n" + answer + "\n\n"
+        "Judge the answer against those criteria ONLY — not against what you "
+        "would have written. Return JSON: grade (1 = did not recall it, "
+        "2 = partial, 3 = met the criteria, 4 = met them easily and completely), "
+        "met (criteria they satisfied), missed (criteria they did not), and note "
+        "(one or two sentences addressed to the learner, saying what was missing "
+        "rather than restating what they got right)."
+    )
+    try:
+        from services.common.llm_utils import llm_generate_json
+        verdict = llm_generate_json(
+            prompt,
+            sys_prompt=("You mark a learner's answer against criteria someone "
+                        "else wrote. Be exact and brief. Do not award a grade "
+                        "the criteria do not support."),
+            expected_type="dict", schema=_RUBRIC_SCHEMA, max_tokens=400)
+    except Exception as e:
+        logger.warning("check_answer: model call failed for %s: %s", uid, e)
+        verdict = None
+
+    if not isinstance(verdict, dict) or "grade" not in verdict:
+        # A failed check must not silently become a grade. The learner keeps
+        # their own judgement, which is what they had before this existed.
+        return jsonify({"error": "could not mark that answer just now",
+                        "gradable": False}), 503
+
+    grade = max(1, min(4, int(verdict.get("grade") or 1)))
+    return jsonify({
+        "grade": grade,
+        "met": verdict.get("met") or [],
+        "missed": verdict.get("missed") or [],
+        "note": (verdict.get("note") or "").strip()[:600],
+        "gradable": True,
+    })
+
+
 @app.route("/api/review/forecast", methods=["GET"])
 def review_forecast_endpoint():
     """Due counts per day ahead — what load balancing is flattening."""

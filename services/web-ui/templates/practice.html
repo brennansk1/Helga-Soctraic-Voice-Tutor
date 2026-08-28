@@ -116,6 +116,30 @@
                 False<span class="choice-key">F</span></button>
             </div>
 
+            {# Open questions can be marked against the author's own criteria
+               rather than self-rated. It is offered, not forced: it is the only
+               call in the review loop that waits on the model, and on a cold
+               model that is minutes. Self-marking stays available. #}
+            <div class="review-mark" id="review-mark" hidden>
+              <label class="review-mark-label" for="review-answer">
+                Answer it in your own words, and Helga can mark you against the
+                criteria the author wrote.
+              </label>
+              <textarea id="review-answer" class="review-answer" rows="4"
+                        placeholder="Your answer (optional — you can also just reveal and mark yourself)"></textarea>
+              <div class="review-mark-actions">
+                <button class="btn-alpine btn-alpine-secondary" id="review-mark-btn"
+                        type="button">Mark my answer</button>
+                <span class="review-mark-note" id="review-mark-note"></span>
+              </div>
+            </div>
+
+            <div class="review-marked" id="review-marked" hidden>
+              <p class="review-marked-grade" id="review-marked-grade"></p>
+              <p class="review-marked-note" id="review-marked-note"></p>
+              <ul class="review-marked-list" id="review-marked-missed"></ul>
+            </div>
+
             <div class="review-back" id="review-back" hidden>
               <p class="review-side-label" id="review-back-label">Answer</p>
               <div id="review-back-body"></div>
@@ -266,5 +290,5 @@
        than falling back to the 'due' default practice.js already applies. */
     window.PRACTICE_ACTIVE_TAB = {{ active_tab | default(none) | tojson }};
 </script>
-<script src="{{ url_for('static', filename='js/practice.js') }}?v=21"></script>
+<script src="{{ url_for('static', filename='js/practice.js') }}?v=22"></script>
 {% endblock %}

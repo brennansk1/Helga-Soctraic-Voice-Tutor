@@ -2762,6 +2762,27 @@ def api_review_grade():
         return jsonify({'error': 'Could not record that grade'}), 502
 
 
+@app.route('/api/review/check_answer', methods=['POST'])
+@student_session_required
+def api_review_check_answer():
+    """Mark an open answer against the concept's criteria.
+
+    A long timeout on purpose: this is the one review call that waits on the
+    model, and on a cold model that is minutes. Failing it early would turn a
+    slow answer into a lost one.
+    """
+    try:
+        body = {**(request.get_json(force=True, silent=True) or {}),
+                'student_id': current_student_id()}
+        resp = requests.post(f'{SERVICES["rag"]}/api/review/check_answer',
+                             json=body, timeout=300)
+        return jsonify(resp.json()), resp.status_code
+    except requests.RequestException as e:
+        logger.error(f"Review check_answer proxy failed: {e}")
+        return jsonify({'error': 'Could not reach the review service',
+                        'gradable': False}), 502
+
+
 @app.route('/api/review/activity', methods=['GET'])
 @student_session_required
 def api_review_activity():

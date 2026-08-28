@@ -1333,3 +1333,72 @@
        still not be a stray line across the card. */
     .review-back::before { display: none; }
 }
+
+/* ---- Marking an open answer ------------------------------------------------
+   Offered on open questions only. Self-marking is weakest exactly here — a
+   learner who has just read the criteria is the worst judge of whether their
+   own answer met them — so this is where a model call earns its cost. */
+.review-mark {
+    margin-top: var(--space-4);
+    padding-top: var(--space-4);
+    border-top: 1px dashed var(--border-color);
+}
+.review-mark-label {
+    display: block;
+    margin-bottom: var(--space-2);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
+.review-answer {
+    width: 100%;
+    padding: var(--space-3);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+    resize: vertical;
+}
+.review-answer:focus-visible { box-shadow: var(--focus-ring); outline: none; }
+.review-mark-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-top: var(--space-2);
+    flex-wrap: wrap;
+}
+.review-mark-note {
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    flex: 1;
+    min-width: 12rem;
+}
+
+.review-marked {
+    margin-top: var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    border-left: 3px solid var(--accent-primary);
+    border-radius: var(--border-radius-sm);
+    background: var(--bg-primary);
+}
+.review-marked-grade {
+    margin: 0 0 var(--space-1);
+    font-weight: 600;
+    font-size: var(--font-size-sm);
+}
+.review-marked-note {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
+/* What was MISSING, not what was right — the gap is the actionable half. */
+.review-marked-list {
+    margin: var(--space-2) 0 0;
+    padding-left: 1.15rem;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
+.review-marked-list:empty { display: none; }
+.review-marked-list li { margin-bottom: var(--space-1); }
