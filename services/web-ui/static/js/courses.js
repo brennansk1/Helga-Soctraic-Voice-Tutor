@@ -240,10 +240,26 @@ async function loadCourses() {
            does not help: it refetches a status that will never change again.
            Only one build runs at a time on this machine, so an idle pipeline
            means any skeleton course is stalled rather than in progress. */
-        const buildActiveReady = fetch('/api/creation_status')
-            .then(function (r) { return r.ok ? r.json() : null; })
-            .then(function (d) { return !!(d && d.active); })
-            .catch(function () { return true; });   // unknown → do not cry wolf
+        /* TWO ENDPOINTS, BECAUSE NEITHER ONE SEES EVERY BUILD.
+           /api/creation_status reads the FSM in core-logic and sees a build
+           started from the create flow. A RESUME runs ContentHydrator inside
+           the rag-engine instead, so creation_status reports active:false
+           throughout — measured mid-resume, while /api/build/status reported
+           active:true, source:"resume" for the same course. Asking only the
+           first would offer "Resume build" on a course that is resuming, and
+           invite someone to start a second hydration over the top of a live
+           one. build-guard.js's own probe consults both for this reason. */
+        const _asked = function (url, read) {
+            return fetch(url)
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(read)
+                .catch(function () { return true; });  // unknown → assume busy
+        };
+        const buildActiveReady = Promise.all([
+            _asked('/api/creation_status', function (d) { return !!(d && d.active); }),
+            _asked('/api/build/status',
+                   function (d) { return !!(d && d.active && !d.stale); })
+        ]).then(function (v) { return v[0] || v[1]; });
         const resp = await fetch('/api/courses', { signal: controller.signal });
         const aBuildIsRunning = await buildActiveReady;
         const qualityByUid = await qualityReady;

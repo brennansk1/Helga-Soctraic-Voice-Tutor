@@ -227,3 +227,23 @@ def test_use_strict_is_the_first_statement_in_its_scope():
             offenders.append(f"{path.name}: {head.strip()[:80]!r} precedes "
                              f"'use strict'")
     assert not offenders, "\n".join(offenders)
+
+
+def test_the_courses_page_asks_both_build_endpoints():
+    """Neither endpoint sees every build.
+
+    /api/creation_status reads the FSM in core-logic and sees a build started
+    from the create flow. A RESUME runs ContentHydrator inside the rag-engine,
+    so creation_status reports active:false for its whole duration — measured
+    mid-resume, while /api/build/status reported active:true, source:"resume"
+    for the same course.
+
+    The courses page decides between "Building…" and "Resume build" from this.
+    Asking only creation_status offers "Resume build" on a course that is
+    already resuming, which invites a second hydration over a live one.
+    """
+    src = (STATIC / "js" / "courses.js").read_text(encoding="utf-8")
+    assert "/api/creation_status" in src
+    assert "/api/build/status" in src, (
+        "courses.js decides whether a build is running from creation_status "
+        "alone; a resume is invisible there")
