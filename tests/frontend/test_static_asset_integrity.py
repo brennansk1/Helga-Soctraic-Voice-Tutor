@@ -184,6 +184,15 @@ def test_every_icon_used_in_a_template_is_defined():
                                tpl.read_text(errors="replace")):
             used.setdefault(name, set()).add(tpl.name)
 
+    # Templates were only half of it. Controls built in JavaScript -- the
+    # "Import a course" button is injected into the courses action bar at
+    # runtime and appears in no template -- name their icons in string
+    # literals, which the first version of this test could not see.
+    ICON_IN_JS = re.compile(r"[\"']\s*(?:i\s+)?i-([a-z0-9-]+)\s*[\"']")
+    for js in _js_files():
+        for name in ICON_IN_JS.findall(js.read_text(errors="replace")):
+            used.setdefault(name, set()).add(js.name)
+
     missing = {k: sorted(v) for k, v in used.items() if k not in defined}
     assert not missing, f"icons used but never defined: {missing}"
 

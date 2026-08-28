@@ -338,3 +338,48 @@ class TestImportPolicies(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ImportedCopyIsDistinguishable(unittest.TestCase):
+    """A uid the learner never sees is not a disambiguation.
+
+    Collision policy makes an import of a course you already have an
+    independent copy under a fresh uid — correct, and invisible. Importing a
+    bundle exported from the same machine produced two cards reading
+    "Practical Regular Expressions", identical in title, subtitle and module
+    counts, with nothing to say which had just arrived. The response reported
+    renamed:true, which was true of the uid alone.
+    """
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.sm = StorageManager(data_dir=self.dir)
+        self.uid = _build_course(self.sm)
+        self.original_title = self.sm.courses.get_course(self.uid)["title"]
+        self.bundle = _export_bytes(self.sm, self.uid)
+
+    def test_a_colliding_import_gets_a_distinguishable_title(self):
+        body = _post_bundle(self.sm, self.bundle).get_json()
+        self.assertTrue(body["ok"], body)
+        self.assertNotEqual(body["title"], self.original_title,
+                            "the copy must not be titled identically to the "
+                            "course it collided with")
+        self.assertIn("imported", body["title"].lower())
+
+    def test_importing_the_same_bundle_twice_does_not_make_twins(self):
+        first = _post_bundle(self.sm, self.bundle).get_json()["title"]
+        second = _post_bundle(self.sm, self.bundle).get_json()["title"]
+        self.assertNotEqual(first, second,
+                            "a second import must not reuse the first copy's "
+                            "title")
+        titles = [(c.get("title") or "") for c in self.sm.courses.list_courses()]
+        self.assertEqual(len(titles), len(set(titles)),
+                         f"duplicate titles in the library: {titles}")
+
+    def test_a_non_colliding_import_keeps_its_own_title(self):
+        """Nothing to disambiguate against — the title must be left alone."""
+        fresh = StorageManager(data_dir=tempfile.mkdtemp())
+        body = _post_bundle(fresh, self.bundle).get_json()
+        self.assertTrue(body["ok"], body)
+        self.assertEqual(body["title"], self.original_title)
+        self.assertFalse(body["renamed"])

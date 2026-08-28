@@ -405,6 +405,32 @@ def import_bundle(storage, bundle_path: str) -> dict:
             structure = json.loads(
                 json.dumps(structure).replace(old_uid, new_uid))
         structure["uid"] = new_uid
+
+        # THE UID WAS DISAMBIGUATED AND THE TITLE WAS NOT.
+        #
+        # Collision policy above deliberately never overwrites: an import of a
+        # course you already have becomes an independent copy under a fresh
+        # uid. But the learner never sees a uid. Importing a bundle exported
+        # from this same machine produced two cards reading "Practical Regular
+        # Expressions", identical in title, subtitle and module counts, with
+        # nothing on either to say which was which or which had just arrived.
+        # The response even said renamed:true -- true of the uid, invisible in
+        # the UI.
+        #
+        # Give the copy a distinguishable title, counting up if that is taken
+        # too, so importing the same bundle twice does not produce two
+        # "(imported)" twins.
+        if collides:
+            _base = (structure.get("title") or "Untitled course").strip()
+            _existing = {(c.get("title") or "").strip()
+                         for c in (storage.courses.list_courses() or [])}
+            _candidate = f"{_base} (imported)"
+            _n = 2
+            while _candidate in _existing:
+                _candidate = f"{_base} (imported {_n})"
+                _n += 1
+            structure["title"] = _candidate
+
         # Provenance, so a support question about an imported course can be
         # answered from the course itself.
         structure["share"] = {
