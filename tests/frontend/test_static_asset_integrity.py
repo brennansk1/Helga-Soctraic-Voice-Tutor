@@ -286,3 +286,39 @@ def test_no_client_script_counts_due_concepts_as_due():
     assert not offenders, (
         "client scripts must count /api/review/queue, not "
         f"/api/due_concepts: {offenders}")
+
+
+def test_home_takes_its_streak_from_the_merged_record():
+    """Three implementations of one number, and the loudest was wrong.
+
+    ActivityStore.get_streak() reads activity_log alone and fed Home;
+    progress.js counted its own run in the browser; and /api/review/activity is
+    the only place that merges the log with the cards' last_review_date, which
+    is what makes the record complete before review logging existed.
+
+    Measured: the log held two days, the merged record three, and a truer count
+    for the middle one — Home said 2 while Progress said 3 for the same learner
+    on the same day.
+    """
+    home = (STATIC / "js" / "home.js").read_text(encoding="utf-8")
+    assert "/api/review/activity" in home, (
+        "home.js no longer reads the merged streak; it will drift from "
+        "Progress again")
+    # Counting the substring proves nothing: it appears in the DEFINITION and
+    # in a comment that mentions it, so an unwired loadStreak still "matches"
+    # twice. Strip comments, then exclude the definition — otherwise this
+    # assertion has exactly the defect it exists to catch.
+    import re
+    code = re.sub(r"/\*[\s\S]*?\*/", " ", home)
+    code = re.sub(r"//[^\n]*", " ", code)
+    calls = re.findall(r"(?<!function )\bloadStreak\s*\(\s*\)", code)
+    assert calls, (
+        "loadStreak is defined but never called — Home silently falls back to "
+        "the log-only streak and disagrees with Progress again")
+
+
+def test_progress_prefers_the_server_streak():
+    prog = (STATIC / "js" / "progress.js").read_text(encoding="utf-8")
+    assert "data.streak" in prog, (
+        "progress.js computes its own streak again instead of reading the "
+        "one the server derives from the merged record")
