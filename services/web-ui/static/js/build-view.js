@@ -972,6 +972,29 @@
                                 if (stage) setStage(stage, 'active');
                                 return;   // keep polling; it is alive
                             }
+                            /* A RESUME THAT FINISHES SAID NOTHING AT ALL.
+                               The create path reaches finish() because
+                               creation_status still names the course when it
+                               goes inactive. A resume never populates that
+                               endpoint, so a completed resume fell straight
+                               through to idle() — "No course is building" —
+                               and the outcome it had just produced was thrown
+                               away. Watched a 136-concept build end `ready`
+                               with 1,944 review items and show exactly that.
+
+                               build/status keeps the same facts: course_uid,
+                               ok, and finished_at. Bounded by recency so
+                               opening /build tomorrow does not resurrect
+                               today's completion as though it were live. */
+                            var FRESH_MS = 6 * 60 * 60 * 1000;
+                            var fin = b && b.finished_at
+                                ? b.finished_at * 1000 : 0;
+                            if (b && b.course_uid && fin &&
+                                    (Date.now() - fin) < FRESH_MS) {
+                                if (b.ok === false) { settle('error', b.course_uid); }
+                                else { finish(b.course_uid); }
+                                return;
+                            }
                             settled = true; stopPolling(); idle();
                         });
                     return;

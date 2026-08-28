@@ -468,13 +468,21 @@ def _teachable_count(course):
     try:
         from services.core.course_audit import count_teachable
 
+        # list_courses() returns SQLite ROWS — no modules on them — so walking
+        # `course` directly finds no concepts and reports 0 teachable for every
+        # course, which is worse than the wrong number it replaced. The tree
+        # lives in structure.json; get_course merges it.
+        structure = storage.courses.get_course(uid) or {}
+        if not structure.get("modules"):
+            return None
+
         def content_for(concept_uid):
             try:
                 return storage.courses.get_concept_content(uid, concept_uid) or ""
             except Exception:
                 return ""
 
-        teachable, _total = count_teachable(course, content_for)
+        teachable, _total = count_teachable(structure, content_for)
     except Exception as e:
         # A count that cannot be taken is not a reason to lose the course list.
         logger.debug("teachable count unavailable for %s: %s", uid, e)
