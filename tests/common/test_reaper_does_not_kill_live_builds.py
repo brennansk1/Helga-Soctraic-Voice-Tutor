@@ -91,3 +91,46 @@ def test_resume_claims_the_build_slot():
         "resume does not claim the slot, so the reaper's guard cannot match"
     assert "build_state.finish(" in body, \
         "resume does not release the slot, so the next build is refused"
+
+
+# ---------------------------------------------------------------------------
+# EVERY STAGE NAME THE CODE PASSES MUST HAVE A QUIET BUDGET.
+#
+# _quiet_budget falls back to STALE_AFTER_SECONDS when a stage is unknown, so a
+# typo is not an error — it is a silently shorter deadline. Four names were
+# passed that the table did not know: "hydration" (resume_build's name for
+# hydrate, one letter from the key that exists), "research", "coverage" and
+# "items", which is Stage 5 extraction.
+#
+# Too long only leaves a banner up. Too short reaps a build that is still
+# working — which this module's own comments record happening four times in
+# twelve minutes, once fourteen seconds after the hydration it killed began.
+# ---------------------------------------------------------------------------
+
+def test_every_stage_passed_anywhere_has_a_quiet_budget():
+    import re
+    import pathlib
+    from services.common.build_state import STAGE_QUIET_BUDGET
+
+    root = pathlib.Path(__file__).resolve().parents[2] / "services"
+    passed = set()
+    for py in root.rglob("*.py"):
+        for m in re.finditer(r"""stage\s*=\s*["']([a-z_]+)["']""",
+                             py.read_text(encoding="utf-8", errors="replace")):
+            passed.add(m.group(1))
+
+    missing = sorted(passed - set(STAGE_QUIET_BUDGET))
+    assert not missing, (
+        "these stage names are passed but have no quiet budget, so they "
+        f"silently take the default deadline: {missing}")
+
+
+def test_the_budget_lookup_actually_uses_those_keys():
+    """Guards the mechanism, not just the table: a rename of _quiet_budget's
+    lookup key would make the entries above decorative."""
+    from services.common import build_state
+    assert build_state._quiet_budget({"stage": "hydration"}) == 20 * 60
+    assert build_state._quiet_budget({"stage": "items"}) == 15 * 60
+    # An unknown stage still falls back rather than raising.
+    assert build_state._quiet_budget({"stage": "no_such_stage"}) == \
+        build_state.STALE_AFTER_SECONDS
