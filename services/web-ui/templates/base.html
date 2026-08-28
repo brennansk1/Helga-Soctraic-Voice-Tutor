@@ -609,6 +609,10 @@
                     case 'skeleton':  return 'skeleton';
                     case 'audit':     return 'audit';
                     case 'hydration': return 'writing';
+                    // build_state's own name for the same stage.
+                    case 'hydrate':   return 'writing';
+                    case 'items':     return 'review items';
+                    case 'finalize':  return 'finishing';
                     case 'complete':  return 'complete';
                     case 'error':     return 'error';
                     default:          return phase || 'starting';
@@ -627,15 +631,43 @@
                 }
                 topicEl.textContent = d.topic || 'course';
                 phaseEl.textContent = phaseLabel(d.phase);
-                pctEl.textContent = (d.progress_pct != null ? d.progress_pct : 0) + '%';
+                pctEl.textContent = (d.progress_pct != null)
+                    ? d.progress_pct + '%' : '';
                 banner.classList.add('visible');
                 currentUid = d.course_uid || currentUid;
+            }
+
+            /* A RESUME IS INVISIBLE TO creation_status.
+               That endpoint reads the FSM in core-logic and sees a build
+               started from Create. A resume runs ContentHydrator inside the
+               rag-engine, so `active` stays false for its whole duration and
+               this banner — the only thing telling a learner a build is
+               running while they browse — never appeared at all. Watched a
+               resume write eighty concepts with no banner on any page.
+               /api/build/status is the record a resume does claim. */
+            function fromBuildState(b) {
+                if (!b || !b.active || b.stale) { applyState(null); return; }
+                applyState({
+                    active: true,
+                    topic: b.topic,
+                    phase: b.stage,
+                    // A resume reports no percentage, and inventing one is
+                    // worse than omitting it. phaseLabel still says "writing".
+                    progress_pct: (typeof b.pct === 'number' && b.pct > 0)
+                        ? b.pct : null,
+                    course_uid: b.course_uid
+                });
             }
 
             function poll() {
                 fetch('/api/creation_status', { cache: 'no-store' })
                     .then(function(r) { return r.ok ? r.json() : null; })
-                    .then(applyState)
+                    .then(function (d) {
+                        if (d && d.active) { applyState(d); return; }
+                        return fetch('/api/build/status', { cache: 'no-store' })
+                            .then(function(r) { return r.ok ? r.json() : null; })
+                            .then(fromBuildState);
+                    })
                     .catch(function() { /* stay quiet — network blip */ });
             }
 
