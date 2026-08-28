@@ -1677,6 +1677,21 @@ def resume_build(course_uid):
     Returns 202 and works in the background: on this hardware even a handful of
     concepts outlives any sensible request timeout.
     """
+    # PIN THE OWNER BEFORE ANY WORKER THREAD EXISTS.
+    #
+    # _update_status stamps every progress message with _status_owner(), and
+    # off the request thread that falls back to a module global — "whatever the
+    # previous request left behind", as _bind_status_owner's own docstring
+    # says. web-ui emits each message to room student:<owner>, so an unbound
+    # resume publishes its entire progress stream, Stage 5's ITEMS: line
+    # included, to whichever room the last unrelated request happened to name.
+    #
+    # Every other handler that spawns a status-emitting worker binds first —
+    # preview_custom_course and create_custom_course_wizard both do. This one
+    # did not. It has worked so far only because there is a single student on
+    # this machine and the global holds the default.
+    _bind_status_owner()
+
     try:
         course = storage.courses.get_course(course_uid)
     except Exception as e:

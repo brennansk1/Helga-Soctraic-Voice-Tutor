@@ -45,3 +45,34 @@ def test_the_resume_path_reads_before_it_writes():
     assert j > 0, "resume no longer records that it is building"
     assert "get_course" in body[max(0, j - 400):j], \
         "resume writes a status without reading the course first"
+
+
+def test_every_handler_that_spawns_a_status_worker_binds_its_owner():
+    """_update_status stamps messages with _status_owner(); off the request
+    thread that falls back to a module global — "whatever the previous request
+    left behind". web-ui emits to room student:<owner>, so an unbound worker
+    publishes its whole progress stream to the wrong room.
+
+    resume_build spawned a thread and never bound. It went unnoticed because
+    this machine has one student and the global holds the default; a second
+    profile would have sent one learner's build progress to another's screen,
+    or to nobody.
+    """
+    import ast
+    import inspect
+    from services.rag import librarian
+
+    tree = ast.parse(inspect.getsource(librarian))
+    offenders = []
+    for fn in [n for n in ast.walk(tree)
+               if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]:
+        body = ast.dump(fn)
+        spawns = "Thread" in body or "ThreadPoolExecutor" in body
+        emits = "_update_status" in body
+        if not (spawns and emits):
+            continue
+        if "_bind_status_owner" not in body:
+            offenders.append(fn.name)
+    assert not offenders, (
+        "these handlers spawn a worker that emits progress without pinning the "
+        f"owner first: {offenders}")
