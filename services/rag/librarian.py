@@ -2811,12 +2811,48 @@ def review_activity_endpoint():
         series.append({"date": d, "count": counts.get(d, 0)})
 
     active = [d for d, n in counts.items() if n]
+
+    # ONE STREAK, COMPUTED WHERE THE MERGED RECORD LIVES.
+    #
+    # There were three. ActivityStore.get_streak() reads activity_log alone and
+    # fed Home's "Day streak"; progress.js counted back over `days` in the
+    # browser for "currently N days in a row"; and this endpoint is the only
+    # place that merges the log with the cards' last_review_date, which is what
+    # makes the record complete at all.
+    #
+    # They disagreed, and the log-only one was wrong: measured on this machine,
+    # activity_log held two days (27th, 28th) while the merged record held
+    # three (26th, 27th, 28th) and a truer count for the 27th — 17 against 10 —
+    # because review logging did not exist for the earlier history. Home said 2
+    # while Progress said 3, on the same day, for the same learner.
+    #
+    # Computed here, from the merged days, so both screens read one number.
+    def _run_from(end_index):
+        run = 0
+        for i in range(end_index, -1, -1):
+            if not series[i]["count"]:
+                break
+            run += 1
+        return run
+
+    last = len(series) - 1
+    # Today not being done yet does not break a streak; the day is not over.
+    streak = _run_from(last if series[last]["count"] else last - 1) \
+        if last >= 0 else 0
+
+    longest, run = 0, 0
+    for entry in series:
+        run = run + 1 if entry["count"] else 0
+        longest = max(longest, run)
+
     return jsonify({
         "days": series,
         "total": sum(counts.values()),
         "active_days": len(active),
         "recorded_from": recorded_from,
         "today": today.isoformat(),
+        "streak": streak,
+        "longest_streak": longest,
     })
 
 

@@ -45,10 +45,31 @@
                 // loadTotals() below overwrites this from the source that is
                 // right; this is only the value shown until it lands.
                 $("stat-concepts").textContent = d.concepts_mastered != null ? d.concepts_mastered : "0";
+                /* Shown until loadStreak() below replaces it. /api/stats
+                   reads activity_log alone, which has no history from before
+                   review logging existed, so it under-reports: measured 2 here
+                   while Progress showed 3 for the same learner on the same
+                   day. */
                 $("stat-streak").textContent = d.streak != null ? d.streak : "0";
                 $("home-error").classList.add("hidden");
                 return d;
             });
+    }
+
+    function loadStreak() {
+        /* ONE STREAK, from the endpoint that merges the activity log with the
+           cards' last_review_date. That merge is what makes the record
+           complete; the log alone cannot see the days before it existed, and
+           this is the front page's headline number for "am I keeping this
+           up". */
+        return fetch("/api/review/activity")
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (d) {
+                if (!d || d.streak == null) { return; }   // keep the fallback
+                var el = $("stat-streak");
+                if (el) { el.textContent = d.streak; }
+            })
+            .catch(function () { /* leave the /api/stats value in place */ });
     }
 
     function loadTotals() {
@@ -192,7 +213,7 @@
         // loadTotals AFTER loadStats, deliberately: it corrects the two
         // figures /api/stats cannot compute.
         Promise.all([loadStats().then(loadTotals), loadDue(),
-                     loadCourses(), loadDegree()])
+                     loadCourses(), loadDegree(), loadStreak()])
             .then(function (res) {
                 var stats = res[0] || {}, courses = res[2] || [];
                 if (last && last.uid) {

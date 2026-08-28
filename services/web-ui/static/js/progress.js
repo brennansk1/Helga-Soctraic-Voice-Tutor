@@ -305,8 +305,17 @@
         renderMonths(cells);
 
         var active = data.active_days || 0;
-        var streak = currentStreak(days);
-        var best = longest(days);
+        /* The server computes this from the same merged record it builds the
+           heatmap from — activity_log folded together with the cards'
+           last_review_date. Counting again here made a third implementation of
+           one number, and the three disagreed: Home showed 2 while this line
+           showed 3, on the same day, because Home's source was the log alone
+           and the log has no history from before review logging existed.
+           The local functions stay as a fallback for a response without the
+           field, and are the same arithmetic. */
+        var streak = (data.streak != null) ? data.streak : currentStreak(days);
+        var best = (data.longest_streak != null)
+            ? data.longest_streak : longest(days);
         var summary = active
             ? plural(active, 'active day') + ' in the last year · ' +
               plural(data.total || 0, 'review') + ' · ' +

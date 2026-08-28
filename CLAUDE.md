@@ -151,6 +151,15 @@ Read these before changing anything; each has cost real time more than once.
     it claims. Asking only the first made the courses page offer "Resume build"
     during a live resume, and made /build say "No course is building" while one
     ran. Ask both, as `build-guard.js`'s own probe does.
+  * **`docker restart` kills a running build, silently.** Hydration runs in a
+    thread inside helga-rag-engine (a resume) or helga-core-logic (a fresh
+    build). Restarting the container kills that thread with no error anywhere:
+    the concepts already written stay on disk, the course keeps status
+    "building", and the work simply stops. It cost three builds in one session,
+    each an hour or more of model time, twice while verifying an unrelated fix.
+    Use `tools/safe_restart.sh <container>`, which refuses while the build
+    record is heartbeating and exits 1 so a script notices. web-ui is always
+    safe.
   * **Images older than requirements.txt.** `jsonschema` was declared on
     2026-08-25 and the images were built on the 24th, so for three days EVERY
     schema-constrained LLM call in the system ran unvalidated and the
