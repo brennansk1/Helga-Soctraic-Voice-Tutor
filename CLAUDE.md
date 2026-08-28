@@ -112,6 +112,22 @@ Read these before changing anything; each has cost real time more than once.
     `tests/frontend/test_static_asset_integrity.py` guards this.
   * **Undefined CSS tokens.** `var(--x)` where `--x` does not exist drops the
     whole declaration. Same test file guards it.
+  * **A JS handler that throws is a page that looks quiet.** build-view.js's
+    Stage 5 block used `text` where the function's variable is `msg`, so a
+    ReferenceError fired on the FIRST message of every build and on every one
+    after it, killing the handler before the `ITEMS:` check and everything
+    below. The "Review items" tile could never light up, on any build, and the
+    page just looked like it had nothing to say. Nothing surfaces console
+    errors, so this is invisible unless you open devtools on a LIVE build —
+    which is how it was finally found, after months. When a live view seems
+    quiet, read the console before believing the server is silent.
+  * **Two endpoints, neither of which sees every build.**
+    `/api/creation_status` reads the FSM in core-logic and sees a build started
+    from Create. A RESUME runs `ContentHydrator` inside the rag-engine and is
+    invisible there for its whole duration — `/api/build/status` is the record
+    it claims. Asking only the first made the courses page offer "Resume build"
+    during a live resume, and made /build say "No course is building" while one
+    ran. Ask both, as `build-guard.js`'s own probe does.
   * **Images older than requirements.txt.** `jsonschema` was declared on
     2026-08-25 and the images were built on the 24th, so for three days EVERY
     schema-constrained LLM call in the system ran unvalidated and the
