@@ -166,6 +166,34 @@ function humaniseHeadline(text) {
  * of muted text — because almost every course has something, and a grid where
  * every card is flagged is a grid with no flags in it.
  */
+/**
+ * The build's own reason a course is not ready, above any quality caveat.
+ *
+ * `teachable_count` counts concepts the TUTOR CAN RUN A LESSON FROM, by the
+ * same check the gate uses — not files on disk. A concept can have a markdown
+ * file and still be an outline, which is precisely the state these courses are
+ * in, and counting files would have called them complete.
+ */
+function readinessRow(course) {
+    const status = course.status || '';
+    if (status === 'ready' || status === 'building') return '';
+
+    const taught = course.teachable_count;
+    const total = course.concept_count;
+    let line = course.gate_reason || '';
+
+    if (!line && Number.isFinite(taught) && Number.isFinite(total) && total) {
+        line = taught === 0
+            ? `None of the ${total} concepts are written enough to teach from yet`
+            : `${taught} of ${total} concepts are written; the rest are still outlines`;
+    }
+    if (!line) return '';
+
+    return `<div class="course-card-quality is-failed">`
+         + `<span class="i i-warning" aria-hidden="true"></span>`
+         + `<span>${escapeHtml(line)}</span></div>`;
+}
+
 function qualityRow(quality) {
     if (!quality || !quality.verdict) return '';
     const headline = escapeHtml(humaniseHeadline(quality.headline || ''));
@@ -451,6 +479,15 @@ async function loadCourses() {
                card. qualityRow escapes its headline and emits no
                event handlers, so injecting it as HTML is safe. */
             if (!isEmpty && !isBuilding) {
+                /* WHY IT IS NOT READY COMES FIRST, in the gate's own words.
+                   The build gate writes a precise sentence — "4 of 4 concepts
+                   are missing sections the tutor reads — there is no lesson to
+                   teach" — and it stopped at structure.json. The card showed
+                   the generic "Checked, with caveats" instead, so a course that
+                   cannot be taught at all read exactly like one with a few
+                   rough edges. */
+                const blocked = readinessRow(course);
+                if (blocked) body.insertAdjacentHTML('beforeend', blocked);
                 const q = qualityRow(qualityByUid[course.uid]);
                 if (q) body.insertAdjacentHTML('beforeend', q);
             }

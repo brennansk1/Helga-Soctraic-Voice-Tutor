@@ -180,11 +180,13 @@
         // old number under the new label — worse than either alone, because it
         // now claimed to be the queue and was not.
         Promise.all([
-            fetch('/api/due_concepts')
-                .then(function (r) { return r.ok ? r.json() : []; })
+            /* The review queue, the same one Practice serves — see home.js.
+               Counting scheduled concepts instead put 186 on this page beside
+               34 on Practice. */
+            fetch('/api/review/queue')
+                .then(function (r) { return r.ok ? r.json() : null; })
                 .then(function (d) {
-                    var items = Array.isArray(d) ? d : (d.concepts || d.due || []);
-                    return items.length;
+                    return (d && d.queue) ? d.queue.length : null;
                 })
                 .catch(function () { return null; }),
             fetch('/api/progress/overview')

@@ -7,8 +7,8 @@
  *      struggle alerts, inactivity nudges. A solo adult session has no
  *      student_id/parent_id in the Flask session, so the endpoint answers
  *      {notifications: [], unread: 0} forever. Real handlers, no rows.
- *   2. /api/due_concepts — the same endpoint the Practice page reads — is
- *      what actually has news for a Mode A learner: reviews that came due.
+ *   2. /api/review/queue — the same queue the Practice page serves — is what
+ *      actually has news for a Mode A learner: the reviews waiting today.
  *
  * So the bell polls both and shows: one synthesized "reviews due" row driven
  * by (2), plus any genuine rows from (1), so the day the backend grows a
@@ -68,8 +68,12 @@
     }
 
     function poll() {
-        var due = fetchJson("/api/due_concepts").then(function (d) {
-            state.dueCount = ((d && d.concepts) || []).length;
+        var due = fetchJson("/api/review/queue").then(function (d) {
+            /* The bell says how much there is to do NOW, so it counts the
+               queue Practice will actually serve — not every concept with a
+               schedule, which is a far larger number and made the badge
+               disagree with the page it links to. */
+            state.dueCount = ((d && d.queue) || []).length;
             state.dueFailed = false;
         }).catch(function () {
             // An unreachable review service is unknown, not zero; keep the

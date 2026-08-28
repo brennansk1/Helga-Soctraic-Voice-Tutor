@@ -497,6 +497,22 @@ def courses():
                     "description": (course.get("description")
                                     or course.get("overview") or ""),
                     "status": course.get("status", "unknown"),
+                    # WHY IT IS NOT READY, in the audit's own words.
+                    #
+                    # The gate writes a precise sentence ("4 of 4 concepts are
+                    # missing sections the tutor reads — there is no lesson to
+                    # teach") and it stopped at structure.json. The card fell
+                    # back to the generic "something worth reviewing" caveat, so
+                    # a course that cannot be taught at all looked exactly like
+                    # one with a few rough edges.
+                    "gate_reason": course.get("gate_reason") or "",
+                    # Concepts the TUTOR CAN TEACH FROM, by the same check the
+                    # audit gate uses (course_audit.is_teachable) — not files on
+                    # disk. A concept can have a markdown file and still be an
+                    # outline the tutor cannot run a lesson from, which is
+                    # exactly the state two of these courses are in.
+                    "teachable_count": course.get("hydrated_count"),
+                    "concept_count": course.get("concept_count"),
                     "teaching_style": course.get("teaching_style", ""),
                     # WHICH TEACHING LAYER THIS COURSE ACTUALLY GOT.
                     #

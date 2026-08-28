@@ -82,16 +82,27 @@
         // Practice is the page a learner acts on, so the home figure now comes
         // from the same endpoint and the two agree by construction rather than
         // by coincidence.
-        return fetch("/api/due_concepts")
-            .then(function (r) { return r.ok ? r.json() : []; })
+        /* THE SAME QUEUE PRACTICE SERVES, not merely the same idea of due.
+           /api/due_concepts counts every concept with a schedule; the queue is
+           what there is to DO today after interleaving, capping and the daily
+           new-item allowance. While this read the old endpoint Home showed 186
+           beside a Practice tab showing 34, and a learner with two numbers has
+           no reason to believe either. */
+        return fetch("/api/review/queue")
+            .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (d) {
-                var items = Array.isArray(d) ? d
-                    : (d.concepts || d.due || d.items || []);
-                var due = items.length;
+                if (!d || !d.queue) { throw new Error("no queue"); }
+                var due = d.queue.length;
                 $("stat-due").textContent = due;
                 return due;
             })
-            .catch(function () { $("stat-due").textContent = "0"; return 0; });
+            .catch(function () {
+                /* Unknown is not zero. "0 due" is a claim that the learner is
+                   finished, and it is the one direction this must never fail
+                   in. */
+                $("stat-due").textContent = "\u2014";
+                return null;
+            });
     }
 
     /* ---------------------------------------------------------- courses */

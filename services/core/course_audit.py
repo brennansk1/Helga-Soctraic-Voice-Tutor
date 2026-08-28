@@ -94,6 +94,43 @@ def _section_body(markdown, heading):
 MIN_SECTION_WORDS = 25
 
 
+def is_teachable(markdown) -> bool:
+    """Can the tutor actually run a lesson from this file?
+
+    ONE definition, shared by the audit gate and the course list. The gate
+    already refused a course because "4 of 4 concepts are missing sections the
+    tutor reads"; the course list had no idea and showed the same soft caveat it
+    shows a course with a few rough edges. Two definitions of "complete" would
+    have let those two disagree again.
+    """
+    if not markdown or not markdown.strip():
+        return False
+    for heading in TUTOR_SECTIONS:
+        body = _section_body(markdown, heading)
+        if not body or len(body.split()) < MIN_SECTION_WORDS:
+            return False
+    return True
+
+
+def count_teachable(structure, content_for) -> tuple:
+    """(teachable, total) concepts, given a reader for each concept's markdown."""
+    total = teachable = 0
+    # walk_concepts yields (concept, path) — unpacking it as a bare concept
+    # silently counted zero, which would have reported every course as having
+    # no concepts at all.
+    for concept, _path in walk_concepts(structure or {}):
+        uid = concept.get("uid") if isinstance(concept, dict) else None
+        if not uid:
+            continue
+        total += 1
+        try:
+            if is_teachable(content_for(uid)):
+                teachable += 1
+        except Exception:            # an unreadable file is not a teachable one
+            pass
+    return teachable, total
+
+
 def audit_concept(markdown, concept, course_title, mastery, domain, sources=None):
     """Deterministic checks for one concept. Returns (findings, checks_run)."""
     uid = concept.get("uid", "")

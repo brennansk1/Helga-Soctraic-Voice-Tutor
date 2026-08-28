@@ -1363,6 +1363,28 @@ class StorageManager:
                 logger.info("Schema migrated to v20: review items "
                             "(kind/bloom/source_section/payload/depth) on flashcards")
 
+            if current_version < 21:
+                # WHY a course is not ready, on the row the course list reads.
+                #
+                # The audit gate writes a precise sentence into structure.json
+                # ("4 of 4 concepts are missing sections the tutor reads — there
+                # is no lesson to teach") and nothing carried it to the learner,
+                # who saw the generic "something worth reviewing" caveat instead.
+                # A course that cannot be taught at all and a course with a few
+                # rough edges looked identical.
+                for col, decl in (
+                    ("gate_reason", "TEXT"),
+                    ("hydrated_count", "INTEGER"),
+                    ("concept_count", "INTEGER"),
+                ):
+                    try:
+                        cursor.execute(f"ALTER TABLE courses ADD COLUMN {col} {decl}")
+                    except sqlite3.OperationalError:
+                        pass          # already present
+                cursor.execute("UPDATE schema_version SET version = 21")
+                logger.info("Schema migrated to v21: gate_reason and hydration "
+                            "counts on courses")
+
             conn.commit()
         finally:
             conn.close()
@@ -1522,6 +1544,26 @@ class StorageManager:
             shutil.rmtree(self.courses_dir)
         os.makedirs(self.courses_dir, exist_ok=True)
         self._init_db()
+
+
+def _int_or_none(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _count_concepts(course_dict) -> int:
+    """Concepts in the structure being written, for the course list.
+
+    Counted here rather than queried later so the row and the document can
+    never disagree about how big the course is."""
+    n = 0
+    for module in (course_dict or {}).get("modules", []) or []:
+        for unit in module.get("units", []) or []:
+            for lesson in unit.get("lessons", []) or []:
+                n += len(lesson.get("concepts", []) or [])
+    return n
 
 
 class CourseStore:
@@ -1983,7 +2025,8 @@ class CourseStore:
                     UPDATE courses SET title=?, overview=?, status=?, teaching_style=?,
                         subject=?, grade_band=?, grade_numeric=?, is_catalog=?,
                         catalog_status=?, version=?, visibility=?, reviewed_by=?,
-                        published_at=?, enrichment_included=?
+                        published_at=?, enrichment_included=?,
+                        gate_reason=?, hydrated_count=?, concept_count=?
                     WHERE uid=?
                 """, (
                     course_dict.get("title", ""),
@@ -2004,6 +2047,12 @@ class CourseStore:
                     cat.get("visibility", "private") if cat else "private",
                     cat.get("reviewed_by"), cat.get("published_at"),
                     1 if cat.get("enrichment_included") else 0,
+                    # Why the course is not ready, and how far hydration got.
+                    # Derived from the document being written, so the row can
+                    # never describe a different build than structure.json does.
+                    (course_dict.get("gate_reason") or None),
+                    _int_or_none(course_dict.get("hydrated_count")),
+                    _count_concepts(course_dict),
                     uid
                 ))
                 # An UPDATE that matches nothing is not an error to SQLite, so
