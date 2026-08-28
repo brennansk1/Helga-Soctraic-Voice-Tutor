@@ -22,8 +22,14 @@ Course *creation* is in scope only as far as an existing course must remain
 usable while one builds.
 
 Out of scope for tomorrow, stated so the boundary is not vague: the Memory
-Palace (disabled), voice in and out, the degree planner, gamification, and the
+Palace, voice in and out, the degree planner, gamification, and the
 parent/teacher surfaces.
+
+> Correction, 2026-08-28: this said "the Memory Palace (disabled)". It was not
+> disabled — commit d2ee217 restored it on 2026-08-02, three weeks before this
+> file was written, and `/palace` returns 200 and is linked from `/learn`.
+> CLAUDE.md carried the same wrong claim. The scope decision stands (it was out
+> of scope for that day's test); only the reason given for it was false.
 
 ## The bar, as pass/fail
 

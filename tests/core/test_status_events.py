@@ -143,3 +143,51 @@ def test_progress_parsing_survives_an_fsm_without_creation_status():
         del fsm.creation_status
     with patch.object(fsm_mod, 'requests'):
         fsm.send_status_update("STRUCT:MODULE_PROGRESS:2:6")   # must not raise
+
+
+def test_every_name_the_fsm_calls_actually_resolves():
+    """get_vividness_prompt was called and defined nowhere.
+
+    fsm_logic.place_concept has called it since the Memory Palace was written,
+    and the call sits OUTSIDE that method's try/except, so anchoring a concept
+    raised NameError instead of falling back to the default question two lines
+    below. docs/AUDIT_LOG.md noted the missing name and dismissed it as
+    unreachable "because the Memory Palace feature is removed" — the palace was
+    restored in d2ee217 on 2026-08-02, returns 200, and is linked from /learn.
+
+    This checks the module's global calls resolve, which is the class of defect
+    a NameError in a rarely-walked branch belongs to.
+    """
+    import ast
+    import inspect
+    import builtins
+    from services.core import fsm_logic
+
+    tree = ast.parse(inspect.getsource(fsm_logic))
+    called = {n.func.id for n in ast.walk(tree)
+              if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+
+    known = set(dir(fsm_logic)) | set(dir(builtins))
+    # Names bound locally (assignments, args, comprehensions) are not globals
+    # and resolve at runtime; only bare global calls are checked here.
+    local = {n.id for n in ast.walk(tree)
+             if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store)}
+    local |= {a.arg for n in ast.walk(tree)
+              if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+              for a in n.args.args + n.args.kwonlyargs}
+    # Names imported inside a function body are bound at call time and are
+    # invisible to dir(module). Without these the check drowns in false
+    # positives -- this file imports llm_generate, extract and thirty others
+    # locally, on purpose, to keep import cost off the hot path.
+    for n in ast.walk(tree):
+        if isinstance(n, (ast.Import, ast.ImportFrom)):
+            for a in n.names:
+                local.add((a.asname or a.name).split(".")[0])
+        # Nested helpers (`def _titles(...)` inside a method) are bound in their
+        # enclosing scope, not on the module.
+        elif isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef,
+                            ast.ClassDef)):
+            local.add(n.name)
+
+    missing = sorted(called - known - local)
+    assert not missing, f"fsm_logic calls names that resolve nowhere: {missing}"

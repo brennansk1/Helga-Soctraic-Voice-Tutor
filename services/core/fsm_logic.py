@@ -47,6 +47,7 @@ from services.common.prompts import (
     is_young_band,
     get_socratic_tutor_prompt,
     get_bridge_prompt,
+    get_vividness_prompt,
     get_socratic_grading_prompt,
     get_examiner_question_prompt,
     get_hint_prompt,

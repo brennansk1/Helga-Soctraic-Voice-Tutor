@@ -1632,6 +1632,47 @@ Next topic: {next_title}
 Task: Create a natural bridge sentence (under 20 words) connecting these topics. Write plain text only, no markdown."""}]
 
 
+def get_vividness_prompt(concept, locus_desc):
+    """Ask the learner for the sensory image that binds a concept to a place.
+
+    THIS FUNCTION DID NOT EXIST. fsm_logic.place_concept has called it since
+    the Memory Palace was written, and the call sits OUTSIDE that method's
+    try/except, so anchoring a concept by text raised NameError rather than
+    degrading to the fallback question two lines below it.
+
+    docs/AUDIT_LOG.md recorded the missing name but concluded the path was
+    unreachable "because the Memory Palace feature is removed". The palace was
+    restored in d2ee217 on 2026-08-02, three weeks before that note was still
+    being relied on: /palace returns 200, is linked from /learn, and the FSM
+    reaches place_concept from LOBBY via text containing "palace" and then
+    "place".
+
+    The method that consumes the answer stores it as `sensory_text`, so the
+    question has to ask for one -- a specific image at a specific place, not a
+    definition of the concept.
+
+    Returns:
+        list: Messages array for chat completions API
+    """
+    concept = (concept or "this idea").strip()
+    where = (locus_desc or "this place").strip()
+    return [{"role": "system", "content": f"""Concept to memorise: {concept}
+Place in the memory palace: {where}
+
+Task: Ask the learner ONE question that makes them invent a vivid, concrete
+sensory image binding the concept to that place. Demand a specific picture --
+what is seen, heard, felt, its size, its motion -- not a definition and not an
+explanation of the concept.
+
+Rules:
+- One question, under 35 words.
+- Name both the concept and the place in the question.
+- Address the learner as "you". Plain text only, no markdown, no preamble.
+- Strange, exaggerated or physically impossible images are better; say so if it
+  helps them.
+"""}]
+
+
 # --- HINT PROMPTS ---
 
 def get_hint_prompt(card_title, card_text, attempts, grade_band=None, first_encounter=False):

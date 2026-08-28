@@ -7,10 +7,20 @@
 > is the reverse-engineered audit and roadmap.
 
 ## Project Overview
-Helga is an offline AI tutor. Two learning modes are live — **Socratic
-teaching** and **spaced-repetition review**. The Memory Palace is gone: `/palace`
-redirects, as do `/quiz`, `/review`, `/schedule` and `/test`, which were folded
-into `/practice`.
+Helga is an offline AI tutor. Three learning modes are live — **Socratic
+teaching**, **spaced-repetition review**, and the **Memory Palace**.
+
+`/quiz`, `/review`, `/schedule` and `/test` are 302 aliases folded into
+`/practice` (verified by request, 2026-08-28; they now carry their query string
+across, so `/quiz?course_uid=X` asks about X).
+
+`/palace` is NOT one of them: it returns 200 and renders. This file said it was
+gone and redirecting; the route renders `palace.html`, its own docstring records
+that it was deliberately restored after a spell of redirecting to home, and
+`tests/web/tab_account/test_honest_controls.py` requires it to be linked from
+`/learn` — which it is, as the palace mode of the open course. It is a mode of a
+course rather than a nav destination, which is presumably how the doc came to
+call it gone.
 
 ## Hardware (measured)
 **Apple M4 — the base chip, not a Pro — with 24 GB of unified memory.** This is
