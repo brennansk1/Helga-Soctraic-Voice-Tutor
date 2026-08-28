@@ -82,13 +82,21 @@ and the services then die with "disk I/O error". Stop the services, remove
 Concept markdown is the item bank. `services/common/review_items.py` extracts
 four tiers of item from sections the hydrator already writes — Key Facts,
 Misconceptions, Edge Cases, Bloom-banded Socratic Hooks — with NO model calls,
-because review-time latency has to be zero on this hardware. 2,460 items came
-out of 186 concepts, 58% of them higher-order.
+because review-time latency has to be zero on this hardware. Currently 2,500
+items over 186 concepts, 57% higher-order (recall 1,079, apply 719,
+discriminate 522, socratic 180).
 
 The mix is deliberate and evidence-led: practising facts alone transfers no
 better than not practising, and mixed factual + higher-order beats either pure
-form. Every concept yields items at several tiers; its Bloom target shifts the
-RATIO, never closes a lane.
+form. A concept's Bloom target shifts the RATIO between tiers.
+
+BUT A LANE CAN BE CLOSED, and this said it could not. Extraction reads the
+sections the hydrator writes, so a concept that lacks them yields only the
+prose fallback — which is recall. Measured: "Reading a Query Plan" holds 26
+items and every one is `recall`; scoping review to it served twelve recall
+questions as an ordinary session, which is precisely the form the evidence says
+does not transfer. The queue now returns `tiers_present` and `recall_only` and
+the Practice tab says so. See `docs/REVIEW_TIERS.md`.
 
 `services/common/review_scheduler.py` is the queue policy over FSRS — load
 balancing, priority, interleaving across courses, leech escalation, retirement,
