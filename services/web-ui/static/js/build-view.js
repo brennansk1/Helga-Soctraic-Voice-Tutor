@@ -28,7 +28,11 @@
 
     // --- stages -------------------------------------------------------------
 
-    var ORDER = ['preflight', 'research', 'skeleton', 'coverage', 'hydrate', 'assets'];
+    // 'audit' and 'items' are the last two. They were missing here, so the
+    // never-walk-backwards guard had no index for them and the list ended a
+    // stage before the build did.
+    var ORDER = ['preflight', 'research', 'skeleton', 'coverage', 'hydrate',
+                 'assets', 'audit', 'items'];
     var reached = 0;   // furthest stage index activated so far
 
     function setStage(name, state) {
@@ -550,6 +554,19 @@
         if (msg.indexOf('ASSET:ERROR:') === 0 || msg.indexOf('ASSET:SKIPPED:') === 0) {
             // Degradable by design: no pictures is not a failed build.
             setStage('assets', 'warn');
+        }
+
+        // Stage 5 — the item bank, which is what makes the course reviewable.
+        if (text.indexOf('ITEMS:') === 0) {
+            var n = parseInt(text.slice(6), 10);
+            setStage('items', 'active');
+            if (!isNaN(n)) {
+                stream(n
+                    ? n.toLocaleString() + ' review items ready'
+                    : 'No review items could be made from this content', n ? 'ok' : 'warn');
+                setStage('items', n ? 'done' : 'warn');
+            }
+            return;
         }
 
         // Stage 4 — the audit. The last thing between a finished build and a

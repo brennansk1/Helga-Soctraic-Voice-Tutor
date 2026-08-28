@@ -80,6 +80,13 @@
       <span class="build-stage-dot"></span>
       <div><strong>Audit</strong><span>Checking the finished course before it can be taught</span></div>
     </li>
+    {# Stage 5. It runs on every build and had no square here, so the progress
+       list ended one stage before the build did — a course sat on "Audit" while
+       it was actually extracting items, and nothing said so. #}
+    <li class="build-stage" data-stage="items">
+      <span class="build-stage-dot"></span>
+      <div><strong>Review items</strong><span>Making what you will be asked later</span></div>
+    </li>
   </ol>
 
   <!-- Chapter progress: a 59-chapter naming run takes tens of minutes, and a
@@ -117,6 +124,11 @@
     <li class="build-stage" data-stage="audit">
       <span class="build-stage-dot"></span>
       <div><strong>Audit</strong><span>Checking the finished course before it can be taught</span></div>
+    </li>
+    {# Stage 5, on the research path too. It runs on every build. #}
+    <li class="build-stage" data-stage="items">
+      <span class="build-stage-dot"></span>
+      <div><strong>Review items</strong><span>Making what you will be asked later</span></div>
     </li>
   </ol>
 
@@ -166,5 +178,5 @@
 {% endblock %}
 
 {% block page_scripts %}
-<script src="{{ url_for('static', filename='js/build-view.js') }}?v=2"></script>
+<script src="{{ url_for('static', filename='js/build-view.js') }}?v=4"></script>
 {% endblock %}

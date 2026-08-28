@@ -1342,23 +1342,57 @@ class SkeletonBuilder:
                 # back empty, the load is what we were waiting on, so try once
                 # more now that it is resident rather than failing a build the
                 # model could have run.
-                probe = llm_generate(
-                    prompt="Reply with the single word: ready",
-                    sys_prompt="You reply with one word.",
-                    max_tokens=8, retries=1)
-                if not (probe and probe.strip()):
-                    log_and_emit("…", "Model did not answer in time — it is "
-                                      "loading; waiting for it once more")
-                    probe = llm_generate(
+                # ASK WHETHER IT IS LOADING; DO NOT INFER IT FROM A TIMEOUT.
+                #
+                # Two 90-second probes still cannot outlast a cold load on this
+                # machine — measured 2026-08-28: both attempts timed out, the
+                # check announced "it is wedged, not merely loading", and the
+                # build was refused while the weights were in fact still being
+                # paged in. Every build on a cold model died at preflight.
+                #
+                # Ollama can be asked directly. While the model is absent from
+                # /api/ps a load is genuinely in progress, so waiting is the
+                # right answer however long it takes; once it is resident and
+                # still emits nothing, "wedged" is a fair verdict.
+                from llm_client import LLMClient as _Probe
+                probe_client = _Probe()
+
+                # ENOUGH BUDGET TO THINK BEFORE IT SPEAKS.
+                #
+                # This probe asked for 8 tokens. The configured model spends
+                # roughly 200 on reasoning before it emits any content, so the
+                # budget was gone before the first visible character and the
+                # call returned an empty string — every time, forever. Measured
+                # 2026-08-28 against a warm model: max_tokens=8 -> 8 tokens,
+                # content ''; 64 -> 64 tokens, content ''; 256 -> 215 tokens,
+                # content 'ready'. Preflight read that empty string as a wedged
+                # model and refused to build. `think=False` does not suppress it
+                # for this model, so the budget is the thing that has to change.
+                def _try_probe():
+                    return llm_generate(
                         prompt="Reply with the single word: ready",
                         sys_prompt="You reply with one word.",
-                        max_tokens=8, retries=1)
+                        max_tokens=320, retries=1)
+
+                probe = _try_probe()
+                attempts = 1
+                while not (probe and probe.strip()) and attempts < 4:
+                    try:
+                        loading = probe_client._model_is_loading()
+                    except Exception:
+                        loading = False
+                    if not loading:
+                        break               # resident and mute — that is wedged
+                    log_and_emit("…", f"Model is still loading — waiting "
+                                      f"(attempt {attempts + 1})")
+                    probe = _try_probe()
+                    attempts += 1
+
                 if probe and probe.strip():
                     log_and_emit("✓", "Model generated a test response")
                 else:
-                    log_and_emit("✗", "Model is reachable but generated nothing "
-                                      "after a second attempt — it is wedged, "
-                                      "not merely loading")
+                    log_and_emit("✗", "Model is loaded but generated nothing — "
+                                      "it is wedged, not merely loading")
                     all_passed = False
             except Exception as e:
                 log_and_emit("✗", f"Model could not generate ({type(e).__name__})")
@@ -2435,7 +2469,7 @@ class SkeletonBuilder:
             raw = llm_generate(
                 prompt=prompt,
                 sys_prompt="You name academic subjects. Answer tersely.",
-                max_tokens=60)
+                max_tokens=320)   # covers ~200 reasoning tokens; see the preflight probe
             return [t.strip() for t in (raw or "").split(",")
                     if t.strip() and len(t.strip()) < 60][:3]
         except Exception as e:
@@ -2462,7 +2496,7 @@ class SkeletonBuilder:
                         f"Answer with 1-3 subject names only, comma separated, "
                         f"no explanation. Example: Geometry, Trigonometry"),
                 sys_prompt="You name academic disciplines. Answer tersely.",
-                max_tokens=60,
+                max_tokens=320,   # covers ~200 reasoning tokens; see the preflight probe
             )
             subjects = [b.strip() for b in (raw or "").split(",")
                         if b.strip() and len(b.strip()) < 60][:3]
@@ -7955,7 +7989,7 @@ class SyllabusAuditor:
                         "abbreviated titles into specific, teachable names. "
                         "Output only the new title on a single line."
                     ),
-                    max_tokens=60,
+                    max_tokens=320,   # covers ~200 reasoning tokens; see the preflight probe
                 )
                 if raw:
                     candidate = raw.strip().strip('"\'').splitlines()[0].strip()
