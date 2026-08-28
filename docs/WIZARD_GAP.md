@@ -122,8 +122,15 @@ tutor_reads.py`). The guard asserts the route storing the key *and* the
 hydrator still reading it, as a pair — either half moving alone reproduces this
 silently, which is how it happened the first time.
 
-## Still open
+## The name collision itself
 
 `/api/create_course_custom` in fsm_logic still exists and is still named one
-word-order away from `/api/custom_course/create`. Nothing calls it now, but the
-collision that caused this is intact.
+word-order away from `/api/custom_course/create`. Nothing calls it now, and it
+was not deleted — it is a working title-only path. Instead it now **refuses a
+payload carrying `modules` or `structure`**, with an error naming the endpoint
+that honours them.
+
+So if the wizard — or anything else — is wired to the wrong one again by the
+same confusion, the failure is loud at the first request rather than silent for
+145 concepts. Guarded in `tests/web/test_frontend_contracts.py`, which checks
+the refusal runs before `start_creation`, not merely that it exists.

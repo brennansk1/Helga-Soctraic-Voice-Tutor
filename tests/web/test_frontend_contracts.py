@@ -429,3 +429,54 @@ def test_the_preview_outlasts_the_modules_it_accepts():
     assert "600" not in m.group(1), (
         "the preview proxy is back to a ceiling shorter than the outlines it "
         "accepts")
+
+
+def test_the_title_only_route_refuses_an_outline_instead_of_dropping_it():
+    """/api/create_course_custom builds from the title alone, and its name is
+    one word-order away from librarian's /api/custom_course/create, which is
+    the one that honours a module outline. The wizard was wired to the wrong
+    one by exactly that confusion, and the symptom was silent: a hand-authored
+    single module with three named concepts came out as six modules and 145.
+
+    Nothing calls it now. So the guard is on the route itself — if anything is
+    rewired to it again and sends an outline, it must say so rather than build
+    from the title and discard the rest.
+    """
+    import ast
+    import pathlib
+
+    src = (pathlib.Path(__file__).resolve().parents[2]
+           / "services" / "core" / "fsm_logic.py").read_text()
+    tree = ast.parse(src)
+    fn = next((n for n in ast.walk(tree)
+               if isinstance(n, ast.FunctionDef)
+               and n.name == "create_course_custom"), None)
+    assert fn is not None, "the title-only route is gone; delete this guard"
+
+    # Comments are stripped by ast, so what follows reads code only — the
+    # block explaining this fix names both routes and would pass a text search.
+    def _returns_400(node):
+        for r in ast.walk(node):
+            if isinstance(r, ast.Return) and isinstance(r.value, ast.Tuple):
+                for e in r.value.elts:
+                    if isinstance(e, ast.Constant) and e.value == 400:
+                        return True
+        return False
+
+    guard_line = None
+    for node in fn.body:
+        if isinstance(node, ast.If) and _returns_400(node):
+            keys = {c.value for c in ast.walk(node)
+                    if isinstance(c, ast.Constant) and isinstance(c.value, str)}
+            if "modules" in keys or "structure" in keys:
+                guard_line = node.lineno
+                break
+    assert guard_line is not None, (
+        "the title-only route accepts a module outline and silently builds "
+        "from the title instead")
+
+    # It has to refuse BEFORE anything starts building.
+    starts = [n.lineno for n in ast.walk(fn)
+              if isinstance(n, ast.Attribute) and n.attr == "start_creation"]
+    assert starts and guard_line < min(starts), (
+        "the outline check runs after the build has already started")

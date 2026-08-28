@@ -6669,6 +6669,26 @@ def create_course_custom():
     if not title:
         return {"error": "Title required"}, 400
 
+    # REFUSE WIZARD-SHAPED PAYLOADS INSTEAD OF QUIETLY DROPPING THE OUTLINE.
+    #
+    # This route builds from the title alone. It is one word-order away from
+    # librarian's /api/custom_course/create, which is the one that honours a
+    # module outline, and the wizard was wired here by that confusion for
+    # long enough to ship: a hand-authored single module with three named
+    # concepts came out as six modules and 145 concepts, silently.
+    #
+    # Nothing calls this route now. If something is rewired to it again and
+    # sends an outline, it gets an error naming the right endpoint rather
+    # than a course built from the title with the outline discarded.
+    if data.get("modules") or data.get("structure"):
+        return {
+            "error": "This endpoint builds from a title only and would "
+                     "discard the module outline you sent. Post to "
+                     "/api/custom_course/create (rag-engine), which takes "
+                     "`modules` plus a `structure` from "
+                     "/api/custom_course/preview.",
+        }, 400
+
     fsm = registry.get(_student_id_from_request())
     if fsm.creation_in_progress:
         return {"error": "Course creation already in progress"}, 409
