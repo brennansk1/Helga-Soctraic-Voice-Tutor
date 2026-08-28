@@ -247,3 +247,42 @@ def test_the_courses_page_asks_both_build_endpoints():
     assert "/api/build/status" in src, (
         "courses.js decides whether a build is running from creation_status "
         "alone; a resume is invisible there")
+
+
+def test_no_client_script_counts_due_concepts_as_due():
+    """/api/due_concepts answers "how much is scheduled", not "what is due".
+
+    It ignores interleaving, the daily cap and the new-item allowance, so it
+    returns a much larger number than the session a learner is actually
+    offered. Home and the notification bell each read it once and showed 186
+    beside a Practice tab showing 13 for the same learner on the same day.
+
+    Both now read /api/review/queue. The endpoint stays for acceptance tooling,
+    which legitimately wants the full schedule; this stops a learner-facing
+    surface picking it up again and making the numbers disagree a third time.
+    """
+    offenders = []
+    for js in _js_files():
+        # Comments may discuss the endpoint -- they explain why it is not used
+        # -- so only executable lines count. Block comments need real tracking:
+        # this repo indents their continuation lines without a leading '*', so
+        # a "starts with // or *" check reports the explanation as a violation.
+        in_block = False
+        for line in js.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            code = line
+            if in_block:
+                if "*/" in line:
+                    in_block = False
+                    code = line.split("*/", 1)[1]
+                else:
+                    continue
+            if "/*" in code and "*/" not in code.split("/*", 1)[1]:
+                in_block = True
+                code = code.split("/*", 1)[0]
+            code = code.split("//", 1)[0]
+            if "/api/due_concepts" in code:
+                offenders.append(f"{js.name}: {stripped[:70]}")
+    assert not offenders, (
+        "client scripts must count /api/review/queue, not "
+        f"/api/due_concepts: {offenders}")

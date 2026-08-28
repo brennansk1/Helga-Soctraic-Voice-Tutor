@@ -2941,11 +2941,23 @@ def review_forecast_endpoint():
 
 @app.route("/api/due_concepts", methods=["GET"])
 def due_concepts_endpoint():
-    """Return concepts due for spaced repetition review.
+    """Every concept with a review scheduled. NOT what to do today.
 
     Combines two sources so early-stage progress is visible before flashcards
     exist: (1) flashcards with next_review_date <= today, (2) scheduled concept
     reviews written by the FSM per-answer. Deduped on concept_uid.
+
+    NO LEARNER-FACING SURFACE MAY COUNT THIS AS "DUE".
+    ---------------------------------------------------------------------
+    This answers "how much is scheduled", which is a fine question for
+    acceptance tooling (tools/course_acceptance.py) and a useless one for a
+    person: it ignores interleaving, the daily cap and the new-item allowance.
+    Home and the notification bell both read it once and showed 186 beside a
+    Practice tab showing 13 for the same learner on the same day, and someone
+    holding two numbers has no reason to believe either.
+
+    Both now read /api/review/queue, which is what there is to DO today.
+    A frontend guard test fails if any client script fetches this path again.
     """
     from datetime import date as _dt_date
     course_uid = request.args.get("course_uid")

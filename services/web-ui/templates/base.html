@@ -375,8 +375,11 @@
             {# The due-reviews bell. /api/notifications is real but its rows
                are addressed to parents; for a solo learner the news that
                actually exists is "reviews came due", so notify.js polls both
-               that endpoint and /api/due_concepts (the Practice page's own
-               source) and folds them into one badge. #}
+               that endpoint and /api/review/queue — the queue the Practice
+               page itself serves — and folds them into one badge.
+               It said /api/due_concepts here, which is what the bell used to
+               poll and is a different number: every concept with a schedule,
+               not what there is to do today. 186 against Practice's 13. #}
             <div class="notify-wrap">
                 <button id="notify-bell" class="notify-bell" type="button"
                         aria-label="Notifications" aria-haspopup="true"
@@ -412,7 +415,7 @@
         will refuse. #}
     <script src="{{ url_for('static', filename='js/build-guard.js') }}?v=1"></script>
     {# The due-reviews bell and the Notebook pill. Polls /api/notifications
-       and /api/due_concepts every 20s, paused while the tab is hidden —
+       and /api/review/queue every 20s, paused while the tab is hidden —
        the same discipline as resources.js below. #}
     <script src="{{ url_for('static', filename='js/notify.js') }}?v=2"></script>
         {% block page_scripts %}{% endblock %}
