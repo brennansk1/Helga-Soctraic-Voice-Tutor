@@ -6690,6 +6690,39 @@ def create_course_custom():
             #
             # `start_creation` owns the flag's whole lifecycle; the route above
             # already returns 409 when a build is genuinely running.
+            # THE WIZARD'S ANSWERS REACHED HERE AND WENT NO FURTHER.
+            #
+            # This route read `title` and nothing else, then built a plain
+            # topic course from it. Measured by walking the wizard: one module
+            # named "Cache-Control and ETag" with three named concepts and the
+            # note "keep this small: three concepts only" produced SIX modules
+            # none of which were mine and 145 concepts, with learner_context
+            # empty. build_state recorded source="topic", which is exactly what
+            # it was.
+            #
+            # What can be honoured here is honoured: the pipeline already reads
+            # _pending_course_params for the learner's own words and the
+            # scope/mastery sliders — the same mechanism the degree planner
+            # uses — so the description and teaching style no longer evaporate.
+            #
+            # The module outline and the named concepts still are NOT honoured,
+            # and that is a bigger hole than this route: the endpoint that does
+            # honour them is librarian's /api/custom_course/create, which takes
+            # `modules` plus a `structure` from /api/custom_course/preview. The
+            # wizard never calls preview, so it has no structure to send, and
+            # it posts to this near-identically-named route instead. Wiring the
+            # wizard through preview -> create is the real fix and is a change
+            # to the flow, not to this line. See docs/WIZARD_GAP.md.
+            _params = {"scope": 3, "mastery": 3, "starting_from": 1}
+            _desc = (data.get("description") or "").strip()
+            if _desc:
+                _params["learner_context"] = _desc
+            fsm._pending_course_params = _params
+
+            _style = (data.get("teaching_style") or "").strip()
+            if _style:
+                fsm.current_teaching_style = _style
+
             fsm.send_status_update(f"Creating custom course: {title}")
             fsm.start_creation(f"create course {title} with depth 3",
                                epub_filepath=None)
