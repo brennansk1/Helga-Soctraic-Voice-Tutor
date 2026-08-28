@@ -429,6 +429,60 @@ def search():
     return jsonify(payload)
 
 
+# THE COMMENT DESCRIBED THE FIX; THE CODE DID THE THING IT WARNED AGAINST.
+#
+# The course list published `teachable_count` with a comment saying it counts
+# "Concepts the TUTOR CAN TEACH FROM, by the same check the audit gate uses
+# (course_audit.is_teachable) — not files on disk", and the value was
+# `course.get("hydrated_count")`, which is precisely files on disk.
+# course_audit.count_teachable() was written for this line and had no callers
+# at all.
+#
+# Measured across the live library: Advanced SQL reported 83 and 74 are
+# teachable — nine concepts carry 1,100-1,700 words each but no
+# "## Core Explanation", so the tutor cannot run a lesson from them, and the
+# course is marked `ready`. The audit gate does not catch it either: it only
+# blocks when MORE THAN HALF a course is affected, which is deliberate (a
+# minority defect must not condemn a whole course) and leaves the minority
+# invisible.
+#
+# 45 ms to read all 322 concepts in the library, so this is computed rather
+# than cached wrong. The cache below is keyed on the structure file's mtime, so
+# it refreshes when a build writes.
+_TEACHABLE_CACHE = {}
+
+
+def _teachable_count(course):
+    """How many of this course's concepts the tutor can actually teach."""
+    uid = course.get("uid")
+    if not uid:
+        return None
+    path = os.path.join(storage.courses.courses_dir, uid, "structure.json")
+    try:
+        stamp = os.path.getmtime(path)
+    except OSError:
+        stamp = None
+    hit = _TEACHABLE_CACHE.get(uid)
+    if hit and hit[0] == stamp:
+        return hit[1]
+    try:
+        from services.core.course_audit import count_teachable
+
+        def content_for(concept_uid):
+            try:
+                return storage.courses.get_concept_content(uid, concept_uid) or ""
+            except Exception:
+                return ""
+
+        teachable, _total = count_teachable(course, content_for)
+    except Exception as e:
+        # A count that cannot be taken is not a reason to lose the course list.
+        logger.debug("teachable count unavailable for %s: %s", uid, e)
+        return None
+    _TEACHABLE_CACHE[uid] = (stamp, teachable)
+    return teachable
+
+
 def _course_progress_pct(course_uid, stats, student_id=None):
     """How much of this course the learner has actually done, 0-100.
 
@@ -512,7 +566,7 @@ def courses():
                     # disk. A concept can have a markdown file and still be an
                     # outline the tutor cannot run a lesson from, which is
                     # exactly the state two of these courses are in.
-                    "teachable_count": course.get("hydrated_count"),
+                    "teachable_count": _teachable_count(course),
                     "concept_count": course.get("concept_count"),
                     "teaching_style": course.get("teaching_style", ""),
                     # WHICH TEACHING LAYER THIS COURSE ACTUALLY GOT.
