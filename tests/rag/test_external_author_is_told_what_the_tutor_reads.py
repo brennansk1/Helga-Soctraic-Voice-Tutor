@@ -127,3 +127,30 @@ def test_teachability_has_one_definition_shared_with_the_gate():
     from services.core import course_audit
     assert pipeline_api.is_teachable is course_audit.is_teachable
     assert pipeline_api.TUTOR_SECTIONS is course_audit.TUTOR_SECTIONS
+
+
+def test_the_wizard_route_stores_what_the_learner_said_they_wanted():
+    """ContentHydrator.hydrate() reads course["learner_context"] and puts it in
+    front of the model for every concept. /api/custom_course/create stored the
+    description only as `overview`, which nothing reads at build time.
+
+    Measured after rewiring the wizard through this route: "I use regex daily
+    but lookahead still confuses me" reached the server and the finished course
+    had learner_context empty. The earlier fix set it on the FSM path — the one
+    the wizard no longer takes — so the reroute quietly undid it.
+    """
+    import inspect
+    import re
+    from services.rag import librarian
+    from services.core.course_builder import ContentHydrator
+
+    src = inspect.getsource(librarian)
+    i = src.index("def create_custom_course_wizard")
+    j = src.index("@app.route", i)
+    body = re.sub(r'#[^\n]*', ' ', src[i:j])
+    assert '"learner_context": description' in body, (
+        "the wizard route drops the learner's own words")
+
+    # And the hydrator must still be reading that key.
+    assert 'course.get("learner_context")' in inspect.getsource(ContentHydrator), (
+        "the hydrator no longer reads learner_context off the course")

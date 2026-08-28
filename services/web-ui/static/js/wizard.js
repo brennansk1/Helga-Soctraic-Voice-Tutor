@@ -629,7 +629,27 @@ async function startCustomGeneration() {
             body: JSON.stringify({
                 title: wizardState.title,
                 teaching_style: wizardState.teaching_style,
-                modules: wizardState.modules
+                /* THE WIZARD AND THE PREVIEW NAMED THE SAME FIELD DIFFERENTLY.
+                   Each module here is {title, note, concepts}; the preview
+                   reads {title, context, depth}. So the per-module note — the
+                   learner saying "focus on this, skip that" — was dropped on a
+                   rename, and the concepts they named had no field at all.
+                   Both are folded into `context`, which is what actually
+                   reaches the model. Named concepts steer the outline rather
+                   than pinning it: the generator decides the final shape, and
+                   saying so here is better than silently discarding them. */
+                modules: wizardState.modules.map(function (m) {
+                    var parts = [];
+                    if (m.note) { parts.push(m.note); }
+                    if (m.concepts && m.concepts.length) {
+                        parts.push('Must cover: ' + m.concepts.join('; ') + '.');
+                    }
+                    return {
+                        title: m.title,
+                        context: parts.join(' '),
+                        concepts: m.concepts || []
+                    };
+                })
             })
         });
         const preview = await previewResp.json().catch(() => ({}));

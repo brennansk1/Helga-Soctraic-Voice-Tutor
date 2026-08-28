@@ -2008,6 +2008,20 @@ def create_custom_course_wizard():
             "uid": course_uid,
             "title": title,
             "overview": description or f"Custom course: {title}",
+            # WHAT THE LEARNER SAID THEY WANTED, WHERE THE HYDRATOR LOOKS.
+            #
+            # ContentHydrator.hydrate() reads course["learner_context"] and
+            # puts it in front of the model for every concept. This route only
+            # stored the description as `overview`, which nothing reads at
+            # build time, so a course made through the wizard was written for
+            # its title rather than for the person who asked.
+            #
+            # Measured after rewiring the wizard through this route: "I use
+            # regex daily but lookahead still confuses me" reached the server
+            # and the finished course had learner_context empty. The earlier
+            # fix for this set it on the FSM path — the path the wizard no
+            # longer takes — so rerouting quietly undid it.
+            "learner_context": description,
             "teaching_style": teaching_style,
             "status": "building",
             "modules": [],
