@@ -3442,6 +3442,23 @@ class ProgressStore:
     def mark_completed(self, concept_uid: str, course_uid: str, student_id: str = None):
         self.update_progress(concept_uid, course_uid, student_id=student_id, status="completed")
 
+    # WHAT COUNTS AS DONE, IN ONE PLACE.
+    #
+    # There were two answers. The course list counted
+    # completed/reviewed/mastered; the course-structure endpoint that draws the
+    # learn path counted "completed" alone. With four concepts sitting at
+    # `reviewed`, the SQL course read "4 of 95 concepts, 4%" on the Courses tab
+    # and "0 of 95 complete, 0%" on the Learn tab -- the same course, the same
+    # learner, on two screens one click apart, telling someone who had worked
+    # through four concepts that they had done nothing.
+    #
+    # Both call this now, so the two screens cannot drift again.
+    DONE_STATUSES = ("completed", "reviewed", "mastered")
+
+    @classmethod
+    def is_done(cls, status) -> bool:
+        return (status or "").strip().lower() in cls.DONE_STATUSES
+
     def get_course_progress(self, course_uid: str, student_id: str = None) -> List[dict]:
         conn = self._get_db()
         rows = conn.execute(

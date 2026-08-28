@@ -9,6 +9,7 @@ import requests
 import re
 import uuid
 from services.common.storage import StorageManager, DEFAULT_STUDENT_ID
+from services.common.storage import ProgressStore
 from services.common.review_items import demath
 
 # THIS SERVICE WAS LOGGING NOTHING BELOW WARNING.
@@ -449,8 +450,7 @@ def _course_progress_pct(course_uid, stats, student_id=None):
     try:
         rows = storage.progress.get_course_progress(course_uid, student_id=student_id)
         done = sum(1 for r in rows
-                   if (r.get("status") or "").lower() in
-                   ("completed", "reviewed", "mastered"))
+                   if storage.progress.is_done(r.get("status")))
         return max(0, min(100, round(done * 100 / total)))
     except Exception as e:
         # A progress read that fails must not cost the learner the course list.
@@ -598,9 +598,13 @@ def stats():
         # reviewed, not merely one that exists.
         studied = 0
         try:
+            # Third copy of the same list, this one in SQL. Built from the
+            # shared definition so the dashboard cannot disagree with the
+            # course list and the learn path about what "learned" means.
+            _done = ProgressStore.DONE_STATUSES
             row = storage.courses._get_db().execute(
-                "SELECT COUNT(*) FROM user_progress "
-                "WHERE status IN ('completed', 'reviewed', 'mastered')"
+                "SELECT COUNT(*) FROM user_progress WHERE status IN (%s)"
+                % ",".join("?" * len(_done)), tuple(_done)
             ).fetchone()
             studied = int(row[0]) if row else 0
         except Exception as e:
@@ -635,8 +639,12 @@ def structure():
 
         # B5.6: load all progress for this course in ONE query, then look up
         # per concept in-memory (was an N+1: one SELECT per concept).
+        # student_id matters here as much as it does in the course list: without
+        # it this read the default profile's progress regardless of who asked.
         progress_by_concept = {
-            p["concept_uid"]: p for p in storage.progress.get_course_progress(uid)
+            p["concept_uid"]: p
+            for p in storage.progress.get_course_progress(
+                uid, student_id=request.args.get("student_id") or None)
         }
 
         # Build structure response matching old format
@@ -654,8 +662,13 @@ def structure():
                     for concept in lesson.get("concepts", []):
                         # Check completion from the pre-loaded progress map (B5.6)
                         progress = progress_by_concept.get(concept["uid"])
+                        # Shared definition -- see ProgressStore.DONE_STATUSES.
+                        # Counting "completed" alone here, while the course list
+                        # counted reviewed and mastered too, is what made one
+                        # course read 4% on one tab and 0% on the next.
                         completed = (
-                            progress["status"] == "completed" if progress else False
+                            storage.progress.is_done(progress["status"])
+                            if progress else False
                         )
                         bloom_level = (
                             progress.get("bloom_level", 0) if progress else 0

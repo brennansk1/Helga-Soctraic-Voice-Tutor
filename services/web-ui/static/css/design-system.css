@@ -1379,7 +1379,13 @@ a:not([class]):hover {
    Verify with: document.documentElement.scrollWidth === clientWidth at 375. */
 @media (max-width: 560px) {
   .helga-search-wrapper .helga-search-input { display: none; }
-  .build-pill span { display: none; }   /* the pulse dot still shows state */
+  /* The label goes, the pulse dot stays -- which is what this rule said it
+     did and did not do. `.build-pill span` matched BOTH children, and the
+     pulse IS a span (<span class="build-now-pulse">), so the dot was hidden
+     along with the text and the pill rendered as a 24x9 translucent blob:
+     padding around nothing, in the header, on every mobile page during a
+     build. Measured at 375px before the fix. */
+  .build-pill span:not(.build-now-pulse) { display: none; }
   .app-header { gap: var(--space-2); padding: 0 var(--space-3); }
 }
 

@@ -274,3 +274,57 @@ class TestFlashcardStore:
         assert len(cards_a) == 2
         cards_b = storage.flashcards.get_cards_for_course("course-b")
         assert len(cards_b) == 1
+
+
+# ---------------------------------------------------------------------------
+# ONE DEFINITION OF "DONE".
+#
+# There were two. The course list counted completed/reviewed/mastered; the
+# course-structure endpoint that draws the learn path counted "completed"
+# alone. With four concepts sitting at `reviewed`, the SQL course read
+# "4 of 95 concepts · 4%" on Courses and "0 of 95 complete · 0%" on Learn —
+# the same course, the same learner, two screens one click apart, telling
+# someone who had worked through four concepts that they had done nothing.
+# ---------------------------------------------------------------------------
+
+def test_reviewed_and_mastered_count_as_done():
+    from services.common.storage import ProgressStore
+    for status in ("completed", "reviewed", "mastered"):
+        assert ProgressStore.is_done(status), status
+
+
+def test_unfinished_states_do_not_count_as_done():
+    from services.common.storage import ProgressStore
+    for status in ("in_progress", "locked", "", None, "started"):
+        assert not ProgressStore.is_done(status), repr(status)
+
+
+def test_case_and_whitespace_do_not_change_the_answer():
+    from services.common.storage import ProgressStore
+    assert ProgressStore.is_done("  Reviewed ")
+    assert ProgressStore.is_done("COMPLETED")
+
+
+def test_a_reviewed_concept_is_done_on_both_paths(storage):
+    """The two surfaces read the same rows; they must agree on what they mean."""
+    from services.common.storage import ProgressStore
+    storage.progress.update_progress('c_rev', 'course_x', status='reviewed')
+    rows = storage.progress.get_course_progress('course_x')
+    by_uid = {r['concept_uid']: r for r in rows}
+    assert ProgressStore.is_done(by_uid['c_rev']['status']), \
+        "a reviewed concept must count as done wherever it is read"
+
+
+def test_neither_surface_hardcodes_its_own_status_list():
+    """They drifted because each carried its own tuple. If a literal list
+    reappears in librarian they can drift again, and the symptom — 0% beside
+    4% — reads to a learner as lost progress."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parents[2]
+           / "services" / "rag" / "librarian.py")
+    text = src.read_text()
+    for literal in ('"reviewed", "mastered"', "'reviewed', 'mastered'",
+                    '"completed", "reviewed"', "'completed', 'reviewed'"):
+        assert literal not in text, (
+            "librarian.py hardcodes a done-status list again; call "
+            "storage.progress.is_done() instead")
