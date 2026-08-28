@@ -1715,6 +1715,29 @@
             // Said once, so the wording cannot drift between the places that
         // narrate the same wait.
         function warmingUpNotice() {
+            /* A BUILD IS THE USUAL REASON, AND THIS BLAMED THE COLD START.
+               "The first lesson of the day takes about two minutes; after that
+               they start straight away" is true of a cold model and false of
+               the case that actually produces this wait most often: a course
+               build holding the model for hours. Watched a lesson sit on that
+               sentence for four minutes while the page's own banner read
+               "Building: HTTP status codes" and core-logic logged
+               "Ollama timeout after 60s (attempt 1/3)". The sentence also
+               promises a duration it cannot keep, and nothing on screen shows
+               that the request is being retried.
+               build-guard.js publishes the build state on every page. */
+            var building = null;
+            try {
+                building = window.HelgaBuildGuard
+                    && window.HelgaBuildGuard.active();
+            } catch (e) { building = null; }
+
+            if (building) {
+                return 'Waiting for the model — it is busy building '
+                    + (building.label ? '"' + building.label + '"' : 'a course')
+                    + '. Still trying; this can take a few minutes while a '
+                    + 'build is running.';
+            }
             return (window.__helgaModelWarm
                 ? 'Still thinking — this concept is a long one.'
                 : 'Loading the model. The first lesson of the day takes about '
