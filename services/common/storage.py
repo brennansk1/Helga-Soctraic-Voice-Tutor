@@ -1981,6 +1981,31 @@ class CourseStore:
     # window is silently reverted by the next write.
     _LEARNER_OWNED = ("title", "teaching_style", "learner_context")
 
+    def set_hydrated_count(self, uid: str, n: int) -> bool:
+        """Record how many concepts are written, cheaply and often.
+
+        update_course rewrites structure.json and the whole row, which is far
+        too heavy to call per concept -- and its own docstring notes that
+        hydration writes from a thread pool and a locked database is the common
+        case. This touches one integer column and nothing else.
+
+        It exists because hydrated_count was persisted EXACTLY ONCE, when the
+        first concept landed, and then not again until the phase ended. Since
+        the course card renders "N of M concepts" from it, a 136-concept course
+        sat on "0 of 136" for the whole of its longest phase while 18 markdown
+        files were already on disk.
+        """
+        try:
+            conn = self._get_db()
+            conn.execute("UPDATE courses SET hydrated_count = ? WHERE uid = ?",
+                         (int(n), uid))
+            conn.commit()
+            return True
+        except Exception as e:
+            # A progress counter is never worth failing a build over.
+            logger.debug("hydrated_count update skipped for %s: %s", uid, e)
+            return False
+
     def update_course(self, uid: str, course_dict: dict,
                       preserve_learner_fields: bool = True):
         """Overwrite course structure.json and update metadata in SQLite.

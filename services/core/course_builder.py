@@ -5289,6 +5289,22 @@ class ContentHydrator:
                         f"Course '{course_title}' first concept hydrated "
                         f"({len(concept_list)-1} remaining); not enterable until "
                         "checks and assets complete")
+                else:
+                    # ...AND EVERY CONCEPT AFTER THE FIRST.
+                    #
+                    # The branch above was the only place hydrated_count ever
+                    # reached the database, so it was written once, as the
+                    # literal 1, and not again until the phase ended. The course
+                    # card renders "N of M concepts" from that column, so a
+                    # 136-concept build sat on "0 of 136" for hours with 18
+                    # markdown files already written -- the same defect as the
+                    # skeleton bar frozen at 10%, one phase later.
+                    #
+                    # A single-column UPDATE, not update_course: rewriting
+                    # structure.json per concept from a thread pool is exactly
+                    # the lock contention this file already warns about.
+                    self.storage.courses.set_hydrated_count(
+                        course_uid, hydrated_count)
 
         # Execute parallel hydration
         if max_workers > 1:

@@ -328,3 +328,46 @@ def test_neither_surface_hardcodes_its_own_status_list():
         assert literal not in text, (
             "librarian.py hardcodes a done-status list again; call "
             "storage.progress.is_done() instead")
+
+
+# ---------------------------------------------------------------------------
+# HYDRATION PROGRESS REACHES THE DATABASE MORE THAN ONCE.
+#
+# hydrated_count was persisted exactly once — as the literal 1, when the first
+# concept landed — and not again until the phase ended. The course card renders
+# "N of M concepts" from that column, so a 136-concept build showed "0 of 136"
+# for hours with 18 markdown files already on disk.
+# ---------------------------------------------------------------------------
+
+def test_hydrated_count_can_be_updated_repeatedly(storage):
+    uid = "course_hyd0001"
+    storage.courses.create_course({"uid": uid, "title": "Hydration",
+                                   "modules": []})
+    for n in (1, 7, 42):
+        assert storage.courses.set_hydrated_count(uid, n) is True
+        assert storage.courses.get_course(uid).get("hydrated_count") == n or \
+            _row_count(storage, uid) == n
+
+
+def _row_count(storage, uid):
+    conn = storage.courses._get_db()
+    row = conn.execute("SELECT hydrated_count FROM courses WHERE uid = ?",
+                       (uid,)).fetchone()
+    return row[0] if row else None
+
+
+def test_a_counter_failure_never_raises(storage):
+    """A progress number must not be able to fail a build."""
+    assert storage.courses.set_hydrated_count("course_does_not_exist", 3) in (
+        True, False)          # no exception either way
+
+
+def test_the_builder_updates_the_counter_past_the_first_concept():
+    """The bug was structural: the only write sat behind `if
+    hydrated_count == 1`. Guard the shape, since reproducing a 136-concept
+    hydration in a unit test is not practical."""
+    import inspect
+    from services.core import course_builder
+    src = inspect.getsource(course_builder)
+    assert "set_hydrated_count(" in src, (
+        "the hydration loop no longer reports progress per concept")
