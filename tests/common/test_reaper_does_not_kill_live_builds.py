@@ -94,43 +94,61 @@ def test_resume_claims_the_build_slot():
 
 
 # ---------------------------------------------------------------------------
-# EVERY STAGE NAME THE CODE PASSES MUST HAVE A QUIET BUDGET.
+# EVERY STAGE NAME HANDED TO build_state.start() MUST HAVE A QUIET BUDGET.
 #
-# _quiet_budget falls back to STALE_AFTER_SECONDS when a stage is unknown, so a
-# typo is not an error — it is a silently shorter deadline. Four names were
-# passed that the table did not know: "hydration" (resume_build's name for
-# hydrate, one letter from the key that exists), "research", "coverage" and
-# "items", which is Stage 5 extraction.
+# _quiet_budget falls back to STALE_AFTER_SECONDS for an unknown stage, so a
+# name the table does not carry is not a crash — it is a quieter, shorter
+# deadline that nothing reports. resume_build passes stage="hydration" and the
+# table had only "hydrate", one letter apart.
 #
-# Too long only leaves a banner up. Too short reaps a build that is still
-# working — which this module's own comments record happening four times in
-# twelve minutes, once fourteen seconds after the hydration it killed began.
+# Scoped to the actual callers on purpose. An earlier version of this test
+# scanned every `stage=` literal under services/, which swept in `data-stage`
+# from build.html — the build PAGE's checklist, a different namespace that
+# never reaches this module — and made one real defect look like four.
 # ---------------------------------------------------------------------------
 
-def test_every_stage_passed_anywhere_has_a_quiet_budget():
-    import re
+def _stage_args_passed_to_build_state_start():
+    import ast
     import pathlib
-    from services.common.build_state import STAGE_QUIET_BUDGET
-
     root = pathlib.Path(__file__).resolve().parents[2] / "services"
-    passed = set()
+    found = set()
     for py in root.rglob("*.py"):
-        for m in re.finditer(r"""stage\s*=\s*["']([a-z_]+)["']""",
-                             py.read_text(encoding="utf-8", errors="replace")):
-            passed.add(m.group(1))
+        try:
+            tree = ast.parse(py.read_text(encoding="utf-8", errors="replace"))
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            fn = node.func
+            name = getattr(fn, "attr", None) or getattr(fn, "id", None)
+            if name != "start":
+                continue
+            owner = getattr(getattr(fn, "value", None), "id", "")
+            if "build_state" not in owner and "_state" not in owner:
+                continue
+            for kw in node.keywords:
+                if kw.arg == "stage" and isinstance(kw.value, ast.Constant) \
+                        and isinstance(kw.value.value, str):
+                    found.add(kw.value.value)
+    return found
 
+
+def test_every_stage_passed_to_build_state_has_a_quiet_budget():
+    from services.common.build_state import STAGE_QUIET_BUDGET
+    passed = _stage_args_passed_to_build_state_start()
+    assert passed, "found no build_state.start(stage=...) calls — check the scan"
     missing = sorted(passed - set(STAGE_QUIET_BUDGET))
     assert not missing, (
-        "these stage names are passed but have no quiet budget, so they "
-        f"silently take the default deadline: {missing}")
+        "these stage names reach build_state.start() but have no quiet "
+        f"budget, so they silently take the default deadline: {missing}")
 
 
 def test_the_budget_lookup_actually_uses_those_keys():
-    """Guards the mechanism, not just the table: a rename of _quiet_budget's
-    lookup key would make the entries above decorative."""
+    """Guards the mechanism, not just the table: renaming _quiet_budget's
+    lookup key would make every entry decorative."""
     from services.common import build_state
     assert build_state._quiet_budget({"stage": "hydration"}) == 20 * 60
-    assert build_state._quiet_budget({"stage": "items"}) == 15 * 60
-    # An unknown stage still falls back rather than raising.
+    assert build_state._quiet_budget({"stage": "hydrate"}) == 20 * 60
     assert build_state._quiet_budget({"stage": "no_such_stage"}) == \
         build_state.STALE_AFTER_SECONDS

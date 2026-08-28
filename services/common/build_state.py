@@ -80,25 +80,25 @@ STAGE_QUIET_BUDGET = {
     "skeleton": 15 * 60,
     "audit": 20 * 60,
     "hydrate": 20 * 60,
-    # FOUR STAGE NAMES WERE PASSED THAT THIS TABLE DID NOT KNOW.
+    # ONE STAGE NAME WAS PASSED THAT THIS TABLE DID NOT KNOW.
     #
     # A missing key is not an error here -- the lookup falls back to
-    # STALE_AFTER_SECONDS -- so "hydration", "research", "coverage" and "items"
-    # all silently took the 15-minute default while believing they had a stage
-    # budget. resume_build passes stage="hydration"; the table only had
-    # "hydrate", one letter apart, so a resumed build has never once used the
-    # hydration budget it was written for.
+    # STALE_AFTER_SECONDS -- so it is not a crash but a quieter, shorter
+    # deadline that nothing reports. resume_build passes stage="hydration";
+    # this table had only "hydrate", one letter apart, so a resumed build has
+    # never once used the hydration budget written for it.
     #
-    # The direction of the error matters. A budget that is too SHORT reaps a
-    # build that is still working, and this file records that happening four
-    # times in twelve minutes on 2026-08-25 -- one of them fourteen seconds
-    # after the hydration it killed had started. A budget that is too long only
-    # leaves a banner up. So these are generous, and a test below fails if a
-    # stage name is ever passed that has no entry.
+    # The direction of that error is the point. Too long only leaves a banner
+    # up; too short reaps a build that is still working, and this file records
+    # that happening four times in twelve minutes on 2026-08-25, one of them
+    # fourteen seconds after the hydration it killed had started.
+    #
+    # Only these keys belong here. `data-stage` in build.html -- research,
+    # coverage, items, and the rest -- is the build PAGE's checklist, a
+    # different namespace that never reaches build_state.start(). Adding those
+    # names here would be dead configuration implying a coupling that does not
+    # exist.
     "hydration": 20 * 60,      # resume_build's name for hydrate
-    "research": 20 * 60,       # per-concept research calls, network-bound
-    "coverage": 20 * 60,       # syllabus-coverage pass
-    "items": 15 * 60,          # Stage 5 extraction: local, but over every concept
     "assets": 20 * 60,
     "finalize": 10 * 60,
 }
