@@ -8,7 +8,7 @@
                 <span class="i i-user-plus"></span>
             </div>
             <h1 class="auth-title">Create Family Account</h1>
-            <p class="auth-subtitle">One account manages all family learners with encrypted data storage</p>
+            <p class="auth-subtitle">One account for everyone learning on this machine</p>
         </div>
 
         <form id="signup-form" autocomplete="on" class="auth-form">
@@ -39,7 +39,13 @@
             <div class="checkbox-group">
                 <label class="checkbox-label">
                     <input id="su-tos" type="checkbox" required class="form-checkbox">
-                    <span>I agree to the Terms of Service and consent to learning data encryption on this self-hosted server (COPPA Parental Consent).</span>
+                    {# There is no Terms of Service. /terms, /tos, /privacy and /legal all
+   404, so this asked people to agree to a document that does not exist
+   — and the true statement is stronger than the boilerplate anyway: on a
+   self-hosted tutor nothing leaves the machine, so there is no third
+   party for terms to be with. What the parent is actually consenting to
+   is their child using it, which is the part COPPA cares about. #}
+                    <span>I am the parent or guardian, and I consent to my children using Helga. Everything they do stays on this machine — no account, no cloud, no data leaving the device.</span>
                 </label>
             </div>
 
@@ -90,7 +96,7 @@
     width: 56px;
     height: 56px;
     margin: 0 auto 1rem;
-    background: linear-gradient(135deg, var(--brand-primary, #4f46e5), #818cf8);
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-tertiary));
     border-radius: 16px;
     display: flex;
     align-items: center;
@@ -139,7 +145,7 @@
 }
 .form-input:focus {
     outline: none;
-    border-color: var(--brand-primary, #4f46e5);
+    border-color: var(--accent-primary);
     box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
 }
 .checkbox-group {
@@ -155,7 +161,7 @@
 }
 .form-checkbox {
     margin-top: 0.15rem;
-    accent-color: var(--brand-primary, #4f46e5);
+    accent-color: var(--accent-primary);
 }
 .auth-submit-btn {
     width: 100%;
@@ -163,7 +169,7 @@
     font-size: 1rem;
     font-weight: 600;
     border-radius: 10px;
-    background: linear-gradient(135deg, var(--brand-primary, #4f46e5), #6366f1);
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-tertiary));
     color: white;
     border: none;
     cursor: pointer;
@@ -184,7 +190,7 @@
     font-size: 0.9rem;
 }
 .auth-link {
-    color: var(--brand-primary, #4f46e5);
+    color: var(--accent-primary);
     font-weight: 600;
     text-decoration: none;
 }

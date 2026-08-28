@@ -162,3 +162,27 @@ def test_every_stylesheet_is_actually_linked():
         f"stylesheets present but linked by no template: {orphans}. Either link "
         f"them or delete them — editing an unlinked file has no visible effect."
     )
+
+
+def test_every_icon_used_in_a_template_is_defined():
+    """An undefined `i i-foo` renders as an empty square, not as nothing.
+
+    Nine were undefined at once — i-key and i-eye on the sign-in form, i-mail
+    and i-user-plus on sign-up, i-plus and i-log-out on the parent screens —
+    so the auth surfaces were dotted with blank boxes where icons should be.
+    They are mask-image rules, so a missing custom property leaves the element
+    sized, coloured and empty.
+    """
+    icons_css = CSS_DIR / "icons.css"
+    if not icons_css.exists():
+        pytest.skip("no icons.css")
+    defined = set(re.findall(r"^\.i-([a-z0-9-]+)", icons_css.read_text(errors="replace"), re.M))
+
+    used = {}
+    for tpl in TEMPLATES.rglob("*.html"):
+        for name in re.findall(r'class="[^"]*\bi\s+i-([a-z0-9-]+)',
+                               tpl.read_text(errors="replace")):
+            used.setdefault(name, set()).add(tpl.name)
+
+    missing = {k: sorted(v) for k, v in used.items() if k not in defined}
+    assert not missing, f"icons used but never defined: {missing}"
