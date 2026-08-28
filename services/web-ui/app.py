@@ -899,18 +899,20 @@ def progress_overview():
                         'gaps': [], 'totals': {}}), 502
 
 
-@app.route('/test')
-# THESE TWO REDIRECTS DROPPED EVERY QUERY PARAMETER.
+# THESE REDIRECTS DROPPED EVERY QUERY PARAMETER.
 #
 # /quiz?course_uid=X is the obvious URL for "quiz me on this course", and it
 # landed on the Quiz tab with the course selector showing whichever course
 # happened to be first. Nothing carried the parameter across the redirect, so
 # the request was silently answered with a different course.
+#
+# Not a view — it must stay clear of the stacked @app.route decorators below.
 def _practice_redirect(tab):
     args = {k: v for k, v in request.args.items(True) if k != 'tab'}
     return redirect(url_for('practice_page', tab=tab, **args))
 
 
+@app.route('/test')
 @app.route('/quiz')
 def test_page():
     return _practice_redirect('quiz')
