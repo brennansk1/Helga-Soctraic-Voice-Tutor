@@ -80,3 +80,15 @@ def test_sound_effects_is_not_resurrected():
     saved, defaulted and round-tripped while doing precisely nothing. If it
     comes back it needs a consumer first, not just a field."""
     assert "sound_effects" not in merge_profile({}, {"sound_effects": True})
+
+
+def test_desired_retention_round_trips_and_is_clamped():
+    """The largest lever on a year of workload, and it was reachable only by
+    editing the database. 0.90 -> 0.85 is roughly a third fewer reviews a day."""
+    assert merge_profile({}, {"desired_retention": 0.85})["desired_retention"] == 0.85
+    assert merge_profile({}, {"desired_retention": 0.95})["desired_retention"] == 0.95
+    # Outside the band the schedule stops being a schedule in one direction and
+    # collapses to daily in the other.
+    assert merge_profile({}, {"desired_retention": 0.2})["desired_retention"] == 0.70
+    assert merge_profile({}, {"desired_retention": 0.999})["desired_retention"] == 0.97
+    assert merge_profile({}, {"desired_retention": "x"})["desired_retention"] == 0.90

@@ -55,6 +55,10 @@ SANITISERS = {
     # the page applies it straight to --font-scale. Clamping it as an integer
     # percent turned 1.2 into 1 and then into the 50 floor, i.e. half-size text.
     "font_scale":    lambda v: _clamp_float(v, 0.8, 1.4, 1.0),
+    # FSRS desired retention. Clamped to a band that is actually sane: below
+    # ~0.7 the schedule stops being a schedule, and above ~0.97 the intervals
+    # collapse toward daily and the workload explodes.
+    "desired_retention": lambda v: _clamp_float(v, 0.70, 0.97, 0.90),
     # The Settings page's own names for three fields this endpoint used to
     # drop on the floor. `display_name` is the one that mattered: the page
     # promises "the tutor will address you by this name", the tutor reads

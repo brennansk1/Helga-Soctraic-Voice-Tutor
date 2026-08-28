@@ -67,6 +67,25 @@
             <input type="number" id="daily-goal" min="1" max="20" value="5">
             <p class="setting-hint">Number of concepts to target each day.</p>
         </div>
+        <div class="setting-row">
+            <label for="retention">Review strength</label>
+            <select id="retention">
+                <option value="0.85">Lighter — fewer reviews, a little more forgetting</option>
+                <option value="0.90" selected>Balanced — the default</option>
+                <option value="0.95">Firmer — more reviews, less forgetting</option>
+            </select>
+            {# THE BIGGEST LEVER ON A YEAR OF WORKLOAD, and it was reachable
+               only by editing the database. FSRS schedules each item so that
+               recall probability has fallen to this number when it comes back:
+               ask for more certainty and every interval shortens, which is a
+               third more reviews a day for a few points of retention. Framed
+               as a trade rather than a percentage, because the percentage is
+               meaningless without the cost attached to it. #}
+            <p class="setting-hint">How sure Helga makes you are of something
+               before it stops asking. Firmer means shorter gaps and noticeably
+               more reviews each day; lighter means fewer, at the cost of
+               forgetting a little more.</p>
+        </div>
     </section>
 
     {#  "Gamification" is a word product teams use about learners, not a word
@@ -706,6 +725,13 @@ input:checked + .slider:before { transform: translateX(22px); }
             document.getElementById('font-scale').value = profile.font_scale || 1.0;
             document.getElementById('font-scale-label').textContent = Math.round((profile.font_scale || 1.0) * 100) + '%';
             document.getElementById('daily-goal').value = profile.daily_goal || 5;
+            /* toFixed(2), not String(). The stored value is a float, and
+               String(0.9) is "0.9" while the option value is "0.90" — the
+               select matched nothing and rendered blank. */
+            var _sel = document.getElementById('retention');
+            var _r = Number(profile.desired_retention || 0.90).toFixed(2);
+            _sel.value = _r;
+            if (!_sel.value) { _sel.value = '0.90'; }   // stored value off-menu
             const gamificationOn = profile.gamification_enabled !== false;
             document.getElementById('gamification-toggle').checked = gamificationOn;
             // Sync localStorage + data-gamification attribute so other tabs/
@@ -841,6 +867,10 @@ input:checked + .slider:before { transform: translateX(22px); }
     });
 
     // Daily goal
+    document.getElementById('retention').addEventListener('change', function() {
+        autoSave('desired_retention', parseFloat(this.value));
+    });
+
     document.getElementById('daily-goal').addEventListener('change', function() {
         autoSave('daily_goal', parseInt(this.value) || 5);
     });

@@ -363,3 +363,16 @@ def test_a_spent_daily_allowance_introduces_nothing_more():
 
     partial = build_queue(fresh, today=TODAY, daily_cap=60, new_per_day=4)
     assert len(partial['queue']) == 4
+
+
+def test_retention_target_moves_every_interval():
+    """The Settings control has to reach FSRS, not just be stored. It read a
+    different key-value table from the one Settings writes, so it returned the
+    0.9 default forever and looked exactly like a working setting."""
+    from services.core.fsrs_engine import FSRSEngine
+    intervals = {r: FSRSEngine(desired_retention=r).next_interval(60)
+                 for r in (0.85, 0.90, 0.95)}
+    assert intervals[0.85] > intervals[0.90] > intervals[0.95], intervals
+    # Asking for more certainty must cost meaningfully more reviews, or the
+    # control is decorative.
+    assert intervals[0.85] >= intervals[0.95] * 2

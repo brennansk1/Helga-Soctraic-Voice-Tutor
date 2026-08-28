@@ -1141,7 +1141,7 @@ def grade_card_fsrs_endpoint():
 
     try:
         from services.core.fsrs_engine import FSRSEngine
-        fsrs = FSRSEngine(desired_retention=0.9)
+        fsrs = FSRSEngine(desired_retention=_desired_retention())
         result = storage.flashcards.grade_card_fsrs(uid, rating, fsrs)
         return jsonify({"status": "ok", **result})
     except ValueError as e:
@@ -2304,6 +2304,47 @@ def ask_endpoint():
 
 # ---------------------------------------------------------------- review queue
 
+def _profile_value(key, default=None):
+    """Read one Settings value from the table Settings actually writes to.
+
+    THERE ARE TWO KEY-VALUE STORES IN THIS DATABASE. The Settings page writes
+    `user_profile` (through PATCH /api/profile); `storage.settings` reads
+    `user_settings`, which nothing on that page has ever written. Reading the
+    wrong one returns the default forever and looks exactly like a working
+    setting — the retention control changed nothing, and the daily cap has been
+    ignoring the learner's goal for as long as it has existed.
+    """
+    conn = None
+    try:
+        conn = _get_profile_db()
+        row = conn.execute(
+            "SELECT value FROM user_profile WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else default
+    except Exception as e:
+        logger.warning("could not read profile key %r: %s", key, e)
+        return default
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def _desired_retention():
+    """The learner's retention target, from Settings.
+
+    ONE reader. The older /api/grade_card_fsrs endpoint had 0.9 hard-coded, so
+    a learner who chose "lighter" got their chosen schedule from one grading
+    path and the default from the other.
+    """
+    try:
+        value = float(_profile_value("desired_retention") or 0.9)
+    except (TypeError, ValueError):
+        return 0.9
+    return min(0.97, max(0.70, value))
+
+
 def _daily_cap(student_id):
     """The learner's own daily goal, in items rather than concepts.
 
@@ -2311,7 +2352,7 @@ def _daily_cap(student_id):
     a dozen items to a concept, so the cap is derived rather than invented.
     """
     try:
-        goal = int(storage.settings.get("daily_goal") or 5)
+        goal = int(_profile_value("daily_goal") or 5)
     except Exception:
         goal = 5
     return max(10, min(200, goal * 12))
@@ -2514,8 +2555,7 @@ def review_grade_endpoint():
         # A policy knob, not a constant: 0.9 suits material you will be tested
         # on; 0.85 cuts the daily workload by roughly a third for slightly more
         # forgetting, which is the right trade over a multi-year programme.
-        retention = float(storage.settings.get("desired_retention") or 0.9)
-        retention = min(0.97, max(0.70, retention))
+        retention = _desired_retention()
     except Exception:
         retention = 0.9
 
@@ -2849,7 +2889,7 @@ def _get_profile_db():
     for key, val in [
         ('display_name', ''), ('theme', 'light'), ('font_scale', '1.0'),
         ('default_voice', 'af_heart'), ('gamification_enabled', 'true'),
-        ('daily_goal', '5'), ('avatar_url', ''),
+        ('daily_goal', '5'), ('avatar_url', ''), ('desired_retention', '0.9'),
     ]:
         conn.execute("INSERT OR IGNORE INTO user_profile (key, value) VALUES (?, ?)", (key, val))
     # Settings that were removed from the product. The rows were seeded on every
@@ -2936,7 +2976,8 @@ def update_profile():
     conn = _get_profile_db()
     try:
         valid_keys = {'display_name', 'theme', 'font_scale', 'default_voice',
-                      'gamification_enabled', 'daily_goal', 'avatar_url'}
+                      'gamification_enabled', 'daily_goal', 'avatar_url',
+                      'desired_retention'}
         for key, value in data.items():
             if key not in valid_keys:
                 continue

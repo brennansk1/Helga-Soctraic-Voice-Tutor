@@ -1089,6 +1089,7 @@ def get_profile():
             "display_name": "",
             "theme": "light",
             "font_scale": 1.0,
+            "desired_retention": 0.9,
             "default_voice": "af_heart",
             "gamification_enabled": True,
             "daily_goal": 5,
