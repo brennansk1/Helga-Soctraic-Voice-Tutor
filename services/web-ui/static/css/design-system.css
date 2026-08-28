@@ -418,6 +418,23 @@
     max-width: min(26rem, calc(100vw - 2 * var(--space-5)));
 }
 
+/* ...and then the build status banner was given the same corner.
+   #creation-banner is fixed at bottom/right 16px on every page while a course
+   builds, so during a build every toast lands on top of it. Watched it happen:
+   the wizard's "Add at least one module" dropped over the live build status,
+   hiding the progress and reading as one garbled strip.
+
+   Two banner classes exist -- .creation-banner (global, the one that actually
+   renders) and .build-banner (build.css) -- and the first attempt at this
+   targeted only the second, which is not present on the page where the
+   collision was observed. Both are matched here; verified against the live DOM
+   rather than the stylesheet. */
+body:has(#creation-banner.visible) #toast-container,
+body:has(.creation-banner.visible) #toast-container,
+body:has(.build-banner.is-visible) #toast-container {
+    bottom: calc(var(--space-5) + 4rem);
+}
+
 .toast {
     padding: var(--space-3) var(--space-4);
     border-radius: var(--border-radius-sm);
