@@ -35,18 +35,29 @@ months. Consequences that follow from it, all measured:
   * Speculative decoding does not work on this hardware. Do not retry it.
 
 ## Architecture
+Verified by asking the running machine, 2026-08-28.
+
 Containers (docker compose): **web-ui** (Flask + Socket.IO, 5050->5000),
 **core-logic** (FSM + course build, 5003), **rag-engine** (course CRUD, review
-queue, search, 5002), **tts** (Kokoro, 5005), **research** (build-time
-augmentation, 5006), **searxng** (8080), **stt** (optional; reports `offline`
-when absent and the UI says so rather than pretending).
+queue, search, 5002), **research** (build-time augmentation, 5006), **searxng**
+(8080), **sqlcheck** (Postgres, below).
 
-Host-native, NOT containers: **Ollama** on 11434, and the **verifier**
-(MiniCheck entailment) on 5007.
+Host-native, NOT containers — reached at `host.docker.internal`:
+  * **Ollama** on 11434
+  * the **verifier** (MiniCheck entailment) on 5007
+  * **Kokoro TTS** on 5005. This file listed it as a container; it is not one
+    by default. docker-compose defines a `tts` service behind the `portable`
+    profile, so `docker compose up` neither builds nor starts it, and its own
+    comment says the primary deployment is native. Confirmed: no helga-tts
+    container exists and host 5005 answers 200.
+  * **STT** on 5001, optional. Absent right now, and the app reports `offline`
+    rather than pretending.
 
 There is no inference-llm container. `helga-sqlcheck` is a live Postgres used to
 EXECUTE SQL claims during the audit — content correctness is checked by running
-the claim, not by asking a model.
+the claim, not by asking a model. (It is build-time only: nothing in the review
+path executes SQL. See `docs/REVIEW_TIERS.md` for why apply items are not
+graded that way.)
 
 ## Model
 `OLLAMA_MODEL` defaults to **`nail-35b-a3b-ctx`** (compose, `.env`,
@@ -55,8 +66,12 @@ tests pin it). Reached at `host.docker.internal:11434` over the
 OpenAI-compatible API.
 
 ## Storage
-SQLite (`helga.db`, WAL) at **schema v21**, plus JSON course structures and
-Markdown concept files. No KuzuDB, no ZIM.
+SQLite (`helga.db`, WAL) at **schema v22** (v22 added `concept_prereqs`; this
+file said v21), plus JSON course structures and Markdown concept files. No
+KuzuDB, no ZIM. Read the version from the machine rather than from here:
+`docker exec helga-rag-engine python3 -c "import sqlite3;
+print(sqlite3.connect('/app/data/helga.db').execute('select version from
+schema_version').fetchone()[0])"`
 
 A NOTE ON THE WAL FILES: writing to `data/helga.db` from host Python while the
 containers are running leaves `-shm`/`-wal` files the containers cannot read,
