@@ -561,9 +561,22 @@
             setStage('assets', 'warn');
         }
 
-        // Stage 5 — the item bank, which is what makes the course reviewable.
-        if (text.indexOf('ITEMS:') === 0) {
-            var n = parseInt(text.slice(6), 10);
+        /* Stage 5 — the item bank, which is what makes the course reviewable.
+
+           THIS BLOCK THREW ON EVERY SINGLE BUILD MESSAGE. handle()'s parameter
+           is `raw` and its trimmed copy is `msg`; this used `text`, which is
+           declared nowhere in the function. So the ReferenceError fired on the
+           first message of every build and again on all that followed, killing
+           this handler before it reached the ITEMS: check and everything below
+           it. Stage 5 could therefore never appear on the build page — the
+           "Review items" tile stayed grey through builds that had extracted
+           thousands of items.
+
+           Caught by reading the console on a live build, not by grepping:
+           every message produced "Uncaught ReferenceError: text is not
+           defined" at build-view.js:565. */
+        if (msg.indexOf('ITEMS:') === 0) {
+            var n = parseInt(msg.slice(6), 10);
             setStage('items', 'active');
             if (!isNaN(n)) {
                 stream(n
@@ -920,7 +933,40 @@
                    replay is what fills the rail, so the page looked busy while
                    the server reported nothing at all. Say so instead. */
                 if (st.active === false && !st.course_uid && !st.started_at) {
-                    settled = true; stopPolling(); idle();
+                    /* ...UNLESS A BUILD IS RUNNING SOMEWHERE THIS ENDPOINT
+                       CANNOT SEE. creation_status reads the FSM in core-logic.
+                       A RESUME runs ContentHydrator inside the rag-engine, so
+                       every field checked above is empty for its whole
+                       duration and this page — whose entire job is showing the
+                       running build — said "No course is building" while one
+                       was writing its 37th concept. The Create modal one click
+                       earlier correctly refused to start a second build,
+                       so two screens disagreed about the same fact.
+
+                       /api/build/status is the record a resume DOES claim. */
+                    fetch('/api/build/status')
+                        .then(function (r) { return r.ok ? r.json() : null; })
+                        .catch(function () { return null; })
+                        .then(function (b) {
+                            if (settled) return;
+                            if (b && b.active && !b.stale) {
+                                var t = $('build-topic');
+                                if (t && b.topic) t.textContent = b.topic;
+                                var sub = $('build-sub');
+                                if (sub) {
+                                    sub.textContent = b.source === 'resume'
+                                        ? 'Continuing a build that stopped '
+                                          + 'early — concepts already written '
+                                          + 'are kept.'
+                                        : 'Building.';
+                                }
+                                var stage = PHASE_TO_STAGE[b.stage];
+                                if (stage) setStage(stage, 'active');
+                                return;   // keep polling; it is alive
+                            }
+                            settled = true; stopPolling(); idle();
+                        });
+                    return;
                 }
             });
 
