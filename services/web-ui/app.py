@@ -592,7 +592,8 @@ def practice_page():
     tab = request.args.get('tab', 'due')
     if tab not in PRACTICE_TABS:
         tab = 'due'
-    return render_template('practice.html', active_tab=tab)
+    return render_template('practice.html', active_tab=tab,
+                           course_uid=request.args.get('course_uid', ''))
 
 
 @app.route('/progress')
@@ -899,14 +900,25 @@ def progress_overview():
 
 
 @app.route('/test')
+# THESE TWO REDIRECTS DROPPED EVERY QUERY PARAMETER.
+#
+# /quiz?course_uid=X is the obvious URL for "quiz me on this course", and it
+# landed on the Quiz tab with the course selector showing whichever course
+# happened to be first. Nothing carried the parameter across the redirect, so
+# the request was silently answered with a different course.
+def _practice_redirect(tab):
+    args = {k: v for k, v in request.args.items(True) if k != 'tab'}
+    return redirect(url_for('practice_page', tab=tab, **args))
+
+
 @app.route('/quiz')
 def test_page():
-    return redirect(url_for('practice_page', tab='quiz'))
+    return _practice_redirect('quiz')
 
 
 @app.route('/review')
 def review_page():
-    return redirect(url_for('practice_page', tab='due'))
+    return _practice_redirect('due')
 
 @app.route('/palace')
 def palace_page():

@@ -5,7 +5,30 @@
  * separate pages got for free and a naive tab widget throws away.
  */
 (function () {
+
     'use strict';
+
+
+/* WHY THE WAIT, NOT A GUESS AT THE WAIT.
+   Both slow paths said "the model is warming up" after 20-25s. That is one
+   real cause and usually not the live one: a course build holds the model for
+   the better part of an hour on this machine, and during it every other LLM
+   feature queues behind it. Observed directly -- a quiz sat at "50s, the model
+   is warming up" while the page itself rendered a "Building: HTTP status codes
+   10%" toast three inches away.
+   build-guard.js publishes the build state on every page, so the honest reason
+   is already in hand. */
+function slowReason() {
+    try {
+        var b = window.HelgaBuildGuard && window.HelgaBuildGuard.active();
+        if (b) {
+            return b.label
+                ? ', waiting for the "' + b.label + '" build to free the model'
+                : ', waiting for the course build to free the model';
+        }
+    } catch (e) {}
+    return ', the model is warming up';
+}
 
     var TABS = ['due', 'quiz', 'upcoming'];
     var loaded = {};
@@ -788,6 +811,12 @@
                     return '<option value="' + esc(c.uid) + '">' +
                            esc(c.title || c.uid) + '</option>';
                 }).join('');
+                /* Honour ?course_uid= so /quiz?course_uid=X asks about X
+                   rather than about whichever course sorted first. */
+                var want = window.PRACTICE_COURSE_UID;
+                if (want && courses.some(function (c) { return c.uid === want; })) {
+                    sel.value = want;
+                }
             })
             .catch(function () {
                 sel.innerHTML = '<option value="">Could not load courses</option>';
@@ -827,7 +856,7 @@
                     // Past twenty seconds, say WHY it is slow rather than
                     // leaving the learner to guess.
                     el.textContent = ' — ' + _elapsed + 's' +
-                        (_elapsed > 20 ? ', the model is warming up' : '');
+                        (_elapsed > 20 ? slowReason() : '');
                 }, 1000);
             }
             var _done = function () { if (_tick) { clearInterval(_tick); _tick = null; } };
@@ -847,6 +876,28 @@
     /* The question being asked right now. Grading needs the reference material
        the question was generated from, and /api/quiz hands it over only here. */
     var current = null;
+
+
+    /* Markdown code spans, rendered as elements instead of shown as backticks.
+       The quiz question comes from the model and routinely names identifiers
+       -- `MERGE JOIN`, `work_mem` -- which reached the learner with the
+       backticks intact. Built from text nodes so nothing here can inject
+       markup; the string never touches innerHTML. */
+    function setRichText(el, str) {
+        el.textContent = '';
+        var parts = String(str == null ? '' : str).split('`');
+        parts.forEach(function (part, i) {
+            if (!part) return;
+            if (i % 2) {
+                var code = document.createElement('code');
+                code.className = 'practice-code';
+                code.textContent = part;
+                el.appendChild(code);
+            } else {
+                el.appendChild(document.createTextNode(part));
+            }
+        });
+    }
 
     function renderQuiz(q) {
         var area = $('quiz-area');
@@ -874,7 +925,7 @@
 
         var h = document.createElement('h3');
         h.className = 'practice-question-text';
-        h.textContent = q.question;
+        setRichText(h, q.question);
 
         var ta = document.createElement('textarea');
         ta.className = 'form-input practice-answer';
@@ -1240,7 +1291,20 @@
         wireTabs();
         wireQuiz();
         wireReview();
-        show(window.PRACTICE_ACTIVE_TAB || 'due', false);
+        var _tab = window.PRACTICE_ACTIVE_TAB || 'due';
+        show(_tab, false);
+        /* THE HEADER IS PAGE CHROME, NOT TAB CONTENT.
+           "due now" and "this week" sit in the page header and are visible on
+           every tab, but only loadDue() ever fills them -- and load() runs the
+           active tab's loader alone. Arriving on Quiz me (which /quiz
+           redirects to) or Upcoming left both reading "–" for the whole visit,
+           on the one screen whose job is to say how much there is to do.
+           Loading the counts regardless, and marking the tab loaded so
+           switching to it does not fetch a second time. */
+        if (_tab !== 'due') {
+            loaded.due = true;
+            loadDue();
+        }
     });
     // Retry buttons on the two error cards.
     document.addEventListener('click', function (e) {

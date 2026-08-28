@@ -64,6 +64,23 @@
             .catch(function (e) { fail(e.message); });
     }
 
+    /* The picker was printing the raw column value -- learners saw "partial"
+       and "needs_review" next to their courses, which are names for states in
+       the build pipeline, not descriptions of a notebook. The courses page
+       already speaks in outcomes ("Fix and finish"); this says what the
+       notebook itself will contain. */
+    var STATUS_LABELS = {
+        partial: "partly written",
+        needs_review: "needs a fix",
+        building: "still building",
+        skeleton: "not written yet",
+        failed: "did not finish"
+    };
+
+    function statusLabel(status) {
+        return STATUS_LABELS[status] || status;
+    }
+
     function renderPicker(courses) {
         var list = $("notebook-picker-list");
         if (!list) return;
@@ -80,7 +97,7 @@
                 c.title || c.uid));
             if (c.status && c.status !== "ready") {
                 a.appendChild(el("span", "notebook-picker-item-status",
-                    c.status));
+                    statusLabel(c.status)));
             }
             list.appendChild(a);
         });

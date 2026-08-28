@@ -9,6 +9,7 @@ import requests
 import re
 import uuid
 from services.common.storage import StorageManager, DEFAULT_STUDENT_ID
+from services.common.review_items import demath
 
 # THIS SERVICE WAS LOGGING NOTHING BELOW WARNING.
 #
@@ -1262,12 +1263,31 @@ def quiz_endpoint():
         )
         user_prompt = f"Generate a test question about this concept:\n\n{content[:3000]}"
 
-        question = llm_generate(user_prompt, sys_prompt=sys_prompt, max_tokens=200)
+        # 200 TOKENS DOES NOT HOLD A QUESTION THIS PROMPT ASKS FOR.
+        #
+        # The system prompt asks for a question that "requires explanation, not
+        # just recall", and the model obliges with a scenario, a table
+        # definition and two or three parts. Measured on a live SQL quiz: the
+        # question ended mid-clause at "...fails to meet the business
+        # requirement for `NULL`" -- the budget ran out, and nothing checked,
+        # because the only guard is a 10-character floor.
+        question = llm_generate(user_prompt, sys_prompt=sys_prompt, max_tokens=700)
         if not question or len(question.strip()) < 10:
             question = f"Explain the key principles of {chosen.get('title', 'this concept')} and give an example."
 
+        # THE QUIZ WAS THE ONE SURFACE STILL SERVING RAW TeX.
+        #
+        # Three surfaces render concept text and each handled math differently:
+        # the Socratic session runs it through KaTeX (learn.html vendors it),
+        # review items are demathed to plain text server-side, and the quiz
+        # passed the model's output straight through to `textContent`. KaTeX is
+        # not loaded on the practice page, so a learner was shown
+        # "$O(N \log N \cdot \log_k M)$" literally, dollar signs and all.
+        #
+        # Demathing here rather than in the client keeps this consistent with
+        # the review path and fixes every consumer of the endpoint at once.
         return jsonify({
-            "question": question.strip(),
+            "question": demath(question.strip()),
             "concept_uid": chosen["uid"],
             "concept_title": chosen.get("title", ""),
             "course_uid": chosen["_course_uid"],
@@ -1278,6 +1298,34 @@ def quiz_endpoint():
     except Exception as e:
         logger.error(f"Quiz generation error: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+# THE QUIZ GRADER ASKED FOR A LIST AND THEN READ IT AS AN OBJECT.
+#
+# llm_generate_json defaults to expected_type="list". The grader never
+# overrode it, so the helper steered the model to a JSON array, returned one,
+# and the very next line did `(result or {}).get("grade")` -- and a non-empty
+# list is truthy, so it went straight into AttributeError: 'list' object has no
+# attribute 'get'. Surfaced by running the tab: "Your answer was not graded
+# ('list' object has no attribute 'get')".
+#
+# The failure was invisible because the handler below is careful -- it refuses
+# to call an infrastructure failure a wrong answer -- so every quiz answer came
+# back ungraded with a polite message instead of an error anyone chased.
+#
+# /api/review/check_answer next door already passes expected_type="dict" with a
+# schema. Same treatment here.
+_QUIZ_GRADE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "grade": {"type": "string", "enum": ["PASS", "FAIL"]},
+        "score": {"type": "integer", "minimum": 0, "maximum": 100},
+        "feedback": {"type": "string"},
+        "missing_concepts": {"type": "array", "items": {"type": "string"}},
+        "key_point": {"type": "string"},
+    },
+    "required": ["grade", "feedback"],
+}
 
 
 @app.route("/api/quiz/grade", methods=["POST"])
@@ -1315,7 +1363,15 @@ def quiz_grade_endpoint():
             "Grade this answer. Be fair but rigorous."
         )
 
-        result = llm_generate_json(user_prompt, sys_prompt=sys_prompt, max_tokens=400)
+        result = llm_generate_json(user_prompt, sys_prompt=sys_prompt,
+                                   max_tokens=400, expected_type="dict",
+                                   schema=_QUIZ_GRADE_SCHEMA)
+        # Tolerate the wrapper the model sometimes adds anyway, the same way
+        # the skeleton builder does: a one-element array holding the object.
+        if isinstance(result, list):
+            result = next((r for r in result if isinstance(r, dict)), None)
+        if not isinstance(result, dict):
+            result = None
 
         # An infrastructure failure is not an assessment.
         #

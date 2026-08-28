@@ -186,3 +186,35 @@ def test_every_icon_used_in_a_template_is_defined():
 
     missing = {k: sorted(v) for k, v in used.items() if k not in defined}
     assert not missing, f"icons used but never defined: {missing}"
+
+
+def test_use_strict_is_the_first_statement_in_its_scope():
+    """'use strict' is a directive prologue: it applies only when nothing
+    executable precedes it. Inserting a helper above it silently downgrades the
+    whole file to sloppy mode, with no error anywhere.
+
+    Caught in review after a helper was spliced in directly beneath
+    `(function () {` and above the pragma in ask.js and practice.js.
+    """
+    import re
+    offenders = []
+    for path in _js_files():
+        src = path.read_text(encoding="utf-8")
+        m = re.search(r"""^[ \t]*['"]use strict['"];""", src, re.M)
+        if not m:
+            continue
+        # Everything before the pragma, with comments and the IIFE opener
+        # removed, must be empty.
+        head = src[:m.start()]
+        head = re.sub(r"/\*.*?\*/", "", head, flags=re.S)
+        head = re.sub(r"//[^\n]*", "", head)
+        # Strip the scope opener itself, in either form the repo uses:
+        #   (function () {            and   var Thing = (function () {
+        head = re.sub(r"^\s*(?:(?:var|let|const)\s+[\w$]+\s*=\s*)?"
+                      r"[;(]*\s*function\b[^\n{]*\{", "",
+                      head.strip(), flags=re.S)
+        head = head.replace("(", "").replace(")", "").replace("{", "")
+        if head.strip():
+            offenders.append(f"{path.name}: {head.strip()[:80]!r} precedes "
+                             f"'use strict'")
+    assert not offenders, "\n".join(offenders)

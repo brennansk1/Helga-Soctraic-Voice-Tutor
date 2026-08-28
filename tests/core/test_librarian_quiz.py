@@ -489,3 +489,74 @@ class TestDueConceptsEndpoint(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestQuizGradeAsksForAnObject(unittest.TestCase):
+    """The defect the mocks above could not see.
+
+    Every grade test sets `mock_llm_json.return_value` to a dict, so they all
+    passed while the real call was steering the model to produce a LIST:
+    llm_generate_json defaults to expected_type="list", the endpoint never
+    overrode it, and the next line did `(result or {}).get("grade")`. A
+    non-empty list is truthy, so live grading raised
+
+        'list' object has no attribute 'get'
+
+    on every single answer. It stayed hidden because the handler correctly
+    refuses to call an infrastructure failure a wrong answer, so the learner
+    saw a polite "not graded" note rather than an error.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        _setup_librarian_app()
+
+    def setUp(self):
+        from services.rag.librarian import app
+        app.config['TESTING'] = True
+        self.client = app.test_client()
+
+    @patch('services.rag.librarian.storage')
+    @patch('services.common.llm_utils.llm_generate_json')
+    def test_grader_requests_a_dict_not_a_list(self, mock_llm_json, mock_storage):
+        mock_llm_json.return_value = {'grade': 'PASS', 'score': 80,
+                                      'feedback': 'ok'}
+        self.client.post('/api/quiz/grade',
+                         json={'question': 'Q', 'answer': 'A', 'context': 'C'})
+        self.assertTrue(mock_llm_json.called)
+        kwargs = mock_llm_json.call_args.kwargs
+        self.assertEqual(kwargs.get('expected_type'), 'dict',
+                         "the grader must ask for an object; asking for the "
+                         "default list is what broke live grading")
+        self.assertIsNotNone(kwargs.get('schema'),
+                             "grading output should be schema-constrained")
+
+    @patch('services.rag.librarian.storage')
+    @patch('services.common.llm_utils.llm_generate_json')
+    def test_a_list_wrapped_verdict_is_still_graded(self, mock_llm_json,
+                                                    mock_storage):
+        """Models wrap objects in a one-element array. The skeleton builder
+        already tolerates that; the grader must too."""
+        mock_llm_json.return_value = [{'grade': 'PASS', 'score': 75,
+                                       'feedback': 'fine'}]
+        resp = self.client.post('/api/quiz/grade',
+                                json={'question': 'Q', 'answer': 'A',
+                                      'context': 'C'})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(json.loads(resp.data)['grade'], 'PASS')
+
+    @patch('services.rag.librarian.storage')
+    @patch('services.common.llm_utils.llm_generate_json')
+    def test_an_unusable_shape_is_never_a_failing_grade(self, mock_llm_json,
+                                                        mock_storage):
+        """A shape we cannot read means "we do not know", which must never be
+        served as "the student was wrong" -- that path downgrades real FSRS
+        cards."""
+        mock_llm_json.return_value = ['not', 'a', 'verdict']
+        resp = self.client.post('/api/quiz/grade',
+                                json={'question': 'Q', 'answer': 'A',
+                                      'context': 'C'})
+        self.assertNotEqual(resp.status_code, 500)
+        body = json.loads(resp.data)
+        self.assertNotEqual(body.get('grade'), 'FAIL')
+        self.assertFalse(body.get('graded', False))

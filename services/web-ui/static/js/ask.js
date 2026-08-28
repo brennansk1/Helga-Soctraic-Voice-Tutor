@@ -10,7 +10,30 @@
  * Hiding that distinction would make this indistinguishable from a chatbot.
  */
 (function () {
+
     'use strict';
+
+
+/* WHY THE WAIT, NOT A GUESS AT THE WAIT.
+   Both slow paths said "the model is warming up" after 20-25s. That is one
+   real cause and usually not the live one: a course build holds the model for
+   the better part of an hour on this machine, and during it every other LLM
+   feature queues behind it. Observed directly -- a quiz sat at "50s, the model
+   is warming up" while the page itself rendered a "Building: HTTP status codes
+   10%" toast three inches away.
+   build-guard.js publishes the build state on every page, so the honest reason
+   is already in hand. */
+function slowReason() {
+    try {
+        var b = window.HelgaBuildGuard && window.HelgaBuildGuard.active();
+        if (b) {
+            return b.label
+                ? ', waiting for the "' + b.label + '" build to free the model'
+                : ', waiting for the course build to free the model';
+        }
+    } catch (e) {}
+    return ', the model is warming up';
+}
 
     var panel, input, body, form, opener, lastFocus = null;
 
@@ -154,7 +177,7 @@
             var el = pending.querySelector('.ask-elapsed');
             if (!el) { clearInterval(_tick); return; }
             el.textContent = ' — ' + _secs + 's' +
-                (_secs > 25 ? ', the model is warming up' : '');
+                (_secs > 25 ? slowReason() : '');
         }, 1000);
         var _stopTick = function () { clearInterval(_tick); };
 

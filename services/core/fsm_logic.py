@@ -4017,9 +4017,22 @@ class MnemosyneFSM:
 
             # Log to Session Notes only when the grader actually responded.
             if content and self.current_lesson_node:
+                # THE ANSWER IS THE ONE FIELD THE NOTEBOOK EXISTS TO SHOW.
+                #
+                # This wrote `text[:50]` with an unconditional "...", so the
+                # learner's own words were destroyed at write time -- 50
+                # characters is mid-sentence for any real answer, and the
+                # ellipsis was appended even when nothing had been cut. The
+                # question and the grader's reasoning were both stored whole.
+                #
+                # Seen in the SQL notebook: "The database would delete the
+                # columns I didn't sel..." next to four full lines of feedback
+                # about it. Reviewing a graded answer you cannot read is not
+                # review. Display may abbreviate; storage must not.
                 self.append_session_note(
                     self.current_lesson_node["uid"],
-                    f"Question: {self.last_question} | Answer: {text[:50]}... | Grade: {grade} | Reasoning: {result.get('reason', 'N/A')}",
+                    f"Question: {self.last_question} | Answer: {text} | "
+                    f"Grade: {grade} | Reasoning: {result.get('reason', 'N/A')}",
                 )
 
         # A.8 — remember what the grader said was missing, so the contract can

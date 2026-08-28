@@ -1402,3 +1402,13 @@
 }
 .review-marked-list:empty { display: none; }
 .review-marked-list li { margin-bottom: var(--space-1); }
+
+/* Code spans inside a quiz question. Matches the chat bubble's treatment
+   (learn-chat.css) so an identifier looks the same wherever it is read. */
+.practice-code {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    background: var(--bg-primary);
+    padding: 0.1em 0.35em;
+    border-radius: var(--border-radius-sm);
+}
