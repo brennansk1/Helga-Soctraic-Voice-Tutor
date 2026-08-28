@@ -152,3 +152,78 @@ def test_the_budget_lookup_actually_uses_those_keys():
     assert build_state._quiet_budget({"stage": "hydrate"}) == 20 * 60
     assert build_state._quiet_budget({"stage": "no_such_stage"}) == \
         build_state.STALE_AFTER_SECONDS
+
+
+# ---------------------------------------------------------------------------
+# HYDRATION MUST TELL THE BUILD RECORD IT IS ALIVE.
+#
+# build_state marks a build dead when `updated_at` has not moved inside the
+# stage's quiet budget. SkeletonBuilder heartbeats through _record_progress;
+# ContentHydrator had no equivalent, and the create pipeline calls
+# build_state.stage() once entering hydration and again at finalize — so a
+# 136-concept hydration ran for hours with updated_at frozen at its start.
+#
+# A long build was therefore not at RISK of being reaped, it was guaranteed to
+# be. Measured on a live resume: updated_at == started_at exactly, while the
+# hydrator was mid-concept and still writing files, and web-ui logged
+# "build_state: stale active build 'HTTP status codes', treating as dead".
+# ---------------------------------------------------------------------------
+
+def test_the_hydrator_heartbeats_every_status_message(monkeypatch):
+    from services.core.course_builder import ContentHydrator
+    from services.common import build_state
+
+    beats = []
+    monkeypatch.setattr(build_state, "note", lambda m, **kw: beats.append(m))
+
+    seen = []
+    cb = ContentHydrator._with_heartbeat(lambda msg: seen.append(msg))
+    cb("STRUCT:HYDRATING:uid:START:A concept")
+
+    assert beats == ["STRUCT:HYDRATING:uid:START:A concept"], \
+        "hydration status did not reach the durable build record"
+    assert seen == ["STRUCT:HYDRATING:uid:START:A concept"], \
+        "the caller's own callback must still run"
+
+
+def test_a_heartbeat_failure_cannot_break_a_build(monkeypatch):
+    from services.core.course_builder import ContentHydrator
+    from services.common import build_state
+
+    def _boom(*a, **kw):
+        raise RuntimeError("disk gone")
+    monkeypatch.setattr(build_state, "note", _boom)
+
+    seen = []
+    cb = ContentHydrator._with_heartbeat(lambda msg: seen.append(msg))
+    cb("anything")            # must not raise
+    assert seen == ["anything"]
+
+
+def test_the_hydrator_heartbeats_with_no_caller_callback(monkeypatch):
+    """Resume passes one; the create path may not. Neither may crash."""
+    from services.core.course_builder import ContentHydrator
+    from services.common import build_state
+
+    beats = []
+    monkeypatch.setattr(build_state, "note", lambda m, **kw: beats.append(m))
+    ContentHydrator._with_heartbeat(None)("solo")
+    assert beats == ["solo"]
+
+
+def test_note_actually_advances_updated_at(tmp_path, monkeypatch):
+    """The heartbeat is only a heartbeat if it moves the field the staleness
+    check reads."""
+    import time
+    from services.common import build_state
+
+    monkeypatch.setattr(build_state, "STATE_PATH", str(tmp_path / "b.json"))
+    monkeypatch.setattr(build_state, "LOCK_PATH", str(tmp_path / "b.json.lock"))
+    build_state.start("A topic", course_uid="course_x", stage="hydration")
+    first = (build_state.current() or {}).get("updated_at")
+    time.sleep(0.02)
+    build_state.note("still going")
+    second = (build_state.current() or {}).get("updated_at")
+
+    assert first and second and second > first, \
+        "note() did not advance updated_at; the staleness check reads that field"

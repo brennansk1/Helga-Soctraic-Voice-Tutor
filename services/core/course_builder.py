@@ -4569,6 +4569,27 @@ def _ground_truth_problems(markdown, title, course_title, domain=""):
 
 
 class ContentHydrator:
+
+    @staticmethod
+    def _with_heartbeat(cb):
+        """Mirror every status message into the durable build record.
+
+        Without this the record's `updated_at` never advances during the
+        longest phase of a build, and build_state declares a working build
+        dead. Failures are swallowed: a heartbeat must never be able to break
+        a build, and a status callback that raises would.
+        """
+        def _beat(message, *a, **kw):
+            try:
+                from services.common import build_state
+                build_state.note(str(message))
+            except Exception:
+                pass
+            if cb:
+                return cb(message, *a, **kw)
+            return None
+        return _beat
+
     def __init__(
         self,
         db_path: str = None,
@@ -4585,7 +4606,27 @@ class ContentHydrator:
         # None here and read off the course in hydrate() — see the note there.
         self.learner_context = (learner_context or "").strip()
         self.provider = None  # Content providers removed — LLM-only generation
-        self.status_callback = status_callback
+        # HYDRATION NEVER TOLD THE BUILD RECORD IT WAS ALIVE.
+        #
+        # build_state marks a build dead when it has not been updated inside
+        # the stage's quiet budget (20 minutes for hydrate). SkeletonBuilder
+        # heartbeats through _record_progress; ContentHydrator had no
+        # equivalent, and the create pipeline only calls build_state.stage()
+        # once entering hydration and again at finalize. Between those two
+        # points a 136-concept hydration runs for HOURS with `updated_at`
+        # frozen at the moment it started.
+        #
+        # So a long build is not at risk of being reaped — it is guaranteed to
+        # be. Measured on a live resume: updated_at == started_at exactly, and
+        # web-ui logged "build_state: stale active build 'HTTP status codes',
+        # treating as dead" while the hydrator was mid-concept and still
+        # writing files. It then reports ok:false, error:"build stopped
+        # reporting", and every surface that reads build/status believes it.
+        #
+        # Wrapping the callback rather than editing each of its call sites
+        # covers every message the hydrator already emits, on both the create
+        # and resume paths, and keeps whatever callback the caller passed.
+        self.status_callback = self._with_heartbeat(status_callback)
         self.course_depth = course_depth
         # Hydration is the long phase — hours on this hardware — so it is the
         # one a learner is most likely to cancel, and the one that most needs
