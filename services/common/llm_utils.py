@@ -473,7 +473,11 @@ def schema_violation(data: Any, schema: dict) -> str:
     if described:
         return described
     err = errors[0]
-    return f"{_error_location(err)}: {err.message}"
+    # Truncated: the fallback path is for violations no branch above names, and
+    # jsonschema renders the whole offending value into `message`. Unbounded,
+    # that lands in the next prompt.
+    msg = err.message if len(err.message) <= 200 else err.message[:200] + "..."
+    return f"{_error_location(err)}: {msg}"
 
 
 def validate_schema(data: Any, schema: dict) -> bool:
@@ -887,6 +891,24 @@ def _describe_schema_mismatch(result, schema, path="root"):
                 return f"{path} must be a JSON array, got {type(result).__name__}"
             if not result:
                 return f"{path} is an empty array; it must contain at least one item"
+            # A COUNT SHORTFALL WAS THE ONE VIOLATION THIS COULD NOT NAME.
+            #
+            # Every other branch describes the problem in a sentence; a short
+            # array fell through to jsonschema's own message, which renders as
+            # the ENTIRE offending array followed by "is too short". That string
+            # goes straight into the retry prompt, so a 1-unit subtree pasted
+            # ~3 KB of its own JSON back at the model under the instruction
+            # "return the SAME content, corrected" -- advice that cannot be
+            # followed, because the same content is exactly what is too short.
+            #
+            # Measured on an HTTP-status-codes build: 3 of 4 modules failed
+            # here, every retry reproduced the same one unit, and each module
+            # then fell back to the slower chunked path with the whole
+            # constrained generation thrown away.
+            _min = schema.get("minItems")
+            if isinstance(_min, int) and len(result) < _min:
+                return (f"{path} has {len(result)} item(s) but needs at least "
+                        f"{_min}")
             item_schema = schema.get("items")
             if isinstance(item_schema, dict):
                 for i, item in enumerate(result[:3]):
@@ -1066,11 +1088,25 @@ def llm_generate_json(
                     f"Attempt {attempt + 1}/{retries}: Schema validation failed "
                     f"({_detail})"
                 )
+                # "Return the SAME content" is right for a wrong type or a
+                # missing key and WRONG for a count shortfall, where the same
+                # content is precisely what was too short. Asking for it back
+                # unchanged is why short arrays retried to the identical answer
+                # and then fell through to the slower path.
+                if "needs at least" in _detail:
+                    _instruction = (
+                        "Split the existing material into more items to reach "
+                        "that minimum — do not simply rename or duplicate what "
+                        "you had, and do not pad with empty entries. Keep the "
+                        "same coverage, divided further."
+                    )
+                else:
+                    _instruction = ("Return the SAME content, corrected to the "
+                                    "required shape.")
                 prompt = (
                     f"{_base_prompt}\n\n"
                     f"YOUR PREVIOUS RESPONSE WAS REJECTED: {_detail}\n"
-                    f"Return the SAME content, corrected to the required shape. "
-                    f"Do not add commentary."
+                    f"{_instruction} Do not add commentary."
                 )
                 continue
             clear_llm_failure()

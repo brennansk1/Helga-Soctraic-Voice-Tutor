@@ -1161,3 +1161,58 @@ class TestSourcelessRouting(unittest.TestCase):
         self.assertEqual(calls, ["Dungeon Mastering"],
                          "an adjacent-only brief must route to iterative research")
         self.assertEqual(b._research_loop_result, {"ran": True})
+
+
+# ---------------------------------------------------------------------------
+# THE UNIT-COUNT CORRECTION ROUND IN THE ONE-SHOT PATH CANNOT RUN.
+#
+# Traced from a real HTTP-status-codes build where 3 of 4 modules fell back to
+# the chunked path. The one-shot calls llm_generate_json with a schema carrying
+# minItems == _shape_lo("units_per_module"), and llm_generate_json validates
+# locally before returning. So:
+#
+#   short answer  -> validation fails -> retries exhaust -> None -> units == []
+#   passing answer-> already has >= the minimum
+#
+# and the guard `0 < len(units_data) < _min_units` is false either way. The
+# round's prompt ("split the material BY TOPIC ... do not simply rename") is
+# better than the generic one, but nothing has ever executed it.
+#
+# Left in place deliberately: it becomes live the moment the first call's
+# schema stops carrying the floor, which is a change worth measuring rather
+# than making blind. This test exists so the next reader learns that from a
+# test instead of an hour of log archaeology, and FAILS if the two floors ever
+# drift apart -- because then the guard silently starts mattering.
+# ---------------------------------------------------------------------------
+
+def test_oneshot_unit_floor_is_enforced_by_the_schema_not_the_retry_round():
+    import inspect
+    from services.core.course_builder import SkeletonBuilder
+
+    src = inspect.getsource(SkeletonBuilder)
+    assert "0 < len(units_data) < _min_units" in src, \
+        "the guard moved; re-derive whether it is reachable"
+
+    # Both floors come from the same shared band, which is what makes the
+    # guard unreachable. If someone parameterises one of them differently,
+    # this assertion is the alarm.
+    assert src.count('_shape_lo("units_per_module", 2)') >= 2, \
+        ("the one-shot schema floor and the correction guard no longer read "
+         "the same band -- the correction round may now be reachable, and "
+         "needs a real build to validate")
+
+
+def test_schema_floor_rejects_a_short_subtree_before_any_correction_round():
+    """The mechanism above, demonstrated rather than asserted from source."""
+    from services.common.llm_utils import schema_violation
+    from services.core.course_builder import SkeletonBuilder
+
+    schema = SkeletonBuilder.subtree_schema(min_units=2, min_lessons=1,
+                                            min_concepts=1)
+    one_unit = {"units": [{"title": "Only Unit", "lessons": [
+        {"title": "L", "concepts": [{"title": "C", "objectives": ["o"]}]}]}]}
+
+    detail = schema_violation(one_unit, schema)
+    assert detail, "a 1-unit subtree must not pass a 2-unit floor"
+    # And the rejection must be actionable, since it becomes the retry prompt.
+    assert "needs at least 2" in detail

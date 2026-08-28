@@ -331,3 +331,39 @@ class TestExtractGrade(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# A COUNT SHORTFALL MUST BE DESCRIBED, NOT DUMPED.
+#
+# The retry prompt is built from this string. When it was jsonschema's raw
+# message it carried the whole rejected array into the next request, under an
+# instruction ("return the SAME content") that cannot satisfy a minimum.
+# ---------------------------------------------------------------------------
+
+def test_short_array_is_described_by_count_not_by_dumping_it():
+    from services.common.llm_utils import schema_violation
+    schema = {"type": "object", "properties": {
+        "units": {"type": "array", "minItems": 3,
+                  "items": {"type": "object"}}}}
+    data = {"units": [{"title": "Only one", "body": "x" * 4000}]}
+    detail = schema_violation(data, schema)
+    assert "needs at least 3" in detail
+    assert "1 item" in detail
+    assert "x" * 100 not in detail, "the rejected value leaked into the hint"
+    assert len(detail) < 200
+
+
+def test_satisfied_minimum_is_not_a_violation():
+    from services.common.llm_utils import schema_violation
+    schema = {"type": "object", "properties": {
+        "units": {"type": "array", "minItems": 2, "items": {"type": "object"}}}}
+    assert schema_violation({"units": [{"a": 1}, {"b": 2}]}, schema) == ""
+
+
+def test_unnamed_violations_are_truncated_before_reaching_a_prompt():
+    from services.common.llm_utils import schema_violation
+    schema = {"type": "object", "properties": {
+        "tag": {"type": "string", "pattern": "^ok$"}}}
+    detail = schema_violation({"tag": "z" * 5000}, schema)
+    assert detail == "" or len(detail) < 300
