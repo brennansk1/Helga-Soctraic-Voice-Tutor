@@ -231,7 +231,21 @@ async function loadCourses() {
         // Both decorations are wanted, and both are fetched
         // concurrently with the list rather than before it.
         const qualityReady = loadCourseQuality();
+        /* IS ANYTHING ACTUALLY BUILDING? A course sits at status `skeleton`
+           from the moment its structure is written until the whole build
+           finishes, and the card rendered a disabled "Building…" from that
+           status alone. So a build that DIES — a container restart, a crash,
+           the machine sleeping — leaves the card saying "Building…" forever,
+           with no way forward and nothing saying it stopped. The 5s poll below
+           does not help: it refetches a status that will never change again.
+           Only one build runs at a time on this machine, so an idle pipeline
+           means any skeleton course is stalled rather than in progress. */
+        const buildActiveReady = fetch('/api/creation_status')
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (d) { return !!(d && d.active); })
+            .catch(function () { return true; });   // unknown → do not cry wolf
         const resp = await fetch('/api/courses', { signal: controller.signal });
+        const aBuildIsRunning = await buildActiveReady;
         const qualityByUid = await qualityReady;
         clearTimeout(timeoutId);
         await resumeReady;
@@ -282,7 +296,9 @@ async function loadCourses() {
             card.className = 'course-card';
             const status = (course.status || 'unknown').toLowerCase();
             const isReady = status === 'ready';   // 'available' (part-built) is NOT enterable
-            const isBuilding = status === 'skeleton' || status === 'building';
+            const claimsBuilding = status === 'skeleton' || status === 'building';
+            const isBuilding = claimsBuilding && aBuildIsRunning;
+            const isStalled = claimsBuilding && !aBuildIsRunning;
 
             /* THE TITLE IS DATA, AND IT USED TO BE CODE.
                These buttons carried onclick="startCourse('uid', 'TITLE', this)"
@@ -349,8 +365,8 @@ async function loadCourses() {
                             actionButton.textContent = 'Fix and finish';
                         });
                 });
-            } else if (status === 'partial' || status === 'hydration_failed' ||
-                       status === 'failed') {
+            } else if (isStalled || status === 'partial' ||
+                       status === 'hydration_failed' || status === 'failed') {
                 /* A DEAD CARD USED TO BE THE ONLY OUTCOME HERE.
                    hydrate() marks a course "partial" when even ONE concept
                    comes back a stub, and everything that is not "ready"
@@ -363,9 +379,12 @@ async function loadCourses() {
                 actionButton = mkEl('button', 'btn-alpine btn-alpine-primary');
                 actionButton.style.cssText = 'flex: 1;';
                 actionButton.textContent = 'Resume build';
-                actionButton.title = status === 'partial'
-                    ? 'Some concepts did not finish. This retries only those.'
-                    : 'This build stopped early. This continues it.';
+                actionButton.title = isStalled
+                    ? 'This build stopped before it finished. This continues '
+                      + 'it, and keeps every concept already written.'
+                    : (status === 'partial'
+                        ? 'Some concepts did not finish. This retries only those.'
+                        : 'This build stopped early. This continues it.');
                 actionButton.addEventListener('click', function () {
                     actionButton.disabled = true;
                     actionButton.textContent = 'Resuming…';
@@ -574,7 +593,7 @@ async function loadCourses() {
 
         // Auto-refresh if any course is still building — without this the user
         // sees "Building..." forever until they manually reload the page.
-        const hasBuilding = courses.some(c => {
+        const hasBuilding = aBuildIsRunning && courses.some(c => {
             const s = (c.status || '').toLowerCase();
             return s === 'skeleton' || s === 'building';
         });
