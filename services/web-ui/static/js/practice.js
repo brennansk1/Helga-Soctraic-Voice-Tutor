@@ -283,14 +283,38 @@ function slowReason() {
 
     /* Re-rendered on every load, not once: the note said "Drilling SQL only"
        for the rest of the session after switching back to all courses. */
+    /* What the bank can offer, from the last queue response. A course whose
+       concepts are missing the sections the tutor reads yields nothing to
+       build discrimination, application or Socratic items from, so its bank is
+       recall alone — and a recall-only session is indistinguishable from a
+       full one while being the single case the evidence says does not
+       transfer. Measured on "Reading a Query Plan": 26 items, all recall,
+       twelve of them served as an ordinary session. */
+    var lastTiers = { recallOnly: false, tiers: [] };
+
     function renderScopeNote() {
         var note = $('review-scope-note');
         if (!note) { return; }
-        if (!scope) { note.hidden = true; note.textContent = ''; return; }
-        var found = knownCourses.filter(function (c) { return c.course_uid === scope; })[0];
-        note.textContent = 'Drilling ' + (found ? found.title : 'one course') +
-            ' only. Mixing courses is better for retention — Helga interleaves ' +
-            'them deliberately — so switch back when you are done here.';
+        var parts = [];
+
+        if (scope) {
+            var found = knownCourses.filter(function (c) { return c.course_uid === scope; })[0];
+            parts.push('Drilling ' + (found ? found.title : 'one course') +
+                ' only. Mixing courses is better for retention — Helga ' +
+                'interleaves them deliberately — so switch back when you are ' +
+                'done here.');
+        }
+
+        if (lastTiers.recallOnly) {
+            parts.push('Everything here is straight recall. This course has no ' +
+                'questions that make you tell things apart, apply them or ' +
+                'explain them, because those are built from parts of the ' +
+                'lesson that were never written. Finishing the course will ' +
+                'add them — recall on its own is the weakest kind of practice.');
+        }
+
+        if (!parts.length) { note.hidden = true; note.textContent = ''; return; }
+        note.textContent = parts.join(' ');
         note.hidden = false;
     }
 
@@ -310,6 +334,8 @@ function slowReason() {
 
         var queue = (data && data.queue) || [];
         var counts = (data && data.counts) || {};
+        lastTiers = { recallOnly: !!(data && data.recall_only),
+                      tiers: (data && data.tiers_present) || [] };
         loadScopeOptions();
         loadWeekAhead();
         /* "Due now" is what there is to DO today, not how big the bank is.
@@ -334,6 +360,10 @@ function slowReason() {
         }
         if (empty) { empty.hidden = true; }
         setShown('review-start-wrap', true);
+        // Also on the path with work in it: the recall-only warning matters
+        // most when a full-looking session is about to start, not only on an
+        // empty day. It was previously drawn on the empty branch alone.
+        renderScopeNote();
 
         var mix = {};
         queue.forEach(function (i) { mix[i.kind] = (mix[i.kind] || 0) + 1; });

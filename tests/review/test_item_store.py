@@ -121,3 +121,46 @@ def test_retired_items_are_excluded_from_the_queue_source(sm):
     sm.flashcards.update_card(uid, status="retired")
     assert uid not in {i["uid"] for i in sm.flashcards.get_items()}
     assert uid in {i["uid"] for i in sm.flashcards.get_items(include_retired=True)}
+
+
+# ---------------------------------------------------------------------------
+# A RECALL-ONLY BANK MUST ANNOUNCE ITSELF.
+#
+# Items are extracted, not generated, so a course whose concepts lack the
+# sections the tutor reads yields only the prose fallback — recall. Measured on
+# "Reading a Query Plan": 26 items, every one recall, and scoping review to it
+# served twelve of them as an ordinary session. Factual-only retrieval practice
+# is the one case the evidence says does not transfer, and nothing on screen
+# distinguished it from a full session.
+# ---------------------------------------------------------------------------
+
+def _item(uid, course_uid, kind, bloom=1):
+    return {"uid": uid, "course_uid": course_uid, "concept_uid": "c_" + uid,
+            "front": "q " + uid, "back": "a " + uid, "kind": kind,
+            "bloom": bloom}
+
+
+def test_kinds_in_scope_reports_only_what_is_there(sm):
+    from services.common.review_items import RECALL, APPLY
+    sm.flashcards.sync_items([_item("a", "course_thin", RECALL),
+                              _item("b", "course_thin", RECALL)])
+    assert sm.flashcards.kinds_in_scope(course_uid="course_thin") == {RECALL}
+
+    sm.flashcards.sync_items([_item("c", "course_full", RECALL),
+                              _item("d", "course_full", APPLY, bloom=3)])
+    assert sm.flashcards.kinds_in_scope(course_uid="course_full") == {RECALL,
+                                                                     APPLY}
+
+
+def test_kinds_in_scope_is_scoped_to_the_course(sm):
+    """The point is per-course: a healthy library must not mask one course
+    whose bank is recall alone."""
+    from services.common.review_items import RECALL, APPLY
+    sm.flashcards.sync_items([_item("a", "course_thin", RECALL),
+                              _item("d", "course_full", APPLY, bloom=3)])
+    assert sm.flashcards.kinds_in_scope(course_uid="course_thin") == {RECALL}
+    assert sm.flashcards.kinds_in_scope() == {RECALL, APPLY}
+
+
+def test_an_empty_scope_reports_nothing_rather_than_raising(sm):
+    assert sm.flashcards.kinds_in_scope(course_uid="course_absent") == set()

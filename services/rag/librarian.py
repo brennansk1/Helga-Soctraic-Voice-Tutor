@@ -2611,6 +2611,26 @@ def review_queue_endpoint():
             "is_new": due.is_new,
         }
 
+    # WHICH TIERS THIS SCOPE CAN ACTUALLY OFFER.
+    #
+    # The item bank is built by extraction, so a concept missing the sections
+    # the tutor reads yields nothing to build discrimination, application or
+    # Socratic items from -- only the prose fallback, which is recall. Measured:
+    # "Reading a Query Plan" holds 26 items, all recall, and scoping review to
+    # it returned twelve recall questions presented as an ordinary session.
+    #
+    # That is the one outcome this design exists to avoid. Factual-only
+    # retrieval practice is the case where the evidence says transfer is no
+    # better than not practising at all, and the learner had no way to tell
+    # that apart from a full session. The queue now reports what the bank holds
+    # so the surface can say so.
+    try:
+        tiers_present = sorted(storage.flashcards.kinds_in_scope(
+            course_uid=course_uid or None, student_id=student_id))
+    except Exception as e:
+        logger.debug("tier summary unavailable: %s", e)
+        tiers_present = []
+
     return jsonify({
         "queue": [present(d) for d in plan["queue"]],
         "counts": plan["counts"],
@@ -2620,6 +2640,8 @@ def review_queue_endpoint():
         "new_today": introduced,
         "new_per_day": NEW_ITEMS_PER_DAY,
         "leeches": [present(d) for d in plan["leeches"]],
+        "tiers_present": tiers_present,
+        "recall_only": tiers_present == ["recall"],
     })
 
 

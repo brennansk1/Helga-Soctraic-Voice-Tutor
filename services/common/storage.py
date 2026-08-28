@@ -3687,6 +3687,27 @@ class FlashcardStore:
         conn.commit()
         return {"written": written, "updated": updated, "retired": retired}
 
+    def kinds_in_scope(self, course_uid: str = None,
+                       student_id: str = None) -> set:
+        """Which item tiers the bank actually holds for this scope.
+
+        Items are EXTRACTED from concept content, so a course whose concepts
+        lack the sections the tutor reads yields nothing to build
+        discrimination, application or Socratic items from -- only the prose
+        fallback, which is recall. That course can still fill a review session,
+        and the session looks exactly like any other while offering the one
+        form of practice the evidence says does not transfer.
+
+        Callers use this to say so rather than to hide it.
+        """
+        conn = self._get_db()
+        sql = "SELECT DISTINCT kind FROM flashcards WHERE student_id = ?"
+        params = [_sid(student_id)]
+        if course_uid:
+            sql += " AND course_uid = ?"
+            params.append(course_uid)
+        return {r[0] for r in conn.execute(sql, params).fetchall() if r[0]}
+
     def get_items(self, course_uid: str = None, student_id: str = None,
                   include_retired: bool = False) -> List[dict]:
         """Every schedulable item with its FSRS state."""
