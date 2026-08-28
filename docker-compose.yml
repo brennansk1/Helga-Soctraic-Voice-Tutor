@@ -94,7 +94,14 @@ services:
       dockerfile: services/core/Dockerfile
     container_name: helga-core-logic
     ports:
-      - "5003:5003"
+      # LOOPBACK ONLY. core-logic has no authentication: anything that can
+      # reach this port can drive the FSM and write course content. On
+      # 0.0.0.0 that was every device on whatever network this machine
+      # joined. Services reach each other over the compose network by
+      # container name, so nothing in the app needs the host mapping —
+      # only host-side tooling (main.py health checks, tools/) does, and
+      # that runs on this machine.
+      - "127.0.0.1:5003:5003"
     depends_on:
       rag-engine:
         condition: service_healthy
@@ -201,7 +208,9 @@ services:
       dockerfile: services/rag/Dockerfile
     container_name: helga-rag-engine
     ports:
-      - "5002:5002"
+      # Loopback only — see core-logic. rag-engine serves course CRUD
+      # and the review queue with no auth in front of it.
+      - "127.0.0.1:5002:5002"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
@@ -284,7 +293,8 @@ services:
     profiles: ["portable"]
     container_name: helga-tts
     ports:
-      - "5005:5005"
+      # Loopback only — see core-logic.
+      - "127.0.0.1:5005:5005"
     environment:
       - TTS_BACKEND=torch
     volumes:
@@ -356,7 +366,8 @@ services:
       dockerfile: services/research/Dockerfile
     container_name: helga-research
     ports:
-      - "5006:5006"
+      # Loopback only — see core-logic.
+      - "127.0.0.1:5006:5006"
     depends_on:
       searxng:
         condition: service_healthy
@@ -415,7 +426,8 @@ services:
     build: services/stt
     container_name: helga-stt
     ports:
-      - "5001:5001"
+      # Loopback only — see core-logic.
+      - "127.0.0.1:5001:5001"
     environment:
       - STT_BACKEND=faster-whisper
       - STT_MODEL=distil-large-v3

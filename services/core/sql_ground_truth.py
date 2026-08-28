@@ -373,9 +373,14 @@ def measure(container=CONTAINER, path=TRUTH_FILE):
     if not version:
         raise RuntimeError(
             f"no SQL engine to measure against (container {container!r}). "
+            # NO PUBLISHED PORT. Every probe reaches this engine through
+            # `docker exec ... psql` (see _run), so the host mapping was never
+            # needed — and what it published was a Postgres whose password is
+            # literally "x", reachable from every device on whatever network
+            # this machine happened to join.
             f"Start one with:  docker run -d --name {container} "
             f"-e POSTGRES_PASSWORD=x -e POSTGRES_DB=check --memory=256m "
-            f"-p 55432:5432 postgres:16-alpine")
+            f"postgres:16-alpine")
     record = {
         "engine": version[0][0],
         "measured_at": _now_iso(),
