@@ -57,14 +57,73 @@ def test_the_contract_endpoint_carries_them():
     assert "sections_the_product_reads" in src[i:i + 1500]
 
 
-def test_they_are_not_presented_as_required():
-    """Requiring them would refuse content that is fine, and the depth
-    contract is the thing that refuses."""
-    from services.rag.pipeline_api import CONSUMED_SECTIONS
+def test_ingest_still_refuses_nothing():
+    """Replaces test_they_are_not_presented_as_required.
+
+    That test asserted the contract must call these sections optional, on the
+    reasoning that "requiring them would refuse content that is fine, and the
+    depth contract is the thing that refuses". Half of that has been falsified
+    by two real courses: "Reading a Query Plan" and "Practical Regular
+    Expressions" were authored through this surface, both MET their depth
+    contract, and both are unusable. The depth contract is not the thing that
+    refuses — course_audit's gate is, on exactly Core Explanation,
+    Misconceptions and Analogies.
+
+    Its other half still stands and is what this keeps: nothing is rejected at
+    ingest. A concept is stored whatever headings it carries; what changed is
+    that finalize now says plainly that the course cannot be taught, instead of
+    the author discovering it from a different subsystem at teach time.
+    """
     src = _read("services", "rag", "pipeline_api.py")
-    i = src.find("sections_note")
-    note = src[i:i + 500]
-    assert "Not required" in note or "not required" in note
-    # and no validator gates on them
-    assert "CONSUMED_SECTIONS" not in src[src.find("def _validate"):
-                                          src.find("def _validate") + 1500]
+    v = src.find("def _validate")
+    assert v > 0
+    assert "CONSUMED_SECTIONS" not in src[v:v + 1500], \
+        "ingest validation must not start rejecting on section headings"
+    assert "is_teachable" not in src[v:v + 1500], \
+        "teachability belongs to finalize's verdict, not to ingest"
+
+
+# ---------------------------------------------------------------------------
+# THE CONTRACT SAID OPTIONAL; THE GATE SAYS REQUIRED.
+#
+# course_audit.TUTOR_SECTIONS is what is_teachable() checks, and the audit gate
+# refuses a course whose concepts lack them — needs_review, "there is no lesson
+# to teach", not openable. The contract told external authors those sections
+# were "not required and not enforced".
+#
+# It cost two real courses. "Reading a Query Plan" and "Practical Regular
+# Expressions" were both authored through this surface, both met their depth
+# contract, and both are unusable: good prose under the wrong headings, which
+# is what an author who believed the note would write.
+# ---------------------------------------------------------------------------
+
+def test_the_contract_does_not_call_the_gated_sections_optional():
+    import re
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parents[2]
+           / "services" / "rag" / "pipeline_api.py").read_text()
+    assert "Not required and not enforced" not in src, (
+        "the contract still tells external authors that the sections the "
+        "audit gate enforces are optional")
+    assert "sections_required" in src, (
+        "the contract should name the required sections explicitly")
+
+
+def test_finalize_refuses_ready_for_a_course_the_tutor_cannot_teach():
+    """A depth contract met by an unteachable course is not readiness."""
+    import inspect
+    from services.rag import pipeline_api
+    src = inspect.getsource(pipeline_api)
+    assert "is_teachable(body)" in src, \
+        "finalize does not check teachability"
+    assert 'passing == total and not unteachable' in src, \
+        "finalize can still mark an unteachable course ready"
+
+
+def test_teachability_has_one_definition_shared_with_the_gate():
+    """Two copies would be free to disagree, which is how the gate and the
+    course list once disagreed about the same course."""
+    from services.rag import pipeline_api
+    from services.core import course_audit
+    assert pipeline_api.is_teachable is course_audit.is_teachable
+    assert pipeline_api.TUTOR_SECTIONS is course_audit.TUTOR_SECTIONS

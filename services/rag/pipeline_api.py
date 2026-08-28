@@ -53,6 +53,10 @@ import os
 import time
 
 from flask import Blueprint, jsonify, request
+# ONE definition of teachable, shared with the audit gate and the
+# course list. A second copy here would be free to disagree with the
+# gate that actually blocks the course.
+from services.core.course_audit import is_teachable, TUTOR_SECTIONS
 
 logger = logging.getLogger(__name__)
 
@@ -186,11 +190,15 @@ def _writing_standard(mastery):
         "vocabulary": p.get("vocabulary"),
         "writing": p.get("writing"),
         "sections_the_product_reads": CONSUMED_SECTIONS,
+        "sections_required": list(TUTOR_SECTIONS),
         "sections_note": (
-            "Not required and not enforced: a concept without them is stored "
-            "and teaches. It teaches WORSE — the tutor reads Misconceptions "
-            "and Analogies straight out of the markdown, and the locally built "
-            "courses always have them. Match the headings exactly."),
+            "## Core Explanation, ## Misconceptions and ## Analogies are "
+            "REQUIRED. A concept missing any of them cannot be taught: the "
+            "audit gate marks the whole course needs_review with 'there is no "
+            "lesson to teach', and a learner cannot open it. finalize reports "
+            "them under `unteachable` before that happens. The rest of the "
+            "sections below are read when present and improve the lesson. "
+            "Match the headings exactly."),
     }
 
 
@@ -208,9 +216,21 @@ def _writing_standard(mastery):
 # Measured: a 4-concept course that met 100% of its depth contract returned an
 # empty teaching context for every concept.
 #
-# Nothing here is required — a concept without them is still stored and still
-# teaches. It teaches WORSE, and the caller should be told that rather than
-# discovering it.
+# THREE OF THESE ARE HARD REQUIREMENTS, AND THIS SAID THEY WERE OPTIONAL.
+#
+# course_audit.TUTOR_SECTIONS — Core Explanation, Misconceptions, Analogies —
+# is what is_teachable() checks, and the audit gate refuses a course whose
+# concepts lack them: status needs_review, "there is no lesson to teach", not
+# openable. This text told external authors the opposite.
+#
+# It cost two real courses. "Reading a Query Plan" and "Practical Regular
+# Expressions" were both authored through this surface, both met their depth
+# contract, and both are unusable — the first gated outright, the second half
+# written. Their concepts are good prose with the wrong headings, which is
+# exactly what an author who believed this note would produce.
+#
+# The remaining sections really are optional: read when present, and the
+# lesson is better for them.
 CONSUMED_SECTIONS = {
     "## Misconceptions": (
         "Read by the tutor before it responds, and by the asset collector. "
@@ -1088,6 +1108,7 @@ def create_pipeline_blueprint(storage):
         topic = course.get("title", "")
         domain = course.get("teaching_domain")
         total, passing, failures, empty = 0, 0, [], []
+        unteachable = []
         for _m, _u, _l, c in _concepts_of(course):
             total += 1
             uid = c.get("uid")
@@ -1099,6 +1120,21 @@ def create_pipeline_blueprint(storage):
             if len(body.split()) < MIN_CONTENT_WORDS:
                 empty.append({"uid": uid, "title": c.get("title")})
                 continue
+            # TEACHABILITY, WHICH THE DEPTH CONTRACT DOES NOT MEASURE.
+            #
+            # Measured on two real externally-authored courses: both met their
+            # depth contract and both are unusable. "Reading a Query Plan"
+            # finalized clean, then the audit gate marked it needs_review with
+            # "4 of 4 concepts are missing sections the tutor reads — there is
+            # no lesson to teach", and it has sat unenterable ever since.
+            #
+            # The author was not at fault. This surface told them the sections
+            # were "not required and not enforced", they met everything that
+            # WAS required, and the product then refused to teach the result.
+            # Finding that out at teach time, from a different subsystem, is
+            # the worst possible moment.
+            if not is_teachable(body):
+                unteachable.append({"uid": uid, "title": c.get("title")})
             problems, _hints = _validate(body, mastery, topic=topic,
                                          domain=domain)
             if problems:
@@ -1108,7 +1144,10 @@ def create_pipeline_blueprint(storage):
                 passing += 1
 
         met_pct = round(100.0 * passing / total, 1) if total else 0.0
-        status = "ready" if (total and passing == total) else "partial"
+        # `ready` means a learner can open it. A concept the tutor cannot run a
+        # lesson from fails that whatever its word counts say.
+        status = ("ready" if (total and passing == total and not unteachable)
+                  else "partial")
         course["status"] = status
         course["depth_contract"] = {
             "mastery": mastery,
@@ -1139,9 +1178,18 @@ def create_pipeline_blueprint(storage):
             "met_pct": met_pct,
             "failures": failures[:25],
             "empty": empty[:25],
-            "note": ("Status is set from the depth contract only. The fact "
-                     "check, grounding verdict and coverage gate belong to the "
-                     "local build and have not run on this course."),
+            "unteachable": unteachable[:25],
+            "unteachable_note": (
+                ("%d concept(s) are missing one of %s. The tutor reads those "
+                 "headings out of the markdown to run a lesson, so the course "
+                 "will be gated as needs_review and cannot be opened until "
+                 "they are added.")
+                % (len(unteachable), ", ".join(TUTOR_SECTIONS))
+            ) if unteachable else "",
+            "note": ("Status is set from the depth contract and teachability. "
+                     "The fact check, grounding verdict and coverage gate "
+                     "belong to the local build and have not run on this "
+                     "course."),
         }), 200
 
     # ---------------------------------------------------------------- handback
