@@ -24,7 +24,7 @@
   window.HELGA_VOICE_AUTOSEND = {{ 'true' if voice_autosend is not defined or voice_autosend else 'false' }};
   window.HELGA_GRADE_BAND = "{{ grade_band|default('', true) }}";
 </script>
-<script src="{{ url_for('static', filename='js/session.js') }}?v=15"></script>
+<script src="{{ url_for('static', filename='js/session.js') }}?v=16"></script>
 {% endblock %}
 
 {% block body_class %}page-learn{% endblock %}

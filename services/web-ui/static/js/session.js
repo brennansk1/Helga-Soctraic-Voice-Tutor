@@ -1068,6 +1068,18 @@ function updateChatStream(transcript) {
     // notice a thinking bubble that some other module put on screen and get
     // its counter running.
     if (chatStream.querySelector('.thinking-message')) startThinkingTimer();
+
+    /* THE WAIT NOTICE OUTLIVED THE WAIT.
+       learn.html posts "Loading the model. The first lesson of the day takes
+       about two minutes" after 45 seconds and nothing ever took it down, so it
+       sat above the lesson for the whole session — telling a learner who was
+       three exchanges in that the model was still loading. Any real turn on
+       screen means the wait is over. */
+    if (transcript.length) {
+        chatStream.querySelectorAll('.chat-sysnotice').forEach(function (n) {
+            n.remove();
+        });
+    }
     console.log("[updateChatStream] Current transcript length:", transcript.length, "displayedCount:", displayedMessagesCount);
 
     // Helper: wipe the chat stream while preserving transient elements
