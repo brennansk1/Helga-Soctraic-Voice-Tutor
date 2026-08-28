@@ -3090,11 +3090,29 @@ def create_custom_course_wizard():
                     logger.warning(f"Failed to clean up {fpath}: {cleanup_err}")
 
         try:
-            # Extended timeout for course creation (5 minutes)
+            # THIS REQUEST BLOCKS FOR THE WHOLE BUILD.
+            #
+            # /api/custom_course/create hydrates INLINE — ContentHydrator, no
+            # thread — so the response does not come back until every concept
+            # is written. Five minutes covered none of that: hydration measures
+            # roughly a minute per concept on this machine, so any real wizard
+            # course exceeded it, the proxy returned an error, and the build
+            # carried on orphaned in the rag-engine. That is the same failure
+            # as the 60s clarify timeout, one order of magnitude larger.
+            #
+            # An hour covers the small, learner-shaped courses this wizard is
+            # for. The browser is not the constraint — fetch has no default
+            # timeout and there is no intermediary on loopback — and the
+            # wizard shows live progress from Socket.IO throughout.
+            #
+            # The better shape is for create to spawn and return, the way
+            # resume_build does, and for the wizard to follow the build record.
+            # That changes an endpoint with other callers, so it is noted
+            # rather than done here. See docs/WIZARD_GAP.md.
             resp = requests.post(
                 f'{SERVICES["rag"]}/api/custom_course/create',
                 json=payload,
-                timeout=300
+                timeout=int(os.getenv("HELGA_CUSTOM_BUILD_TIMEOUT", "3600"))
             )
 
             # Log response

@@ -362,3 +362,50 @@ def test_wizard_model_calls_outlast_a_single_generation():
             f"{route} does not use the generate timeout")
         assert not re.search(r"timeout=\d+\b", code), (
             f"{route} still hardcodes a timeout")
+
+
+def test_the_wizard_builds_the_outline_it_collected():
+    """"Build module by module" must send the modules, not just the title.
+
+    It posted the whole wizardState to /api/create_course_custom, which reads
+    `title` and nothing else. Measured: one module named "Cache-Control and
+    ETag" with three named concepts produced six modules none of which were
+    mine and 145 concepts. The endpoints that honour a structure existed and
+    were never called.
+    """
+    import pathlib
+    import re
+    raw = (pathlib.Path(__file__).resolve().parents[2]
+           / "services" / "web-ui" / "static" / "js" / "wizard.js").read_text()
+    # Strip comments: the block explaining this change names the old route, and
+    # a naive search reports the explanation as the defect. Third time today
+    # that trap has caught me, so it is written down here rather than re-learnt.
+    src = re.sub(r"/\*[\s\S]*?\*/", " ", raw)
+    src = re.sub(r"//[^\n]*", " ", src)
+
+    assert "/api/custom_course/preview" in src, (
+        "the wizard never turns its module list into a structure")
+    assert "/api/custom_course/create" in src, (
+        "the wizard does not call the endpoint that honours a structure")
+    assert "/api/create_course_custom" not in src, (
+        "the wizard is back on the title-only route, which discards the "
+        "module outline the learner wrote")
+
+    # create takes form data with both structures as JSON strings.
+    for field in ("'modules'", "'structure'"):
+        assert field in src, f"the create request omits {field}"
+
+
+def test_the_synchronous_build_is_given_time_to_finish():
+    """/api/custom_course/create hydrates inline, so the proxy must outlast a
+    real build. At 300s it returned an error while the build carried on
+    orphaned — the 60s clarify failure, one order of magnitude larger."""
+    import pathlib
+    import re
+    src = (pathlib.Path(__file__).resolve().parents[2]
+           / "services" / "web-ui" / "app.py").read_text()
+    m = re.search(r"custom_course/create',\s*\n\s*json=payload,\s*\n\s*timeout=([^\n]+)",
+                  src)
+    assert m, "the create proxy call moved; re-derive this check"
+    assert "300" not in m.group(1), (
+        "the create proxy is back to a timeout shorter than a build")

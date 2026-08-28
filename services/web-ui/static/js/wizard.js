@@ -609,12 +609,54 @@ async function startCustomGeneration() {
     });
 
     try {
-        const resp = await fetch('/api/create_course_custom', {
+        /* PREVIEW, THEN CREATE — so the outline the learner wrote is the
+           outline that gets built.
+
+           This posted the whole wizardState to /api/create_course_custom,
+           which reads `title` and nothing else and builds a generic topic
+           course. Measured: one module named "Cache-Control and ETag" with
+           three named concepts produced six modules none of which were mine
+           and 145 concepts. See docs/WIZARD_GAP.md.
+
+           The endpoints that honour a structure already existed and were
+           never called. /api/custom_course/preview turns the module list into
+           a real structure; /api/custom_course/create takes that structure
+           plus the modules and builds exactly it. */
+        statusEl.textContent = 'Laying out your modules…';
+        const previewResp = await fetch('/api/custom_course/preview', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(wizardState)
+            body: JSON.stringify({
+                title: wizardState.title,
+                teaching_style: wizardState.teaching_style,
+                modules: wizardState.modules
+            })
         });
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const preview = await previewResp.json().catch(() => ({}));
+        if (!previewResp.ok || !preview.structure) {
+            throw new Error(preview.error || ('Could not lay out the modules (HTTP '
+                                              + previewResp.status + ')'));
+        }
+
+        // The create proxy takes form data, with the two structures as JSON
+        // strings, because it also accepts a source file per module.
+        statusEl.textContent = 'Building your course…';
+        const fd = new FormData();
+        fd.append('title', wizardState.title);
+        fd.append('description', wizardState.description || '');
+        fd.append('teaching_style', wizardState.teaching_style || '');
+        fd.append('content_source', wizardState.content_source || 'llm');
+        fd.append('modules', JSON.stringify(wizardState.modules));
+        fd.append('structure', JSON.stringify(preview.structure));
+
+        const resp = await fetch('/api/custom_course/create', {
+            method: 'POST',
+            body: fd
+        });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.error || ('HTTP ' + resp.status));
+        }
         const result = await resp.json();
         clearTimeout(stallTimer);
 
