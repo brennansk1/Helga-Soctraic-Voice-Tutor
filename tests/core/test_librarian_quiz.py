@@ -33,20 +33,49 @@ _mock_modules['services.common.course_cleaner'] = MagicMock()
 
 
 def _setup_librarian_app():
-    """Import and configure librarian Flask app with mocked dependencies."""
+    """Import and configure librarian Flask app with mocked dependencies.
+
+    PIN THE MODULE, OR A TEST PATCHES A DIFFERENT ONE THAN IT EXERCISES.
+    -------------------------------------------------------------------
+    `patch.dict('sys.modules', ...)` SNAPSHOTS sys.modules and restores it on
+    exit, so a module imported inside the block is removed again. Importing
+    librarian here left the app object alive with no sys.modules entry behind
+    it.
+
+    `@patch('services.rag.librarian.storage')` in a test then imported
+    librarian afresh — re-executing the module and building a REAL
+    StorageManager — and patched storage on that new object, while the app's
+    view functions still closed over the globals of the original. The mock
+    applied to a module nothing served requests from, the endpoint read the
+    real (empty) storage, and the test failed 404 != 200.
+
+    It passed in a directory run only because an earlier test module had
+    already imported librarian: the entry then pre-dated the snapshot,
+    survived the restore, and the patch landed on the module the app came
+    from. Pure run order — which is what made a real regression here maskable.
+
+    Restoring the module afterwards keeps the identity the app was built from.
+    Both the sys.modules entry AND the attribute on the parent package are
+    needed: mock.patch resolves "services.rag.librarian.storage" by importing
+    the parent and then getattr-ing `librarian` off it.
+    """
     with patch.dict('sys.modules', _mock_modules):
-        # Mock StorageManager at module level
         with patch('services.common.storage.StorageManager') as MockSM:
             mock_storage = MagicMock()
             MockSM.return_value = mock_storage
-
-            # Need to reload/import with mocks in place
-            import importlib
             # Patch os.path.exists to avoid ZIM file loading
             with patch('os.path.exists', return_value=False):
                 with patch('services.rag.librarian.storage', mock_storage):
-                    from services.rag.librarian import app
-                    return app, mock_storage
+                    from services.rag import librarian as _lib
+                    app = _lib.app
+
+    import importlib
+    sys.modules.setdefault('services', importlib.import_module('services'))
+    parent = sys.modules.setdefault('services.rag',
+                                    importlib.import_module('services.rag'))
+    sys.modules['services.rag.librarian'] = _lib
+    setattr(parent, 'librarian', _lib)
+    return app, mock_storage
 
 
 class TestQuizEndpoint(unittest.TestCase):
@@ -560,3 +589,42 @@ class TestQuizGradeAsksForAnObject(unittest.TestCase):
         body = json.loads(resp.data)
         self.assertNotEqual(body.get('grade'), 'FAIL')
         self.assertFalse(body.get('graded', False))
+
+
+class TestTheAppAndTheNameAreTheSameModule(unittest.TestCase):
+    """The invariant that made these tests order-dependent.
+
+    `patch.dict('sys.modules', ...)` restores sys.modules on exit, so a module
+    imported inside that block is dropped again. When it was,
+    `@patch('services.rag.librarian.storage')` imported librarian afresh and
+    patched THAT copy, while the Flask app's view functions still closed over
+    the original module's globals — so the mock applied to a module nothing was
+    serving from, the endpoint used the real storage, and the tests failed
+    404 != 200 when this file was run on its own.
+
+    They passed in a directory run purely because another test module had
+    imported librarian first. Run order deciding a result is what let a genuine
+    regression here hide.
+    """
+
+    def test_the_module_the_app_lives_in_is_reachable_by_name(self):
+        app, _mock = _setup_librarian_app()
+        self.assertIn('services.rag.librarian', sys.modules,
+                      "librarian is not in sys.modules, so @patch will import "
+                      "a second copy and patch the wrong one")
+
+        view = app.view_functions['quiz_endpoint']
+        named = sys.modules['services.rag.librarian']
+        self.assertIs(view.__globals__, vars(named),
+                      "the app's views and the importable module are different "
+                      "objects; patching the name cannot affect the app")
+
+    def test_patching_the_name_reaches_the_running_endpoint(self):
+        """The end the invariant exists for: a patch must change behaviour."""
+        app, _mock = _setup_librarian_app()
+        client = app.test_client()
+        with patch('services.rag.librarian.storage') as mock_storage:
+            mock_storage.courses.list_courses.return_value = []
+            resp = client.get('/api/quiz')
+        self.assertEqual(resp.status_code, 404)
+        self.assertIn('No courses found', json.loads(resp.data).get('error', ''))
