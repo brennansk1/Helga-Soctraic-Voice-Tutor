@@ -27,8 +27,12 @@ def _concept_order(structure: Dict) -> List[Dict]:
     return out
 
 
-def prerequisite_depth(concepts: List[Dict], content_for: Callable) -> Dict[str, int]:
-    """How far each concept sits from the foundations, by its own prereq list.
+def prerequisite_depth(concepts: List[Dict], content_for: Callable) -> tuple:
+    """(depth, edges) — how far each concept sits from the foundations, and
+    which concepts each one rests on.
+
+    The edges used to be discarded once depth was computed. Depth can order a
+    queue; only the edges can answer "is the thing underneath this also weak?"
 
     Depth is computed over titles because that is what the hydrator writes into
     '## Prerequisites'. Cycles and dangling names resolve to depth 0 rather than
@@ -46,6 +50,7 @@ def prerequisite_depth(concepts: List[Dict], content_for: Callable) -> Dict[str,
                         if n.strip().lower() in by_title
                         and by_title[n.strip().lower()] != uid]
 
+    edges = dict(prereqs)          # the caller wants these, not just the depth
     depth: Dict[str, int] = {}
     visiting = set()
 
@@ -74,7 +79,7 @@ def prerequisite_depth(concepts: List[Dict], content_for: Callable) -> Dict[str,
     if depth:
         deepest = max(depth.values()) or 1
         depth = {uid: min(6, round(6 * d / deepest)) for uid, d in depth.items()}
-    return depth
+    return depth, edges
 
 
 def build_for_course(course_uid: str, storage, data_root: str = "data",
@@ -106,7 +111,7 @@ def build_for_course(course_uid: str, storage, data_root: str = "data",
         except OSError:
             return ""
 
-    depth = prerequisite_depth(concepts, content_for)
+    depth, edges = prerequisite_depth(concepts, content_for)
 
     items = []
     for c in concepts:
@@ -121,6 +126,13 @@ def build_for_course(course_uid: str, storage, data_root: str = "data",
         note("ITEMS:NONE")
         return {"items": 0, "concepts": len(concepts),
                 "written": 0, "updated": 0, "retired": 0}
+
+    try:
+        storage.courses.save_prereqs(course_uid, edges)
+    except Exception as e:
+        # A missing dependency map costs a better repair suggestion, not the
+        # item bank.
+        logger.warning("could not save prerequisite edges for %s: %s", course_uid, e)
 
     result = storage.flashcards.sync_items(items, student_id=student_id)
     # depth lives on the row so the queue can order by it without re-reading

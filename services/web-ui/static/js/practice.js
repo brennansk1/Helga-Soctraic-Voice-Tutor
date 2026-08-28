@@ -602,7 +602,18 @@
         fetch('/api/review/grade', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ uid: item.uid, rating: n })
+            /* concept_uid and course_uid travel with the grade because the
+               server needs them to answer "is what this rests on also weak?".
+               Sending only {uid, rating} left that lookup with nothing to look
+               up, so it returned nothing every time — the feature existed on
+               both sides and never once fired. */
+            body: JSON.stringify({
+                uid: item.uid,
+                rating: n,
+                concept_uid: item.concept_uid || '',
+                course_uid: item.course_uid || '',
+                kind: item.kind || ''
+            })
         })
         .then(function (r) {
             if (!r.ok) { throw new Error('scheduler returned ' + r.status); }
@@ -617,7 +628,7 @@
                 : (days < 1 ? 'Again shortly.'
                    : 'Next in ' + Math.round(days) + ' day' +
                      (Math.round(days) === 1 ? '' : 's') + '.');
-            if (d && d.leech) { offerRepair(item); return; }
+            if (d && d.leech) { offerRepair(item, d.weak_prerequisite); return; }
             advance(auto ? 900 : 350);
         })
         .catch(function (e) {
@@ -626,12 +637,34 @@
         });
     }
 
-    /* Repeated forgetting is a teaching problem, not a scheduling one. */
-    function offerRepair(item) {
+    /* Repeated forgetting is a teaching problem, not a scheduling one — and
+       often not a problem with THIS concept. The server checks what this one
+       rests on; if something underneath is also failing, going back to the
+       dependent re-teaches a symptom. */
+    function offerRepair(item, weakRoot) {
         var text = $('review-leech-text');
+        var link = $('review-leech-link');
+
+        if (weakRoot && weakRoot.concept_uid) {
+            text.textContent = 'You have lost this one several times, and ' +
+                (weakRoot.title ? '\u201c' + weakRoot.title + '\u201d' : 'a concept it rests on') +
+                ' — which this one is built on — is slipping too. That is the ' +
+                'more likely place to fix it.';
+            link.textContent = weakRoot.title
+                ? 'Go back to \u201c' + weakRoot.title + '\u201d'
+                : 'Go back to what this rests on';
+            link.href = '/learn?course_uid=' +
+                        encodeURIComponent(weakRoot.course_uid || item.course_uid || '') +
+                        '&concept_uid=' + encodeURIComponent(weakRoot.concept_uid);
+            setShown('review-leech', true);
+            setShown('review-grades', false);
+            advance(6000);      // a longer read; there is a decision in it
+            return;
+        }
+
         text.textContent = 'You have lost this one several times. Reviewing it ' +
                            'again next week is unlikely to be what fixes it.';
-        var link = $('review-leech-link');
+        link.textContent = 'Go through this concept again';
         link.href = '/learn?course_uid=' + encodeURIComponent(item.course_uid || '') +
                     '&concept_uid=' + encodeURIComponent(item.concept_uid || '');
         setShown('review-leech', true);

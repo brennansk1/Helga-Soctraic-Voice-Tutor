@@ -347,3 +347,80 @@ def forecast(items: Iterable[Due], days: int = 30,
     return [{"date": _iso(today + timedelta(days=n)),
              "count": counts.get(_iso(today + timedelta(days=n)), 0)}
             for n in range(days + 1)]
+
+
+# ---------------------------------------------------------------- weak roots
+
+# How settled a prerequisite must look before it stops being a suspect.
+WEAK_LAPSES = 2
+WEAK_STABILITY_DAYS = 7.0
+
+
+def concept_strength(items: Sequence[Due]) -> Dict[str, Dict]:
+    """Per concept: how much of it is holding, and how much keeps slipping.
+
+    Judged over a concept's ITEMS rather than a single mastery flag, because
+    that is what the review system actually knows. A concept whose items keep
+    lapsing is weak whatever a completion flag says about it.
+    """
+    out: Dict[str, Dict] = {}
+    for it in items:
+        c = out.setdefault(it.concept_uid, {
+            "items": 0, "seen": 0, "lapses": 0, "weak_items": 0, "stability": 0.0})
+        c["items"] += 1
+        if it.repetitions:
+            c["seen"] += 1
+            c["lapses"] += it.lapses
+            c["stability"] += float(it.stability or 0)
+            if it.lapses >= WEAK_LAPSES or float(it.stability or 0) < WEAK_STABILITY_DAYS:
+                c["weak_items"] += 1
+    for c in out.values():
+        c["mean_stability"] = (c["stability"] / c["seen"]) if c["seen"] else 0.0
+        c["weak_share"] = (c["weak_items"] / c["seen"]) if c["seen"] else 0.0
+    return out
+
+
+def is_weak(stats: Optional[Dict]) -> bool:
+    """A concept worth sending someone back to, rather than one merely unseen.
+
+    An UNSEEN concept is not weak — it is unstarted, and telling a learner to
+    revisit something they have never met would be nonsense.
+    """
+    if not stats or not stats.get("seen"):
+        return False
+    return stats["weak_share"] >= 0.5 or stats["lapses"] >= WEAK_LAPSES * 2
+
+
+def weakest_root(concept_uid: str, prereqs_of, strength: Dict[str, Dict],
+                 max_depth: int = 4) -> Optional[str]:
+    """The deepest weak concept beneath this one, or None.
+
+    Walks the dependency map breadth-first and keeps the LAST weak ancestor
+    found — the furthest down that is still failing — because that is where the
+    misunderstanding actually starts. Sending someone back to a dependent while
+    the thing under it is broken re-teaches the symptom.
+
+    Cycles and missing edges resolve to None rather than raising: a malformed
+    prerequisite line must not cost the learner a repair suggestion.
+    """
+    seen = {concept_uid}
+    frontier = [concept_uid]
+    deepest = None
+    for _ in range(max_depth):
+        nxt = []
+        for uid in frontier:
+            try:
+                parents = prereqs_of(uid) or []
+            except Exception:
+                parents = []
+            for p in parents:
+                if p in seen:
+                    continue
+                seen.add(p)
+                nxt.append(p)
+                if is_weak(strength.get(p)):
+                    deepest = p
+        if not nxt:
+            break
+        frontier = nxt
+    return deepest

@@ -2304,6 +2304,32 @@ def ask_endpoint():
 
 # ---------------------------------------------------------------- review queue
 
+_CONCEPT_TITLES = {}
+
+
+def _concept_title(concept_uid):
+    """A concept's own title, for naming it to the learner.
+
+    Cached per process: this is called only when an item becomes a leech, and
+    the alternative is walking every course structure on each grade."""
+    if not concept_uid:
+        return ""
+    if concept_uid in _CONCEPT_TITLES:
+        return _CONCEPT_TITLES[concept_uid]
+    try:
+        for course in storage.courses.list_courses() or []:
+            structure = storage.courses.get_course(course["uid"]) or {}
+            for module in structure.get("modules", []) or []:
+                for unit in module.get("units", []) or []:
+                    for lesson in unit.get("lessons", []) or []:
+                        for concept in lesson.get("concepts", []) or []:
+                            if concept.get("uid"):
+                                _CONCEPT_TITLES[concept["uid"]] = concept.get("title", "")
+    except Exception as e:
+        logger.warning("could not load concept titles: %s", e)
+    return _CONCEPT_TITLES.get(concept_uid, "")
+
+
 def _profile_value(key, default=None):
     """Read one Settings value from the table Settings actually writes to.
 
@@ -2595,6 +2621,39 @@ def review_grade_endpoint():
     lapses = int(result.get("lapses") or 0)
     result["leech"] = lapses >= LEECH_LAPSES
     result["status"] = "ok"
+
+    # WHERE THE MISUNDERSTANDING ACTUALLY STARTS.
+    #
+    # An item failed four times is a teaching problem, and the concept the item
+    # belongs to is not always the one to re-teach. The hydrator recorded what
+    # each concept rests on; if something underneath is ALSO failing, sending
+    # the learner back to the dependent re-teaches a symptom. This names the
+    # deepest weak ancestor instead, when there is one.
+    if result["leech"]:
+        try:
+            from datetime import date as _date
+            from services.common.review_scheduler import (
+                concept_strength, weakest_root)
+            rows = storage.flashcards.get_items(student_id=student_id)
+            today_iso = _date.today().isoformat()
+            strength = concept_strength([_as_due(r, today_iso) for r in rows])
+            concept_uid = data.get("concept_uid") or ""
+            root = weakest_root(concept_uid, storage.courses.get_prereqs, strength)
+            if root and root != concept_uid:
+                titles = {}
+                for r in rows:
+                    if r.get("concept_uid") == root:
+                        titles[root] = r.get("payload", {}).get("concept_title") or ""
+                result["weak_prerequisite"] = {
+                    "concept_uid": root,
+                    "title": _concept_title(root) or titles.get(root) or "",
+                    "course_uid": next((r.get("course_uid") for r in rows
+                                        if r.get("concept_uid") == root), ""),
+                }
+        except Exception as e:
+            # A missing suggestion is not a failed grade.
+            logger.warning("weak-prerequisite lookup failed for %s: %s", uid, e)
+
     return jsonify(result)
 
 

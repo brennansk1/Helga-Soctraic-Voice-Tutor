@@ -376,3 +376,69 @@ def test_retention_target_moves_every_interval():
     # Asking for more certainty must cost meaningfully more reviews, or the
     # control is decorative.
     assert intervals[0.85] >= intervals[0.95] * 2
+
+
+# ---- weak prerequisites --------------------------------------------------
+
+from services.common.review_scheduler import (  # noqa: E402
+    concept_strength, is_weak, weakest_root,
+)
+
+
+def _item(concept, *, reps=5, lapses=0, stability=40.0):
+    return Due(f"{concept}-{lapses}-{stability}", concept, "course_a", "recall",
+               TODAY.isoformat(), 10, stability, lapses, reps)
+
+
+def test_a_concept_that_keeps_slipping_reads_as_weak():
+    weak = concept_strength([_item("c", lapses=3, stability=2.0),
+                             _item("c", lapses=4, stability=1.5)])
+    firm = concept_strength([_item("d", lapses=0, stability=90.0),
+                             _item("d", lapses=0, stability=120.0)])
+    assert is_weak(weak["c"])
+    assert not is_weak(firm["d"])
+
+
+def test_an_unseen_concept_is_not_weak():
+    """Unstarted is not failing. Telling someone to revisit a concept they have
+    never met would be nonsense."""
+    unseen = concept_strength([Due("u", "c", "k", "recall", TODAY.isoformat(),
+                                   0, None, 0, 0)])
+    assert not is_weak(unseen["c"])
+    assert not is_weak(None)
+    assert not is_weak({})
+
+
+def test_the_deepest_weak_ancestor_is_the_one_named():
+    """NULLIF rests on three-valued logic, which rests on NULL semantics. If the
+    bottom one is failing, sending the learner back to the middle re-teaches a
+    symptom."""
+    edges = {"nullif": ["threeval"], "threeval": ["nullsem"], "nullsem": []}
+    strength = concept_strength(
+        [_item("threeval", lapses=3, stability=2.0),
+         _item("nullsem", lapses=5, stability=1.0)])
+    assert weakest_root("nullif", edges.get, strength) == "nullsem"
+
+
+def test_a_solid_foundation_yields_no_suggestion():
+    edges = {"nullif": ["threeval"], "threeval": []}
+    strength = concept_strength([_item("threeval", lapses=0, stability=120.0)])
+    assert weakest_root("nullif", edges.get, strength) is None
+
+
+def test_a_cycle_terminates():
+    edges = {"a": ["b"], "b": ["a"]}
+    assert weakest_root("a", edges.get, {}) is None
+
+
+def test_a_prereq_lookup_that_raises_costs_only_the_suggestion():
+    def boom(uid):
+        raise RuntimeError("map unavailable")
+    assert weakest_root("a", boom, {}) is None
+
+
+def test_depth_is_bounded():
+    """A long chain must not walk the whole course."""
+    chain = {f"c{i}": [f"c{i+1}"] for i in range(20)}
+    strength = concept_strength([_item("c19", lapses=9, stability=1.0)])
+    assert weakest_root("c0", chain.get, strength, max_depth=3) is None

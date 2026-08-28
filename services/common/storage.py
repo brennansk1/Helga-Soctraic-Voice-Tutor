@@ -1385,6 +1385,38 @@ class StorageManager:
                 logger.info("Schema migrated to v21: gate_reason and hydration "
                             "counts on courses")
 
+            if current_version < 22:
+                # WHICH CONCEPT RESTS ON WHICH.
+                #
+                # The hydrator writes a prerequisite list into every concept and
+                # the item bank walked it to compute a depth number — then threw
+                # the edges away. Depth alone can order a queue but it cannot
+                # answer the question that matters when someone keeps failing:
+                # "is the thing under this one also weak?" Re-drilling NULLIF
+                # while three-valued logic is lapsed spends the learner's
+                # attention on the wrong concept.
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS concept_prereqs (
+                        course_uid  TEXT NOT NULL,
+                        concept_uid TEXT NOT NULL,
+                        prereq_uid  TEXT NOT NULL,
+                        PRIMARY KEY (concept_uid, prereq_uid)
+                    )
+                """)
+                for ddl in (
+                    "CREATE INDEX IF NOT EXISTS idx_prereq_concept "
+                    "ON concept_prereqs(concept_uid)",
+                    "CREATE INDEX IF NOT EXISTS idx_prereq_course "
+                    "ON concept_prereqs(course_uid)",
+                ):
+                    try:
+                        cursor.execute(ddl)
+                    except sqlite3.OperationalError as e:
+                        logger.warning("v22: %s -- skipped (%s)",
+                                       ddl.split("(")[0].strip(), e)
+                cursor.execute("UPDATE schema_version SET version = 22")
+                logger.info("Schema migrated to v22: concept_prereqs edges")
+
             conn.commit()
         finally:
             conn.close()
@@ -1621,6 +1653,36 @@ class CourseStore:
             except Exception as e:
                 logger.error("rollback failed: %s", e)
         return conn
+
+    def save_prereqs(self, course_uid: str, edges: dict):
+        """Replace this course's dependency map.
+
+        Rewritten wholesale rather than merged: the edges are derived from the
+        concept files, so a stale edge means a concept's prerequisites were
+        edited and the old answer is simply wrong.
+        """
+        conn = self._get_db()
+        conn.execute("DELETE FROM concept_prereqs WHERE course_uid = ?", (course_uid,))
+        rows = [(course_uid, concept, prereq)
+                for concept, parents in (edges or {}).items()
+                for prereq in (parents or [])]
+        if rows:
+            conn.executemany(
+                "INSERT OR REPLACE INTO concept_prereqs "
+                "(course_uid, concept_uid, prereq_uid) VALUES (?,?,?)", rows)
+        conn.commit()
+        return len(rows)
+
+    def get_prereqs(self, concept_uid: str) -> List[str]:
+        """The concepts this one rests on directly.
+
+        Indexed positionally: this store's connection has no row_factory, and
+        subscripting by name raised a TypeError that the caller's except
+        swallowed — so the suggestion silently never appeared."""
+        rows = self._get_db().execute(
+            "SELECT prereq_uid FROM concept_prereqs WHERE concept_uid = ?",
+            (concept_uid,)).fetchall()
+        return [r[0] for r in rows]
 
     def _structure_path(self, uid: str) -> str:
         return os.path.join(self.courses_dir, uid, "structure.json")
