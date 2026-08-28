@@ -227,3 +227,51 @@ def test_note_actually_advances_updated_at(tmp_path, monkeypatch):
 
     assert first and second and second > first, \
         "note() did not advance updated_at; the staleness check reads that field"
+
+
+# ---------------------------------------------------------------------------
+# THE SKELETON IS THE FIRST PHASE, NOT THE WHOLE BUILD.
+#
+# SkeletonBuilder.build() called build_state.start() and then, in its finally,
+# build_state.finish() — closing the record for the entire pipeline the moment
+# the structure was written, with audit, hydration, assets, the item bank and
+# finalize still to come.
+#
+# fsm_logic ends that record and identifies it by `getattr(sb, "_build_id")`,
+# a contract its own comment spells out. The attribute was never set, so the
+# FSM always received None.
+#
+# Measured on the wizard build: build_state read active=False, ok=True,
+# stage="audit" while core-logic was running "PASS 2: LLM quality review".
+# ---------------------------------------------------------------------------
+
+def test_the_skeleton_builder_keeps_the_id_the_fsm_reads_back():
+    import inspect
+    from services.core.course_builder import SkeletonBuilder
+
+    builder = inspect.getsource(SkeletonBuilder)
+    assert "self._build_id = build_state.start(" in builder, (
+        "SkeletonBuilder discards the build id, so fsm_logic cannot identify "
+        "the record it is meant to close")
+
+    # Read as text: fsm_logic imports fsrs_engine by a container-relative path
+    # and cannot be imported on the host.
+    import pathlib
+    fsm = (pathlib.Path(__file__).resolve().parents[2]
+           / "services" / "core" / "fsm_logic.py").read_text()
+    assert 'getattr(sb, "_build_id", None)' in fsm, (
+        "the FSM no longer reads the id back; re-derive who owns the record")
+
+
+def test_the_skeleton_builder_does_not_close_the_record():
+    """Closing it here reported every create-path build as finished as soon as
+    its structure existed."""
+    import inspect
+    import re
+    from services.core.course_builder import SkeletonBuilder
+
+    src = inspect.getsource(SkeletonBuilder.build)
+    code = re.sub(r'"""[\s\S]*?"""', " ", src)
+    code = re.sub(r"#[^\n]*", " ", code)
+    assert "build_state.finish" not in code, (
+        "the skeleton phase closes the whole build's durable record again")

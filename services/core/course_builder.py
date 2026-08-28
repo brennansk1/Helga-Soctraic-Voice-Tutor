@@ -1517,7 +1517,14 @@ class SkeletonBuilder:
             build_state = None
 
         if build_state:
-            build_state.start(topic, source=getattr(self, "build_source", "topic"))
+            # KEEP THE ID. fsm_logic reads `getattr(sb, "_build_id", None)` to
+            # end this record when the WHOLE pipeline finishes — the contract
+            # its own comment states: "The SkeletonBuilder claims the durable
+            # record; this function ends it." The attribute was never set, so
+            # the FSM always received None and could not identify what it was
+            # closing.
+            self._build_id = build_state.start(
+                topic, source=getattr(self, "build_source", "topic"))
             # Every status event now also lands in the durable record.
             _original_cb = self.status_callback
 
@@ -1538,8 +1545,23 @@ class SkeletonBuilder:
             return self._build_inner(topic, max_depth, module_depths)
         finally:
             _build_lock.release()
-            if build_state:
-                build_state.finish()
+            # DO NOT FINISH THE RECORD HERE. The skeleton is the FIRST phase of
+            # a build, not the whole of it: audit, hydration, assets, the item
+            # bank and finalize all follow. Closing it here reported every
+            # create-path build as finished the moment its structure was
+            # written.
+            #
+            # Measured on the wizard build: build_state read
+            # active=False, ok=True, stage="audit" while core-logic was still
+            # running "PASS 2: LLM quality review". Everything that reads that
+            # record then believes the build is over — the banner, the build
+            # page, the courses card, and tools/safe_restart.sh, which would
+            # have cheerfully restarted the container mid-build.
+            #
+            # fsm_logic ends it, with the id above, once the pipeline is done.
+            # A caller that runs the builder alone leaves the record to go
+            # stale on the heartbeat, which is the mechanism that already
+            # exists for an owner that stops reporting.
 
     def _classify_concepts_by_domain(self, course_dict, topic):
         """Set `concept_kind` on every concept, via the domain registry.
