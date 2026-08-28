@@ -576,7 +576,15 @@
            every message produced "Uncaught ReferenceError: text is not
            defined" at build-view.js:565. */
         if (msg.indexOf('ITEMS:') === 0) {
-            var n = parseInt(msg.slice(6), 10);
+            /* item_bank emits "ITEMS:<n> review items over <m> concepts" AND,
+               when a course yields nothing, the literal "ITEMS:NONE".
+               parseInt("NONE") is NaN, so the branch below set the tile active
+               and never resolved it: a course too thin to build items from —
+               not hypothetical, "Reading a Query Plan" is one — left the
+               Review items stage spinning for the rest of the build. NONE is
+               a finished, warning outcome, not an unfinished one. */
+            var rest = msg.slice(6);
+            var n = /^NONE\b/.test(rest) ? 0 : parseInt(rest, 10);
             setStage('items', 'active');
             if (!isNaN(n)) {
                 stream(n
