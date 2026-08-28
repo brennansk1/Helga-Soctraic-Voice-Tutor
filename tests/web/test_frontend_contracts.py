@@ -331,3 +331,34 @@ class TestOwnedScriptsParse(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def test_wizard_model_calls_outlast_a_single_generation():
+    """Every wizard button that reaches the model must use the generate
+    timeout, not a minute.
+
+    Measured by walking the wizard: /api/clarify_course returned 502 after
+    exactly 60.017s while core-logic was still working, and step 4 reported
+    "Failed to generate questions" for a request that had not failed. One warm
+    generation on this hardware was measured at 28s and a cold model load is
+    minutes, so 60s failed routinely rather than exceptionally.
+    """
+    import pathlib
+    import re
+
+    src = (pathlib.Path(__file__).resolve().parents[2]
+           / "services" / "web-ui" / "app.py").read_text()
+
+    for route in ("clarify_course", "suggest_modules", "suggest_concepts"):
+        m = re.search(rf"def {route}\(\):(.*?)(?=\n@app\.route|\Z)", src, re.S)
+        assert m, f"{route} not found"
+        body = m.group(1)
+        # Strip the docstring and comments first: the docstring EXPLAINS the
+        # old `timeout=60`, so a naive search finds the prose describing the
+        # fix and reports it as the defect.
+        code = re.sub(r'"""[\s\S]*?"""', " ", body)
+        code = re.sub(r"#[^\n]*", " ", code)
+        assert "GENERATE_PROXY_TIMEOUT_S" in code, (
+            f"{route} does not use the generate timeout")
+        assert not re.search(r"timeout=\d+\b", code), (
+            f"{route} still hardcodes a timeout")

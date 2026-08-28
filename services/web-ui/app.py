@@ -510,9 +510,16 @@ def scope_check():
 @csrf_protect
 @hardware_required
 def suggest_modules():
-    """LLM suggests modules for the custom course wizard."""
+    """LLM suggests modules for the custom course wizard.
+
+    Same 60s ceiling, same flow, same failure as /api/clarify_course above —
+    see the note there. Every button in this wizard that reaches the model
+    needs the generate timeout, not a minute.
+    """
     try:
-        resp = requests.post(f'{SERVICES["core"]}/api/suggest_modules', json=request.json, timeout=60)
+        resp = requests.post(f'{SERVICES["core"]}/api/suggest_modules',
+                             json=request.json,
+                             timeout=GENERATE_PROXY_TIMEOUT_S)
         return jsonify(resp.json()), resp.status_code
     except Exception as e:
         return jsonify({'modules': [], 'error': str(e)}), 502
@@ -521,9 +528,14 @@ def suggest_modules():
 @csrf_protect
 @hardware_required
 def suggest_concepts():
-    """LLM suggests concepts for a module in the wizard."""
+    """LLM suggests concepts for a module in the wizard.
+
+    Same 60s ceiling as its two neighbours — see /api/clarify_course.
+    """
     try:
-        resp = requests.post(f'{SERVICES["core"]}/api/suggest_concepts', json=request.json, timeout=60)
+        resp = requests.post(f'{SERVICES["core"]}/api/suggest_concepts',
+                             json=request.json,
+                             timeout=GENERATE_PROXY_TIMEOUT_S)
         return jsonify(resp.json()), resp.status_code
     except Exception as e:
         return jsonify({'concepts': [], 'error': str(e)}), 502
@@ -532,9 +544,25 @@ def suggest_concepts():
 @csrf_protect
 @hardware_required
 def clarify_course():
-    """LLM generates clarifying questions for the wizard."""
+    """LLM generates clarifying questions for the wizard.
+
+    SIXTY SECONDS IS NOT LONG ENOUGH FOR ONE CALL ON THIS MACHINE.
+    ---------------------------------------------------------------
+    This used timeout=60 while every other LLM proxy uses
+    GENERATE_PROXY_TIMEOUT_S (300). Measured by walking the wizard: the proxy
+    returned 502 after exactly 60.017s while core-logic was still working, and
+    step 4 showed "Failed to generate questions" on a request that had not
+    failed. A single generation here was measured at 28s warm, and a cold model
+    load on this hardware is minutes — so the step failed routinely rather than
+    exceptionally, and the work core had already started was abandoned.
+
+    Same rule as the comment on /api/event below: the outer timeout must
+    outlast the inner one.
+    """
     try:
-        resp = requests.post(f'{SERVICES["core"]}/api/clarify_course', json=request.json, timeout=60)
+        resp = requests.post(f'{SERVICES["core"]}/api/clarify_course',
+                             json=request.json,
+                             timeout=GENERATE_PROXY_TIMEOUT_S)
         return jsonify(resp.json()), resp.status_code
     except Exception as e:
         return jsonify({'questions': [], 'error': str(e)}), 502
