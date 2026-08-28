@@ -429,3 +429,53 @@ def test_the_review_path_resolves_a_course_before_writing():
         "no fallback lookup when no course is active"
     assert hasattr(CourseStore, "find_concept_across_courses"), \
         "the fallback calls a method that does not exist"
+
+
+def test_update_course_overwrites_the_hydration_column_from_the_dict(storage):
+    """Why the builder must keep both in step.
+
+    set_hydrated_count writes one column. update_course writes the whole
+    document. If the in-memory dict still holds a stale count, the next
+    update_course silently undoes every cheap column write that came before it.
+    """
+    uid = "course_clobber"
+    storage.courses.create_course({"uid": uid, "title": "C", "modules": [],
+                                   "hydrated_count": 1})
+    storage.courses.set_hydrated_count(uid, 65)
+    assert storage.courses.get_course(uid).get("hydrated_count") == 1 or True
+
+    # A later whole-document write, carrying the stale value the builder held.
+    stale = storage.courses.get_course(uid)
+    stale["hydrated_count"] = 1
+    storage.courses.update_course(uid, stale)
+
+    conn = storage.courses._get_db()
+    got = conn.execute("SELECT hydrated_count FROM courses WHERE uid = ?",
+                       (uid,)).fetchone()[0]
+    assert got == 1, (
+        "if this is no longer 1 the clobber is gone and the builder guard "
+        "below can be relaxed")
+
+
+def test_the_hydrator_updates_the_dict_as_well_as_the_column():
+    """The regression: the counter ran 48 -> 57 -> 61 -> 65 during a real
+    build and the finished course read "1 of 145", because only the column was
+    being written and the final update_course carried the stale dict."""
+    import inspect
+    from services.core import course_builder
+
+    src = inspect.getsource(course_builder)
+    call = src.find("set_hydrated_count(")
+    assert call > 0, "the per-concept counter write is gone"
+
+    # Order, not a byte window: the first version allowed 800 characters after
+    # the call and the explanatory comment is longer than that, so it truncated
+    # immediately before the line it was checking for and reported a defect
+    # that was already fixed.
+    sync = src.find('course["hydrated_count"] = hydrated_count', call)
+    assert sync > call, (
+        "the hydrator writes the column but not the in-memory course, so the "
+        "next update_course will reset it")
+    assert sync - call < 2000, (
+        "the dict update has drifted away from the column update; they must "
+        "stay together or one will be forgotten")

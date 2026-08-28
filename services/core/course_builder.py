@@ -5368,6 +5368,18 @@ class ContentHydrator:
                     # the lock contention this file already warns about.
                     self.storage.courses.set_hydrated_count(
                         course_uid, hydrated_count)
+                    # AND THE DICT, OR THE COLUMN IS UNDONE AT THE END.
+                    #
+                    # update_course() writes the whole course document back,
+                    # and this dict still held the 1 written when the first
+                    # concept landed. So every later update_course — the audit
+                    # verdict, the item bank, finalize — reset the column to 1.
+                    #
+                    # Measured on the wizard build: the counter ran up through
+                    # 48, 57, 61, 65 during hydration and the finished course
+                    # read "1 of 145". My own fix, half done: I corrected where
+                    # the number is stored and not where it is remembered.
+                    course["hydrated_count"] = hydrated_count
 
         # Execute parallel hydration
         if max_workers > 1:
