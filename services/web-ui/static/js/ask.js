@@ -27,9 +27,12 @@ function slowReason() {
     try {
         var b = window.HelgaBuildGuard && window.HelgaBuildGuard.active();
         if (b) {
-            return b.label
-                ? ', waiting for the "' + b.label + '" build to free the model'
-                : ', waiting for the course build to free the model';
+            /* The guard's `label` is the PILL'S TEXT, not a course name — set()
+       defaults it to the literal "Building\u2026" — so naming it here produced
+       'busy building "Building…"'. Seen on a live lesson. It also survives up
+       to MAX_AGE_MS after a build ends, so this must not assert more than
+       "a build may be running". */
+            return ', waiting for a course build to free the model';
         }
     } catch (e) {}
     return ', the model is warming up';

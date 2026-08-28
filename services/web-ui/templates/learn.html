@@ -1733,10 +1733,13 @@
             } catch (e) { building = null; }
 
             if (building) {
-                return 'Waiting for the model — it is busy building '
-                    + (building.label ? '"' + building.label + '"' : 'a course')
-                    + '. Still trying; this can take a few minutes while a '
-                    + 'build is running.';
+                /* The guard's `label` is the PILL'S TEXT, not a course name — set()
+       defaults it to the literal "Building\u2026" — so naming it here produced
+       'busy building "Building…"'. Seen on a live lesson. It also survives up
+       to MAX_AGE_MS after a build ends, so this must not assert more than
+       "a build may be running". */
+                return 'Waiting for the model — a course build is using it. '
+                    + 'Still trying; this can take a few minutes.';
             }
             return (window.__helgaModelWarm
                 ? 'Still thinking — this concept is a long one.'

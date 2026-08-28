@@ -371,3 +371,61 @@ def test_the_builder_updates_the_counter_past_the_first_concept():
     src = inspect.getsource(course_builder)
     assert "set_hydrated_count(" in src, (
         "the hydration loop no longer reports progress per concept")
+
+
+# ---------------------------------------------------------------------------
+# PROGRESS MUST CARRY THE COURSE IT BELONGS TO.
+#
+# The flashcard review path wrote `course_uid=self.active_course_uid or ""`.
+# A review session interleaves courses, so active_course_uid is normally None,
+# and every row written that way landed under course_uid="".
+# get_course_progress() filters ON that column, so the work was invisible to
+# the course: the learn path never turned the node green and the progress
+# percentage never counted it.
+#
+# Found after a 20-question Socratic session on SELECT Clause Syntax: the row
+# read course_uid='' with times_reviewed=38, sitting outside the course.
+# ---------------------------------------------------------------------------
+
+def test_progress_written_without_a_course_is_invisible_to_that_course(storage):
+    """The mechanism, so the fix has something to be measured against."""
+    storage.progress.update_progress("con_orphan", "", status="reviewed")
+    assert storage.progress.get_course_progress("course_x") == [], \
+        "a row with an empty course_uid must not appear under a real course"
+
+
+def test_progress_written_with_its_course_is_visible(storage):
+    storage.progress.update_progress("con_ok", "course_x", status="reviewed")
+    rows = storage.progress.get_course_progress("course_x")
+    assert [r["concept_uid"] for r in rows] == ["con_ok"]
+
+
+def test_the_review_path_resolves_a_course_before_writing():
+    """Guards the shape: the progress write must not fall back to "".
+
+    Read as TEXT rather than imported — fsm_logic imports fsrs_engine by a
+    container-relative path and cannot be imported on the host, and skipping
+    the check there would leave it unguarded where it is usually run.
+
+    Scoped to the update_progress call on purpose. `active_course_uid or ""`
+    also appears in the Memory Palace's log_activity call, which is a different
+    table with a much smaller consequence; banning the string outright would
+    make this fail for the wrong reason and invite weakening it.
+    """
+    import pathlib
+    import re
+    from services.common.storage import CourseStore
+
+    src = (pathlib.Path(__file__).resolve().parents[2]
+           / "services" / "core" / "fsm_logic.py").read_text()
+
+    for m in re.finditer(r"update_progress\((?:[^()]|\([^()]*\))*\)", src):
+        call = m.group(0)
+        assert 'active_course_uid or ""' not in call, (
+            "a progress write falls back to an empty course_uid, which "
+            f"orphans the row from its course: {call[:120]}")
+
+    assert "find_concept_across_courses" in src, \
+        "no fallback lookup when no course is active"
+    assert hasattr(CourseStore, "find_concept_across_courses"), \
+        "the fallback calls a method that does not exist"

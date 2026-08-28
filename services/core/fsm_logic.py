@@ -4460,9 +4460,35 @@ class MnemosyneFSM:
                 grade = 2
 
             try:
+                # AN EMPTY course_uid ORPHANS THE ROW FROM ITS COURSE.
+                #
+                # `self.active_course_uid or ""` looks like a harmless default
+                # and is not: a review session interleaves several courses, so
+                # active_course_uid is normally None, and every row written
+                # this way lands under course_uid="". get_course_progress()
+                # filters ON that column, so the work is invisible to the
+                # course — the learn path never turns the node green and the
+                # progress percentage never counts it.
+                #
+                # Found after a 20-question Socratic session: the concept's row
+                # read course_uid='' with times_reviewed=38, sitting outside
+                # the course it belongs to. The card knows its own course; ask
+                # it before falling back.
+                _course = (self.current_card.get("course_uid")
+                           or self.active_course_uid or "")
+                if not _course:
+                    # find_concept_across_courses is the lookup that exists;
+                    # the first name I reached for did not, which would have
+                    # silently left the row orphaned exactly as before.
+                    try:
+                        _hit = self.storage.courses.find_concept_across_courses(
+                            self.current_card["uid"]) or {}
+                        _course = _hit.get("course_uid") or ""
+                    except Exception:
+                        _course = ""
                 self.storage.progress.update_progress(
                     self.current_card["uid"],
-                    course_uid=self.active_course_uid or "",
+                    course_uid=_course,
                     grade=grade,
                     status="reviewed",
                 )
