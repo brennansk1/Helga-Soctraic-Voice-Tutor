@@ -324,3 +324,13 @@
                          color: var(--text-secondary); }
 .build-cancel-actions { display: flex; gap: var(--space-3); justify-content: flex-end; }
 .build-cancel-error { color: var(--color-danger); font-size: .82rem; margin-top: .8em; }
+
+/* On a phone the search field and its button share one 375px row, which left
+   the placeholder cut mid-word ("e.g. cell biology, Euclid, sta"). The example
+   subjects are the whole point of that placeholder — they tell a new learner
+   what this box accepts — so the button moves below rather than the hint being
+   clipped. */
+@media (max-width: 620px) {
+    .library-search { flex-direction: column; }
+    .library-search > * { width: 100%; }
+}

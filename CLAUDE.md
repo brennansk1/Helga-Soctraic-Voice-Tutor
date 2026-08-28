@@ -1,41 +1,107 @@
 # CLAUDE.md — Project Helga: Socratic Voice Tutor
 
-> ⚠️ **Stack reality (verified 2026-06-29).** This file's older sections drifted from the
-> actual system. The current stack — Mac Mini, Qwen3-14B/Ollama, Kokoro TTS, text-only,
-> SQLite, SearXNG/research — is documented below. A full reverse-engineered audit, feature
-> tree, and prioritized upgrade roadmap live in `docs/HELGA_BUILD_TREE.md` (the source of truth
-> for current state and known bugs). The "MASTER IMPLEMENTATION PLAN" lower in this file is
-> historical and references the old Jetson/Qwen2.5/ZIM/KuzuDB stack — treat it as archive.
+> **Stack reality — verified 2026-08-28 by running the system, not by reading it.**
+> Everything in this section was checked against the live machine on that date.
+> The "MASTER IMPLEMENTATION PLAN" far below is ARCHIVE: it describes a
+> Jetson/Qwen2.5/ZIM/KuzuDB stack that no longer exists. `docs/HELGA_BUILD_TREE.md`
+> is the reverse-engineered audit and roadmap.
 
 ## Project Overview
-Helga is an autonomous, fully-offline AI tutor that runs on a **Mac Mini M4 Pro (24GB)** with three learning modes: Socratic Learning, Spaced Repetition (FSRS), and Memory Palace (Memory Palace UI is currently dead/disabled). Microservices orchestrated via Docker Compose; Flask + Socket.IO web UI at port 5050. Inference is **Ollama (native on the host)**, not a container.
+Helga is an offline AI tutor. Two learning modes are live — **Socratic
+teaching** and **spaced-repetition review**. The Memory Palace is gone: `/palace`
+redirects, as do `/quiz`, `/review`, `/schedule` and `/test`, which were folded
+into `/practice`.
+
+## Hardware (measured)
+**Apple M4 — the base chip, not a Pro — with 24 GB of unified memory.** This is
+the single most load-bearing fact about the system and it was wrong here for
+months. Consequences that follow from it, all measured:
+  * A 35B model and the container stack together exceed comfortable residency.
+    Weights get evicted between turns, so a lesson can pay a ~2 minute cold load
+    even mid-session. `OLLAMA_KEEP_ALIVE=30m` is set and reaches Ollama; the
+    machine simply does not hold it.
+  * Turn latency is dominated by PREFILL, not decode. Prefix caching measured
+    31.6x on a warm cache (27.7s -> 0.88s).
+  * Speculative decoding does not work on this hardware. Do not retry it.
 
 ## Architecture
-- **Microservices:** web-ui (Flask dashboard, port 5050→5000), core-logic (FSM + course creation, port 5003), rag-engine (course CRUD/search/flashcards, port 5002), tts (Kokoro, port 5005), searxng (self-hosted web search, port 8080), research (build-time content augmentation, port 5006). There is **no** inference-llm container — inference is Ollama on the host.
-- **STT (voice input):** `services/stt` exposes `POST /api/stt` (audio→transcript). Primary engine = `nvidia/nemotron-3.5-asr-streaming-0.6b` via the MLX/ANE port, run **natively on the host** (port 5001) and reached at `host.docker.internal:5001` like Ollama; faster-whisper is a containerizable fallback (`STT_BACKEND`). See `services/stt/README.md`.
-- **LLM:** **Ollama + Nail-Qwen3.6-35B-A3B** (`nail-35b-a3b`) on the host at `host.docker.internal:11434`, OpenAI-compatible chat API. **One model serves every role** (build and tutor) — 34.7B MoE with ~3B active per token, 256K context, IQ3_S. Measured 29 tok/s vs the old 9B's 17.2, and 2.3x faster per hydrated concept. It is imported from a local GGUF and is **not pullable** — see `docs/MODEL.md`. Model name comes from `${OLLAMA_MODEL}` everywhere (compose, `.env`, `llm_client.py`, `llm_utils.py`, `model_roles.py`). **Thinking-model trap:** both LLM paths must send `reasoning_effort="none"` and `chat_template_kwargs.enable_thinking=False`, or `content` comes back EMPTY and the whole token budget is spent on `reasoning`.
-- **Storage:** SQLite (`helga.db`, WAL) + JSON course structures + Markdown concept files. KuzuDB and ZIM/`libzim` have been fully removed.
-- **AI Stack:** Qwen3.5-9B (Ollama, multimodal), Kokoro TTS (`kokoro`), sentence-transformers `all-MiniLM-L6-v2` (loaded but not yet used for dense retrieval — `/search` now uses SQLite **FTS5**; see `docs/HELGA_BUILD_TREE.md` B2). STT via Nemotron-3.5-ASR (MLX, host-native) — see above. No Piper, no CUDA.
+Containers (docker compose): **web-ui** (Flask + Socket.IO, 5050->5000),
+**core-logic** (FSM + course build, 5003), **rag-engine** (course CRUD, review
+queue, search, 5002), **tts** (Kokoro, 5005), **research** (build-time
+augmentation, 5006), **searxng** (8080), **stt** (optional; reports `offline`
+when absent and the UI says so rather than pretending).
 
-## Key File Locations
+Host-native, NOT containers: **Ollama** on 11434, and the **verifier**
+(MiniCheck entailment) on 5007.
+
+There is no inference-llm container. `helga-sqlcheck` is a live Postgres used to
+EXECUTE SQL claims during the audit — content correctness is checked by running
+the claim, not by asking a model.
+
+## Model
+`OLLAMA_MODEL` defaults to **`nail-35b-a3b-ctx`** (compose, `.env`,
+`llm_client.py` all agree — this has broken three times by drifting apart, so
+tests pin it). Reached at `host.docker.internal:11434` over the
+OpenAI-compatible API.
+
+## Storage
+SQLite (`helga.db`, WAL) at **schema v21**, plus JSON course structures and
+Markdown concept files. No KuzuDB, no ZIM.
+
+A NOTE ON THE WAL FILES: writing to `data/helga.db` from host Python while the
+containers are running leaves `-shm`/`-wal` files the containers cannot read,
+and the services then die with "disk I/O error". Stop the services, remove
+`data/helga.db-shm` and `data/helga.db-wal`, start them again.
+
+## The review system (mode A)
+Concept markdown is the item bank. `services/common/review_items.py` extracts
+four tiers of item from sections the hydrator already writes — Key Facts,
+Misconceptions, Edge Cases, Bloom-banded Socratic Hooks — with NO model calls,
+because review-time latency has to be zero on this hardware. 2,460 items came
+out of 186 concepts, 58% of them higher-order.
+
+The mix is deliberate and evidence-led: practising facts alone transfers no
+better than not practising, and mixed factual + higher-order beats either pure
+form. Every concept yields items at several tiers; its Bloom target shifts the
+RATIO, never closes a lane.
+
+`services/common/review_scheduler.py` is the queue policy over FSRS — load
+balancing, priority, interleaving across courses, leech escalation, retirement,
+and a daily new-item budget that spends down. `services/common/item_bank.py`
+builds a course's items (Stage 5 of the build).
+
+## Key files
 | File | Purpose |
 |------|---------|
-| `services/core/fsm_logic.py` | FSM state machine — all learning interaction logic (~3700 lines) |
-| `services/core/course_builder.py` | SkeletonBuilder + SyllabusAuditor + ContentHydrator — course generation pipeline |
-| `services/core/fsrs_engine.py` | FSRS-5 spaced-repetition engine (direct pure-Python implementation; not a py-fsrs wrapper) |
-| `services/research/research_server.py` | Build-time content augmentation (Wikipedia + SearXNG); `content_provider.py` was removed |
-| `services/rag/librarian.py` | RAG Flask service — course CRUD, (substring) search, flashcards, quiz |
-| `services/common/storage.py` | StorageManager — SQLite + JSON + Markdown facade |
-| `services/common/llm_utils.py` | LLM call wrappers with JSON repair + retry logic |
-| `services/common/spaced_repetition.py` | Legacy SM-2 engine (deprecated, kept for schedule generation) |
-| `services/common/prompts.py` | Centralized prompt templates |
-| `services/common/concept_doc.py` | Reads the concept `.md` — section parser + per-mode context packer (`tutor_context`, `index_text`). See `docs/HYDRATION_STORAGE_REVIEW.md` |
-| `services/web-ui/app.py` | Web UI Flask app — proxies to microservices |
-| `services/web-ui/static/js/session.js` | Socket.IO client, sendEvent(), audio, chat rendering |
-| `services/web-ui/templates/courses.html` | Course listing (logic moved to `static/js/courses.js` + `wizard.js`) |
-| `services/web-ui/templates/learn.html` | Learn tab — path visualization + session view |
-| `services/web-ui/templates/review.html` | Spaced repetition review UI |
-| `services/web-ui/templates/schedule.html` | Review calendar/schedule UI |
+| `services/core/fsm_logic.py` | FSM — all Socratic interaction |
+| `services/core/course_builder.py` | Build pipeline, Stages 1-5 |
+| `services/core/course_audit.py` | Audit checks + `is_teachable` (one definition of a teachable concept, shared with the course list) |
+| `services/core/course_repair.py` | Pass 3 repair |
+| `services/core/sql_ground_truth.py` | Executes SQL claims against `helga-sqlcheck` |
+| `services/core/fsrs_engine.py` | FSRS-5, direct implementation |
+| `services/common/review_items.py` | Item extraction from concept markdown |
+| `services/common/review_scheduler.py` | Queue policy, maturity bands |
+| `services/common/item_bank.py` | Per-course item build |
+| `services/common/storage.py` | SQLite + JSON + Markdown facade |
+| `services/common/user_profile.py` | Profile merge/sanitise (partial saves must MERGE) |
+| `services/verifier/verifier_server.py` | MiniCheck entailment, host-native :5007 |
+| `services/web-ui/static/js/practice.js` | Review session and queue UI |
+| `services/web-ui/static/js/degree.js` | Programme view; areas group by slot |
+
+## Things that keep going wrong here
+Read these before changing anything; each has cost real time more than once.
+  * **Component built, path never fires.** The signature defect. A feature works
+    in isolation and nothing calls it: 40 flashcards with no review surface,
+    `activity_log` empty because one call passed its arguments positionally,
+    `/api/profile` answering 200 while dropping the field. Grep for a READER
+    before believing a writer works.
+  * **Two sources for one number.** Home said 186 due while Practice said 34.
+    If two screens can show the same quantity, they must read the same endpoint.
+  * **Name collisions in one JS scope.** `function show()` twice, and a `var`
+    overwriting a hoisted function, each killed a whole page silently.
+    `tests/frontend/test_static_asset_integrity.py` guards this.
+  * **Undefined CSS tokens.** `var(--x)` where `--x` does not exist drops the
+    whole declaration. Same test file guards it.
 
 ## Development Conventions
 - **Python 3.10+**, no type stubs needed
@@ -50,10 +116,10 @@ Helga is an autonomous, fully-offline AI tutor that runs on a **Mac Mini M4 Pro 
 - **Paths:** Always `os.path.join()`, never string concat
 
 ## Known Constraints
-- **Mac Mini M4 Pro 24GB:** Ollama (Qwen3-14B Q4_K_M, ~9-10GB) runs natively on the host; containers share the remaining RAM. Sequential hydration; avoid speculative `gc.collect()`.
+- **Apple M4 (base) / 24 GB:** Ollama runs natively on the host and the containers share what is left. `nail-35b-a3b-ctx` does not stay resident beside them, so cold reloads happen mid-session — see Hardware above. Hydration is sequential; avoid speculative `gc.collect()`.
 - **Ollama is a hard external dependency:** all LLM calls go to `host.docker.internal:11434`. There is still no *fallback model*, but there is now a **circuit breaker** — `services/common/llm_breaker.py`, shared by `llm_client.py` (tutoring) and `llm_utils.py` (building). When the host is down it fast-fails instead of paying a timeout per call, and probes its way back automatically. Tune with `OLLAMA_BREAKER_TRIP` / `OLLAMA_BREAKER_PROBE_S` (see `docs/HELGA_BUILD_TREE.md` B9.5).
 - **LLM failures are NAMED, and the names matter:** `LLMUnavailable` (circuit open / timeout / transport / overloaded) means *we never got an answer*; `LLMBadOutput` (bad JSON / schema mismatch / empty response) means *the model answered badly*; `LLMRequestRejected` (4xx) means *our payload is wrong and the host is fine*. Only the first family counts toward the breaker. Pass `strict=True` (or set `LLM_STRICT_ERRORS=1`) to `llm_generate`/`llm_generate_json`/`chat` to get the exception; otherwise read `last_llm_failure()` after a `""`/`None`. Never collapse these back into one "content unavailable" branch — that is how a dead host used to produce a course full of stubs marked `ready`.
-- **LLM output:** Qwen3-14B is far more reliable than the old 1.5B model, but JSON can still fail — always use `llm_generate_json()` with retry, and prefer Ollama's `format` (JSON-schema) constrained output where possible.
+- **LLM output:** JSON can still fail whatever the model — always use `llm_generate_json()` with retry, and prefer Ollama's `format` (JSON-schema) constrained output where possible.
 - **Single global FSM session:** state is not per-user/per-tab; multiple browsers share one session (see `docs/HELGA_BUILD_TREE.md` B6.3).
 - **Socket.IO events are receive-only in browser** — all commands go Browser → HTTP POST `/api/event` → Web-UI → HTTP POST core `/event` → FSM
 
