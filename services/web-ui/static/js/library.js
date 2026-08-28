@@ -674,7 +674,19 @@
                 window.location.href = '/build?topic=' +
                     encodeURIComponent(file.name);
             } else {
-                fail('Upload failed (' + xhr.status + ').');
+                /* THE SERVER EXPLAINS; THIS THREW THE EXPLANATION AWAY.
+                   /api/upload_epub answers a rejected .docx with ".docx is not
+                   supported — no parser is installed for it. Convert to EPUB,
+                   PDF, Markdown or plain text first." — the format, the reason
+                   and the fix. This showed "Upload failed (400)." instead, so
+                   a learner was handed a status code and left to guess, while
+                   the sentence that told them what to do was already in the
+                   response body. */
+                var why = '';
+                try {
+                    why = (JSON.parse(xhr.responseText) || {}).error || '';
+                } catch (e) { why = ''; }
+                fail(why || ('Upload failed (' + xhr.status + ').'));
                 btn.disabled = false;
                 btn.textContent = 'Build the course';
             }

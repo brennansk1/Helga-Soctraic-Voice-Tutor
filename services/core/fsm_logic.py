@@ -1511,6 +1511,34 @@ class MnemosyneFSM:
                 logging.info("Session paused via PAUSE_SESSION event")
             return
 
+        # AN UPLOADED FILE IS NOT AN ANSWER TO THE CURRENT QUESTION.
+        #
+        # /api/upload_epub posts a TEXT_INPUT carrying
+        # "create course from epub <path>" plus source="epub_upload" and the
+        # filepath. The create branch that reads it lives inside the LOBBY
+        # state, so from anywhere else the sentence fell through to the
+        # learner-input path and was GRADED.
+        #
+        # Watched it: uploading caching-notes.md mid-session produced
+        #   Transition: SOCRATIC_LEARNING with TEXT_INPUT 'create course from
+        #   epub /app/data/uploads/caching-notes.md'
+        #   LLM Grading Request for: WHERE Clause Syntax
+        # — no course was built, the file sat unread in uploads/, and a real
+        # concept was scored against a string the learner never wrote. That
+        # last part is the worst of it: it corrupts the record silently.
+        #
+        # The payload already says what it is, so this does not depend on the
+        # state it arrives in.
+        if event_type == "TEXT_INPUT" and \
+                (event.get("payload", {}) or {}).get("source") == "epub_upload":
+            _path = (event.get("payload", {}) or {}).get("filepath")
+            logging.info("Upload-initiated build for %s (state was %s)",
+                         _path, self.state)
+            if self.state == "SOCRATIC_LEARNING":
+                self._save_current_course_progress()
+            self.start_creation(text, epub_filepath=_path)
+            return
+
         # State-specific transitions
         if event_type == "TEXT_INPUT":
             self.transcript.append({"sender": "user", "text": text})

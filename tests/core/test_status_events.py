@@ -191,3 +191,43 @@ def test_every_name_the_fsm_calls_actually_resolves():
 
     missing = sorted(called - known - local)
     assert not missing, f"fsm_logic calls names that resolve nowhere: {missing}"
+
+
+def test_an_uploaded_file_is_never_graded_as_an_answer():
+    """/api/upload_epub posts a TEXT_INPUT carrying "create course from epub
+    <path>" with source="epub_upload". The branch that reads it lived inside
+    the LOBBY state, so from anywhere else the sentence fell through to the
+    learner-input path and was GRADED against the open concept.
+
+    Observed: uploading caching-notes.md mid-session logged
+      Transition: SOCRATIC_LEARNING with TEXT_INPUT 'create course from epub …'
+      LLM Grading Request for: WHERE Clause Syntax
+    No course was built, the file was never read, and a real concept was scored
+    against a string the learner never wrote.
+    """
+    import inspect
+    from services.core import fsm_logic
+
+    src = inspect.getsource(fsm_logic.MnemosyneFSM.transition)
+    assert 'source") == "epub_upload"' in src, \
+        "upload-initiated builds are state-dependent again"
+
+    # The guard must come BEFORE the state-specific TEXT_INPUT block, or it
+    # never runs for the states that caused the bug.
+    guard = src.index('"epub_upload"')
+    generic = src.index('# State-specific transitions')
+    assert guard < generic, \
+        "the upload guard sits after the state-specific handler and cannot fire"
+
+
+def test_the_upload_guard_calls_start_creation_correctly():
+    """The signature is start_creation(text, epub_filepath=...). My first
+    version passed epub_path=, which would have raised TypeError on every
+    upload — inside a path nothing else exercises."""
+    import inspect
+    from services.core import fsm_logic
+
+    sig = inspect.signature(fsm_logic.MnemosyneFSM.start_creation)
+    assert "epub_filepath" in sig.parameters
+    src = inspect.getsource(fsm_logic.MnemosyneFSM.transition)
+    assert "epub_path=" not in src, "upload guard calls a parameter that does not exist"

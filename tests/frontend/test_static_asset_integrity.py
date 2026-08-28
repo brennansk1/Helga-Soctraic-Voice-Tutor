@@ -322,3 +322,22 @@ def test_progress_prefers_the_server_streak():
     assert "data.streak" in prog, (
         "progress.js computes its own streak again instead of reading the "
         "one the server derives from the merged record")
+
+
+def test_upload_failures_show_the_server_reason_not_just_a_status():
+    """/api/upload_epub answers a rejected file with the format, the reason and
+    the fix — ".docx is not supported — no parser is installed for it. Convert
+    to EPUB, PDF, Markdown or plain text first."
+
+    library.js showed "Upload failed (400)." and dropped that sentence, handing
+    the learner a status code to interpret. courses.html already had the right
+    shape (`data.error || fallback`); this keeps them consistent.
+    """
+    import re
+    lib = (STATIC / "js" / "library.js").read_text(encoding="utf-8")
+    m = re.search(r"xhr\.onload\s*=\s*function[\s\S]{0,1200}?\n        \};", lib)
+    assert m, "the upload onload handler moved; re-derive this check"
+    handler = m.group(0)
+    assert "responseText" in handler, (
+        "the upload handler ignores the response body, so the server's "
+        "explanation never reaches the learner")
