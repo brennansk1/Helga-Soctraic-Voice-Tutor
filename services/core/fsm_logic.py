@@ -779,6 +779,32 @@ class MnemosyneFSM:
         structured fields instead of parsing the free-text `message`. The message
         is kept for human display and legacy string-matching handlers.
         """
+        # MOVE THE SKELETON BAR AS MODULES LAND.
+        #
+        # creation_status walks a fixed ladder -- 10 skeleton, 30 audit, 40
+        # hydration, 100 done -- so the phase that takes the longest is the one
+        # with no movement in it. Observed: two hours at "Building... 10%" on a
+        # build that was working the whole time, which reads exactly like a
+        # hang. The builder now says which module it is on; map that across the
+        # 10-30 band so the number means something.
+        _status = getattr(self, "creation_status", None)
+        if (isinstance(message, str) and isinstance(_status, dict)
+                and message.startswith("STRUCT:MODULE_PROGRESS:")):
+            try:
+                _done, _total = message.split(":")[2:4]
+                _done, _total = int(_done), int(_total)
+                if _total > 0:
+                    _pct = 10 + int(20 * max(0, _done - 1) / _total)
+                    _status.update({
+                        "phase": "skeleton",
+                        "progress_pct": min(29, _pct),
+                        "modules_done": max(0, _done - 1),
+                        "modules_total": _total,
+                        "last_update": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    })
+            except (ValueError, IndexError, TypeError):
+                pass          # a malformed progress line must never stop a build
+
         # B15.5: stamp ownership at the source — web-ui emits to this
         # student's Socket.IO room and never broadcasts.
         data = {"message": message, "student_id": self.student_id}

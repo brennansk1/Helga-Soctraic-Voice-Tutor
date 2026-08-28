@@ -320,6 +320,11 @@
                 return 'Audit could not check everything — see the course page';
             }
             return 'Audit finished: ' + verdict; }],
+        /* Must precede the generic STRUCT:\w+ rule below, which would
+           otherwise render this as a bare "1:6". */
+        [/^STRUCT:MODULE_PROGRESS:(\d+):(\d+)/, function (m) {
+            return 'Module ' + m[1] + ' of ' + m[2];
+        }],
         [/^STRUCT:MODULE:(.+)/,          function (m) { return 'Module: ' + m[1]; }],
         [/^STRUCT:(?:UNIT|LESSON):(.+)/, function (m) { return '   ' + m[1]; }],
         // The concept/hydration lines carry the uid in field 2. The old

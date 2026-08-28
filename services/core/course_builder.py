@@ -4019,6 +4019,14 @@ class SkeletonBuilder:
             # correct module as substructures are generated sequentially.
             if self.status_callback:
                 self.status_callback(f"STRUCT:MODULE:{m_title}")
+                # The only signal that says how far through the skeleton we
+                # are. creation_status pins progress_pct at 10 for this entire
+                # phase, and the phase is the long one -- on this hardware a
+                # six-module skeleton runs for hours while the toast reads
+                # "Building... 10%" the whole time, indistinguishable from a
+                # wedged build. Both numbers are already in scope here.
+                self.status_callback(
+                    f"STRUCT:MODULE_PROGRESS:{ordinal}:{total_modules}")
                 self.status_callback(f"LOG: Generating Units for module: {m_title}")
 
             # STEP 1: Generate Units only (fast, small call)

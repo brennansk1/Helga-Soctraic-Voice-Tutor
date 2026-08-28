@@ -75,3 +75,71 @@ def test_call_llm_forwards_images_to_client():
                         images=["data:image/png;base64,AAAA"])
     assert out == "It's a force diagram."
     assert fsm.llm_client.chat.call_args.kwargs['images'] == ["data:image/png;base64,AAAA"]
+
+
+# ---------------------------------------------------------------------------
+# THE SKELETON PHASE IS THE LONG ONE AND HAD NO MOVEMENT IN IT.
+#
+# creation_status walks a fixed ladder: 10 skeleton, 30 audit, 40 hydration,
+# 100 complete. Skeleton is where the hours go -- an HTTP-status-codes build
+# sat at "Building... 10%" for two hours while working normally, which is
+# indistinguishable from a hang. The builder knows its module ordinal and
+# total; these map it onto the 10-30 band.
+# ---------------------------------------------------------------------------
+
+def test_module_progress_advances_the_skeleton_bar():
+    fsm = _make_fsm()
+    fsm.creation_status = {"phase": "skeleton", "progress_pct": 10}
+    with patch.object(fsm_mod, 'requests'):
+        fsm.send_status_update("STRUCT:MODULE_PROGRESS:1:6")
+        first = fsm.creation_status['progress_pct']
+        fsm.send_status_update("STRUCT:MODULE_PROGRESS:4:6")
+        later = fsm.creation_status['progress_pct']
+
+    assert first == 10, "starting the first module is 0/6 done"
+    assert later > first, "the bar must move as modules land"
+    assert fsm.creation_status['modules_done'] == 3
+    assert fsm.creation_status['modules_total'] == 6
+    assert fsm.creation_status['phase'] == 'skeleton'
+
+
+def test_module_progress_never_reaches_the_next_phase():
+    """Audit owns 30. Skeleton must stop short of it however many modules."""
+    fsm = _make_fsm()
+    fsm.creation_status = {"phase": "skeleton", "progress_pct": 10}
+    with patch.object(fsm_mod, 'requests'):
+        fsm.send_status_update("STRUCT:MODULE_PROGRESS:6:6")
+        assert fsm.creation_status['progress_pct'] < 30
+        fsm.send_status_update("STRUCT:MODULE_PROGRESS:99:6")
+        assert fsm.creation_status['progress_pct'] < 30
+
+
+def test_a_malformed_progress_line_never_stops_a_build():
+    fsm = _make_fsm()
+    fsm.creation_status = {"phase": "skeleton", "progress_pct": 10}
+    with patch.object(fsm_mod, 'requests'):
+        for bad in ("STRUCT:MODULE_PROGRESS:",
+                    "STRUCT:MODULE_PROGRESS:x:y",
+                    "STRUCT:MODULE_PROGRESS:1",
+                    "STRUCT:MODULE_PROGRESS:1:0"):
+            fsm.send_status_update(bad)     # must not raise
+
+
+def test_ordinary_status_messages_do_not_touch_progress():
+    fsm = _make_fsm()
+    fsm.creation_status = {"phase": "hydration", "progress_pct": 40}
+    with patch.object(fsm_mod, 'requests'):
+        fsm.send_status_update("STRUCT:MODULE:Redirection and Persistence")
+        fsm.send_status_update("LOG: Generating Units for module: X")
+    assert fsm.creation_status['progress_pct'] == 40
+
+
+def test_progress_parsing_survives_an_fsm_without_creation_status():
+    """send_status_update is called from every corner of the FSM, including
+    contexts that never run a build. An AttributeError here would take out
+    status reporting everywhere, so the hook must simply not engage."""
+    fsm = _make_fsm()
+    if hasattr(fsm, 'creation_status'):
+        del fsm.creation_status
+    with patch.object(fsm_mod, 'requests'):
+        fsm.send_status_update("STRUCT:MODULE_PROGRESS:2:6")   # must not raise
